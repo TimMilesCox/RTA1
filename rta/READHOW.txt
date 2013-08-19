@@ -1,0 +1,427 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    The masmx target-independent meta-asembler delivered here
+#    is free software whether it is used for constructing RTA1 code
+#    or any other code. masmx is a separate free program by the
+#    same author and included with this software to save searching for it
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    RTA1 is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+
+
+This READHOW is about running the emulated machine and building the
+emulated machine
+
+You need to build it if you haven't either Intel OSX or PowerPC OSX
+
+
+
+How to run the Emulated Machine
+_______________________________
+
+
+You need to have the real external network interfaces talking to the
+RTA1 network device buffer first of all
+
+	cd rta/netifx
+
+	./runL
+
+
+The script sets up firewall divert rules which catch traffic addressed to
+the RTA1 from outside, then runs a program netifx
+
+netifx owns the firewall divert socket which catches traffic meant for
+RTA1 and places it in a large ring of shared memory buffers which looks
+to the emulated RTA1 like one of its architectural device arrays
+
+netifx also takes RTA1's network traffic from that buffer and forwards
+it to real networks
+
+If can stop netifx by keying in .<ENTER>  twice
+
+You need to restart netifx before restarting the emulated RTA1
+if you have stopped that
+
+There is a script
+
+	./rerunL
+
+which runs netifx without repeating the firewall rules. It does no harm
+however to duplicate the firewall rules
+
+If you are running on OSX and talking to emulated RTA1 from the
+same computer it's running on, you need the -z option for netifx
+
+This is because OSX puts wrong checksums on its own loopback
+interface and netifx must correct them before passing traffic to
+RTA1
+
+In detail the wrong checksums are addresses + protocol + PDUsize
+without doing any more
+
+Other netifx options are about how much trace you like to see
+in the shell where netifx is running
+
+
+
+Then in another shell
+
+
+
+	cd rta/rta.run
+
+	./run	srom
+
+	l ../fsimages/rand7
+
+	g
+
+This runs the emulated machine. The script ./run looks
+for a file ../rta.gen/srom.rom, which is the system image
+in RTA1 target instruction code. A script rta/rta.gen/make
+constructs the this RTA1 executable image
+
+the command l loads a file system image so the emulated
+RTA1 can webhost its own documentation pages and send them
+to other computers
+
+The file system image is constructed with the script
+rta/mrand7
+
+Command g leaves single-step and RTA1 is running free.
+The prompt symbol changes from > to :
+
+You can see the emulator's appearance while running at the end
+of this document, along with some interactive commands
+
+
+Network Interaction with the Emulated RTA1
+__________________________________________
+
+To talk to the emulated RTA1, first set up routes to it
+from wherever you are
+
+Its address is always 172.29.7.7 at the moment. It's
+not yet worth using a ZeroConf address because there
+is not yet  ZeroConf software in the target image to fend
+off address challenges
+
+If you don't like 172.29.7.7 it can be changed by
+reassembling the RTA1 target image with rta/rta.gen/make
+
+The easiest way to set up routes is a script in rta/client
+where there are also a couple of programs for talking to
+the RTA1
+
+This script is called ./prun and it equips local
+users with an address in the same network as 172.29.7.7
+and pings 172.29.7.7 a few times
+
+
+
+Special Considerations Networking from
+the Emulator Host to the Emulated Machine
+_________________________________________
+
+Any protocol you talk from the  machine where the
+emulator is running must to be forced to come from an
+address other than 172.29.7.7, which is an alias
+of the emulator host's loopback
+
+This is because sending IP likes to send from the
+loopback alias which it is sending to. And RTA1 IP
+then replies to its own address...
+
+./prun configures an address 172.29.7.6 also on loopback
+and sends the echo request
+
+	ping -c 6 -S 172.29.7.6 172.29.7.7
+
+telnet can also be guided on the command line
+
+	$ telnet -s 172.29.7.6 172.29.7.7
+	Trying 172.29.7.7...
+	Connected to 172.29.7.7.
+	Escape character is '^]'.
+	RTA1 smaragd7 OS shared console
+	key h for command list
+	h
+	commands are	t	h	bsh&
+		stay
+
+The floating point interactor which calls the floating
+server on RTA1 is commanded with argument 2 to come from
+somewhere different from the destination
+
+	fp 172.29.7.7 172.29.7.6
+
+There is some point in having this floating server in the
+emulated machine! The PC hasn't a thousand billionth of
+RTA1's number range. The PC is obliged to send the largest
+numbers in ASCII because it can't otherwise represent them
+
+
+        $ ./fp 172.29.7.7
+        remote application socket 3 bind state 0 F 2 NB 0 udconnect state 0
+
+        >246913578024691357802e600004 / 2000000000000000000000000e-600000
+         send state 65
+         recv state 34/35 +1.23456789012345678901e+1200000
+        >
+
+
+
+netsnmp manager has a configuration file to say where it's
+coming from
+
+	/Users/YOU/.snmp/snmp.conf 
+	 clientaddr	172.29.7.6
+
+Then you can interact from the emulator host
+
+	$ snmpwalk -v 1 -c public -Ir -Os 172.29.7.7 tcp
+	.
+	tcpMaxConn = INTEGER: 7500000
+	tcpActiveOpens = Counter32: 0
+	tcpPassiveOpens = Counter32: 1
+	tcpAttemptFails = Counter32: 0
+	tcpEstabResets = Counter32: 0
+	tcpCurrEstab = Gauge32: 1
+	tcpInSegs = Counter32: 7
+	tcpOutSegs = Counter32: 6
+	tcpRetransSegs = Counter32: 0
+	tcpConnTable.172.29.7.7.23.172.29.7.6.51171.1 = INTEGER: 5
+	tcpConnTable.172.29.7.7.23.172.29.7.6.51171.2 = IpAddress: 172.29.7.7
+	tcpConnTable.172.29.7.7.23.172.29.7.6.51171.3 = INTEGER: 23
+	tcpConnTable.172.29.7.7.23.172.29.7.6.51171.4 = IpAddress: 172.29.7.6
+	tcpConnTable.172.29.7.7.23.172.29.7.6.51171.5 = INTEGER: 51171
+	tcpInErrs = Counter32: 0
+	tcpOutRsts = Counter32: 0
+
+	$ snmpwalk -v 1 -c public -Ir -Os 172.29.7.7 system
+	sysDescr = STRING: RTA1 running OS smaragd7
+	sysObjectID = OID: zeroDotZero.0
+	sysUpTime = Timeticks: (4294946715) 497 days, 2:24:27.15
+	sysContact = STRING: TimMilesCox@gmx.ch
+	sysName = STRING: RTA1
+	sysLocation = STRING: worldwide
+
+To browse the RTA1 from the emulator host, just say you're going to 172.29.7.6:8080
+and the firewall will send the input to netifx. The responses will come to 172.29.7.6
+which is you
+
+	http:/172.29.7.6:8080
+
+
+Talking to the RTA1 over a Real Interface
+_________________________________________
+
+If you are talking from another computer you need to
+set a route with a next-hop at the emulator host
+on the same network as the RTA1 target
+
+The ifconfig command is privileged and so is
+the Windows route command
+
+In Unix and Linux environments, for example
+
+	sudo route -nv delete -host 172.29.7.7
+	sudo route -nv add -host 172.29.7.7 192.168.1.3
+
+Windows help route is easy to read, but if you are not
+running administrator privileges, Windows will decide
+that you are not suitably elevated. Really, try it
+
+You right click on some small icon in the shell frame
+corner (or maybe you right click on the icon for the
+shell frame), and if you have it right you may choose
+to be elevated, and then you may configure a route
+
+
+
+
+How to build the Emulated Machine
+_________________________________
+
+to build netifx
+
+	cd rta/netifx
+
+	gcc -m32 -funsigned-char [-DINTEL] -o netifx netifx.c
+
+also in netifx directory you prepare the network hook for the
+emulator
+
+	gcc -m32 -funsigned-char -c [-DINTEL] netbank.c
+
+
+to build the emulator, first the sections of the instruction set
+are in engine.rta
+
+There is a script there to build all of them
+
+	cd rta/engine.rta
+
+	./genrel
+
+Then you need rta.run from where you run the emulator
+The script tipgen picks up the emulator framework and adds
+it round the instruction set emulations which you have already
+compiled
+
+	cd rta/rta.run
+
+	gcc -m32 -funsgigned-char -c [-DINTEL] idisplay.c
+
+	./tipgen
+
+
+Running the Emulator
+___________________
+
+This is how it looks when you run it. Don't forget to have
+netifx running first
+
+	$ ./run srom
+	rom image 28672 target words read
+	netbank 65536
+	netbase 0x1c020000
+	async thread ID 0xb0081000
+	[000000:00003f]000000	sr	0000
+	800000 00000040
+	[000000:000040]5500fc	lx,xi	00fc
+	[000000:000041]10008f	sx	008f
+	[000000:000042]10008e	sx	008e
+	[000000:000043]04007c	inA	007c
+	[000000:000044]200087	sa	0087
+	[000000:000045]680084	lb	0084
+	80: 000000 000000 000000 000000 000000 000000 000000 000000
+	88: 000000 000000 000000 000000 000000 000000 000000 000000
+	90: 000000 000000 000000 000000 000000 000000 000000 000000
+	[000000]-> 000000 000000 000000 000000 000000 000000 000000
+	    000000 000000 000000 000000 000000 000000 000000 000000
+	>l ../fsimages/rand7
+	1443 granules loaded
+	[000000:000040]5500fc	lx,xi	00fc
+	800000 00000041
+	[000000:000041]10008f	sx	008f
+	[000000:000042]10008e	sx	008e
+	[000000:000043]04007c	inA	007c
+	[000000:000044]200087	sa	0087
+	[000000:000045]680084	lb	0084
+	[000000:000046]dd0001	anb,xi	0001
+	80: 000000 000000 0000fc 000000 000000 000000 000000 000000
+	88: 000000 000000 000000 000000 000000 000000 000000 000000
+	90: 000000 000000 000000 000000 000000 000000 000000 000000
+	[000000]-> 000000 000000 000000 000000 000000 000000 000000
+	    000000 000000 000000 000000 000000 000000 000000 000000
+	>
+	
+
+
+There are two state displays because RTA1 executed an instruction
+after it loaded the file system
+
+The first line of the display is the instruction located in
+memory before the one where we are. Sometimes we haven't just
+executed it. In frame one, we had just jumped from zero to 64
+
+The second line per frame is the PSR and program counter
+
+The next six instructions in line are shown
+
+24 registers. We're at system start, so these are the first
+24 of the 128 interrupt registers starting at 128
+
+If we single-step one instruction more, a value gets into the
+stack pointer! Now we can see how the the last four interrupt
+registers at address 242 are
+
+	>
+	[000000:000041]10008f	sx	008f
+	800000 00000042
+	[000000:000042]10008e	sx	008e
+	[000000:000043]04007c	inA	007c
+	[000000:000044]200087	sa	0087
+	[000000:000045]680084	lb	0084
+	[000000:000046]dd0001	anb,xi	0001
+	[000000:000047]de0049	jnzb	0049
+	80: 000000 000000 0000fc 000000 000000 000000 000000 000000
+	88: 000000 000000 000000 000000 000000 000000 000000 0000fc
+	90: 000000 000000 000000 000000 000000 000000 000000 000000
+	[0000fc]-> 000000 000000 000000 000000 000000 000000 000000
+   	 000000 000000 000000 000000 000000 000000 000000 000000
+	>g
+	:
+
+
+A few emulator interactive commands
+__________________________________
+
+To get back to single step key s and return
+
+The prompt symbol then changes back to >
+
+Enter will execute a single instruction
+
+g<address> will set a breakpoint and run to it
+for example
+
+        g6:3    # go until bank 24K word 3
+
+        g16a    # go until 16a of the current bank
+
+m<address> will display a line of system memory
+. will stop doing that
+
+The address for m is either, for example
+
+	m8400	# in the current address space
+
+	mc:010	# absolute 4K page and offset
+
+
+
+b will diplay the relocation register values
+
+. will exit the emulator
+
+
