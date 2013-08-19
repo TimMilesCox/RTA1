@@ -1,0 +1,134 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+LIBRARY	$equ	05000
+
+	$include	../def/rta.def
+	$include	../def.sys/banks.def
+	$include	../language/stack.def
+	$include	register.def
+	$include	../def/map1.def
+
+.	this library is for a stream continuum
+.	so nothing is set up to initialise
+.	a field pointer of any kind
+.	except it is a counted stream and must
+.	do nothing if no bytes are available
+.	and stop when it runs out of bytes
+
+.	this generation runs with the defaults
+.	ASCII / UTF8, 8-bit byte
+
+.	the initialisation call READ_START
+.	programs the staging registers
+.	RDATAC+RDATA+Q to shift two bytes
+.	per word from network buffers,
+.	which store datalike this:
+.	
+.		_________________________________
+.		| 0000 0000 XXXX xxxx XXXX xxxx |
+.		|_______________________________|
+
+.	immediately on acquisition via register *q++
+.	if bstream16r is on, RDATAC is decremented
+.	from 24 to 16 and RDATA is shifted 8 bits
+.	left:
+
+.		_________________________________
+.		| XXXX xxxx XXXX xxxx 0000 0000 |
+.		|_______________________________|
+
+
+.	in contrast to 8 bit data in program data
+.	which uses all 24 bits in the data word:
+
+.		_________________________________
+.		| XXXX xxxx XXXX xxxx XXXX xxxx |
+.		|_______________________________|
+
+.	the staging registers deliver or output
+.	16 bits per word if PSR flags
+
+.		b$stream16r
+.		b$stream16w
+
+.	are on, otherwise 24 bits per word
+
+
+	$list	2
+$(0:0:LIBRARY)
+fscan*	$vector	fscan_net16
+fedit*	$vector	fedit_net16
+symbol*	$vector	symbol_net16
+ieditu*	$vector	ieditu_net16
+iedit48u*	$vector	iedit48uascii_net16
+iscan_xdr*	$vector	iscan_net16
+
+fscana*	$vector	fscan_core24
+fedita*	$vector	fedit_core24
+symbola*	$vector	symbol_core24
+ieditua*	$vector	ieditu_core24	
+iedit48ua*	$vector	iedit48uascii_core24
+iscan	$vector	iscan_core24
+
+        $if     LIBRARY=LIBRARY_XDR
+
+        $do     60-$,   fret    0
+	j	ieee754_64_2f
+	j	f2_ieee754_64
+
+	j	xdr_ieee754_64:float
+	j	xdr_float:ieee754_64
+
+	$include	xdr_bina
+        $else
+
+        $do     64-$,   fret    0
+
+        $endif
+
+	$include		number
+	$include		numbera
+	$include,$binary	aqui16
+	$include,$binary	aqui24

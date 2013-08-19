@@ -1,0 +1,822 @@
+<html>
+<div	style="font-size:15pt">
+
+<h1>The smaragd7 Kernel and API</h1>
+
+<pre>
+
+	Quick Description
+
+	API
+
+		Primitives Versus Kernel Calls
+
+		Launching, Switching and Ending Tasks
+
+		Adding and Releasing Task Storage
+
+		The Posix Network API
+
+		The High-Volume Network API
+		
+
+	API Service Building Blocks
+
+	Appendix A: Calling Sequences on the Internal Stack
+
+	Appendix B: Prototype Online File System
+
+	Appendix C: smaragd7 Kernel Structure
+
+</pre>
+
+<h2>Quick Description</h2>
+
+<p>
+The smaragd7 kernel is constructed to support a set of Posix services
+
+<p>
+The primitive components of these services are exposed in lower level APIs
+for faster processing
+
+<p>
+Initially the kernel is prototyped with the Posix interface incomplete
+and the lower-level realtime interfaces far more complete
+
+<p>
+The realtime interfaces support not only quicker access than the Posix
+interfaces, but services on a far larger scale
+
+<p>
+For example, Posix networking is centred on the handle, an integer token
+for a socket. The integer value shares a number space with file handles
+
+<p>
+RTA1 with smaragd7 kernel supports transaction servers with initially
+over 5 million active TCP connections. The remote transacton session
+is modelled on the TCP connection. So there are millions of sustained
+TCP connections, not dozens of in-and-out connections
+
+<p>
+A transaction domain does not have 5..10 million socket handles, but
+instead binds to TCP service at a low level
+
+
+<h2>API</h2>
+
+<h3>Primitives versus Kernel Calls</h3>
+
+System calls have a call interface and their
+arguments are on the internal stack. This is identical to a
+call between application functions or a library call
+
+<p>
+A small number of system calls are internal interrupts and are called via
+the <b>ii</b> internal interrupt instruction, or via a functional wrapper
+
+<p>
+Macro language supports the same call interface to system and
+application functions alike. This example sequence
+<pre>
+
+	c	<i>vector</i>	<i>argument<b>1</b></i>
+
+</pre>
+generates this instruction sequence
+<pre>
+
+	push	<i>argument<b>1</b></i>
+	push, i	1, sp
+	call	<i>vector</i>
+	pop	sp
+
+</pre>
+
+There is a more complex example at <b>Appendix A: Calling Sequences on the Internal Stack</b>
+
+<p>
+Kernel routines which temporarily alter the address space are
+implemented as internal interrupts
+
+<p>
+Return from interrupt restores the caller's environment
+
+<p>
+Arguments for these primitive routines are typically in accumulators or index registers
+<pre>
+
+	la, xi	<i>argument</i>
+	ii	<i>vector</i>
+
+</pre>
+<p>
+A vector, whether of an interrupt or of a far call routine, is a value
+with a 16-bit bank pointer and a 6-bit offset
+<pre>
+
+	00 bbbb bbbb bbbb bbbb offset
+
+</pre>
+
+The operand of the internal interrupt instruction <b>ii</b> is a
+16-bit immediate sign extended to 24 bits
+
+<p>
+In practice, all ISRs which are kernel targets of <b>ii</b> are in a
+4096-word bank at absolute address 4096, i.e. the second page of storage. 
+
+<p>
+So these vector values are all in the range
+<pre>
+
+	64++[0..63]
+	000000 000000 000001 xxxxxx
+
+</pre>
+
+<p>
+They are
+<pre>
+
+	SPAWN$             66		= bank 1  vector  2
+
+					task launch
+					4 parameters in application
+					registers a b mantissa2 mantissa3
+
+
+	BANK$              67		= bank 1  vector  3
+
+					storage acquire
+					words requested in application
+					register a
+
+
+	ARRAY$             68		= bank 1  vector  4
+
+					very large storage acquire
+					4096-word blocks requested
+					in application register a 
+
+	BANK$FREE          69		= bank 1  vector  5
+
+					storage relinquish
+					absolute bank pointer in
+					application register a
+
+
+	YIELD$             65		= bank 1  vector  1
+
+					task switch
+
+
+
+	TWAIT$             91		= bank 1  vector  27
+
+					task switch and wait milliseconds
+					application register a contains
+					millisecond count
+
+
+
+	EXIT$              70		= bank 1  vector  6
+
+					end task
+
+
+</pre>
+
+<p>
+Internal interrupts and far calls both jump to a vector address in
+the first 64 words of the target bank
+
+<p>
+The operand of a call instruction is a storage word instead of an immediate
+
+<p>
+Call vectors are similarly a 16-bit bank pointer and 6-bit vector,
+or alternatively a 19-bit bank pointer and a 3-bit vector field 
+
+<p>
+Because a 16-bit bank pointer only covers 256 megawords of executable
+space (banks start at 4096-word boundaries), application vectors may be
+a 19-bit pointer to a bank at a 32678-word boundary, with a 3-bit vector
+offset, covering all 16 gigawords of executable space
+<pre>
+
+	00 bbbb bbbb bbbb bbbb vector	call vector value up to 256 MWord
+
+	01 bbbb bbbb bbbb bbbb bbbvvv	call vector value up to 16 GWord
+
+</pre>
+
+<p>
+The kernel call interface vectors are in 4096-word instruction banks
+starting from absolute address 8192, or the third page of system memory
+
+<p>
+Instruction banks can be any size up to and beyond the direct address
+range of 32768 words, but the kernel banks are the minimum size of
+4096 words for modularity. IP network calls are in bank 2 at
+address 8192 and file system calls in bank 5 at address 20480
+
+<p>
+So the kernel call-interface routines have, for example, the vector keys
+<pre>
+
+	2*64++[0..63]
+	00 0000 0000 0000 0010 yyyyyy
+
+	5*64++[0..63]
+	00 0000 0000 0000 0101 xxxxxx
+
+</pre>
+
+<p>
+The operand of <b>call</b> instruction is a variable or a constant,
+and is often a coded as a literal
+<pre>
+
+	call	(vector)
+
+</pre>
+
+<h3>Launching, Switching and Ending Tasks:SPAWN$:YIELD$:TWAIT$:EXIT$</h3>
+
+One task launches another with the SPAWN$ primitive
+<pre>
+
+	ql	(start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
+	ii	SPAWN$
+
+</pre>
+
+<p>
+PRIORITY may not be < zero or > PRIORITIES-1
+
+<p>
+PRIORITIES is in kernel assembly
+
+<p>
+The highest priority is zero and the lowest PRIORITIES-1
+
+<p>
+DATA_SPACE is the amount of application data storage which the
+application will receive and base in banks B3..B31
+
+<p>
+-B1_OCCURENCES is a negative number indicating the number of 4096-word
+banks the application requires in its private B1 stack. The default is
+-1, which means the application uses one private B1 bank
+
+<p>
+B1 banks are distinct from application data banks because their content
+is encapsulated in the owning application or service. Adresses in B1
+are not available to called or calling entities.
+
+<p>
+A simple application has one B1 bank. A service disposing tabled resources
+has one or more
+
+<p>
+Subprogramming application models may also have a linear stack of B1 banks
+or a service aligned multiple of B1 banks
+
+<p>
+The kernel assigns a single storage area starting with B1 banks, then a
+4096-word Task Control Block, then a 4096-word vector bank which the
+application will base in B2, then the initial DATA_SPACE
+
+<p>
+The kernel writes the base adresses of all banks initially supplied to the
+task and all entry point vectors in the initial instruction bank into the vector bank
+
+<p>
+The instruction bank containing the start vector must be loaded before
+SPAWN$
+
+<p>
+A primitive to launch threads is planned
+
+<p>
+<b>YIELD$</b> is a voluntary task switch. Practically, it only benefits
+equal or higher priority tasks, unless the task descriptor has been marked
+to block on an event
+<pre>
+
+	ii	YIELD$
+
+</pre>
+
+<p>
+<b>TWAIT$</b> is a voluntary task yield for a time in milliseconds.
+When the wait time is expired, the task becomes a candidate for switching
+<pre>
+
+	la, xi	milliseconds
+	ii	TWAIT$
+
+</pre>
+
+<p>
+<b>EXIT$</b> deletes the task and pools its resources
+<pre>
+
+	ii	EXIT$
+
+</pre>
+
+<p>
+If the application internal stack is exactly as at task entry, the
+far return instruction <b>fret</b> can be used to end and delete a task
+<pre>
+
+	fret	0
+
+</pre>
+
+
+<h3>Adding and Releasing Task Storage:BANK$:ARRAY$:BANK$FREE</h3>
+
+<p>
+These primitives acquire or free storage banks up to 16 Gigawords in
+size. The banks acquired are not automatically based and
+may be too large to base all at once
+
+<p>
+This service is not similar to C-Language library calls for
+obtaining buffers by pointer. C-Library manages memory which the task
+already has, and does not return it to the smaragd7 kernel but to the 
+application internal management
+
+<p>
+<b>BANK$</b> obtains a bank from 1 to 16777215 words in size and
+records it in the task control block. The argument in application
+register a is words requested. value returned in a is the bank
+pointer. Zero = no memory granted
+<pre>
+
+	la, xi	WORDS_REQUESTED
+	ii	BANK$
+
+</pre>
+
+<p>
+<b>BANK$</b> granularity of memory grant is 4096-word blocks up to 262144
+words and 262144-word blocks beyond
+
+<p>
+<b>ARRAY$</b> obtains a bank from 4096 words to 16 Gigawords in size
+and records it in the task control block. The argument in application
+register a is 4096-word blocks requested. value returned in a is the bank
+pointer. Zero = no memory granted
+
+<pre>
+
+	la, xi	4K_BLOCKS_REQUESTED
+	ii	ARRAY$
+
+</pre>
+<p>
+<b>ARRAY$</b> granularity of memory grant is 262144-word blocks
+
+<p>
+<b>BANK$FREE</b> returns a bank of any size to the kernel. If the task
+does not possess the bank, no action is taken. The argument in
+application register a is the bank pointer
+<pre>
+
+	la	BANK_INDEX
+	ii	BANK$FREE
+
+</pre>
+<h3>The Network API</h3>
+<p>
+The network API has call interfaces. There is a conventional handle-based
+interface and additionally a set of lower-level calls for greater
+efficiency and for handling sockets in number-orders of millions at one
+application endpoint
+
+<p>
+A departure from the totally conventional socket interface is that
+error return values are a variety of negative numbers indicating the
+actual problem. There is no errno variable
+
+<h3>The Posix Network API</h3>
+<pre>
+
+	<b>la	([IPPROTO_TCP|IPPROTO_UDP]*/16)
+	call	(__socket)</b>
+
+
+	result in application register a
+	+integer = socket ID
+	-1	= handle not available
+	-2	= protocol not supported
+
+
+
+	<b>[dl	(net_address*/16++port:d)|dsr	48]
+	ds	6
+	la	socket
+	[lb, xi	0]
+	call	(bind)</b>
+
+
+	result in application register a
+	0	= good
+	-2	= handle is not TCP or UDP
+	-3	= port number specified and not free
+	-4	= no resource to model the socket
+
+
+
+	<b>c	(recv)	socket_handle	buffer	bytes	flags</b>
+
+	socket handle is the integer handle number
+
+	For UDP sockets bit 23 of flags has a <b>PEEK</b> effect
+	-the user datagram stays on the input queue
+
+	flag bit 22 has <b>NON_BLOCKING</b> effect.
+	<b>recv</b> is by default <b>BLOCKING</b>
+
+	if a UDP socket has no user datagram available it
+	blocks if flag bit 22 = 0
+
+	if a TCP connection has less data available than
+	requested it blocks if flag bit 22 = 0
+
+	sockets receiving XDR data require BLOCKING to work
+	correctly. Applications protocols with BLOCKING
+	sockets must be separate tasks from the IP task
+
+	the result in application register a is bytes read
+
+	result -2 means the handle is neither a UDP socket
+	nor a TCP connection
+
+	result -99 means a TCP connection has received remote
+	close
+
+
+
+	<b>c	(send)	socket_handle	buffer	bytes	flags</b>
+
+	socket_handle is the integer handle number
+
+	for TCP sockets bit 3 of flags is TCP_PSH which sends
+	immediately instead of on full segment
+
+	result in application register a is bytes sent
+
+	If the socket is NON_BLOCKING,
+	if the transmission could not be immediately resourced
+	actual bytes sent is in a and outstanding count in b
+
+	a result of -2 indicates that the handle is neither
+	a UDP socket not a TCP connection
+
+bind            $equ            T77_V++2
+recv            $equ            T77_V++6
+send            $equ            T77_V++7
+ipsend          $equ            T77_V++8
+tcp_accept      $equ            T77_V++9
+tcp_send_push   $equ            T77_V++10
+tcp_ack_fin     $equ            T77_V++11
+xaccept         $equ            T77_V++49
+
+</pre>
+<h3>The High-Volume Network API</h3>
+
+
+<p>
+The following are low-level network calls which are the building blocks
+of the well-known socket interface
+
+<p>
+Instead of passing handles these routines use the kernel socket structures
+
+<p>
+There are two reasons for making this lower-level interface available
+to applications
+
+<p>
+Firstly some processing is sidestepped which retrieves the
+socket value via the task control block and the kernel vector bank
+
+<p>
+Secondly the network architecture is designed to allow one server
+endpoint to have some millions of TCP connections. So many handles
+could neither be contructed nor to any effect used
+
+<p>
+Instead the application traverses the transmission control blocks in
+order to serve realtime traffic needs
+
+
+<pre>
+
+	<b>lx	connection
+	call	(xaccept)</b>
+
+	move a passive connect from <b>SYNC_RECEIVED</b> to <b>ESTABLISHED</b> state
+	the transmission control block address is in x
+
+	<b>xaccept</b> is the building block of the <b>accept()</b> call
+
+	to walk the open and half-open connnections attached to a
+	port, it is necessary to bind a listening socket to that port
+
+	<b>bind</b> returns the bank:offset address in kernel space of the
+	listening socket in registers 10:11. This address must be based in
+	the space <b>BSOCKET</b> and the socket structure attribute <b>tbase</b>
+	retrieved to identify the bank where this socket has connections
+
+	The bank containing connection blocks is then based at <b>BSOCKET</b>
+
+	the connections in this bank are in 32 ordered chains and the
+	chain for the local port is a function of the local port number
+
+	the local port number may be known at assembly time and the
+	chain function can then be resolved at assembly
+
+	a local port number picked at runtime must be resolved to its
+	chain address at <b>bind</b>. A randomly numbered listening port is
+	conceivable with services bound to <b>portmapper()</b>
+
+
+		$(1)
+		tcp_socket_handle	+	0
+		connections_bank	+	0
+		port_socket_long_address +	0:d
+
+		connection_chain_head
+			+	BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(LISTENING_PORT)
+
+		listening_port		+	LISTENING_PORT		
+
+		$(69::,b)
+		s		socket
+
+		$(66::,x)
+		transmission	tcp_connection
+
+		$(67::,y)
+		tlist		tbank
+
+		$(0)
+
+		first_time	la	(IPPROTO_TCP*/16)
+				<b>call	(__socket)</b>
+				jna	socket_error
+
+				sa	tcp_socket_handle
+				lb, xi	LISTENING_PORT
+
+				sb	7
+				z	6
+				<b>call	(bind)</b>
+
+				jna	bind_error
+
+				dl	10
+				ds	port_socket_long_address
+
+				sabr	BSOCKET
+
+				.	register b is now a pointer to
+				.	the port socket structure
+
+				push	s:tbase
+				pop	connections_bank
+
+				$if	LISTENING_PORT=0
+				.	if <b>bind</b> chose the port number
+				la	s:socket_address+1
+				and	(00FFFF)
+				sa	listening_port
+				<b>call	(tcp_hash_localsocket)</b>
+				aa	(BSOCKET*/12++tlist:chain(1))
+				sa	connection_chain_head
+
+				$endif
+
+		subsequently	la	connections_bank
+				sabr	BSOCKET
+
+				lx      connection_chain_head
+
+				lk	(00FFFF)	. compare mask for
+							. local port # in chain
+
+		walk		lx	transmission:next
+				tz	x
+				j	a_connection
+				j	no_more_connections
+
+		a_connection	la	transmission:socket_address+1
+				mta	listening_port	. chains are shareable
+				j	walk
+
+				la	transmission:state
+				anu, xi	<b>TCP_ESTABLISHED</b>
+				jzb	traffic?
+				anu, xi	<b>TCP_SYNRECEIVED</b>
+				jnzb	walk		. TCP will service any other state
+
+				<b>call	(xaccept)</b>
+
+		traffic?	la	transmission:receiveq:head
+				jza	walk	
+
+
+	Listening sockets for very large numbers of connections have dedicated connection
+	banks per port, and TCP accepts incoming connections to these automatically.
+	The application protocol then filters the credentials of the remote socket owner
+
+
+tcp_release_rxline      $equ    T77_V++50
+
+tcp_rx          $equ            T77_V++53
+tcp_tx          $equ            T77_V++54
+tcp_addbyte     $equ            T77_V++55
+tcp_pushbytes   $equ            T77_V++56
+
+udgram_rx       $equ            T77_V++57
+udgram_tx       $equ            T77_V++58
+tfer_dgram      $equ            T77_V++4
+release_udgram  $equ            T77_V++5
+
+udp_acw_send_nocheck $equ       T77_V++59
+udp_rtxbuffer   $equ            T77_V++60
+udp_send        $equ            T77_V++61
+udp_txbuffer    $equ            T77_V++62
+udp_acw_send    $equ            T77_V++63
+net_disengage   $equ            T77_V++3
+</pre>
+<h3></h3>
+
+
+
+
+<h2>API Service Building Blocks</h2>
+
+<h3></h3>
+
+These internal interrupt primitives are used as building blocks
+in system services
+
+<pre>
+	HANDLE$            80		= bank 1  vector  16
+
+					acquire a file or socket handle
+
+	FREE_HANDLE$       81		= bank 1  vector  17
+
+					relinquish a file or socket handle
+					handle number in application
+					register a
+
+	READ_HANDLE$       82		= bank 1  vector  18
+
+					retrieve handle encoding
+					in user register a
+					application supplies handle
+					number in a
+
+	READ_XVECTOR$      83		= bank 1  vector  19
+
+					read the kernel vector bank
+					location in application register x
+					vector word returned in
+					application register a
+
+	WRITE_XVECTOR$     84		= bank 1  vector  20
+					write the kernel vector bank
+					location in application register x
+					value in application register a
+					
+
+	READ_SOCKET$       85		= bank 1  vector  21
+
+					handle number is in application a
+					return handle encoding +location of
+					control cell in application a + b
+					
+	UHANDLE$           86		= bank 1  vector  22
+					bind socket control cell to handle
+
+					application d$save = handle number
+					applicatio a = bank of control cell
+
+					Return long virtual address in
+					application registers 10, 11
+
+	KERNEL$B1          87		= bank 1  vector  23
+					base a kernel private data bank
+					in bank B1
+
+					application register a
+					->kernel vector bank location of
+					required kernel B1 occurrence
+
+	B1$                88		= bank 1  vector  24
+					rebase the caller's current
+					private data bank in bank B1
+
+	KERNEL$B1_1        89		= bank 1  vector  25
+
+					base the initial kernel private
+					data bank in bank B1
+
+
+	XBASE$32           96		= bank1	vector	32
+	XBASE$33           97		= bank1	vector	33
+	XBASE$34           98		= bank1	vector	34
+	XBASE$35           99		= bank1	vector	35
+	XBASE$36           100		= bank1	vector	36
+	XBASE$37           101		= bank1	vector	37
+	XBASE$38           102		= bank1	vector	38
+	XBASE$39           103		= bank1	vector	39
+	XBASE$40           104		= bank1	vector	40
+	XBASE$41           105		= bank1	vector	41
+	XBASE$42           106		= bank1	vector	42
+	XBASE$43           107		= bank1	vector	43
+
+                                        bank 1 vectors 32..43
+                                        request to base a device array
+
+	smaragd7 kernel bases specialised arrays outside system memory
+	(devices) in a few banks starting from B32. To avoid accident,
+	only interrupt code is allowed to do this. Internal interrupts
+	XBASE$32..XBASE$43 are available to base device arrays
+
+
+</pre>
+<p>
+These internal interrupts can be further documented on request
+
+<p>
+The kernel source code is also open
+
+
+<h3></h3>
+<h3></h3>
+
+<h2>Appendix A: Calling Sequences on the Internal Stack</h2>
+
+
+This macro language for example
+
+<pre>
+
+
+	c	<i>vector</i>	<i>argument<b>1</b></i>[,[xreg], [INT]]		;
+			[<i>*argument<b>2</b></i>]				;
+			[<i>value<b>3</b></i>,,XI]				;
+			[<i>value<b>4</b></i>,[xreg],I]			;
+			[<i>long_integer<b>5</b></i>,[xreg], LONG]		;
+			[<i>floating_number<b>6</b></i>,[xreg], FLOATING]	;
+			[<i>packed_floating_number<b>7</b></i>,[xreg], PACKED_FLOATING]
+		
+
+</pre>
+
+<p>
+generates this instruction sequence
+<pre>
+
+	[fpx	<i>packed_floating_number<b>7</b></i>]
+	[qpush	<i>floating_number<b>6</b></i>]
+	[dpush	<i>long_integer<b>5</b></i>]
+	[push,i	<i>value<b>4</b></i>]
+	[push,xi	<i>value<b>3</b></i>]
+	[push	<i>*argument<b>2</b></i>]
+	push	<i>argument<b>1</b></i>
+	push, i	<i><b>argument_words</b></i>, sp
+	call	<i>vector</i>
+	pop	sp
+
+</pre>
+
+<p>
+Any kind of argument may be *indirect
+
+<p>
+Any argument may be a literal instead of a name, for example
+<b>(1.875*+1262607),,FLOATING</b>
+
+<p>
+The <i>vector</i> operand of the far call is a variable or a constant,
+and may be a literal
+<pre>
+
+	call	(<i>vector</i>)
+	c	(<i>vector</i>)
+
+</pre>
+
+</div>
+</html>
+

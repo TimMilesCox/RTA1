@@ -1,0 +1,353 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$include	a_protos.def
+
+IPV4_BANK 		$equ	02000
+IPV4_DINITIAL_BANK      $equ    3*/12
+SIGALERT		$equ	0
+QSIMULTANEOUS		$equ	1
+NET_ATTENTION_PORT	$equ	121
+
+RX_FRAGMENTS		$equ	1
+NETWORK_D		$equ	24*1024
+D0_WORDS		$equ	NETWORK_D
+
+	$include	t77.def
+
+networks 		$equ	IPV4_BANK/*6
+
+$(67::,y)
+sbind	$socket
+
+$(67::,y)
+axw	acw
+
+.	$(1:4096:IPV4_DINITIAL_BANK/$1)
+
+$(1:*1/$1)
+$(3:*1/$3)
+
+$(0::IPV4_BANK)
+	j	networks_start
+	j	network_socket
+	j	network_bind
+	j	network_disengage
+	j	net_pass_xcall
+	j	udp_drop_dgram
+
+	j	socket_receive
+	j	socket_send
+	j	ip_send
+	j	tcp_respond_syn_ack
+	j	tcp_send_i
+	j	tcp_respond_fin_ack
+
+	$do	24-$,	fret	0
+
+.	jump pad for interface drivers included in this bank
+
+	j	ift1_rxtx
+	j	ift1_writeq
+
+	$do	48-$,	fret	0
+
+xaccept	$vector	tcp_xaccept
+xdisco	$vector	tcp_xdisco
+
+	j	tcp_textline_release
+
+	j	tcp_hashlocal
+	j	tcp_hashremote
+
+	j	tcp_read
+	j	tcp_add
+	j	tcp_add1byte
+	j	tcp_pushline
+
+	j	udgram_read
+	j	udgram_transmit
+	j	udp_txaw_nocheck
+	j	udp_response_buffer
+	j	udp_tx
+	j	udp_buy_txaw
+	j	udp_txaw
+
+
+netbank_initial
+	ql	0, y
+	qs	0, x
+	ax, xi	4
+	ay, xi	4
+	jdr	netbank_initial
+	lret	0
+
+networks_start
+	$base_d
+
+	lr, xi	2048/4-1
+	lx, xi	01000
+	la, xi	IPV4_DINITIAL_BANK/*12
+	ly	(48*/12:s)
+	sabr	48
+	lcal	netbank_initial
+				. handle with caution here
+				. BANK3 is based at B48 and y is
+				. pointing halfway along it
+	lr, xi	2048/4-1
+	lx, xi	03000
+	lcal	netbank_initial
+
+
+	b1_sp_start
+
+	lcal	net_bank
+
+.	lx, xi	interface(1)
+.	la, xi	SOFTWARE_I_F
+.	lcal	start_internal_interface
+	lcal	locate_interfaces
+	on	see$2		. must have the kernel vector bank
+
+	lcal	tcp4_construct_connections_bank
+	sa	tcx_v4(1)
+
+network	push	fp
+	lcal	frames
+
+	$if	SIGALERT
+	la, xi	0
+	outA	NET_ATTENTION_PORT
+	$endif
+
+	lcal	xarp			. exists because it has timers
+	lcal	ipv4			. exists for timing fragments out
+	lcal	udp4			. may not need to exist
+					. because inputs are handled
+					. completely in frames
+					. and outputs are handled
+					. completely in the socket
+					. send call
+	lcal	xtcp4
+	pop	fp
+
+	$include	a_protos
+
+	lcal	icapsule
+	j	network
+
+network_socket
+	anu	(IPPROTO_UDP*/16)
+	jzb	srequest
+	anu	(IPPROTO_TCP*/16)
+	jzb	srequest
+	la, xi	-2
+	fret	0
+srequest
+	ii	HANDLE$
+	fret	0
+
+
+.	    A	    B	    6	    7
+.	_________________________________
+.	| socket|   0	|address:port	|
+.	|_______|_______|_______________|
+
+.	note the kernel vector bank is read and
+.	written with internal interrupts
+
+.		ii	READ_XVECTOR
+.		ii	WRITE_XVECTOR
+
+.	because this routine is available
+.	both to kernel tasks which share
+.	the kernel vector bank, and unkernel
+.	tasks which have their own vector
+.	bank
+
+.	the internal ISRs switch to the
+.	kernel vector bank
+
+.		on	see$2
+
+.	return from any ISR restores all PSR
+.	flags to what they were on II
+
+.	the kernel task which mostly calls here
+.	is the IP task in this bank,
+.	because some application server protocols
+.	are in this task
+
+.	otherwise the callers are application
+.	tasks
+
+network_bind
+	ds	d$save
+	ii	READ_HANDLE$
+	jna	network_bind_x
+
+	anu	(IPPROTO_UDP*/16)
+	jzb	bind_udp
+	anu	(IPPROTO_TCP*/16)
+	jzb	bind_tcp
+
+	la, xi	-2	. protocol unknown
+			. or socket already bound
+			. (lower 16 bits nonzero)
+
+network_bind_x
+	fret	0
+
+bind_udp
+	lx, xi	usockb(1)
+	j	protocol_bind
+bind_tcp
+	lx, xi	tsockb(1)
+protocol_bind
+	sa	d$save2
+	la	7
+	and	(65535)
+	sa	8
+	jnza	selected_bind
+        la	7
+	or, xi	1024
+	sa	7
+selected_bind
+	dsr	9
+	and, xi	127
+
+	ax	a
+	ii	READ_XVECTOR$
+	sbr	15
+	sbl	3
+	ab	(BSOCKET*/12)
+	ly	b
+
+	jza	new_bind_bank
+
+	sabr	BSOCKET
+	ii	UHANDLE$
+	ds	10		. return also the long
+				. virtual address of 
+				. the port control block
+
+	dl	sbind:socket_address
+	jdz	bind_clear_to_add
+
+	tz	8
+	j	bind_e3
+
+	inc	7
+	la	7
+	lb	7
+	andB,xi 2048
+	jzb	selected_bind
+bind_e3
+	la, xi	-3	. port number already claimed
+	fret	0
+
+new_bind_bank
+	la, xi	4096
+	ii	BANK$
+	jnza	bind_bank_granted
+
+	la, xi	-4	. cannot resource the bind
+	fret	0
+
+bind_bank_granted
+	ds	10	. save the long virtual address
+			. of the port control block
+
+	ii	WRITE_XVECTOR$
+	sabr	BSOCKET
+	ii	UHANDLE$
+
+	qpush	a
+	dsr	48
+	ds	6
+
+	lx	(BSOCKET*/12)
+	lr, xi	512/2-1		. initialise 2 8-word
+				. port blocks per loop
+bind_bank_prepare
+?	$do	4,	qs	?*4-4, x
+	ax, xi	16
+	jdr	bind_bank_prepare
+
+	qpop	a
+
+bind_clear_to_add
+	dl	6
+	ds	sbind:socket_address
+
+				. TCP bind, place a
+				. connections bank pointer
+				. in the port socket
+				. structure
+
+	la	d$save2
+	ana	(IPPROTO_TCP*/16)
+	jnza	bind_complete
+
+	la	tcx_v4(1)
+	ii	READ_XVECTOR$
+
+	jza	bind_failed_cbank
+	sa	sbind:tbase
+	z	sbind:tbase+1
+
+bind_complete
+	la, xi	0
+	fret	0
+
+bind_failed_cbank
+	z	sbind:socket_address+1
+	la, xi	-19
+	fret	0
+
+
+
+network_disengage
+	fret	0
+

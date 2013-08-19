@@ -1,0 +1,442 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$list		0
+
+	$path		../def
+	$include	rta.def
+	$include	ii.def
+	$include	b1_stack.def
+	$include	vector.def
+	$include	rt.def
+
+	$path		../def.sys
+	$include	tcb.def
+	$include	io.def
+	$include	base.def
+	$include	banks.def
+	$path
+	$include	../fs/fs24.def
+
+"$SP_LOWER_LIMIT"	$equ	32
+	$include	../language/stack.def
+
+PRIORITIES		$equ	8
+ROM_IMAGE		$equ	1
+VECTOR_SEGMENT_INDEX	$equ	16384
+
+TRANSFER_PAGE		$equ	4096
+
+FREE_BASE		$equ	128+7
+
+MANAGER_BANKS           $equ    2
+MANAGER_TABLE           $equ    8-MANAGER_BANKS*/12
+SCALE_THRESHOLD		$equ	16384	. the # pages of
+					. system memory
+					. below which
+					
+			$if	ROM_IMAGE
+RAM_LOAD_PAGES		$equ	0	. zero if all 
+					. the OS code
+					. is ROM
+			$else
+RAM_LOAD_PAGES		$equ	OS_HIGH+4095/*12
+			$endif
+					. otherwise
+					. the number
+					. of pages
+					. copied by
+					. the boot ROM
+
+
+	$list		2
+$(64:MANAGER_TABLE)
+
+$(0:0:0)
+	j		engage
+
+$(0:64)
+engage	lx, xi		256-4
+	sx		sp_x
+	sx		fp_x
+
+	inA		ram$threshold
+	sa		FREE_BASE
+	tanu, xi	1
+	jnzb		image_in_rom
+
+	lcal		load_image
+
+image_in_rom
+	go		(TRANSFER_PAGE/*6)
+
+load_image
+	.	if an image is to be loaded starting at
+	.	TRANSFER_PAGE, load it here from a local
+	.	file system
+
+	.	and adjust FREE_BASE to the first page
+	.	after the system image
+
+	.	otherwise a system is already in ROM
+	.	which is larger than just this
+	.	restart page
+
+	lret		0
+
+	$do		$<256,$(0:256)
+
+$(0:0:TRANSFER_PAGE)
+	j		start
+	j		yield
+	j		spawn_ii
+	j		bank_ii
+	j		array_ii
+	j		bank_free_ii
+	j		exit
+
+	$do		16-$,	ir	0
+
+	j		handle_ii
+	j		free_handle_ii
+	j		read_handle_ii
+	j		read_xvector_ii
+	j		write_xvector_ii
+	j		read_socket_ii
+	j		uhandle_ii
+	j		kernel_b1_ii
+	j		b1_ii
+	j		kernel_b1_ii_1
+	j		dayclock_w_ii
+
+	$do		30-$,	ir	0
+
+	j		timer
+	j		xbase_u
+
+?	$do	32,	j	xbase(?+32-1)
+
+	
+bank_ii	la		4
+	lcal		bank
+	sa		4
+
+	jza		nothing_gained
+	on		see$1
+	la		BANK_CHAIN
+	sa		0, b		. descriptor pointer
+	sb		BANK_CHAIN	. to front of chain
+nothing_gained
+	ir		0
+
+array_ii
+	la		4
+	lcal		array
+	sa		4
+
+	jza		nothing_banked
+	on		see$1
+	la		BANK_CHAIN
+	sa		0, b		. descriptor pointer
+	sb		BANK_CHAIN	. to front of chain
+nothing_banked
+	ir		0
+
+bank_free_ii
+	la		4
+
+	on		see$1
+	lb, xi		BANK_CHAIN
+	lk, xi		-1		. search mask
+
+bank_freewheel
+	ly		b
+	lb		0, y
+	jzb		bank_freed
+	mta		0, b		. skip on equal
+	j		bank_freewheel
+
+	la		b		. bank free wants
+					. a descriptor pointer
+
+	lb		0, a		. take it out of
+	sb		0, y		. the chain
+
+	lcal		bank_free
+bank_freed
+	ir		0
+
+spawn_ii
+	on		see$1	. you get here from an application
+
+	inB		65	. TCB in B65 and vector bank in B2
+	la		ABT+2	. are constructed in situ
+	dpush		a_x	. so save the caller's environment
+
+	ql		a	. read the 4 parameters from
+				. the application accumulators
+
+	lcal		spawn
+
+	pop		a_x
+	sabr		2	. restore the caller's B2 and B65
+	inA		65	. new B65 as result value
+	sa		a	. in the application A-Register
+	pop		b_x
+	outB		65
+	ir		0
+
+start	lcal		measure
+	lcal		stem_link
+
+			. some manager tasks will
+			. get tabled here
+
+	ql		(networks, 0, NETWORK_D, -6:q)
+	lcal		spawn
+
+	la		ABT+2		. the IP vector bank
+	outA		66		. is the kernel vector bank
+					. kernel routines which need
+					. to find kernel data
+
+	lr		sp_x
+	lk, xi		128
+	sk		sp_x
+
+	j		choose
+
+	$include	measure
+
+xbase_u	j		guard
+
+	$include	xiobase
+
+	$include	timer
+
+
+.	each handle integer corresponds to a 48-bit encoding
+.	starting at handle(1)
+
+.	the index corresponds to a port number or to a
+.	TCP connection and is the encoded offset of the
+.	control block in the containing bank
+
+.	47	40 39		     24	 23				0
+.	_________________________________________________________________
+.	|hndl type|	 index 16 bits	| descriptor of containing bank	|
+.	|_________|_____________________|_______________________________|
+
+handle_ii
+	on		see$1
+	la		FREE_HANDLE	. address of next free 48-bit encoding
+	lk		a		. read the type wanted from user A 
+	jza		new_handle
+	lb		0, a		. next free after to free list head
+	sb		FREE_HANDLE
+	sk		0, a		. type with zero index to encoding
+	z		1, a		. zero bank descriptor to encoding
+	aa, xi		-handle(1)	. change the address to offset
+	sar		1		. change the 2-word offset to integer
+	sa		a		. return the handle
+	ir		0
+
+new_handle
+	lx		HANDLES		. add a new 48-bit encoding
+	lr, xi		HANDLES_MAX	. at the list end
+	jxge		no_handle	. if you can
+	sk		0, x		. write the handle type, zero index
+	z		1, x		. and zero containing bank descriptor
+	la		x_x		. copy the address
+	ax, xi		2		. before updating it
+	sx		HANDLES		. and writing it back
+	aa, xi		-handle(1)	. turn the address to an offset
+	sar		1		. turn the offset to an integer
+	sa		a		. return it
+	ir		0
+
+no_handle
+	la, xi		-1
+	sa		a
+	ir		0
+
+free_handle_ii
+	la		a
+	lx, xi		FREE_HANDLE
+	sal		1		. turn the handle integer
+	aa, xi		handle(1)	. to address of 48-bit encoding
+free_handle_search
+	ly		x_x		. this to previous
+	lb		0, x		. read next
+	lx		b_x
+	jzb		free_handle_in_here	. to end of free chain
+	tanu		x_x			. or compare so as to
+						.  order re-use
+	jzb		handle_free_already	. and to test
+	jc		free_handle_search	. if lower insert before
+free_handle_in_here
+	sa		0, y
+	sx		0, a
+handle_free_already
+	ir		0
+
+read_handle_ii
+	la		a
+	lx, xi		handle(1)
+	sal		1
+	ax		a_x
+	on		see$1
+	lr		HANDLES
+	jxge		handle_out_of_range
+	la		0, x
+	sa		a
+	ir		0
+handle_out_of_range
+	la, xi		-1
+	sa		a
+	ir		0
+
+uhandle_ii
+	on		see$1
+	lb		d$save		. user d$save
+	sbl		1		. change to handle offset
+	lx, xi		handle(1)	. change to encoding block pointer
+	ax		b_x
+	lb		0, x		. in case the choice of port
+	lk		(00FFFF)	. was randomised
+	mlb		7
+	la		b_x
+	lb		a		. bank descriptor
+	ds		0, x
+	ir		0
+
+read_socket_ii
+	la		a
+	sal		1
+	lx, xi		handle(1)
+	ax		a_x
+	on		see$1
+	lr		HANDLES
+	jxge		socket_out_of_range
+	dl		0, x
+	ds		a
+	fret		0		. return the whole 48-bit encoding
+					. and let application code verify it
+
+
+socket_out_of_range
+	z		a
+	ir		0
+				
+
+
+.	these are here to read or write
+.	a pointer in the kernel vector bank
+
+.	from routines which might be called
+.	from either a kernel task or an
+.	application
+
+.	see$2 makes the kernel vector bank
+.	visible instead of the application
+.	vector bank
+
+.	on return from ISR, see$2 is on or off
+.	whichever it was before
+
+read_xvector_ii
+	la		x
+	tanu, xi	02000
+	jnc		read_xvector_ix
+	tanu, xi	03000
+	jc		read_xvector_ix
+	on		see$2
+	lb		0, a
+	sb		a
+read_xvector_ix
+	ir		0
+
+write_xvector_ii
+	la		x
+	tanu, xi	02000
+	jnc		write_xvector_ix
+	tanu, xi	03000
+	jc		write_xvector_ix
+	lb		a
+	on		see$2
+	sb		0, a
+write_xvector_ix
+	ir		0
+
+
+kernel_b1_ii_1
+	on		see$2
+	la		VECTOR_B1(1)
+	outA		1
+	ir		0
+
+kernel_b1_ii
+	on		see$2
+	la		*a	. read the bank sought via user A register
+	outA		1
+	ir		0
+
+b1_ii	on		see$1++see$2
+	la		*B1_P
+	outA		1
+	ir		0
+
+dayclock_w_ii
+	dl		a
+	ds		DAYCLOCK$U
+	ir		0
+
+
+TRANSFER_PAGE_HIGH
+
+	$trace		TRANSFER_PAGE_HIGH
+
+	$path		../t77.4
+	$include	t77
+	$path

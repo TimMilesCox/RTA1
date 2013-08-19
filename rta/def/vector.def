@@ -1,0 +1,124 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.	code must not be generated at kernel
+.	assembly, so all the fields are $RES
+
+.	spawn routine writes VECTOR(1..64)
+.	application entry points, BASE_VECTOR,
+.	Automatic Data Page pointers
+.	VECTOR_B1(1..63), data section pointer
+.	VECTOR_D
+
+.	but application assembly adds external
+.	reference literals in the literal pool
+.	at the end of this list:
+
+.		$2(external_name)
+
+.	this can't go in a ROM image because spawn
+.	plugs the other data page pointers into it
+
+.	this is loaded near the front of the
+.	RAM pages collection which spawn finds
+.	for the new task
+
+.	the entry point literals added to it in
+.	assembly can't have a literal load string
+.	address. Assembly doesn't know where the
+.	vector page is going, even if the vector
+.	targets are in known ROM addresses
+
+.	starting a task from ROM image involves
+.	copying the initialised parts of vector
+.	page b2 as all the other data bank parts
+.	with initial values
+
+
+$(2:02000/$2)
+
+?	$do	64,;
+VECTOR(?)	$res	1
+
+BASE_VECTOR	$res	1
+
+?	$do	63,;
+VECTOR_B1(64-?)	$res	1
+VECTOR_D	$res	1
+
+?	$do	02100-$,;
+xvector(?)	$res	1
+
+?	$do	128,;
+usockb(?)	$res	1
+
+?	$do	128,;
+tsockb(?)	$res	1
+
+?	$do	03000-$,;
+tcx_v4(?)	$res	1
+
+	$trace	4096-?/*4
+
+"$base_d"* $proc
+base*	$proc
+	la, i	1, a
+	sabr	3+?
+	$end
+
+	la	VECTOR_D
+	sabr	3
+
+?	$do	D0_WORDS//4096-1,	base
+
+	$if	D0_WORDS+03000<32768
+	la, xi	03000+D0_WORDS
+	$else
+	la	(03000+D0_WORDS)
+	$endif
+
+	sa	fp	. initialise the external stack
+			. in case that is required
+	$end
+

@@ -1,0 +1,357 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+IFT1_RX_BASE	$equ	32
+IFT1_TX_BASE	$equ	32
+
+IFT1_RPAGEW	$equ	1024
+IFT1_TPAGEW	$equ	1024
+
+IFT1_RPAGES	$equ	128
+IFT1_TPAGES	$equ	128
+
+
+$(67::, y)
+xframe	delivery
+
+
+$(0)
+
+ift1_rxtx
+
+	la	this_if:ift1:base_rx
+	ii	XBASE$(32)
+	ly	this_if:ift1:rx_cursor
+	
+frames?	dl	xframe:flag	. 2nd word in B is total frame length
+				. this may include the length of
+				. a 2-byte protocol family tag
+				. appended to the front of a dgram
+				. which has no MAC header
+
+	and	(008000)
+
+	jza	next_interface	. capture not complete
+
+	la	xframe:ll_hl	. link layer header length
+
+	MIB_ACOUNT48	this_if:inoctets	b
+	MIB_ICOUNT48	this_if:inpackets
+
+	sy	fp
+	ay, xi	3		. offset descriptor->frame
+
+	anb	a		. net datagram length
+	jnc	frame_complete	. less than llh length!
+	lr	b		. datagram length bytes
+
+				. the protocol family tag
+				. is mostly the word
+				. before the datagram
+
+				. either because there is
+				. a DIX MAC header, or
+				. a similar encapsulation
+
+	sar	1		. byte count to word count
+				. only two bytes per word
+				. in packet data
+
+				. MAC header / TAG must
+				. be even # bytes
+
+	ay	a
+
+	la, xi	-1	
+	aa	y
+	la	0, a		. load the protocol TAG
+
+
+	push	fp
+	push	x
+
+	lcal	frame_to_protocol
+	pop	x
+	pop	y
+
+
+frame_complete
+	z	xframe:flag
+	ay, xi	RPAGEW
+	la	y
+
+
+	$if	RPAGEW*RPAGES>262144
+
+	ana	(RX_BASE+1*/18:s)
+	jnc	frames?
+	ly	(RX_BASE*/18++RPAGEW*0:s)
+
+	la	base_rx
+	aa, xi	64
+
+	lk	(03FFFC0)
+	mta	(RPAGEW*RPAGES/*18-6:s)
+	j	$+2
+	and	(0C0003F)
+	sa	base_rx
+	sabr	RX_BASE
+	
+	$else
+
+	ana	(RX_BASE*/18++RPAGEW*RPAGES:s)
+	jnc	frames?
+	ly	(RX_BASE*/18++RPAGEW*0:s)
+
+	$endif
+
+	j	frames?
+	
+next_interface
+	sy	this_if:ift1:rx_cursor
+
+
+txq_ift1_relay
+	dl	this_if:ift1:base_tx, x
+	ii	XBASE$(IFT1_TX_BASE)
+	la	this_if:mtu, x
+	sa	MTU
+
+	sb	fp
+
+	$if	HVBANK
+
+txq_ift1_otraffic1?
+	dl	this_if:ift1:hvoq:head, x
+	jzb	txq_ift1_otraffic2?
+	sabr	A$BUFFB
+	ly	b
+
+txq_ift1_fragment1
+
+	tz	xframe:flag, fp		. test interface buffer available
+	j	txq_next_interface	. or not
+
+	push	x
+	lx, i	4, fp
+	lcal	ipv4_transcribe_tx
+	pop	x
+
+	MIB_ACOUNT48	this_if:outoctets	TX_DATAGRAML
+	MIB_ICOUNT48	this_if:outpackets
+
+	push	TX_DATAGRAML		. inform the interface logic
+	pop	xframe:frame_length, fp	. that the frame
+	push	(008000)		. is
+	pop	xframe:flag, fp		. complete
+
+	lcal	txq_ift1_next_frame	. focus on the next available
+					. buffer of the interface
+
+	ly	TX_TRANSFER_DESCRIPTOR
+	jnza	txq_ift1_fragment1	. send any remaining part
+					. as long as the interface
+					. has buffers
+
+	lcal	ift1_readhvq
+.	ly, i	this_if:ift1:hvoq, x	. otherwise separate the datagram
+.	lcal	hvreadq			. from the interface xmit queue
+
+					. drop the datagram unless the
+					. upper protocol needs to keep it
+	tp	descriptor:bytes, b	. test the retain bit
+	j	txq_ift1_otraffic1?
+
+	lx	(A$BUFFB*/18:s)
+
+	push	x
+	lcal	sell1
+	pop	x
+
+	j	txq_ift1_otraffic1?
+
+	$endif
+	
+txq_ift1_otraffic2?	
+	la	this_if:ift1:oq:head, x
+	jza	txq_next_interface
+	ly	a
+
+txq_ift1_fragment2
+	tz	xframe:flag, fp		. see if a device buffer 
+	j	txq_next_interface	. is free or not
+
+	push	x
+	lx, i	4, fp
+	lcal	ipv4_transcribe_tx
+	pop	x
+
+	MIB_ACOUNT48	this_if:outoctets	TX_DATAGRAML
+	MIB_ICOUNT48	this_if:outpackets
+
+	push	TX_DATAGRAML		. inform the interface logic
+	pop	xframe:frame_length, fp	. this frame
+	push	(008000)		. is
+	pop	xframe:flag, fp		. complete
+
+	lcal	txq_ift1_next_frame	. focus on the next
+					. frame buffer of the interface
+
+
+	ly	TX_TRANSFER_DESCRIPTOR
+	jnza	txq_ift1_fragment2	. send any remaining part
+					. as long as the interface
+					. has buffers
+
+	ly, i	this_if:ift1:oq, x	. otherwise separate the datagram
+
+
+        $if      QSIMULTANEOUS
+	lcal	ift1_readq
+.	lcal	readqif
+	$else
+	lcal	readq			. from the interface xmit queue
+	$endif
+
+	tp	descriptor:bytes, a	. test the retain bit
+	j	txq_ift1_otraffic2?
+
+	push	x			. drop the transmitted frame unless
+	lcal	net_free_txb		. the upper protocol needs it again
+	pop	x
+
+	j	txq_ift1_otraffic2?
+txq_next_interface
+	fret	0
+
+txq_ift1_next_frame
+	lb, xi	IFT1_TPAGEW
+	ab	fp
+	andB	(IFT1_TPAGES*IFT1_TPAGEW-IFT1_TPAGEW:s)
+	orB	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+	
+	sb	fp
+	sb	this_if:ift1:tx_cursor, x
+
+	$if	0
+	anb	((IFT1_TX_BASE*/18);
+		+IFT1_RPAGES*IFT1_RPAGEW;
+		+IFT1_TPAGES*IFT1_TPAGEW:s)
+
+	jnc	$+2
+	ly	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+
+	sy	fp
+	sy	this_if:ift1:tx_cursor, x
+	$endif
+
+
+	lret	0
+
+rxq_ift1_next_frame
+	ly, xi	IFT1_RPAGEW
+	ay	fp
+	lb	y
+	anb	(IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+	jnc	$+2
+	ly	(IFT1_RX_BASE*/18:s)
+	sy	fp
+	sy	this_if:ift1:rx_cursor, x
+	lret	0
+
+start_ift1
+	sa	this_if:flags
+	lb	(0400000)
+	orB	y
+	sb	this_if:ift1:base_rx
+	sb	this_if:ift1:base_tx
+
+	$if	0
+	la, xi	FIREWALL_RELAY
+	sa	this_if:type
+	dl	(IFT1_RX_BASE*/18, IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:d)
+	sa	this_if:ift1:rx_cursor
+	sb	this_if:ift1:tx_cursor
+	z	this_if:ift1:oq:head
+	z	this_if:ift1:hvoq:head+1
+	$endif
+
+	j	locate_interfaces_include
+
+ift1_readq
+	LOCK	this_if:lock_cell_q1
+	ly, i	this_if:ift1:oq
+	lcal	readqif
+	tz	a
+	z	descriptor:i_f, a
+	FREE	this_if:lock_cell_q1
+	lret	0
+
+ift1_readhvq
+	LOCK	this_if:lock_cell_q2
+	ly, i	this_if:ift1:hvoq
+	lcal	hvreadqif
+	FREE	this_if:lock_cell_q2
+	lret	0
+
+ift1_writeq
+	tz	descriptor:i_f, a
+	fret	0
+	lk	(63*/18:s)
+	mta	(A$BUFFB*/18:s)
+	j	ift1_writeq1
+	LOCK	this_if:lock_cell_q2
+	ly, i	this_if:ift1:hvoq
+	lcal	q2ifhv
+	FREE	this_if:lock_cell_q2
+	fret	0
+
+ift1_writeq1
+	LOCK	this_if:lock_cell_q1
+	ly, i	this_if:ift1:oq
+	push	this_if:id
+	pop	descriptor:i_f, a
+	lcal	q2if
+	FREE	this_if:lock_cell_q1
+	fret	0

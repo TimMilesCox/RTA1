@@ -1,0 +1,1190 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+REQUIRED		$equ	128+6
+SIZE			$equ	REQUIRED
+BANKS			$equ	REQUIRED
+
+OUTSIZE			$equ	128+7
+TEMP_BASE_ABSO		$equ	x$save
+B4			$equ	x$save1
+
+.	measure is once-only initialisation code
+.	called at kernel start up
+.	it is in a lcal subroutine to make it
+.	modular and include-compatible with
+.	any other bank management routines
+.	in this file
+
+$(64)
+
+banks_lock_cell			$res	1
+
+next				$res	1	.	=next_page_descriptor
+large_bank_descriptor_sp	$res	1
+
+?	$do	64,free_chain(?) $res	1
+
+switch_lock_cell		$res	1
+free_tdescriptor		$res	1
+next_tdescriptor_sp		$res	1
+
+?	$do	7**8-($**7),tq_align(?)	$res	1
+
+?	$do	PRIORITIES,stem(?)	$res	4
+
+uq_head				$res	1
+uq_tail				$res	1
+
+$(65:$bank_address($(64)+7**-8))
+
+next_page_descriptor		$res	2
+
+$(0)
+
+stem_link
+	lr, xi	PRIORITIES-2
+	lx, xi	stem(1)
+	lb, xi	-1
+	sb	6+128
+	ly,xi	stem(PRIORITIES)
+next_stem
+	la, i	4, x		. next pointer
+	sy	7+128		. uplink
+	qs	0, x
+
+	ly	x_x		. previous
+	ax, xi	4
+	ab, xi	-1		. symbolic 1s complement
+				. chain priority
+
+	jdr	next_stem	. and write the last
+	la, xi	stem(1)		. task queue trailing
+	sy	7+128		. link descriptor
+	qs	0, x
+
+	z	switch_lock_cell
+	z	uq_head
+	z	uq_tail
+
+?	$do	tq_align(),	z	tq_align(?)
+
+	lret	0
+
+measure	inB	device$flags	. read system memory configuration
+	andB	(03fffff)	. isolate the highest page index
+	ab, xi	1		. convert the highest index (+1)
+				. to the number of pages
+
+	la	b_x
+	and, xi	-64
+	sar	5		. calculate and save
+	sa	BANKS		. the # words potentially needed
+				. for descriptors of 256K banks
+
+				. the big banks descriptor stack
+				. has space for a potential two-word
+				. descriptor for each 262144-word bank
+				. actually present in system memory
+
+				. the descriptor values used for
+				. system memory in IO-mapped
+				. relocation registers have 6
+				. low zero bits when
+				. descriptor bit 22 (BIG/BANK)
+				. is on
+
+				. 01xxxx xxxxxx xxxxxx 000000
+
+				. because when BIG/BANK is on,
+				. LS 6 bits in the relocation
+				. register port select devices other
+				. than system memory (filestore arrays,
+				. dual ported network I/F memories
+
+				. 01xxxx xxxxxx xxxxxx DEVICE
+
+				. however, when BIG/BANK is off,
+				. the six low bits select a page
+				. within the system memory bank
+
+				. 00xxxx xxxxxx xxxxxx XXXXXX
+
+
+
+				. construct the first descriptor
+				. which describes the end of memory
+				. at the end of OS tabler memory
+
+	la	b_x
+	ana	(SCALE_THRESHOLD)
+				. if there are not a large number of
+				. banks of 262144 words altogether,
+				. the management table is a page or so
+
+	on	see$all**(see$7*/MANAGER_BANKS)-1
+	la	FREE_BASE
+
+p	$proc
+table_page* $name	1
+
+	outA	72-MANAGER_BANKS+?-1
+	aa, xi	p(0, 0)
+	$end
+
+p	$proc
+table_bank* $name	-64
+
+	ab, xi	p(0, 0)
+	outB	72-?
+	$end
+
+	lx	(next_page_descriptor)
+	jc	large_system
+
+
+?	$do	MANAGER_BANKS,	table_page
+	sa	1, x		. next_page_descriptor:pointer
+	la, xi	4096*8-2
+	j	memory_configured
+
+large_system
+
+				. decision to use big banks
+				. for management
+
+				. so take them from high-end
+				. memory
+
+				. because that's where
+				. 256K-banks are assigned
+				. and the system image in
+				. low memory almost certainly
+				. doesn't fill exact 256K-banks
+
+	orB	(0400000)	. think big
+	andB,xi	-64		. make sure it really is
+				. whole banks however at
+				. the high end
+
+?	$do	MANAGER_BANKS,	table_bank
+
+	andB	(03FFFFF)	. stop thinking big
+
+	sa	1, x		. next_page_descriptor:pointer
+	la	(262144*8-2)
+
+memory_configured
+	sx	next
+	ds	0, a
+
+	z	banks_lock_cell
+	z	free_tdescriptor
+?	$do	63,	z	free_chain(?)
+	z	free_chain(64)
+
+
+				. the stack of four-word task descriptors
+				. grows downwards from the position below
+				. the lowest possible big bank descriptor
+
+				. the lowest big-bank pointer
+				. is the small-banks upper limit pointer
+
+				. next_tdescriptor_sp
+				. is the also the upper edge for
+				. small-banks DESCRIPTORS
+
+				. write the pointer to the descriptor
+				. This pointer decrements as 2-word
+				. big-bank descriptors are added
+
+	sa	large_bank_descriptor_sp
+
+	ana	BANKS
+
+	sa	next_tdescriptor_sp
+
+				. *next points to next_descriptor
+				. for small banks
+				. this is the next available two-word
+				. descriptor in the upward-growing
+				. small banks decriptor list
+
+				. *next and the initial descriptor
+				. where *next points are constructed
+				. here at system start, so all
+				. system images are restartable
+				. and may be in ROM
+
+				. The buffer pointer in the initial
+				. *next descriptor  points to the
+				. first available RAM page after
+				. the kernel ROM or kernel load
+
+				. there are 64 free-chains into the
+				. "small" banks heap and one free-chain 
+				. into the big-banks stack
+	
+				. The small-banks free-chains are one
+				. per size, 1..64 pages (4096 words
+				. to 262144 words)
+
+				. a "small" bank of 262144 words is
+				. possible, because a smaller bank
+				. may get bigger if the next assignment
+				. does not fit in the same 262144-word
+				. physical bank
+
+				. small banks are assigned from low-order
+				. locations upwards. The free chains
+				. reassign free storage at the lowest
+				. addresses first.
+
+				. Freed space above the highest
+				. assigned small bank is recombined
+				. as single free area between the
+				. the stack of small banks which grows
+				. upwards and compresses downwards, and
+				. the stack of big banks, which grows
+				. downwards and compresses upwards
+
+				. There is one large-banks free-chain
+				. for all sizes. A big bank may combine
+				. one to nearly 65536 adjacent physical
+				. banks of 262144 words
+
+				. A single large bank may contain nearly
+				. 1024 times the 16 Megaword Address space
+				.          -16 gigawords in total-
+				. for large arrays which need to be contiguous
+
+				. An array needs to be contiguous if
+				. multiword operands to single instructions
+				. straddle physical 256K bank boundaries.
+
+				. Developers can also structure arrays
+				. so that quad or double word operands
+				. are safely inside one bank, even if
+				. the containing structure straddles two
+				. non-contiguous banks addressed with
+				. two adjacent relocation base-registers
+
+				. Operand EA is translated to an absolute
+				. address once for each operand read or write
+
+				. However very large contiguous bank
+				. arrays are obtained with one ARRAY$ call
+				. and accessed with one bank handle
+
+				. Arrays larger than the address space
+				. are addressed a part at
+				. a time. Structures straddling bank boundaries
+				. are accessed using two adjacent base registers
+				. to address two adjacent banks
+
+	.
+	.	lb	instance_index		. read the subscript
+	.	m, xi	STRUCTURE_SIZE		. convert to table offset
+	.	dsl	6			. split into relative
+	.	sal	6			. bank/word offsets
+	.	sbr	6
+	.	aa	array_base_bank_handle	. bank handle obtained from
+	.					. large_bank_request routine
+
+	.					. set bits 23..18 of address
+	.					. to the address region which
+	.	orB	(BASE_REGISTER_TAG*/18)	. we shall base
+
+	.	sabr	BASE_REGISTER_TAG	. base the bank where the 
+	.					. structure starts
+
+	.	la, i	64, a			. and base the next bank after
+	.	sabr	BASE_REGISTER_TAG+1	. in the next range of the
+	.					. address space
+
+				. where for addresses > 262143, the
+				. storage operand address is resolved
+				. with the base register indicated in
+				. effective address bits 23..18
+
+				.	_____________________________
+				.	|baseid|xxxxxx xxxxxx xxxxxx|
+				.	|______|____________________|
+				.
+				. and for addresses 256..262143, the 
+				. storage operand address is resolved
+				. with the base register indicated in
+				. effective address bits 17..12
+				.
+				.	_____________________________
+				.	|000000|baseid|xxxxxx xxxxxx|
+				.	|______|______|_____________|
+				.
+				. instructions are always fetched from
+				. the bank based with base register zero
+				. whatever the effective address of the
+				. instruction
+				.
+				. storage operands in the
+				. address range 256..4095 are also in
+				. instruction bank 0.
+
+				. storage operands at effective address <
+				. 256 are registers.
+
+				. large banks are assigned from high-order
+				. memory downwards, in size multiples of
+				. one bank (262144 words) The highest-addressed
+				. contiguous area large enough for each
+				. request is assigned. This is achieved
+				. by recombining and reshaping the
+				. available contiguous collections of
+				. 262144-word banks
+
+				. "small" banks may accidentally become
+				. an aligned bank of 64 pages, if the next
+				. assignment steps to the next bank edge
+				. ("small" banks don't straddle physical
+				. bank edges). Because of this, a task
+				. requesting more storage may already
+				. have it
+
+	lret	0		. the end of the measure subroutine
+				. initialisation routine at startup
+
+
+bank_free
+	on	see$all**(see$7*/MANAGER_BANKS)-1
+	ts	banks_lock_cell
+	j	$-1
+
+.	this is an lcal subroutine and can only be called
+.	from interrupt code (internal interrupt, system start etc)
+
+.	the argument is a descriptor pointer in interrupt register A
+.	because the routine which decided which descriptor stack
+.	(lower/small banks or upper/big banks) already copied the
+.	descriptor pointer from application register A, in order
+.	to evaluate it.
+.
+.	This call is from other interrupt code
+.	so registers addressed as storage operands are all
+.	in the space 128..255
+
+.	test & set word banks_lock_cell is already obtained
+
+
+	tanu	large_bank_descriptor_sp
+	jc	large_bank_free
+
+	lb	next			. is this descriptor
+	anb, i	2, a			. the one below next-available
+					. ie is it on the heap top?
+	jnzb	not_highest_bank
+
+spiral_again
+	sa	next
+
+	tanu	(next_page_descriptor)
+	jzb	out_of_spiral
+
+	z	banks_lock_cell		. free the lock at this point
+	ts	banks_lock_cell		. and compete for it again
+	j	$-1			. another CPU may be looping
+					. for it
+
+	la	next			. this value may have changed
+
+					. see if the bank now at the
+	aa, xi	-2			. heap top is on its free chain
+
+					. calculate the bank size
+
+	lb	3, a			. next bank address minus
+	anb	1, a			. this bank address
+
+	lx, xi	free_chain(1)-1		. index of free chain head is
+					. size in pages minus 1
+	ax	b_x
+
+					. point towards the chain head
+
+spiral	ly	x_x			. copy "this" to "previous"
+	lb	0, x			. copy "next" to "this
+
+	jzb	out_of_spiral
+	lx	b_x
+
+	tanu	b_x			. banks (and descriptors)
+					. at the lower addresses
+					. are preferred for re-use
+
+					. therefore the chain starts
+					. with lowest addresses, rises
+					. and ends with null forward
+					. pointer
+
+					. if you arrive at a higher
+					. address in B, the bank is
+					. not in the free chain, and
+	jnc	out_of_spiral		. consolidation stops here
+
+					. the candidate is still at
+					. a higher address than the
+	jnzb	spiral			. free chain sample, move on
+
+
+					. you have hit equal. Pull
+					. the bank out of the free
+					. chain and squash the
+					. assigned heap top
+
+					. a = b
+
+	lb	0, a			. copy next pointer of candidate
+	sb	0, y			. to next of previous
+
+	j	spiral_again		. store new next-available
+					. descriptor pointer
+out_of_spiral
+	z	banks_lock_cell
+	lret	0
+
+					. the freed bank isn't at
+					. the top of the assigned
+					. heap, so link it into its
+					. free chain
+not_highest_bank
+	lb	3, a			. size = next bank address
+	anb	1, a			. minus this bank address
+
+	lx, xi	free_chain(1)-1		. chain index = size in pages
+	ax	b_x			. minus 1
+
+					. point at the free chain head
+find_higher_point
+	ly	x_x			. copy "this" to "previous"
+	lb	0, x			. copy "next" to "this"
+	lx	b_x
+
+	jzb	found_higher_point	. end of chain
+
+	anb	a
+	jnc	find_higher_point	. the chain sample is lower
+	jzb	bank_is_free
+
+found_higher_point			. link into chain
+	sx	0, a			. "next" = next-pointer of "this"
+	sa	0, y			. "this" = next-pointer of "previous"
+bank_is_free
+	z	banks_lock_cell
+	lret	0
+
+
+large_bank_free
+
+.	this is branched from bank_free when the storage to free
+.	is in the downward-expanding/upward compressing stack of
+.	large bank collections in high-order memory
+
+.	the last 2 instructions before getting here were
+
+.	tanu	large_bank_upper_limit_dp
+.	jc	large_bank_free
+
+	jzb	large_bank_at_summit
+
+	lb	3, a
+	anb	1, a
+	sb	SIZE
+	lx, xi	free_chain(64)
+fsearch	sx	B4
+	lb	0, x
+	lx	b_x
+	jzb	chain_insert
+
+	lb	3, x
+	anb	1, x
+	anb	SIZE
+	jzb	position?
+	jnc	fsearch		. next in chain is smaller
+	j	chain_insert	. next in chain is larger
+
+position?
+	tanu	x_x
+	jzb	in_freechain_already
+
+				. descriptors are in the
+				. same storage order as
+				. their buffers
+
+				. for big banks the
+				. stack grows downwards
+				. the preferred re-use
+				. order is furthest from
+				. the middle first
+
+				. chain the freed descriptor
+				. in front of the first
+				. which, within size subchain,
+				. is at a lower storage address
+
+	jnc	fsearch
+
+chain_insert
+	sa	*B4
+	sx	0, a
+in_freechain_already
+	z	banks_lock_cell
+	lret	0
+
+large_bank_at_summit
+	aa, xi	2
+	sa	large_bank_descriptor_sp
+
+				. bank array + 1 is the
+				. new lower edge of the
+				. bank stack
+
+				. now spiral up compressing
+				. any free banks which are now
+				. at the stack top
+
+	z	banks_lock_cell	. free the lock and compete
+	ts	banks_lock_cell	. for it again. Other CPUs
+	j	$-1		. may be revolving on it	
+
+	la	large_bank_descriptor_sp
+
+				. this may now have a new value
+				. during the unlocked nanowindow
+				. see if is the address of a
+				. descriptor in the free chain
+	lx, xi	free_chain(64)
+
+big_spiral
+
+	ly	x_x		. copy "this" to "previous"
+	lb	0, x
+	jzb	end_big_spiral
+
+	lx	b_x		. copy "next" to "this"
+
+	lb	3, b		. calculate the size of next
+	anb	1, x
+
+	tanu	SIZE		. compare for size
+
+	jnc	big_spiral	. it's smaller than this buffer
+	jnzb	end_big_spiral	. it's larger than this buffer
+				. and the chain is in size order
+
+	tanu	x_x		. if you reach lower than "you"
+				. within size
+
+				. then the bank/multibank
+				. at assigned stack top
+				. is not free and the stack
+				. compression is over
+
+	jnc	big_spiral	. higher than you, keep going
+	jnzb	end_big_spiral	. lower than you. The candidate
+				. buffer is not free
+				. compression is complete
+
+
+				. replace the upper pointer
+				. x = a
+
+	lx	0, x		. previous->next = this->next
+	sx	0, y		. out of the chain
+
+	j	large_bank_at_summit
+
+end_big_spiral
+	z	banks_lock_cell
+	lret	0
+
+bank	aa, xi	-1
+	jnc	cannot_add_bank
+	sar	12
+	tanu,xi	63			. decide whether < 262144 words
+					. because big banks are in
+					. high memory and smaller ones
+					. in low memory
+
+	on	see$all**(see$7*/MANAGER_BANKS)-1
+
+	ts	banks_lock_cell
+        j	$-1
+					. carry is from ANU,XI 63
+					. if set, it means 262144+ words
+					. have been requested
+
+					. free banks from 262144 words to
+					. 16 gigawords are listed by size
+					. and position on free_chain(64)
+
+					. within size, the large banks
+					. furthest from the centre of
+					. storage are offered first for
+					. re-use
+
+					. that means free large banks at
+					. higher addresses are prefered for
+					. re-use, because large banks are
+					. stacked downward from high memory
+					. _________________________________
+
+	jc	large_bank		. carry was set or cleared by the ANU
+					. instruction
+
+					. the TS instruction does not touch
+					. carry
+					. ________________________________
+
+					. free banks from 4096 words to
+					. 252K words (262144 words minus 4096)
+					. are listed by position on
+					. free_chain(1..63)
+
+					. within their one-size chains,
+					. 4K..252K banks furthest from
+					. the centre of memory are offered
+					. for re-use first
+
+					. that means "small" banks at
+					. lower addresses are prefered
+					. for re-use, because they are
+					. stacked upwards from low memory
+	lx, i	free_chain(1)
+	ax	a_x
+
+	lb	0, x
+	jzb	not_on_list		. free chain head is zero
+
+	la	0, b			. buffer on free chain
+	sa	0, x
+	la	1, b
+	z	banks_lock_cell
+	lret	0
+
+not_on_list
+	ly, i	1, a			. convert page high index in A
+					. to size required in Y
+	lb	next
+	la	next_tdescriptor_sp
+	lr, i	2, b			. this descriptor + 1	
+	ana, i	4, b			. new next descriptor + 1
+	jnc	take_any_bank
+	la	1, b			. the new bank handle
+	sa	128+6
+	ay	a_x			. new next bank handle
+	la	large_bank_descriptor_sp
+	la	1, a			. lower edge of big banks
+	ana	y_x
+	jnc	take_any_bank
+	la	128+6
+	sy	3, b			. new next bank
+	sr	next
+	z	banks_lock_cell
+	lret	0
+
+
+take_any_bank
+					. here is the last resort
+					. for an ordinary "small" bank
+
+					. you can have something larger
+					. if it is free
+
+					. the awarded bank stays at
+					. its larger size,
+
+
+	lr, xi	free_chain(64)		. as a last resort, any bank at
+					. the front of the big bank chain,
+					. free_chain(64), is awarded
+
+					. so the brakes go on to the
+					. JXGE comparison after
+					. free_chain(64) has been
+					. interrogated
+
+					. initially you can't be
+					. at a higher notch than
+					. free_chain(63)
+take_any
+	ax,xi	1
+	lb	0, x
+	jnzb	take_bank		. free bank on this chain
+	jxge	bank_not_obtained
+take_bank
+	la	0, b			. yes there is. Promote the 2nd
+	sa	0, x			. descriptor on the free chain to 1st
+
+	la	1, b			. read the bank start page handle
+	z	banks_lock_cell
+	lret	0
+
+
+array					. a very large bank
+					. > 16777215 words
+					. the request is expressed
+					. in pages of 4096 words
+	aa, xi	-1
+	jnc	cannot_add_bank
+
+	on	see$all**(see$7*/MANAGER_BANKS)-1
+
+	ts	banks_lock_cell
+	j	$-1
+	
+	.	make sure this falls thru
+
+large_bank
+	sar	6			. translate page high index
+
+	lb, i	1, a			. to # banks requested
+	sbl	6
+	sb	REQUIRED		. = highest bank index required
+					. + 64 pages
+
+	z	OUTSIZE
+
+	lx, xi	free_chain(64)		. not the pointer
+					. but its address
+bsearch	sx	B4
+	lb	0, x
+	lx	b
+
+	jzb	new_large_bank
+
+	la	3, x
+	lr	1, x
+	tanu	r_x
+	anb	REQUIRED
+
+	jnc	bsearch		. what you want is bigger than
+				. what you found
+
+	jzb	bfound		. you found what you want
+
+	sx	OUTSIZE		. what you found is bigger than
+				. what you want
+
+new_large_bank
+	lx	large_bank_descriptor_sp
+	ax, xi	-2		. guaranteed space for
+				. the descriptor itself
+
+	la	3, x
+	ana	REQUIRED	. address of new big bank
+
+	ly	next		. does it overlap the
+	tanu	1, y		. highest assigned small bank?
+
+	jc	add_large_bank
+
+	lb	OUTSIZE
+	jnzb	bfound1
+	j	bank_not_obtained
+
+bfound	lb	x_x
+bfound1	la	0, b		. take B out of the freechain
+	sa	*B4
+	la	r_x		. retrieve the buffer pointer
+	or	(0400000)	. turn the big flag on for the user
+	z	banks_lock_cell
+	lret	0
+
+add_large_bank
+	lb	x_x
+	sx	large_bank_descriptor_sp
+	sa	1, x		. write the handle in the descriptor
+	or	(0400000)	. turn the big flag on for the user
+	z	banks_lock_cell
+	lret	0
+
+bank_not_obtained
+	z	banks_lock_cell
+cannot_add_bank
+	la, xi	0
+	lb, xi	-1
+	lret	0
+
+exit	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+	la	TDESCRIPTOR
+	ts	banks_lock_cell
+	j	$-1
+	tanu	next_tdescriptor_sp
+	jnzb	intofreelist
+	aa, xi	4
+	sa	next_tdescriptor_sp
+	j	freebanklock
+
+intofreelist
+	lb	free_tdescriptor
+	sb	0, a
+	sa	free_tdescriptor	
+freebanklock
+	z	banks_lock_cell
+delete
+	la	BANK_CHAIN
+	jza	deleted
+	lr	0, a
+	sr	BANK_CHAIN
+	lcal	bank_free
+	j	delete
+deleted	j	choose
+
+
+guard	la, xi	-1
+	sa	PRIORITY$	
+
+yield	ql	0, fp
+	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+	qs	UPACKET
+
+	inA	1
+	sa	ABT+1
+
+	lr	sp_x
+	z	sp_x
+
+?	$do	128/4,	qpop	RSAVE+4*?-4
+
+			. interrupt SP now contains 128
+
+	ts	switch_lock_cell
+	j	$-1
+
+	tp	PRIORITY$
+	j	out_of_order
+
+	lx	TDESCRIPTOR
+	la	1, x	. priority
+
+	jna	out_of_order
+	tanu,xi	PRIORITIES
+
+	jc	out_of_order
+
+	sal	2
+	aa, xi	stem(1)
+
+	lb	3, a	. uplink to last in priority chain
+	sx	3, a	. new last <-
+	sx	0, b	. old_last->next
+	sa	0, x	. ->next = stem_post
+
+choose			. now load another task
+
+	la,xi	stem(PRIORITIES)
+forward	lb	a_x
+	la	0, a
+	tz	2, a	. clear to run?
+	j	forward
+
+	lx	0, a	. ->next becomes previous->next
+	sx	0, b
+
+	tp	1, x	. is he the stem post?
+	sb	3, x	. known by 1s complement PRIORITY
+			. if so, the uplink from
+			. stem post points to the new
+			. last in the priority list
+
+	z	switch_lock_cell
+
+
+	lb	3, a
+	outB	65
+
+	lb	1, a
+	sb	PRIORITY$
+
+	$if	1
+
+	la, xi	ABT+2
+?	$do	48/2-1,	reload	2*?
+
+	$else
+
+load_pair* $proc
+	dl	ABT+2*?
+	fsabr	2*?
+	fsbbr	2*?+1
+	$end
+
+?	$do	23,	load_pair
+
+	$endif
+
+	la	ABT+1
+	outA	1
+
+
+			. ISR ISP still = 128
+
+?	$do	128/4,	qpush	RSAVE+128-4*?
+
+	sr	sp_x
+
+	la	ULIMIT
+	sa	REALTIME$_CLOCK
+
+	ql	UPACKET
+	qs	0, fp
+	ir	0
+
+out_of_order		. priority in descriptor
+			. does not figure
+	z	0, x
+	la	uq_tail
+	sx	uq_tail	. queue for investigation
+	tz	uq_head	. do not schedule again
+	j	extend_uq
+	sx	uq_head
+	j	choose
+extend_uq
+	sx	0, a
+	j	choose
+
+
+spawn	dpush	a_x
+	jnb	priority_out_of_range
+	anb,xi	PRIORITIES
+	jc	priority_out_of_range
+
+	dl	6+128
+	jnb	b1_stack_given
+	lb, xi	-1
+				. B1 stack pages
+	sb	7+128
+b1_stack_given
+	sbl	12		. this much more storage
+	ana	b_x
+
+	aa,xi	4096*2		. TCB + vector page
+	lcal	bank
+	jza	no_new_task
+
+	sa	TEMP_BASE_ABSO
+
+	z	0, b		. ensure forward pointer
+				. of descriptor is zero
+
+	on	see$1
+	off	see$2
+				. subtract is add because
+				. the B1 stack size is a
+				. minus value in 7
+
+	ana	7+128		. above the B1 stack
+	outA	65		. we have a TCB
+
+	z	ULIMIT		. default no time slice
+	sb	BANK_CHAIN	. this initial bank
+				. complex is the last
+				. thing on our
+				. ownership chain
+
+	lb, xi	-1		. B1 stack page 1
+	ab	a_x
+	sb	ABT+1
+
+	la, i	2, b		. vector page
+	outA	2
+	sa	ABT+2
+
+	push	TEMP_BASE_ABSO
+	pop	BASE_VECTOR
+
+	aa, xi	1		. first data page
+	sa	VECTOR_D
+
+	la, xi	VECTOR_B1(1)
+	sa	B1_P		. B1 array stack pointer
+
+set_b1	sb	0, a
+	aa, xi	-1
+	ab, xi	-1
+	inc	128+7
+	tz	128+7
+	j	set_b1
+
+	la	0, sp
+	tanu	(0400000)
+
+	jc	application_bank
+
+	dsr	6
+	sbr	18
+	j	store_upacket
+application_bank
+	dsr	3
+	sbr	21
+	sal	3
+
+store_upacket
+	ds	UPACKET+2	. set thread transfer
+
+	la	0, sp		. read bank name again
+	and, xi	-64		. beginning with vector 0
+				. write the 64 entry points
+				. into the vector bank
+
+p	$proc
+v64*	$name
+	sa	VECTOR(?)
+	aa, xi	1
+	$end
+
+?	$do	64,	v64
+
+        la      (TRANSFER_PAGE/*12)      . set default return
+        lb, xi  return_exit
+        ds      RSAVE+126
+        la, i   126
+        ds      RSAVE+15        . set user SP
+
+	dl	(080:d)		. default halfword-sensitive
+				. just for now
+	ds	UPACKET
+
+	ts	banks_lock_cell
+	j	$-1
+
+	la	free_tdescriptor
+	jza	new_tdescriptor
+
+	lb	0, a
+	sb	free_tdescriptor
+
+	j	tdescriptor2
+new_tdescriptor
+	la	next_tdescriptor_sp
+	aa, xi	-4
+	tanu	next
+	jc	tdescriptor1
+
+	z	banks_lock_cell
+	la	BANK_CHAIN
+	lcal	bank_free
+no_new_task
+priority_out_of_range
+	pop	a_x
+	pop	b_x
+	dsr	0
+	lret	0
+
+tdescriptor1
+	sa	next_tdescriptor_sp
+
+tdescriptor2
+	lx	a_x
+	z	banks_lock_cell
+
+	lb	1, sp
+	sb	1, x
+
+	sx	TDESCRIPTOR
+
+	inA	65
+	sa	3, x
+	sa	0, sp
+
+.	la, xi	-1		. stop it running
+.	sa	2, x		. it is not loaded
+
+	z	2, x
+
+	sbl	2
+
+	ts	switch_lock_cell
+	j	$-1
+
+	ab, xi	stem(1)
+	la	3, b		. trailing uplink
+	sx	0, a		. new is last->next
+	sb	0, x		. stem is new->next
+	sx	3, b		. new is stem->uplink
+
+	z	switch_lock_cell
+
+?	$do	4-xvector(1)**3,	z	xvector(1)+?-1
+
+				. this is a lot of processing
+				. for interrupt code
+
+				. but the internal interrupt
+				. does not mask any other
+				. interrupts
+
+	lx, xi	xvector(1)+3**-4
+	lr, xi	+(02FFC-xvector(1))/*2
+	dsr	48
+	ds	6+128
+
+zero4vectors
+	qs	0, x
+	ax, xi	4
+	jdr	zero4vectors
+
+	la, xi	handle(4)
+	sa	HANDLES
+	z	FREE_HANDLE
+
+	pop	a_x
+	pop	b_x
+
+	lret	0
+
+return_exit			. this is application code
+	ii	EXIT$		. return to here
+				. = exit, as in Unix
+
+

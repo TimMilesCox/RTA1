@@ -1,0 +1,257 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(1)
+a1_socket	+	0
+a1_bound	-	1
+a1_sva		-	1:d
+
+$(3)
+ber_transient	ber_template
+
+$(0)
+agent_1	$head_far	scalars(rseq,	24)	;
+			xframe(tferq,	72)
+
+	tz	a1_socket
+	j	a1_sample
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	a1_stop
+	sa	a1_socket
+	lb, xi	AGENT1_PORT
+	sb	7
+	z	6
+	call	(bind)
+	sa	a1_bound
+	jna	a1_stop
+	dl	10
+	ds	a1_sva
+	call	(mib_start)
+a1_sample
+	tp	a1_bound
+	j	a1_stop
+	dl	a1_sva
+	sabr	BSOCKET
+	lx	b
+a1_next	lb	s:socket_inq:head, x
+	jzb	a1_stop
+	la	descriptor:bytes, b
+	aa, xi	-3
+	jnc	a1_drop
+	sa	6
+	la	descriptor:apdata, b
+	sa	q
+	z	RDATAC
+	on	b$streamZR
+	on	b$stream16r
+	rsr	8
+
+	lx, i	rseq
+
+	anu, xi	SNMP_GETNEXTREQ
+	jzb	a1_getnext
+	anu, xi	SNMP_SETREQ
+	jzb	a1_set
+	anu, xi	SNMP_GETREQ
+	jzb	a1_get
+	j	a1_drop
+
+a1_get	lcal	ber_load_oid
+	j	a1_drop
+
+	c	(mib_get)	rseq,,i	;
+				3,,xi
+
+	lx, i	rseq
+	lcal	a1_response
+
+	j	a1_drop
+
+
+
+a1_set	lcal	ber_load_oid
+	j	a1_drop
+
+	ly, i	tferq
+	sy	p
+
+	ly, xi	ber_transient
+	lcal	ber_read_data
+
+	c	(mib_set)	rseq,,i		;	. oid
+				3,,xi		;	. permissions
+				ber_t:ojet	;	. data type
+				ber_t:bytes	;	. octets
+				b		;	. data address
+				a		;	. data words or zero
+				0,,xi			. range tuples
+
+	lx, i	rseq
+	lcal	a1_response
+	j	a1_drop
+
+
+a1_getnext
+	lcal	ber_load_oid
+	j	a1_drop
+	c	(mib_getnext)	rseq,,i	;
+				3,,xi
+	lx, i	rseq
+	lcal	a1_response
+
+	j	a1_drop	
+
+a1_drop	lx	a1_sva+1
+	call	(release_udgram)
+	j	a1_next
+
+a1_stop	lx, i	$$frame, sp
+	sx	sp
+	lx, i	$$xframe, fp
+	sx	fp
+	fret	0
+
+
+a1_response	$head_near	scalars(a1_mibstatus,	long,	a	;
+					a1_response_axw, int		;
+					a1_oid_array,	int,	x	;
+					a1_tber_oid,	12)
+					
+
+a1_mojet	$equf	a1_mibstatus+1
+
+	off	b$stream16w
+	la, i	a1_tber_oid
+	sa	p
+
+	ly, xi	ber_transient
+	lcal	ber_woi
+
+	z	RDATAC
+	off	b$stream16r
+	on	b$stream16w
+	z	WDATAC
+
+	dl	a1_mibstatus
+	jnza	a1_nojet
+	lx	b			.	the mobject
+	lcal	ber_edit_mojet
+	aa	ber_t:oidl
+	aa, xi	2
+	sa	BYTES
+
+	dl	a1_sva
+	sabr	BSOCKET			.	some subagents change the
+	lb	s:socket_inq:head	.	socket relocation register
+
+	la	BYTES
+	call	(udp_rtxbuffer)
+	jza	a1_no_response
+
+	lb	descriptor:apdata, a
+	sa	a1_response_axw
+
+	sb	p
+
+	la	(SNMP_GETRESP*/16:s)
+	wsr	16			.	2 bytes
+
+	ly, xi	ber_transient
+.	lcal	ber_release_identifier
+	lcal	ber_release_mo
+	wsr	8
+
+	la	BYTES			.	edited OID byte count
+
+	lx	a1_response_axw
+	sa	descriptor:bytes, x
+
+
+	ly, i	ber_transient
+
+	lx	a1_response_axw
+	j	a1_send
+
+a1_nojet
+	dl	a1_sva
+	sabr	BSOCKET
+	lb	s:socket_inq:head
+
+	la	ber_transient:oidl
+	aa, xi	2+2			.	resp codes + SNMP_NULL.0
+	sa	BYTES
+	
+	call	(udp_rtxbuffer)
+
+	jza	a1_no_response
+	sa	a1_response_axw
+
+	push	descriptor:apdata, a
+	pop	p
+
+	la	a1_mibstatus		.	the upper 24 bits are MIB status
+	sal	8
+	or	(SNMP_GETRESP*/16:s)
+	wsr	16
+
+	ly, xi	ber_transient
+	lcal	ber_release_identifier
+
+	
+	la	(SNMP_NULL*/16)
+	wsr	16
+	wsr	8
+	
+	lx	a1_response_axw
+	la	BYTES			.	edited IOD byte count
+	sa	descriptor:bytes, x
+
+a1_send	call	(udp_acw_send)
+
+a1_no_response
+	lx, i	$$frame, sp
+	sx	sp
+	lret	0
+

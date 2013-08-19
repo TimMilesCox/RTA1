@@ -1,0 +1,259 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(1)
+thandle	+	0
+tnetbound -	1
+tlsoc_va  -	1:d
+
+
+tn_help		"commands are":9:"t":9:"h":9:"bsh&":10:9:9:"stay":10
+tn_helpx
+
+$(0)
+telnet_i
+	tz	thandle
+	j	telnet_tstate?
+
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	telnet_x
+	sa	thandle
+	la, xi	23
+	z	6
+	sa	7
+	la	thandle
+	call	(bind)
+	sa	tnetbound
+	jna	telnet_x
+	dl	10
+	ds	tlsoc_va
+	
+telnet_tstate?
+	tp	tnetbound	
+	j	telnet_x
+
+
+	dl	tlsoc_va
+	sabr	BSOCKET
+	lx	(BSOCKET*/12)
+	la	s:tbase, b
+	sabr	BSOCKET
+
+
+	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23)
+
+telnet_walk
+	la	transmission:next
+	jza	telnet_x
+	lx	a
+	lk	(00FFFF)
+	la, xi	23
+	mta	transmission:socket_address+1
+	j	telnet_walk
+
+	la	transmission:state
+	and, xi	63
+	anu, xi	TCP_ESTABLISHED
+	jzb	telnet_traffic?
+	anu, xi	TCP_SYNRECEIVED
+	jnzb	telnet_walk
+
+	call	(xaccept)
+	jna	telnet_walk	. could not accept
+
+	la, xi  32
+	lb, xi $1("RTA1 smaragd7 OS shared console":10)
+	lcal	telnet_respond
+
+	j	telnet_walk
+
+telnet_traffic?
+	la	transmission:receiveq:head
+	jza	telnet_walk
+	lcal	telnet_console
+	j	telnet_walk
+telnet_x
+	fret	0
+
+telnet_console
+
+	lcal	telnet_command
+	call	(tcp_release_rxline)
+	lret	0
+
+telnet_command
+	ly	transmission:receiveq:head
+	lr	descriptor:bytes, y
+	ly	descriptor:apdata, y
+
+	z	TELNET_BITS
+	lcal	telnet_token
+
+	anu	('t'*/16:)
+	jzb	telnet_tasks
+	anu	('h'*/16:s)
+	jzb	telnet_help
+
+	dl	10
+	dan	('bsh&'*/16:d)
+	jdz	telnet_launch_bshell_task
+
+	dl	10
+	dan	("stay")
+	jdz	telnet_zero_timer1
+
+	dl	10
+	dan	("rstest")
+	jdz	telnet_test_resend
+
+	j	telnet_prompt
+
+
+telnet_launch_bshell_task
+	la, xi	28
+	lb, xi	$1("bash shell not yet released":10)
+	j	telnet_respond
+
+telnet_tasks
+	la, xi	22
+	lb, xi	$1("console tasks display":10)
+	j	telnet_respond
+
+telnet_help
+	la, xi	3*(tn_helpx-tn_help)
+	lb, xi	tn_help
+	j	telnet_respond
+
+telnet_prompt
+	la, xi	23
+	lb, xi	$1("key h for command list":10)
+	j	telnet_respond
+
+telnet_zero_timer1
+	z	transmission:timer(1)
+	la, xi	11
+	lb, xi	$1("no timeout":10)	
+	j	telnet_respond
+
+telnet_test_resend
+.	la	DAYCLOCK$
+.	aa, xi	1
+.	sa	transmission:timer(2)
+	la, xi	12
+	lb, xi	$1("resend test":10)
+
+	lcal	telnet_respond
+	push	x
+	call	(jv_ift1_rxtx)
+	pop	x
+	la	DAYCLOCK$
+	aa, xi	-1
+	sa	transmission:timer(2)
+	lret	0
+
+.	fall	thru	
+
+telnet_respond
+	sb	q
+	push,xi	05000++TCP_ACK++TCP_PSH
+	pop	SOCKET_CALL_FLAGS
+	call	(tcp_tx)
+	lret	0
+
+TELNET_BITS $equ 8
+
+telnet_token
+	lk	(255*/16:s)
+
+	j	telnet_read_abyte?
+
+telnet_read_abyte!
+	tz	TELNET_BITS
+	j	telnet_test_abyte
+
+	dl	0, y
+
+	sbl	8
+	dsl	8
+
+	orB	2, y
+	ay, xi	3
+
+	push,xi	48
+	pop	TELNET_BITS
+
+telnet_test_abyte
+
+	mta	(' '*/16)
+	j	$+2
+	j	telnet_token_end
+	mta	(09*/16)
+	j	$+2
+	j	telnet_token_end
+	mta	(0D*/16)
+	j	$+2
+	j	telnet_token_end
+	mta	(0A*/16)
+	j	$+2
+	j	telnet_token_end
+	mta	(0)
+	j	telnet_read_abyte
+	j	telnet_token_end
+
+telnet_read_abyte
+	drl	8
+	push,xi	-8
+	popA	TELNET_BITS
+
+	tz	TELNET_BITS
+
+telnet_read_abyte?
+	jdr	telnet_read_abyte!
+
+telnet_token_end
+	ds	6
+	dsl	*TELNET_BITS
+	ds	10
+	lret	0

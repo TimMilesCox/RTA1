@@ -1,0 +1,1399 @@
+MASMX 7r2
+3/lib_utf8.msm
+aqui16.txo:$(0) 459 words decimal from hexadecimal 000679 to 000844
+aqui24.txo:$(0) 451 words decimal from hexadecimal 000844 to 000A07
+*EOF*
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is free processor architecture design.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    The masmx target-independent meta-asembler delivered here
+  :                            23 .    is free software whether it is used for constructing RTA1 code
+  :                            24 .    or any other code. masmx is a separate free program by the
+  :                            25 .    same author and included with this software to save searching for it
+  :                            26 .
+  :                            27 .    Scripts and utility programs for constructing RTA1 target
+  :                            28 .    executable software are free software
+  :                            29 .
+  :                            30 .    You can redistribute it and/or modify RTA1
+  :                            31 .    under the terms of the GNU General Public License as published by
+  :                            32 .    the Free Software Foundation, either version 3 of the License, or
+  :                            33 .    (at your option) any later version.
+  :                            34 .
+  :                            35 .    RTA1 is distributed in the hope that it will be useful,
+  :                            36 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            37 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            38 .    GNU General Public License for more details.
+  :                            39 .
+  :                            40 .    You should have received a copy of the GNU General Public License
+  :                            41 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            42 .
+  :                            43 .
+  :                            44 
+  :                            45 LIBRARY	$equ	05000
+  :                            46 
+  :                            47: 	$include	../def/rta.def
+  :                            48: 	$include	../def.sys/banks.def
+  :                            49: 	$include	../language/stack.def
+  :                            50: 	$include	register.def
+  :                            51: 	$include	../def/map1.def
+  :                            52 
+  :                            53 .	this library is for a stream continuum
+  :                            54 .	so nothing is set up to initialise
+  :                            55 .	a field pointer of any kind
+  :                            56 .	except it is a counted stream and must
+  :                            57 .	do nothing if no bytes are available
+  :                            58 .	and stop when it runs out of bytes
+  :                            59 
+  :                            60 .	this generation runs with the defaults
+  :                            61 .	ASCII / UTF8, 8-bit byte
+  :                            62 
+  :                            63 .	the initialisation call READ_START
+  :                            64 .	programs the staging registers
+  :                            65 .	RDATAC+RDATA+Q to shift two bytes
+  :                            66 .	per word from network buffers,
+  :                            67 .	which store datalike this:
+  :                            68 .	
+  :                            69 .		_________________________________
+  :                            70 .		| 0000 0000 XXXX xxxx XXXX xxxx |
+  :                            71 .		|_______________________________|
+  :                            72 
+  :                            73 .	immediately on acquisition via register *q++
+  :                            74 .	if bstream16r is on, RDATAC is decremented
+  :                            75 .	from 24 to 16 and RDATA is shifted 8 bits
+  :                            76 .	left:
+  :                            77 
+  :                            78 .		_________________________________
+  :                            79 .		| XXXX xxxx XXXX xxxx 0000 0000 |
+  :                            80 .		|_______________________________|
+  :                            81 
+  :                            82 
+  :                            83 .	in contrast to 8 bit data in program data
+  :                            84 .	which uses all 24 bits in the data word:
+  :                            85 
+  :                            86 .		_________________________________
+  :                            87 .		| XXXX xxxx XXXX xxxx XXXX xxxx |
+  :                            88 .		|_______________________________|
+  :                            89 
+  :                            90 .	the staging registers deliver or output
+  :                            91 .	16 bits per word if PSR flags
+  :                            92 
+  :                            93 .		b$stream16r
+  :                            94 .		b$stream16w
+  :                            95 
+  :                            96 .	are on, otherwise 24 bits per word
+  :                            97 
+  :                            98 
+  :                            99 	$list	2
+  :                            100 $(0:0:LIBRARY)
+00:000000 B60681              +101 fscan*	$vector	fscan_net16
+00:000001 B60741              +102 fedit*	$vector	fedit_net16
+00:000002 B60734              +103 symbol*	$vector	symbol_net16
+00:000003 B607D2              +104 ieditu*	$vector	ieditu_net16
+00:000004 B607E1              +105 iedit48u*	$vector	iedit48uascii_net16
+00:000005 B60825              +106 iscan_xdr*	$vector	iscan_net16
+  :                            107 
+00:000006 B6084C              +108 fscana*	$vector	fscan_core24
+00:000007 B6090E              +109 fedita*	$vector	fedit_core24
+00:000008 B60900              +110 symbola*	$vector	symbol_core24
+00:000009 B60998              +111 ieditua*	$vector	ieditu_core24	
+00:00000A B609A7              +112 iedit48ua*	$vector	iedit48uascii_core24
+00:00000B B609E7              +113 iscan	$vector	iscan_core24
+  :                            114 
+  :                            115         $if     LIBRARY=LIBRARY_XDR
+  :                            116 
+00:00000C 3D0000              +117         $do     60-$,   fret    0
+00:00000D 3D0000              +117 
+00:00000E 3D0000              +117 
+00:00000F 3D0000              +117 
+00:000010 3D0000              +117 
+00:000011 3D0000              +117 
+00:000012 3D0000              +117 
+00:000013 3D0000              +117 
+00:000014 3D0000              +117 
+00:000015 3D0000              +117 
+00:000016 3D0000              +117 
+00:000017 3D0000              +117 
+00:000018 3D0000              +117 
+00:000019 3D0000              +117 
+00:00001A 3D0000              +117 
+00:00001B 3D0000              +117 
+00:00001C 3D0000              +117 
+00:00001D 3D0000              +117 
+00:00001E 3D0000              +117 
+00:00001F 3D0000              +117 
+00:000020 3D0000              +117 
+00:000021 3D0000              +117 
+00:000022 3D0000              +117 
+00:000023 3D0000              +117 
+00:000024 3D0000              +117 
+00:000025 3D0000              +117 
+00:000026 3D0000              +117 
+00:000027 3D0000              +117 
+00:000028 3D0000              +117 
+00:000029 3D0000              +117 
+00:00002A 3D0000              +117 
+00:00002B 3D0000              +117 
+00:00002C 3D0000              +117 
+00:00002D 3D0000              +117 
+00:00002E 3D0000              +117 
+00:00002F 3D0000              +117 
+00:000030 3D0000              +117 
+00:000031 3D0000              +117 
+00:000032 3D0000              +117 
+00:000033 3D0000              +117 
+00:000034 3D0000              +117 
+00:000035 3D0000              +117 
+00:000036 3D0000              +117 
+00:000037 3D0000              +117 
+00:000038 3D0000              +117 
+00:000039 3D0000              +117 
+00:00003A 3D0000              +117 
+00:00003B 3D0000              +117 
+00:00003C B60040              +118 	j	ieee754_64_2f
+00:00003D B60041              +119 	j	f2_ieee754_64
+  :                            120 
+00:00003E B60042              +121 	j	xdr_ieee754_64:float
+00:00003F B6006B              +122 	j	xdr_float:ieee754_64
+  :                            123 
+  :                            124: 	$include	xdr_bina
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is free processor architecture design.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    The masmx target-independent meta-asembler delivered here
+  :                            23 .    is free software whether it is used for constructing RTA1 code
+  :                            24 .    or any other code. masmx is a separate free program by the
+  :                            25 .    same author and included with this software to save searching for it
+  :                            26 .
+  :                            27 .    Scripts and utility programs for constructing RTA1 target
+  :                            28 .    executable software are free software
+  :                            29 .
+  :                            30 .    You can redistribute it and/or modify RTA1
+  :                            31 .    under the terms of the GNU General Public License as published by
+  :                            32 .    the Free Software Foundation, either version 3 of the License, or
+  :                            33 .    (at your option) any later version.
+  :                            34 .
+  :                            35 .    RTA1 is distributed in the hope that it will be useful,
+  :                            36 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            37 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            38 .    GNU General Public License for more details.
+  :                            39 .
+  :                            40 .    You should have received a copy of the GNU General Public License
+  :                            41 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            42 .
+  :                            43 .
+  :                            44 .	____________________________________________________________
+  :                            45 
+  :                            46 
+  :                            47 .	these are used in conjunction with
+  :                            48 .	hard TCP / RPC / XDR / which handle
+  :                            49 .	segments fragmented over IP plus messages
+  :                            50 .	fragmented over segments with record
+  :                            51 .	marks
+  :                            52 
+  :                            53 .	external data is 24-bit in application
+  :                            54 .	space typically in scratch registers or
+  :                            55 .	internal stack
+  :                            56 
+  :                            57 
+  :                            58 ieee754_64_2f
+00:000040 3D0000              +59 	fret	0
+  :                            60 f2_ieee754_64
+00:000041 3D0000              +61 	fret	0
+  :                            62 
+  :                            63 .	below this line routines are available
+  :                            64 .	for very simple UDP socket user programs
+  :                            65 .	which access the 16-bit data in socket
+  :                            66 .	buffers
+  :                            67 
+  :                            68 .	user datagrams have to be very short or DNF
+  :                            69 .	so that no-fragments is assured for these
+  :                            70 .	routines to be used safely
+  :                            71 
+  :                            72 
+  :                            73 xdr_ieee754_64:float
+00:000042 60B000              +74 	la	0, y
+00:000043 6D0000              +75 	lb, xi	0
+00:000044 160004              +76 	dsr	4
+00:000045 F80005              +77 	push	b
+00:000046 6D0000              +78 	lb, xi	0
+00:000047 16000A              +79 	dsr	10
+00:000048 F6004A              +80 	jao	ieee754_midpoint
+00:000049 9D0FFF              +81 	orB, xi	4095
+  :                            82 ieee754_midpoint
+  :                            83 
+00:00004A 4E000C              +84 	rbr	12
+00:00004B 160002              +85 	dsr	2
+00:00004C CD0002              +86 	ab, xi	2
+00:00004D 600005              +87 	la	b
+00:00004E 960018              +88 	dsa	24
+00:00004F 200011              +89 	sa	SIGNS
+00:000050 380004              +90 	pop	a
+00:000051 A80A07              +91 	andB	(07FFFFF)
+00:000052 9F0004              +92 	dpush	a
+00:000053 680011              +93 	lb	SIGNS
+00:000054 2E0005              +94 	sbl	5	. signs -> b18..0 mantissa
+00:000055 60B003              +95 	la	3, y
+00:000056 B00011              +96 	xor	SIGNS
+00:000057 160005              +97 	dsr	5	. b4..0 ieee mantissa -> 23..19
+00:000058 280007              +98 	sb	7
+00:000059 16000B              +99 	dsr	11	. b15..5 ieee mantissa -> 34..24
+00:00005A 60B002              +100 	la	2, y
+00:00005B B00011              +101 	xor	SIGNS
+00:00005C 16000D              +102 	dsr	13	. b28..16 ieee mantissa -> 47..35
+00:00005D 280006              +103 	sb	6
+00:00005E 160003              +104 	dsr	3	. b31..29 ieee mantissa -> 50..48
+00:00005F 60B001              +105 	la	1, y
+00:000060 B00011              +106 	xor	SIGNS
+00:000061 160010              +107 	dsr	16	. b47..32 ieee mantissa -> 66..51
+00:000062 380004              +108 	pop	a
+00:000063 060014              +109 	sar	20
+00:000064 950010              +110 	or, xi	16
+00:000065 B00011              +111 	xor	SIGNS
+00:000066 160005              +112 	dsr	5	. [1]:b51..48 ieee mantissa -> 71..67
+00:000067 380004              +113 	pop	a
+00:000068 B00011              +114 	xor	SIGNS	
+00:000069 8D0004              +115 	ay, xi	4
+00:00006A 3D0000              +116 	fret	0
+  :                            117 
+  :                            118 xdr_float:ieee754_64
+00:00006B A60070              +119 	jpa	xdr_float_upright
+00:00006C B00A07              +120 	xor	(07FFFFF)	. leave only the sign at 1
+00:00006D 0F0005              +121 	n	b
+00:00006E 0F0006              +122 	n	6
+00:00006F 0F0007              +123 	n	7
+  :                            124 
+  :                            125 xdr_float_upright
+00:000070 9F0004              +126 	dpush	a
+00:000071 CF0006              +127 	dl	6
+00:000072 D70A08              +128 	da	(10*/16:d)	. slightly over-rounding but
+  :                            129 				. that agrees with x86 PC
+  :                            130 				. 8*/18 is more precise
+00:000073 C70006              +131 	ds	6
+00:000074 B70005              +132 	sc	b
+00:000075 C8F001              +133 	ab	1, sp
+00:000076 5E007B              +134 	jnc	xdr_float_around
+00:000077 37F001              +135 	src	1, sp
+00:000078 370006              +136 	src	6
+00:000079 370007              +137 	src	7
+00:00007A 17F000              +138 	inc	0, sp
+  :                            139 xdr_float_around
+00:00007B 380004              +140 	pop	a
+00:00007C 380005              +141 	pop	b		. that's enough rounding
+  :                            142 
+00:00007D C5FFFE              +143 	aa, xi	-2		. change from midpoint to bias
+00:00007E F80005              +144 	push	b
+00:00007F 16000A              +145 	dsr	10
+00:000080 06000C              +146 	sar	12		. destroy 12 exponent bits
+00:000081 36000A              +147 	dsl	10
+00:000082 380005              +148 	pop	b		. recover the high order mantissa
+00:000083 2E0001              +149 	sbl	1		. destroy the normalising bit
+00:000084 360004              +150 	dsl	4		. put 4 fraction bits in 1st word
+00:000085 20B000              +151 	sa	0, y
+00:000086 650000              +152 	la, xi	0
+00:000087 360010              +153 	dsl	16		. put 16 fraction bits in 2nd word
+00:000088 20B001              +154 	sa	1, y
+00:000089 650000              +155 	la, xi	0
+00:00008A 360003              +156 	dsl	3		. there are 3 fraction bits left
+00:00008B 680006              +157 	lb	6
+00:00008C 36000D              +158 	dsl	13		. put 16 fraction bits in 3rd word
+00:00008D 20B002              +159 	sa	2, y
+00:00008E 650000              +160 	la, xi	0
+00:00008F 36000B              +161 	dsl	11		. put 16 fraction bits in 4th word
+00:000090 680007              +162 	lb	7
+00:000091 360005              +163 	dsl	5
+00:000092 20B003              +164 	sa	3, y
+00:000093 8D0004              +165 	ay, xi	4
+00:000094 3D0000              +166 	fret	0
+  :                            167 	
+  :                            125         $else
+  :                            126 
+  :                            127         $do     64-$,   fret    0
+  :                            128 
+  :                            129         $endif
+  :                            130 
+  :                            131: 	$include		number
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is free processor architecture design.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    The masmx target-independent meta-asembler delivered here
+  :                            23 .    is free software whether it is used for constructing RTA1 code
+  :                            24 .    or any other code. masmx is a separate free program by the
+  :                            25 .    same author and included with this software to save searching for it
+  :                            26 .
+  :                            27 .    Scripts and utility programs for constructing RTA1 target
+  :                            28 .    executable software are free software
+  :                            29 .
+  :                            30 .    You can redistribute it and/or modify RTA1
+  :                            31 .    under the terms of the GNU General Public License as published by
+  :                            32 .    the Free Software Foundation, either version 3 of the License, or
+  :                            33 .    (at your option) any later version.
+  :                            34 .
+  :                            35 .    RTA1 is distributed in the hope that it will be useful,
+  :                            36 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            37 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            38 .    GNU General Public License for more details.
+  :                            39 .
+  :                            40 .    You should have received a copy of the GNU General Public License
+  :                            41 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            42 .
+  :                            43 .
+  :                            44 
+  :                            45 
+  :                            46 .	if the acquired mantissa fits in 72 bits use this conversion
+  :                            47 .	because this should be integer accurate if it is correct code
+  :                            48 
+  :                            49 .	the technique of adding together two overlapping numbers
+  :                            50 .	forces a small inaccuracy through hardware rounding. That
+  :                            51 .	can't be accepted if the mantissa was 100% representable
+  :                            52 .	in the first place
+  :                            53 
+  :                            54 
+  :                            55 u72tofloat*
+00:000095 300006              +56 	z	6
+00:000096 780009              +57 	tp	TRIPLE		. 
+00:000097 B600A0              +58 	j	unsigned72	. allow 72-bit unsigned range 
+00:000098 E70009              +59 	dlsc	TRIPLE		. otherwise look for a sign change
+00:000099 450019              +60 	lr, xi	25		. from sign zero
+00:00009A 500006              +61 	lx	6
+00:00009B 7400A2              +62 	jxge	around		. bit 47 is also zero
+00:00009C 200009              +63 	sa	TRIPLE
+00:00009D CF000A              +64 	dl	TRIPLE+1	. working in unsigned at this point
+00:00009E 36A000              +65 	dsl	0, x		. rotate up to 24 zeros
+00:00009F C7000A              +66 	ds	TRIPLE+1	. into the LS 48 bits
+  :                            67 unsigned72
+00:0000A0 600A0A              +68 	la	(0400048)	. midpoint + 72 - normalising count
+00:0000A1 B600A6              +69 	j	exponent
+00:0000A2 E7000A              +70 around	dlsc	TRIPLE+1	. rotate up to 72 zeros
+00:0000A3 30000B              +71 	z	TRIPLE+2	. into all of it
+00:0000A4 C70009              +72 	ds	TRIPLE
+00:0000A5 600A0B              +73 	la	(0400030)	. midpoint + 48 - normalising count
+  :                            74 exponent
+00:0000A6 D00006              +75 	ana	6		. minus normalising count
+00:0000A7 B00011              +76 	xor	SIGNS		. now switch to working in signed
+00:0000A8 200008              +77 	sa	QUAD
+00:0000A9 A600AD              +78 	jpa	signed
+00:0000AA 0F0009              +79 	n	TRIPLE		. floating architecture is
+00:0000AB 0F000A              +80 	n	TRIPLE+1	. ones complement
+00:0000AC 0F000B              +81 	n	TRIPLE+2
+00:0000AD 350000              +82 signed	lret	0
+  :                            83 
+  :                            84 
+  :                            85 up*	$proc
+  :                            86 	src	SCALE
+  :                            87 	jnc	$+2
+  :                            88 	fm	(1*+(1*/?-1))
+  :                            89 	$end
+  :                            90 
+  :                            91 down*	$proc
+  :                            92 	src	SCALE
+  :                            93 	jc	$+2
+  :                            94 	fm	(1*-(1*/?-1))
+  :                            95 	$end
+  :                            96 
+  :                            97 apply_scale*
+00:0000AE EE00F1              +98 	jnb	apply_minus_scale
+00:0000AF 280013              +99 	sb	SCALE
+00:0000B0 4F0008              +100 	ql	8
+00:0000B1 370013              +101 ?	$do	21,	up
+00:0000B2 5E00B4              +101 
+00:0000B3 770A0C              +101 
+00:0000B4 370013              +101 
+00:0000B5 5E00B7              +101 
+00:0000B6 770A10              +101 
+00:0000B7 370013              +101 
+00:0000B8 5E00BA              +101 
+00:0000B9 770A14              +101 
+00:0000BA 370013              +101 
+00:0000BB 5E00BD              +101 
+00:0000BC 770A18              +101 
+00:0000BD 370013              +101 
+00:0000BE 5E00C0              +101 
+00:0000BF 770A1C              +101 
+00:0000C0 370013              +101 
+00:0000C1 5E00C3              +101 
+00:0000C2 770A20              +101 
+00:0000C3 370013              +101 
+00:0000C4 5E00C6              +101 
+00:0000C5 770A24              +101 
+00:0000C6 370013              +101 
+00:0000C7 5E00C9              +101 
+00:0000C8 770A28              +101 
+00:0000C9 370013              +101 
+00:0000CA 5E00CC              +101 
+00:0000CB 770A2C              +101 
+00:0000CC 370013              +101 
+00:0000CD 5E00CF              +101 
+00:0000CE 770A30              +101 
+00:0000CF 370013              +101 
+00:0000D0 5E00D2              +101 
+00:0000D1 770A34              +101 
+00:0000D2 370013              +101 
+00:0000D3 5E00D5              +101 
+00:0000D4 770A38              +101 
+00:0000D5 370013              +101 
+00:0000D6 5E00D8              +101 
+00:0000D7 770A3C              +101 
+00:0000D8 370013              +101 
+00:0000D9 5E00DB              +101 
+00:0000DA 770A40              +101 
+00:0000DB 370013              +101 
+00:0000DC 5E00DE              +101 
+00:0000DD 770A44              +101 
+00:0000DE 370013              +101 
+00:0000DF 5E00E1              +101 
+00:0000E0 770A48              +101 
+00:0000E1 370013              +101 
+00:0000E2 5E00E4              +101 
+00:0000E3 770A4C              +101 
+00:0000E4 370013              +101 
+00:0000E5 5E00E7              +101 
+00:0000E6 770A50              +101 
+00:0000E7 370013              +101 
+00:0000E8 5E00EA              +101 
+00:0000E9 770A54              +101 
+00:0000EA 370013              +101 
+00:0000EB 5E00ED              +101 
+00:0000EC 770A58              +101 
+00:0000ED 370013              +101 
+00:0000EE 5E00F0              +101 
+00:0000EF 770A5C              +101 
+00:0000F0 350000              +102 	lret	0
+  :                            103 
+  :                            104 apply_minus_scale
+00:0000F1 CDFFFF              +105 	ab, xi	-1
+00:0000F2 280013              +106 	sb	SCALE
+00:0000F3 4F0008              +107 	ql	8
+00:0000F4 370013              +108 ?	$do	21,	down
+00:0000F5 7E00F7              +108 
+00:0000F6 770A60              +108 
+00:0000F7 370013              +108 
+00:0000F8 7E00FA              +108 
+00:0000F9 770A64              +108 
+00:0000FA 370013              +108 
+00:0000FB 7E00FD              +108 
+00:0000FC 770A68              +108 
+00:0000FD 370013              +108 
+00:0000FE 7E0100              +108 
+00:0000FF 770A6C              +108 
+00:000100 370013              +108 
+00:000101 7E0103              +108 
+00:000102 770A70              +108 
+00:000103 370013              +108 
+00:000104 7E0106              +108 
+00:000105 770A74              +108 
+00:000106 370013              +108 
+00:000107 7E0109              +108 
+00:000108 770A78              +108 
+00:000109 370013              +108 
+00:00010A 7E010C              +108 
+00:00010B 770A7C              +108 
+00:00010C 370013              +108 
+00:00010D 7E010F              +108 
+00:00010E 770A80              +108 
+00:00010F 370013              +108 
+00:000110 7E0112              +108 
+00:000111 770A84              +108 
+00:000112 370013              +108 
+00:000113 7E0115              +108 
+00:000114 770A88              +108 
+00:000115 370013              +108 
+00:000116 7E0118              +108 
+00:000117 770A8C              +108 
+00:000118 370013              +108 
+00:000119 7E011B              +108 
+00:00011A 770A90              +108 
+00:00011B 370013              +108 
+00:00011C 7E011E              +108 
+00:00011D 770A94              +108 
+00:00011E 370013              +108 
+00:00011F 7E0121              +108 
+00:000120 770A98              +108 
+00:000121 370013              +108 
+00:000122 7E0124              +108 
+00:000123 770A9C              +108 
+00:000124 370013              +108 
+00:000125 7E0127              +108 
+00:000126 770AA0              +108 
+00:000127 370013              +108 
+00:000128 7E012A              +108 
+00:000129 770AA4              +108 
+00:00012A 370013              +108 
+00:00012B 7E012D              +108 
+00:00012C 770AA8              +108 
+00:00012D 370013              +108 
+00:00012E 7E0130              +108 
+00:00012F 770AAC              +108 
+00:000130 370013              +108 
+00:000131 7E0133              +108 
+00:000132 770AB0              +108 
+00:000133 350000              +109 	lret	0
+  :                            110 
+  :                            111 
+  :                            112 fraction6*
+00:000134 68000B              +113 	lb	11
+00:000135 E80AB4              +114 	mf	(1000000)
+00:000136 200007              +115 	sa	7
+00:000137 300006              +116 	z	6
+00:000138 68000A              +117 	lb	10
+00:000139 E80AB4              +118 	mf	(1000000)
+00:00013A D70006              +119 	da	6
+00:00013B 28000A              +120 	sb	10
+00:00013C 200007              +121 	sa	7
+00:00013D B70006              +122 	sc	6
+00:00013E 680009              +123 	lb	9
+00:00013F E80AB4              +124 	mf	(1000000)
+00:000140 D70006              +125 	da	6
+00:000141 280009              +126 	sb	9
+00:000142 20000B              +127 	sa	11
+  :                            128 
+00:000143 68000A              +129 	lb	10
+00:000144 E80AB4              +130 	mf	(1000000)
+00:000145 28000A              +131 	sb	10
+00:000146 200007              +132 	sa	7
+00:000147 300006              +133 	z	6
+00:000148 680009              +134 	lb	9
+00:000149 E80AB4              +135 	mf	(1000000)
+00:00014A D70006              +136 	da	6
+00:00014B 20000A              +137 	sa	10
+  :                            138 
+00:00014C E80AB4              +139 	mf	(1000000)
+00:00014D 200009              +140 	sa	9
+00:00014E 350000              +141 	lret	0	
+  :                            142 
+  :                            143 	$if	1
+  :                            144 
+  :                            145 h2l*	$proc	*
+  :                            146 	fm	(1*-(1*/(21-?)))
+  :                            147 	mta	(0400000)
+  :                            148 	j	under
+  :                            149 	qs	8
+  :                            150 	$if	1*/21-?>32767
+  :                            151 	push	(1*/21-?)
+  :                            152 	$else
+  :                            153 	push,xi	1*/21-?
+  :                            154 	$endif
+  :                            155 	popA	SCALE
+  :                            156 under	ql	8
+  :                            157 	$end
+  :                            158 
+  :                            159 	$else
+  :                            160 
+  :                            161 cdown*	$proc	*
+  :                            162 	fm	(1*-(1262612/*?))
+  :                            163 	mta	(0400000)
+  :                            164 	j	toolow
+  :                            165 	qs	8
+  :                            166 
+  :                            167 	$if	1262612/*?<32768
+  :                            168 	push,xi	1262612/*?
+  :                            169 	$else
+  :                            170 	push	(1262612/*?)
+  :                            171 	$endif
+  :                            172 
+  :                            173 	popA	SCALE
+  :                            174 toolow
+  :                            175 	ql	8
+  :                            176 	$end
+  :                            177 
+  :                            178 	$endif
+  :                            179 
+  :                            180 climber* $proc
+  :                            181 	mta	(0)
+  :                            182 	j	over_midpoint
+  :                            183 
+  :                            184 	fm	(1*+(1*/(?-1)))
+  :                            185 
+  :                            186 	$if	1*/(?-1)<32768
+  :                            187 	push,xi	-1*/(?-1)
+  :                            188 	$else
+  :                            189 	push	(-1*/(?-1))
+  :                            190 	$endif
+  :                            191 
+  :                            192 	popA	SCALE
+  :                            193 	$end	
+  :                            194 
+  :                            195 
+  :                            196 scale_out*
+00:00014F 300013              +197 	z	SCALE
+00:000150 480AB5              +198 	lk	(0400000)
+  :                            199 
+00:000151 AF0AB6              +200 ?	$do	21,	climber
+00:000152 B601BA              +200 
+00:000153 770A0C              +200 
+00:000154 FDFFFF              +200 
+00:000155 2F0013              +200 
+00:000156 AF0AB6              +200 
+00:000157 B601BA              +200 
+00:000158 770A10              +200 
+00:000159 FDFFFE              +200 
+00:00015A 2F0013              +200 
+00:00015B AF0AB6              +200 
+00:00015C B601BA              +200 
+00:00015D 770A14              +200 
+00:00015E FDFFFC              +200 
+00:00015F 2F0013              +200 
+00:000160 AF0AB6              +200 
+00:000161 B601BA              +200 
+00:000162 770A18              +200 
+00:000163 FDFFF8              +200 
+00:000164 2F0013              +200 
+00:000165 AF0AB6              +200 
+00:000166 B601BA              +200 
+00:000167 770A1C              +200 
+00:000168 FDFFF0              +200 
+00:000169 2F0013              +200 
+00:00016A AF0AB6              +200 
+00:00016B B601BA              +200 
+00:00016C 770A20              +200 
+00:00016D FDFFE0              +200 
+00:00016E 2F0013              +200 
+00:00016F AF0AB6              +200 
+00:000170 B601BA              +200 
+00:000171 770A24              +200 
+00:000172 FDFFC0              +200 
+00:000173 2F0013              +200 
+00:000174 AF0AB6              +200 
+00:000175 B601BA              +200 
+00:000176 770A28              +200 
+00:000177 FDFF80              +200 
+00:000178 2F0013              +200 
+00:000179 AF0AB6              +200 
+00:00017A B601BA              +200 
+00:00017B 770A2C              +200 
+00:00017C FDFF00              +200 
+00:00017D 2F0013              +200 
+00:00017E AF0AB6              +200 
+00:00017F B601BA              +200 
+00:000180 770A30              +200 
+00:000181 FDFE00              +200 
+00:000182 2F0013              +200 
+00:000183 AF0AB6              +200 
+00:000184 B601BA              +200 
+00:000185 770A34              +200 
+00:000186 FDFC00              +200 
+00:000187 2F0013              +200 
+00:000188 AF0AB6              +200 
+00:000189 B601BA              +200 
+00:00018A 770A38              +200 
+00:00018B FDF800              +200 
+00:00018C 2F0013              +200 
+00:00018D AF0AB6              +200 
+00:00018E B601BA              +200 
+00:00018F 770A3C              +200 
+00:000190 FDF000              +200 
+00:000191 2F0013              +200 
+00:000192 AF0AB6              +200 
+00:000193 B601BA              +200 
+00:000194 770A40              +200 
+00:000195 FDE000              +200 
+00:000196 2F0013              +200 
+00:000197 AF0AB6              +200 
+00:000198 B601BA              +200 
+00:000199 770A44              +200 
+00:00019A FDC000              +200 
+00:00019B 2F0013              +200 
+00:00019C AF0AB6              +200 
+00:00019D B601BA              +200 
+00:00019E 770A48              +200 
+00:00019F F80AB7              +200 
+00:0001A0 2F0013              +200 
+00:0001A1 AF0AB6              +200 
+00:0001A2 B601BA              +200 
+00:0001A3 770A4C              +200 
+00:0001A4 F80AB8              +200 
+00:0001A5 2F0013              +200 
+00:0001A6 AF0AB6              +200 
+00:0001A7 B601BA              +200 
+00:0001A8 770A50              +200 
+00:0001A9 F80AB9              +200 
+00:0001AA 2F0013              +200 
+00:0001AB AF0AB6              +200 
+00:0001AC B601BA              +200 
+00:0001AD 770A54              +200 
+00:0001AE F80ABA              +200 
+00:0001AF 2F0013              +200 
+00:0001B0 AF0AB6              +200 
+00:0001B1 B601BA              +200 
+00:0001B2 770A58              +200 
+00:0001B3 F80ABB              +200 
+00:0001B4 2F0013              +200 
+00:0001B5 AF0AB6              +200 
+00:0001B6 B601BA              +200 
+00:0001B7 770A5C              +200 
+00:0001B8 F80ABC              +200 
+00:0001B9 2F0013              +200 
+  :                            201 
+  :                            202 over_midpoint
+00:0001BA 470008              +203 	qs	8
+  :                            204 
+  :                            205 	$if	1
+00:0001BB 770AB0              +206 ?	$do	21,	h2l
+00:0001BC AF0AB5              +206 
+00:0001BD B601C1              +206 
+00:0001BE 470008              +206 
+00:0001BF F80ABD              +206 
+00:0001C0 2F0013              +206 
+00:0001C1 4F0008              +206 
+00:0001C2 770AAC              +206 
+00:0001C3 AF0AB5              +206 
+00:0001C4 B601C8              +206 
+00:0001C5 470008              +206 
+00:0001C6 F80ABE              +206 
+00:0001C7 2F0013              +206 
+00:0001C8 4F0008              +206 
+00:0001C9 770AA8              +206 
+00:0001CA AF0AB5              +206 
+00:0001CB B601CF              +206 
+00:0001CC 470008              +206 
+00:0001CD F80ABF              +206 
+00:0001CE 2F0013              +206 
+00:0001CF 4F0008              +206 
+00:0001D0 770AA4              +206 
+00:0001D1 AF0AB5              +206 
+00:0001D2 B601D6              +206 
+00:0001D3 470008              +206 
+00:0001D4 F80AC0              +206 
+00:0001D5 2F0013              +206 
+00:0001D6 4F0008              +206 
+00:0001D7 770AA0              +206 
+00:0001D8 AF0AB5              +206 
+00:0001D9 B601DD              +206 
+00:0001DA 470008              +206 
+00:0001DB F80AC1              +206 
+00:0001DC 2F0013              +206 
+00:0001DD 4F0008              +206 
+00:0001DE 770A9C              +206 
+00:0001DF AF0AB5              +206 
+00:0001E0 B601E4              +206 
+00:0001E1 470008              +206 
+00:0001E2 F80AC2              +206 
+00:0001E3 2F0013              +206 
+00:0001E4 4F0008              +206 
+00:0001E5 770A98              +206 
+00:0001E6 AF0AB5              +206 
+00:0001E7 B601EB              +206 
+00:0001E8 470008              +206 
+00:0001E9 FD4000              +206 
+00:0001EA 2F0013              +206 
+00:0001EB 4F0008              +206 
+00:0001EC 770A94              +206 
+00:0001ED AF0AB5              +206 
+00:0001EE B601F2              +206 
+00:0001EF 470008              +206 
+00:0001F0 FD2000              +206 
+00:0001F1 2F0013              +206 
+00:0001F2 4F0008              +206 
+00:0001F3 770A90              +206 
+00:0001F4 AF0AB5              +206 
+00:0001F5 B601F9              +206 
+00:0001F6 470008              +206 
+00:0001F7 FD1000              +206 
+00:0001F8 2F0013              +206 
+00:0001F9 4F0008              +206 
+00:0001FA 770A8C              +206 
+00:0001FB AF0AB5              +206 
+00:0001FC B60200              +206 
+00:0001FD 470008              +206 
+00:0001FE FD0800              +206 
+00:0001FF 2F0013              +206 
+00:000200 4F0008              +206 
+00:000201 770A88              +206 
+00:000202 AF0AB5              +206 
+00:000203 B60207              +206 
+00:000204 470008              +206 
+00:000205 FD0400              +206 
+00:000206 2F0013              +206 
+00:000207 4F0008              +206 
+00:000208 770A84              +206 
+00:000209 AF0AB5              +206 
+00:00020A B6020E              +206 
+00:00020B 470008              +206 
+00:00020C FD0200              +206 
+00:00020D 2F0013              +206 
+00:00020E 4F0008              +206 
+00:00020F 770A80              +206 
+00:000210 AF0AB5              +206 
+00:000211 B60215              +206 
+00:000212 470008              +206 
+00:000213 FD0100              +206 
+00:000214 2F0013              +206 
+00:000215 4F0008              +206 
+00:000216 770A7C              +206 
+00:000217 AF0AB5              +206 
+00:000218 B6021C              +206 
+00:000219 470008              +206 
+00:00021A FD0080              +206 
+00:00021B 2F0013              +206 
+00:00021C 4F0008              +206 
+00:00021D 770A78              +206 
+00:00021E AF0AB5              +206 
+00:00021F B60223              +206 
+00:000220 470008              +206 
+00:000221 FD0040              +206 
+00:000222 2F0013              +206 
+00:000223 4F0008              +206 
+00:000224 770A74              +206 
+00:000225 AF0AB5              +206 
+00:000226 B6022A              +206 
+00:000227 470008              +206 
+00:000228 FD0020              +206 
+00:000229 2F0013              +206 
+00:00022A 4F0008              +206 
+00:00022B 770A70              +206 
+00:00022C AF0AB5              +206 
+00:00022D B60231              +206 
+00:00022E 470008              +206 
+00:00022F FD0010              +206 
+00:000230 2F0013              +206 
+00:000231 4F0008              +206 
+00:000232 770A6C              +206 
+00:000233 AF0AB5              +206 
+00:000234 B60238              +206 
+00:000235 470008              +206 
+00:000236 FD0008              +206 
+00:000237 2F0013              +206 
+00:000238 4F0008              +206 
+00:000239 770A68              +206 
+00:00023A AF0AB5              +206 
+00:00023B B6023F              +206 
+00:00023C 470008              +206 
+00:00023D FD0004              +206 
+00:00023E 2F0013              +206 
+00:00023F 4F0008              +206 
+00:000240 770A64              +206 
+00:000241 AF0AB5              +206 
+00:000242 B60246              +206 
+00:000243 470008              +206 
+00:000244 FD0002              +206 
+00:000245 2F0013              +206 
+00:000246 4F0008              +206 
+00:000247 770A60              +206 
+00:000248 AF0AB5              +206 
+00:000249 B6024D              +206 
+00:00024A 470008              +206 
+00:00024B FD0001              +206 
+00:00024C 2F0013              +206 
+00:00024D 4F0008              +206 
+  :                            207 	$else
+  :                            208 ?	$do	20,	cdown
+  :                            209 	$endif
+  :                            210 
+00:00024E 350000              +211 	lret	0
+  :                            212 
+  :                            213 	$do	$<256,$(0:256)
+  :                            214 table_add*
+00:00024F C8C255              +215 	ab	units, a
+00:000250 C8C25F              +216 	ab	tens, a
+00:000251 C8C269              +217 	ab	hundreds, a
+00:000252 C8C273              +218 	ab	thousands, a
+00:000253 C8C27D              +219 	ab	ten_thousands, a
+00:000254 C8C287              +220 	ab	hundred_thousands, a
+  :                            221 
+  :                            222 units
+00:000255 000000              +223 ?	$do	10,	+	?*1-1
+00:000256 000001              +223 
+00:000257 000002              +223 
+00:000258 000003              +223 
+00:000259 000004              +223 
+00:00025A 000005              +223 
+00:00025B 000006              +223 
+00:00025C 000007              +223 
+00:00025D 000008              +223 
+00:00025E 000009              +223 
+  :                            224 tens
+00:00025F 000000              +225 ?	$do	10,	+	?*10-10
+00:000260 00000A              +225 
+00:000261 000014              +225 
+00:000262 00001E              +225 
+00:000263 000028              +225 
+00:000264 000032              +225 
+00:000265 00003C              +225 
+00:000266 000046              +225 
+00:000267 000050              +225 
+00:000268 00005A              +225 
+  :                            226 hundreds
+00:000269 000000              +227 ?	$do	10,	+	?*100-100
+00:00026A 000064              +227 
+00:00026B 0000C8              +227 
+00:00026C 00012C              +227 
+00:00026D 000190              +227 
+00:00026E 0001F4              +227 
+00:00026F 000258              +227 
+00:000270 0002BC              +227 
+00:000271 000320              +227 
+00:000272 000384              +227 
+  :                            228 thousands
+00:000273 000000              +229 ?	$do	10,	+	?*1000-1000
+00:000274 0003E8              +229 
+00:000275 0007D0              +229 
+00:000276 000BB8              +229 
+00:000277 000FA0              +229 
+00:000278 001388              +229 
+00:000279 001770              +229 
+00:00027A 001B58              +229 
+00:00027B 001F40              +229 
+00:00027C 002328              +229 
+  :                            230 ten_thousands
+00:00027D 000000              +231 ?	$do	10,	+	?*10000-10000
+00:00027E 002710              +231 
+00:00027F 004E20              +231 
+00:000280 007530              +231 
+00:000281 009C40              +231 
+00:000282 00C350              +231 
+00:000283 00EA60              +231 
+00:000284 011170              +231 
+00:000285 013880              +231 
+00:000286 015F90              +231 
+  :                            232 hundred_thousands
+00:000287 000000              +233 ?	$do	10,	+	?*100000-100000
+00:000288 0186A0              +233 
+00:000289 030D40              +233 
+00:00028A 0493E0              +233 
+00:00028B 061A80              +233 
+00:00028C 07A120              +233 
+00:00028D 0927C0              +233 
+00:00028E 0AAE60              +233 
+00:00028F 0C3500              +233 
+00:000290 0DBBA0              +233 
+  :                            234 
+  :                            132: 	$include		numbera
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is free processor architecture design.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    The masmx target-independent meta-asembler delivered here
+  :                            23 .    is free software whether it is used for constructing RTA1 code
+  :                            24 .    or any other code. masmx is a separate free program by the
+  :                            25 .    same author and included with this software to save searching for it
+  :                            26 .
+  :                            27 .    Scripts and utility programs for constructing RTA1 target
+  :                            28 .    executable software are free software
+  :                            29 .
+  :                            30 .    You can redistribute it and/or modify RTA1
+  :                            31 .    under the terms of the GNU General Public License as published by
+  :                            32 .    the Free Software Foundation, either version 3 of the License, or
+  :                            33 .    (at your option) any later version.
+  :                            34 .
+  :                            35 .    RTA1 is distributed in the hope that it will be useful,
+  :                            36 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            37 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            38 .    GNU General Public License for more details.
+  :                            39 .
+  :                            40 .    You should have received a copy of the GNU General Public License
+  :                            41 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            42 .
+  :                            43 .
+  :                            44 
+  :                            133: 	$include,$binary	aqui16
+  :                            134: 	$include,$binary	aqui24
+*EOF*
+00:000a07+7FFFFF
+00:000a08+0000000A0000
+00:000a0a+400048
+00:000a0b+400030
+00:000a0c+400004A00000000000000000
+00:000a10+400007C80000000000000000
+00:000a14+40000E9C4000000000000000
+00:000a18+40001BBEBC20000000000000
+00:000a1c+4000368E1BC9BF0400000000
+00:000a20+40006B9DC5ADA82B70B59DF1
+00:000a24+4000D5C2781F49FFCFA6D53D
+00:000a28+4001AA93BA47C980E98CDFC7
+00:000a2c+400353AA7EEBFB9DF9DE8DDE
+00:000a30+4006A5E319A0AEA60E91C6CD
+00:000a34+400D4AC976758681750C1765
+00:000a38+401A949E8B3B5DC53D5DE4A7
+00:000a3c+403527C46052028A20979AC9
+00:000a40+406A4E96A3A1D17FAF211A0D
+00:000a44+40D49BB1485471F16603B563
+00:000a48+41A935F58A326A5783A749B4
+00:000a4c+43526AEB81CF19F0160E7F72
+00:000a50+46A4D4D8A7940BFE7769BD08
+00:000a54+4D49A8B75B3786BAAD6104E0
+00:000a58+5A9350835389E324B7C31668
+00:000a5c+75269F86BD34C256458F5081
+00:000a60+3FFFFDCCCCCCCCCCCCCCCCCD
+00:000a64+3FFFFAA3D70A3D70A3D70A3E
+00:000a68+3FFFF3D1B71758E219652BD4
+00:000a6c+3FFFE6ABCC77118461CEFCFE
+00:000a70+3FFFCBE69594BEC44DE15B4D
+00:000a74+3FFF96CFB11EAD453994BA68
+00:000a78+3FFF2CA87FEA27A539E9A540
+00:000a7c+3FFE57DDD0467C64BCE4A0AD
+00:000a80+3FFCAEC0314325637A1939FB
+00:000a84+3FF95C9049EE32DB23D21C72
+00:000a88+3FF2B7A2A682A5DA57C0BD88
+00:000a8c+3FE56DCEAE534F34362DE44A
+00:000a90+3FCADAA6DD04C8D2CE9FDE2E
+00:000a94+3F95B3D986C20B686DA8695D
+00:000a98+3F2B66B8D5BBE70E10851746
+00:000a9c+3E56CC8573F08E5CA085E572
+00:000aa0+3CAD978B2358EBDC62806126
+00:000aa4+395B2D973ECEE32168765559
+00:000aa8+32B659B2B64EF19D3F7AF4C3
+00:000aac+256CB1F9840F38AD1FFA36A9
+00:000ab0+0AD962F33229BBF4226E8E51
+00:000ab4+0F4240
+00:000ab5+400000
+00:000ab6+000000
+00:000ab7+FF8000
+00:000ab8+FF0000
+00:000ab9+FE0000
+00:000aba+FC0000
+00:000abb+F80000
+00:000abc+F00000
+00:000abd+100000
+00:000abe+080000
+00:000abf+040000
+00:000ac0+020000
+00:000ac1+010000
+00:000ac2+008000
+LIBRARY=005000
+r=000000
+k=000001
+x=000002
+y=000003
+a=000004
+b=000005
+p=00000C
+q=00000D
+fp=00000E
+sp=00000F
+d$save=000010
+d$save1=000011
+d$save2=000012
+d$save3=000013
+RDATAC=000014
+RDATA=000015
+WDATAC=000016
+WDATA=000017
+r_x=000080
+k_x=000081
+x_x=000082
+y_x=000083
+a_x=000084
+b_x=000085
+p_x=00008C
+q_x=00008D
+fp_x=00008E
+sp_x=00008F
+x$save=000090
+x$save1=000091
+x$save2=000092
+x$save3=000093
+X_RDATAC=000094
+X_RDATA=000095
+X_WDATAC=000096
+X_WDATA=000097
+w0=000000
+t1=000001
+t2=000002
+t3=000003
+i=000004
+xi=000005
+h1=000002
+h2=000003
+i$=.5.3.1.15
+i$x=.5.3.1.3.12
+i$a=.5.3.16
+sr=:N129:P:0:000000
+sk=:N129:P:0:000001
+sx=:N129:P:0:000002
+sy=:N129:P:0:000003
+sa=:N129:P:0:000004
+sb=:N129:P:0:000005
+z=:N129:P:0:000006
+pop=:N129:P:0:000007
+lr=:N129:P:0:000008
+lk=:N129:P:0:000009
+lx=:N129:P:0:00000A
+ly=:N129:P:0:00000B
+la=:N129:P:0:00000C
+lb=:N129:P:0:00000D
+tz=:N129:P:0:00000E
+tp=:N129:P:0:00000F
+ax=:N129:P:0:000010
+ay=:N129:P:0:000011
+or=:N129:P:0:000012
+orB=:N129:P:0:000013
+and=:N129:P:0:000014
+andB=:N129:P:0:000015
+xor=:N129:P:0:000016
+xorB=:N129:P:0:000017
+aa=:N129:P:0:000018
+ab=:N129:P:0:000019
+ana=:N129:P:0:00001A
+anb=:N129:P:0:00001B
+m=:N129:P:0:00001C
+mf=:N129:P:0:00001D
+d=:N129:P:0:00001E
+push=:N129:P:0:00001F
+inA=:N129:P:0:000000
+inB=:N129:P:0:000001
+outA=:N129:P:0:000002
+outB=:N129:P:0:000003
+reload=:N129:P:0:000004
+emulator_cool=:N129:P:0:000005
+sabr=:N129:P:0:000006
+jxge=:N129:P:0:00000E
+jyge=:N129:P:0:00000F
+see$1=004000
+see$2=002000
+see$3=001000
+see$4=000800
+see$5=000400
+see$6=000200
+see$7=000100
+half$w=000080
+b$streamZR=000040
+b$stream16r=000020
+b$stream16w=000010
+carry$=000001
+see$all=007F00
+see$allbut=:N65:F:0:000000
+on=:N129:P:0:000000
+off=:N129:P:0:000001
+rsr=:N129:P:0:000002
+wsr=:N129:P:0:000003
+lret=:N129:P:0:000006
+fret=:N129:P:0:000007
+ii=:N129:P:0:00000E
+ir=:N129:P:0:00000F
+sar=:N129:P:0:000000
+sbr=:N129:P:0:000001
+dsr=:N129:P:0:000002
+jdr=:N129:P:0:000003
+sal=:N129:P:0:000004
+sbl=:N129:P:0:000005
+dsl=:N129:P:0:000006
+lcal=:N129:P:0:000007
+rar=:N129:P:0:000008
+rbr=:N129:P:0:000009
+drr=:N129:P:0:00000A
+jnc=:N129:P:0:00000B
+ral=:N129:P:0:00000C
+rbl=:N129:P:0:00000D
+drl=:N129:P:0:00000E
+jc=:N129:P:0:00000F
+saa=:N129:P:0:000010
+sba=:N129:P:0:000011
+dsa=:N129:P:0:000012
+jdz=:N129:P:0:000013
+jpa=:N129:P:0:000014
+jpb=:N129:P:0:000015
+j=:N129:P:0:000016
+jza=:N129:P:0:000018
+jzb=:N129:P:0:000019
+jnza=:N129:P:0:00001A
+jnzb=:N129:P:0:00001B
+jna=:N129:P:0:00001C
+jnb=:N129:P:0:00001D
+jao=:N129:P:0:00001E
+jpo=:N129:P:0:00001F
+ts=:N129:P:0:000000
+n=:N129:P:0:000001
+inc=:N129:P:0:000002
+dec=:N129:P:0:000003
+sim=:N129:P:0:000004
+popA=:N129:P:0:000005
+src=:N129:P:0:000006
+slc=:N129:P:0:000007
+qs=:N129:P:0:000008
+ql=:N129:P:0:000009
+fpp=:N129:P:0:00000A
+fpx=:N129:P:0:00000B
+fa=:N129:P:0:00000C
+fan=:N129:P:0:00000D
+fm=:N129:P:0:00000E
+fd=:N129:P:0:00000F
+qpop=:N129:P:0:000010
+qpush=:N129:P:0:000011
+ex=:N129:P:0:000012
+dpush=:N129:P:0:000013
+lsc=:N129:P:0:000014
+mta=:N129:P:0:000015
+sc=:N129:P:0:000016
+mlb=:N129:P:0:000017
+ds=:N129:P:0:000018
+dl=:N129:P:0:000019
+da=:N129:P:0:00001A
+dan=:N129:P:0:00001B
+dlsc=:N129:P:0:00001C
+go=:N129:P:0:00001E
+call=:N129:P:0:00001F
+$address15=:N65:F:0:000000
+$address12=:N65:F:0:000000
+$index=:N65:F:0:000000
+$bank_address=:N65:F:0:000000
+tnz=:P1:0:00000A
+tn=:P1:0:00000B
+mtane=:P1:0:00000C
+jae=:P1:0:00000D
+jpe=:P1:0:00000E
+anu=:P1:0:00000F
+anuba=:P1:0:000010
+tanu=:P1:0:000011
+tanuba=:P1:0:000012
+IPV4_BANK=002000
+IPV4_B1_INITIAL_BANK=003000
+A_PROTOS_B3_INITIAL_BANK=003800
+A_PROTOS_BANK1=004000
+LIBRARY_XDR=005000
+FS24_BANK=006000
+$head_far=:N131:P:0:000003
+$head_near=:N131:P:0:000002
+c=:N129:P:0:000001
+lc=:N129:P:0:000000
+$vector=:P1:0:000015
+SEGMENT_QL=:P1:0:000016
+$stack_macro_remarks=000000
+LAST_BYTE_READ=000001
+BYTES=000010
+QUAD=000008
+TRIPLE=000009
+SIGNS=000011
+SCALE_TRIPPED=000012
+SCALE=000013
+$map=:N129:P:0:000000
+fscan+=000140
+fedit+=000141
+symbol+=000142
+ieditu+=000143
+iedit48u+=000144
+iscan_xdr+=000145
+fscana+=000146
+fedita+=000147
+symbola+=000148
+ieditua+=000149
+iedit48ua+=00014A
+iscan=00014B
+ieee754_64_2f=$00:000040
+f2_ieee754_64=$00:000041
+xdr_ieee754_64:float=$00:000042
+ieee754_midpoint=$00:00004A
+xdr_float:ieee754_64=$00:00006B
+xdr_float_upright=$00:000070
+xdr_float_around=$00:00007B
+u72tofloat+=$00:000095
+unsigned72=$00:0000A0
+around=$00:0000A2
+exponent=$00:0000A6
+signed=$00:0000AD
+up=:P1:0:000018
+down=:P1:0:000019
+apply_scale+=$00:0000AE
+?=00000A
+apply_minus_scale=$00:0000F1
+fraction6+=$00:000134
+h2l=:P3:0:00001A
+climber=:P1:0:00001B
+scale_out+=$00:00014F
+over_midpoint=$00:0001BA
+table_add+=$00:00024F
+units=$00:000255
+tens=$00:00025F
+hundreds=$00:000269
+thousands=$00:000273
+ten_thousands=$00:00027D
+hundred_thousands=$00:000287
+table+=$00:000291
+hundred=00000A
+ten=00000A
+unit=00000A
+fscan_net16+=$00:000681
+fedit_net16+=$00:000741
+symbol_net16+=$00:000734
+ieditu_net16+=$00:0007D2
+iedit48uascii_net16+=$00:0007E1
+iscan_net16+=$00:000825
+fscan_core24+=$00:00084C
+fedit_core24+=$00:00090E
+symbol_core24+=$00:000900
+ieditu_core24+=$00:000998
+iedit48uascii_core24+=$00:0009A7
+iscan_core24+=$00:0009E7
+label1=000844,00000F
+aqui24.txo=1<000005
+aqui16.txo=1<000005
+numbera.msm=1<000005
+number.msm=1<000005
+xdr_bina.msm=1<000005
+../def/map1.def=1<000005
+register.def=1<000005
+../language/stack.def=1<000005
+../def.sys/banks.def=1<000005
+../def/rta.def=1<000005
+lib_utf8.msm=0<000003
+:$(00):000000:000AC3 
+lib_utf8.msm: object code 19913 bytes: 0 errors: 0 undefined labels

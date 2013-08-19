@@ -1,0 +1,375 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+. Emulation implements one kind of network interface
+
+. this can be modified when there is more than one interface type
+. initially the only known type is modelled as a dual ported memory
+. interface to the system
+.
+. half of the interfacing memory presents input frames
+. the other half is available for output frames
+
+
+.		_________________________________
+.	>------>|1st receive buffer		|
+.	|	|2nd				|
+.	|	|				|
+.	^
+.	|
+.	<-------|last receive buffer		|
+.		|_______________________________|
+.	>------>|1st transmit buffer		|
+.	|	|2nd				|
+.	|	|				|
+.	^
+.	|
+.	<-------|last transmit buffer		|
+.		|_______________________________|
+
+
+. the frames arrive and are sent in cyclic order of the buffers
+.
+. there is an 8-word length + ethernet header at the start of each buffer
+. this sketch represents a quartet of bits per symbol
+
+.	 00LLLL 00xxxx 00xxxx 00xxxx 00yyyy 00yyyy 00yyyy 00pppp
+
+.	________________________________________________________________________
+.	| 00LLLL | 00xxxx | 00xxxx | 00xxxx | 00yyyy | 00yyyy | 00yyyy | 00pppp|
+.	|________|________|________|________|________|________|________|_______|
+.	| 00data | 00....
+
+
+. network data is buffered 16 bits per computer word right up to the socket
+. and XDR interfaces. These "interface dual ported" memories may be 16-bit
+. memories reading out eight zero bits at the high order positions of each
+. computer word, or they may be 24-bit memories: then the high-order 8 bits
+. must be maintained with zero values
+
+.	LLLL	is frame size, and nonzero value written here indicates
+.		a complete frame received, or available for transmission
+.
+.	xxxx xxxx xxxx	is the destination ethernet address
+
+.	yyyy yyyy yyyy	is the source ethernet address
+
+.	pppp	is the protocol family indicator, 0800 for IPv4, 0806 for ARP
+.		as many as required
+
+
+. the buffers are equal sized and used cyclically
+
+. the input machine signals to software that a frame is available
+. by writing a length in bits 15:0 of the first word in the buffer:
+.
+.		0000 0000 LLLL LLLL LLLL LLLL
+.
+. The length is not self-inclusive. It is the frame length.
+. The frame starts at the next word
+
+. software indicates that the frame has been sampled and the buffer is
+. free by writing zero to this length word
+
+. software indicates that a frame for transmission is assembled 
+. in the transmission buffer by writing a length in bits 15:0 of
+. the first word in the transmission buffer. The length is the
+. frame length and not self-inclusive
+
+. The frame for transmission starts in the second word of the
+. transmission buffer
+
+. Transmission completion is indicated back to the software by zero
+. in the length word, and this also indicates the transmission buffer
+. is again free
+
+. This interface model is not part of RTA architecture but supports
+. this emulation and is intended to work like network interfaces are 
+. intended for RTA systems
+. 
+. That is, some of the 63 DEVICEs (arrays outside system memory)
+. should carry network data to and from an RTA system.
+
+. A DEVICE is up to 65536 BANKS of up to 262144 WORDS of up to 24 bits
+.
+
+. device 0 is system memory or executable space and is up to 16 gigawords
+. of 24-bit memory
+
+. only system memory is selectable in pages of 4096 words as well as in
+. banks of 256K
+
+. Memory in the other 63 possible devices is selectable in banks of
+. 262144 words only
+
+. the pointer to a page of system memory based in one of the 72 relocation
+. registers has the layout
+
+.	00pp pppp pppp pppp pppp pppp
+
+. where bit 22 = 0 indicates a 22-bit page pointer and the task has a granule
+. of 4096 words addressed and available
+
+. the pointer to a bank of system memory in a relocation register has the layout
+
+.	01pp pppp pppp pppp pp00 0000
+
+. where bit 22 = 1 indicates a 16-bit bank pointer and the task has a granule
+. of 262144 words addressed and available
+
+. bits 5:0 = 00 0000 indicate that the bank is in system memory
+.
+. the pointer to a bank of "I/O Memory" (strictly an array other than
+. system memory) has the layout in a relocation register
+
+.	01bb bbbb bbbb bbbb bbDE VICE
+
+. where bit 22 = 1 = Big Bank ** DEVICE = nonzero = some other device than
+. system memory
+
+. Some of these 63 possible arrays outside system memory will be battery-
+. supported SRAMS of 24-bit words containing realtime transaction file systems
+
+. Others may be flash memories containing default system images and occasional
+. data backups (but flash memories may not be used for high-frequency
+. transaction update data)
+
+. some may be insertable flashes containing 16- or 8-bit memories organised
+. in a file system architecture readable and writable by other systems
+
+. some may be video RAMs of up to 16 Gigawords of 24-bit words
+
+. At least one device must be an array interfacing a network adaptor to the
+. RTA system with 16 network data bits per computer word as modelled here
+
+. This interface array is supplied to the emulator by a Unix shared memory
+. block of 524288 bytes which looks to RTA like a device of one bank of
+. 262144 16-bit words.
+
+. RTA reads each word out as a 24-bit computer word with bits 23:16 = 0000 0000
+. The first half of this block is receive buffers and the second half transmit
+. buffers
+
+. the settings here are that RPAGEW is 1024 words. This is the buffer size
+. and it allows an ethernet frame of 1514+ bytes. Jumbos are not accounted
+. for in the emulation. A device in a large-configuration RTA may have
+. 65536 * 262144 words in a network interface device, but the emulator has
+. only 1 * 262144 words in its one network interface space.
+
+. Therefore the emulator will only test standard ethernet traffic
+
+. the configuration of the emulated interface (which links to a real interface
+. outside the emulator) is therefore
+
+.	128 receive buffers of 1024 words each
+. plus	128 transmit buffers of 1024 words each
+
+
+. Notes. Note 1
+
+. To avoid accidental damage, device banks (as distinct from system memory
+. banks) may only be based by interrupt code. This avoids inadvertant
+. traversal of array accesses across all the devices. At its simplest,
+. the internal interrupts (system calls II 64+32 .. II 64+63) only need
+. to copy the bank handle from user-A register, base it, and return:
+
+.		la	A
+.		sabr	32
+.		ir	0
+
+		.
+		.
+
+.		la	A
+.		sabr	63
+.		ir	0
+
+. but as much extra security can be added to that as wished in more complex OS
+
+. Once the storage area is based, the application can access it at will.
+. If this is not wished, the interrupt code itself must carry out required
+. operations and unbase the storage area before return. The simplest model
+. here relies on trusted applications which base the sensitive banks
+. by design and not by accident
+
+. This also provides the beginning of a security model for any implementation
+. which includes the translatable storage handle
+
+. Where a handle 0xxx xxxx xxxx xxxx xxxx is absolute whether it points
+. to system memory or a device
+
+. 1xxx xxxx xxxx xxxx xxxx is reserved for a possible translating range of
+. storage area handles, for moveable/swappable application storage.
+. A hardware implementation which does translatable handles would reserve
+. the basing of all absolute areas (device and system memory) to privileged
+. code of some sort, perhaps system calls as in this initial model
+
+. applications could then only directly base an allowed set of areas described
+. in their translate lists.
+
+
+
+. Note 2
+
+. the interface handler here will offer each frame to the protocol family
+. (mostly IPv4 or similar), which must decide immediately whether to take
+. the frame and place it in storage visible to the application.
+
+. This means IP will check IP correctness, and call ICMP, UDP or TCP which
+. must checksum as necessary while copying the datagram to socket storage.
+
+. This is not a flat-address system and there is no zero-copy
+. receive. But there is only one copy, and it is carried out during checksum
+. generation. After that the datagrams are in socket-associated buffers which
+. are placed in the address space of the application.
+
+. The socket or XDR interface will format the data when the application
+. subsequently receives it over the socket API.
+
+. on return from the call to the protocol family, the interface buffer is
+. freed
+
+
+
+RX_LL_HL $equ	d$save
+
+
+
+$(1)
+
+.	pointer array to the network interface descriptors
+.	these are numbered starting from one as in MIB-II
+.	interfaces table
+
+.	word zero of this table is a count of the number of
+.	interface descriptors in use
+
+.	the initial value 1 indicates that there is one
+.	interface so far, interface(1) = internal loopback,
+.	and the next to be configured ought to be interface(2)
+
+.	to obtain a descriptor for a new interface, increment
+.	the counter in the first word of the array and select
+.	the pointer at
+
+.	i_f_pointer_array[i_f_pointer_array[0]]
+
+.	for example
+.
+.		lx		i_f_pointer_array
+.		ax, xi		1
+.		sx		i_f_pointer_array
+.		lx		0, x
+
+
+i_f_pointer_array	. who wants to go multiplying subscripts?
+	+	1
+?	$do	INTERFACES,	+	interface(?)
+
+
+?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback	;
+						net_address(2),2040,firewall_relay, jv_ift1_rxtx, jv_ift1_writeq,,,,, 00:12:01c:00:00:5
+
+$(66::,x)
+this_if	i_f
+
+. $(67::,y)
+. this_frame enet_type1
+
+. $(67::,y)
+. tagged_frame tagged_voidll 
+
+$(0)
+locate_interfaces
+	lr, xi	interface(INTERFACES)
+	ly, xi	2
+	lx, xi	interface(2)		. interface(1) is software loopback
+	lk	(I_F_16BIT_FLAGS:s)
+
+locate_interfaces_again
+	inA	128, y
+	mta	k
+	j	locate_interfaces_next_device
+	j	start_ift1
+
+locate_interfaces_include
+	inc	i_f_pointer_array
+	jxge	thats_enough_interfaces
+	ax, xi	interface(2)-interface(1)
+
+locate_interfaces_next_device
+	ay, xi	1
+	la	y
+	aa, xi	-64
+	jnc	locate_interfaces_again
+
+thats_enough_interfaces
+	push	i_f_pointer_array
+	pop	ifNumber:i
+	lret	0
+
+
+frames	lx, xi	interface(2)
+test_if	tz	this_if:flags
+	j	traffic
+	lret	0
+traffic	tz	this_if:rxtx_interface
+	call	this_if:rxtx_interface
+
+	ax, xi	interface(2)-interface(1)
+	j	test_if
+
+frame_to_protocol
+
+	lb	this_if:id
+	sb	I_F_IDX
+
+	anu, xi	IP
+	jzb	ipv4_rx
+	anu, xi	ARP
+	jzb	arp_rx
+
+	MIB_ICOUNT48	this_if:inoproto
+
+	lret	0

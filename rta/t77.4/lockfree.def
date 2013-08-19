@@ -1,0 +1,141 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+NETMASK_ABSOLUTE	$equ	MAX_INT_MASK
+
+CHECK_TS_CELL* $proc	. check developer remembered
+			. to give an argument, and 
+			. that it seems to be a
+			. writable storage address
+
+			. the address range is only
+			. checked if neither indexing
+			. nor indirection applies,
+			. otherwise the effective
+			. address is not predictable
+			. at assembly time
+
+			. only an assembly time check
+			. for any very obvious mistake
+
+			. there is no range check at
+			. runtime
+
+	$do		p(1, *1),	$return
+	$do		p(1, 2)^=0,	$return
+	$if		p(1, 1)<4096
+	$if		p(1, 1)<256
+	$flag		test and set cell is a register
+	$else
+	$note		test and set cell is in ;
+			instruction + constant space
+	$endif
+	$endif
+	$end
+
+LOCK*	$proc		. prevent all interrupts
+			. while in possession of
+			. the resource,
+
+			. by switching the active
+			. interrupt mask with the
+			. maximum mask on the
+			. stack top
+
+			. instruction SIM exchanges
+			. the active network mask
+			. PSR bits 22:16
+			. with a storage operand,
+			. here a word at the
+			. internal stack top
+
+			. then lock the resource
+			. with TS instruction
+
+	push, xi	NETMASK_ABSOLUTE
+	sim		0, sp
+	ts		LOCK(1)
+	j		$-1
+	CHECK_TS_CELL	LOCK(1)
+	$end
+
+FREE*	$proc		. finally free the resource
+			. and allow interrupts at
+			. the former level
+
+			. THE STACK STATE MUST BE
+			. EXACTLY AS SET BY LOCK
+
+			. restore the stack state
+
+	z		FREE(1)
+	sim		0, sp
+	inc		sp
+	CHECK_TS_CELL	FREE(1)
+	$end
+
+OPEN*	$proc		. momentarily free the resource
+			. and allow interrupts at the
+			. former level
+
+			. THE STACK STATE MUST BE
+			. EXACTLY AS SET BY LOCK
+
+	z		OPEN(1)
+	sim		0, sp
+	CHECK_TS_CELL	OPEN(1)
+	$end
+
+SHUT*	$proc		. take the resource back after
+			. momentarily reliquishing
+
+			. THE STACK STATE MUST BE
+			. EXACTLY AS SET BY LOCK
+
+	sim		0, sp
+	ts		SHUT(1)
+	j		$-1
+	CHECK_TS_CELL	SHUT(1)
+	$end
+

@@ -1,0 +1,435 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$include	../lib/lib.def
+LIBRARY	$set		LIBRARY_XDR
+
+FPSERVER_PORT	$equ	4608
+FPSERVER_PORT2	$equ	4609
+CALIBRATE_PORT	$equ	4610
+AGENT1_PORT	$equ	4611
+
+
+$(0::A_PROTOS_BANK1)
+telnet		$vector	telnet_i
+http_server	$vector	http_serve
+
+mib_get*	$vector	mib_read
+mib_getnext*	$vector	mib_walk
+mib_set*	$vector	mib_write
+mib_start*	$vector	mib_initial
+mib_line*	$vector	mib_wline
+agent1*		$vector	agent_1
+agent2*		$vector	agent_2
+mib2ticks*	$vector	mib2tick
+
+udp_agent1*	$vector	udpagent_net
+udp_agent2*	$vector	udpagent_port
+
+if_agentidx	$vector	ifagent_idx
+if_agentdescr	$vector	ifagent_descr
+if_agenttype	$vector	ifagent_type
+if_agentMTU	$vector	ifagent_MTU
+if_agentspeed	$vector	ifagent_speed
+if_agentphy	$vector	ifagent_phy
+if_agentadmins	$vector	ifagent_admins
+if_agentosta	$vector	ifagent_osta
+if_agentlastc	$vector	ifagent_lastc
+if_agentibytes	$vector	ifagent_ibytes
+if_agentiucast	$vector	ifagent_iucast
+if_agentimcast	$vector	ifagent_imcast
+if_agentidrops	$vector	ifagent_idrops
+if_agentierrs	$vector	ifagent_ierrs
+if_agentinoproto $vector ifagent_inoproto
+if_agentobytes	$vector	ifagent_obytes
+if_agentoucast	$vector	ifagent_oucast
+if_agentomcast	$vector	ifagent_omcast
+if_agentodrops	$vector	ifagent_odrops
+if_agentoerrs	$vector	ifagent_oerrs
+if_agentoqlen	$vector	ifagent_oqlen
+if_agentsmib	$vector	ifagent_smib
+
+tcp_agent_add	$vector	tcpagent_add
+tcp_agent_free	$vector	tcpagent_free
+tcp_agent_state	$vector	tcpagent_state
+tcp_agent_neta	$vector	tcpagent_neta
+tcp_agent_port	$vector	tcpagent_port
+tcp_agent_remote_neta $vector tcpagent_neta_remote
+tcp_agent_remote_port $vector tcpagent_port_remote
+
+	$do	$>61,	flag	jump pad overfull A_PROTOS_BANK1
+	$do	61-$,	fret	0
+calibration	$vector	calibrate
+fp_server	$vector	fp_server1
+fp_serverB	$vector	fp_server2
+
+$(1)
+socket1	+	0
+fp_bound -	1
+portcb_lva	$res 1
+portcb		$res 1
+
+$(0)
+fp_server1	$head_far	scalars(response_axw,	int	;		
+					operator,	int	;
+					left,		float	;
+					right,		float)
+
+	tz	socket1
+	j	fp_rx
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socket1
+	jna	fp_error
+	lb, xi	FPSERVER_PORT
+	sb	7
+	z	6
+	call	(bind)
+	sa	fp_bound
+	jna	fp_error
+
+	dl	10
+	ds	portcb_lva
+
+fp_rx	tp	fp_bound
+	j	fp_error
+
+	dl	portcb_lva
+	sabr	BSOCKET
+
+fp_rx1	lb	s:socket_inq.head, b
+	jzb	fp_no_traffic
+	la	descriptor:bytes, b
+	sa	BYTES
+
+	z	RDATAC
+
+	push	descriptor:apdata, b
+	pop	q
+
+	la, xi	21+7+1+2+1
+	call	(udp_rtxbuffer)
+	jza	fp_release
+
+	ly	descriptor:apdata, a
+	sa	response_axw
+	sy	p
+	z	WDATAC
+	z	WDATA
+
+	call	(floating_scan)
+	qs	left
+
+	call	(symbol_scan)
+	sa	operator
+
+	call	(floating_scan)
+	qs	right
+
+	la	operator
+
+	anu, xi	'+'
+	jzb	fp_add
+	anu, xi	'-'
+	jzb	fp_add_negative
+	anu, xi	'*'
+	jzb	fp_multiply
+	anu, xi	'/'
+	jzb	fp_divide
+	j	fp_nop
+fp_add
+	ql	left
+	fa	right
+	j	fp_edit
+fp_add_negative
+	ql	left
+	fan	right
+	j	fp_edit
+fp_multiply
+	ql	left
+	fm	right
+	j	fp_edit
+fp_divide
+	ql	left
+	fd	right
+	j	fp_edit
+fp_nop
+fp_edit
+	z	BYTES
+	call	(floating_edit)
+
+	la	("":10:0:0)
+	wsr	24
+	
+	lx	response_axw
+	la	BYTES
+	la, i	1, a
+	sa	descriptor:bytes, x
+
+
+	call	(udp_acw_send)
+
+fp_release
+	lx	portcb			. port structure in scalar frame
+	call	(release_udgram)
+	lb	portcb			. port structure in scalar frame
+	j	fp_rx1
+fp_no_traffic
+fp_error
+
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+$(1)
+socket2	+	0
+s2bound	-	1
+s2lva	+	0
+port2cb	+	0
+
+$(0)
+fp_server2 $head_far	scalars(response2_axw,	int	;
+				request2_axw,	int	;
+				operator2, 	int	;
+				left2,		float	;
+				right2,		float)
+	tn	s2bound
+	j	traffic2?
+	la	socket2
+	jna	fps2_error
+	jnza	s2bind
+
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socket2
+	jna	fps2_error
+s2bind
+	lb, xi	FPSERVER_PORT2
+	sb	7
+	z	6
+	call	(bind)
+	sa	s2bound
+	jna	fps2_error
+
+	dl	10
+	ds	s2lva
+
+traffic2?
+	tp	s2bound
+	j	fps2_error
+	dl	s2lva
+	sabr	BSOCKET
+
+traffic2more?
+	lb	s:socket_inq:head, b
+	jzb	fps2_notraffic
+	sb	request2_axw
+	la, xi	8
+	call	(udp_rtxbuffer)
+	jza	traffic2_release
+	sa	response2_axw
+
+	ly	request2_axw	
+	ly	descriptor:apdata, y
+	la	0, y
+	sa	operator2
+	ly, i	2, y
+	call	(xdr16_ieee754_64_2float)
+	qs	left
+	call	(xdr16_ieee754_64_2float)
+	qs	right
+	la	operator2
+	lk, xi	-(1*/$byte)
+	mta	('+'*/$byte)
+	j	subtract2?
+	ql	left2
+	fa	right2
+	j	result2
+
+subtract2?
+	mta	('-'*/$byte)
+	j	multiply2?
+	ql	left2
+	fan	right2
+	j	result2
+
+multiply2?
+	mta	('*'*/$byte)
+	j	divide2?
+	ql	left2
+	fm	right2
+	j	result2
+
+divide2?
+	mta	('/'*/$byte)
+	j	forget2
+	ql	left2
+	fd	right2
+	j	result2
+
+forget2
+	ql	(-0.0)
+result2	
+	lx	response2_axw
+	ly	descriptor:apdata, x
+	call	(xdr16_float2_ieee754_64)
+	call	(udp_acw_send)	
+traffic2_release
+	lx	port2cb
+	call	(release_udgram)
+	lb	port2cb
+	j	traffic2more?
+
+fps2_error
+fps2_notraffic
+
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+$(1)
+calibrate_s	+	0
+calibrate_bound	-	1
+calibrate_slva	$res	1
+calibrate_cb	$res	1
+
+$(0)
+calibrate	$head_far	scalars(calibrate_request,	int	;
+					calibrate_response,	int)
+
+	dl	calibrate_s
+	jpb	calibrate?
+	jna	calibrate_e
+	jnza	calibrate_b
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	calibrate_s
+	jna	calibrate_e
+
+calibrate_b
+	lb, xi	CALIBRATE_PORT
+	sb	7
+	z	6
+	call	(bind)
+	sa	calibrate_bound
+	jna	calibrate_e
+	dl	10
+	ds	calibrate_slva
+calibrate?
+	dl	calibrate_slva
+	sabr	BSOCKET
+
+calibrate_more?
+	lb	s:socket_inq:head, b
+	jzb	calibrated
+	sb	calibrate_request
+
+	la, xi	8
+	call	(udp_rtxbuffer)
+	jza	calibrate_release
+	sa	calibrate_response
+
+	lb	calibrate_request
+	la	descriptor:bytes, b
+	sa	BYTES
+	la	descriptor:apdata, b
+	sa	q
+	z	RDATAC
+	call	(iscan_xdr)
+	j	calibrate_nowrite
+
+	la, xi	0
+	ii	DAYCLOCK$W
+calibrate_nowrite
+
+	lr	(10000000:s)
+	jdr	$
+
+	la	calibrate_response
+	push	descriptor:apdata, a
+	pop	p	
+	z	BYTES
+	z	WDATA
+	z	WDATAC
+	la	DAYCLOCK$
+	call	(xdr_integer_edit)
+	la	(10*/16)
+	wsr	8
+	wsr	16
+	la	BYTES
+	la, i	1, a
+	lx	calibrate_response
+	sa	descriptor:bytes, x
+	call	(udp_acw_send)
+
+calibrate_release
+	lx	calibrate_cb
+	call	(release_udgram)
+	lb	calibrate_cb
+	j	calibrate_more?
+
+calibrate_e
+calibrated
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+	$include telnet
+	$list	4
+	$include ../netapps2/http.msm
+	$path	../mib
+	$include mib-II
+	$include agent1
+	$include snmpv1
+	$include ber
+	$include sequo
+	$include mib2tick
+	$include udpagent
+	$include ifagent
+	$include tcpagent
+	$include loadplan
+
+$(0)
+	$do	$<256,$(0:256)
+	$do	$>4032,	$note	ap_bank1 nearly full

@@ -1,0 +1,125 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+COUNTED_STREAM $equ 1	. a field or message size limit
+			. in register BYTES is heeded
+
+			. BYTES can be progressively
+			. decremented in several scan
+			. primitive routine calls
+
+
+READ_STREAM_START* $proc
+	sa	q	. once per input buffer
+	z	RDATAC
+	$end
+
+
+READ_START* $proc	. once per input specification
+	$if	AQUIFORM_NET16
+	on	b$stream16r++b$streamZR
+	$else
+	on	b$streamZR
+	off	b$stream16r
+	$endif
+	$end		. it is up to the calling application
+			. to change b$stream16R back if it needs
+
+READ_BYTE* $proc *
+	la	BYTES
+	jza	already
+	dec	BYTES
+	rsr	$byte
+.	and, xi	+(1*/$byte)-1	.	b$streamZR does that
+already
+	sa	LAST_BYTE_READ
+	$end
+
+WRITE_START* $proc
+	$if	AQUIFORM_NET16
+	on	b$stream16w
+	$else
+	off	b$stream16w
+	$endif
+	$end
+
+WRITE_BYTE* $proc
+	sal	$word-$byte
+WRITE_UPPER_BYTE* $name
+	wsr	$byte
+	inc	BYTES
+	$end
+
+WRITE3_BYTES* $proc
+	$if	AQUIFORM_NET16
+	wsr	$byte*2
+	wsr	$byte
+	$else
+	wsr	24
+	$endif
+
+	push,xi	3
+	popA	BYTES
+	$end
+
+WRITE_BYTES*	$proc
+bits	$set	WRITE_BYTES(1, 1)*$byte
+	$if	AQUIFORM_NET16**(bits>16)
+	wsr	16
+	wsr	bits-16
+	$else
+	wsr	bits
+	$endif
+	push, xi bits/$byte
+	popA	BYTES
+	$end
+
+	
+
+HORIZONTAL_TAB $equ 9	. the code does not know this library
+			. is 8-bit ASCII
+			. only this wrapper knows that
+

@@ -1,0 +1,700 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+HEADER_WORDS	$set	d$save
+HEADER_LONGWORDS $set	d$save1
+TP_HEADER	$set	d$save2
+I_F_IDX		$set	d$save3
+
+$(71::,sp)
+dgram	datagram
+
+$(70::,fp)
+descriptor acw
+
+$(66::, x)
+ro	route
+
+$(1)
+
+route_list +	route_(5)
+route_free +	route_(6)
+route_(1)	route   0.0.0.0    0.0.0.0         192.168.1.1 2:RELAY_ROUTE 0
+route_(2)	route	127.0.0.0  255.0.0.0       127.0.0.1   1 route_(1)
+route_(3)	route	172.29.0.0 255.255.240.0   172.29.7.7  2 route_(2)
+route_(4)	route	172.29.7.7 255.255.255.255 127.0.0.1   1 route_(3)
+route_(5)	route	127.0.0.1  255.255.255.255 127.0.0.2   1 route_(4)
+?	$do	ROUTES-5,;
+route_(?+5)	route	0.0.0.0    0.0.0.0         0.0.0.0     0 route_(?+6)
+
+net_afree +	net_address(3)
+net_address(1)	netv4	127.0.0.1  255.0.0.0     127.255.255.255 1 0 net_address(2)
+net_address(2)	netv4	172.29.7.7 255.255.240.0 127.29.15.255   2 0 0
+?	$do	NET_ADDRESSES-2,;
+net_address(?+2) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
+
+$(0)
+
+ipv4
+	$if	0
+	lr	i_f_pointer_array	. process interface output queues
+	lx, xi	interface(1)
+	j	interface?
+interface!
+	la	this_if:type, x
+	jza	interfaces_last
+	anu, xi	SOFTWARELOOPBACK
+	jzb	txq_softwareloopback
+	anu, xi	FIREWALL_RELAY
+	jzb	txq_ift1_relay
+txq_next_interface
+	ax, xi	interface(2)-interface(1)
+interface?
+	jdr	interface!
+interfaces_last
+	$endif
+
+	lret	0
+
+construct_xdgram
+			. id is obtained
+			. the datagram is as first+final
+			. i.e without regard to the MTU
+			. and it might later get fragmented
+			. on transmission and / or get
+			. IP header options modified
+
+			. so it is not checksummed here
+
+			. in the case of dual-ported
+			. buffer interfaces, checksum
+			. happens as the IP headers
+			. are transferred from interface
+			. queues to device buffers
+
+			. the descriptor is in X
+			. and the datagram is in Y
+
+	dl	ipOutRequests:i
+	da	(1:d)
+	ds	ipOutRequests:i
+	andB	(00FFFF)
+	sb	dgram:id, y
+	lb	dgram:vers_ihl_tos, y
+	sbr	8-2
+	andB,xi	15*/2
+	ab	descriptor:bytes, x
+	la	dgram:flags_fragment, y
+	and, xi	IP_DNF
+	sa	dgram:flags_fragment, y
+	z	dgram:checksum, y
+	lret	0
+
+ip_routadvance			. temporary change to IP task B1
+				. goes here
+
+	la, xi	VECTOR_B1(1)
+	ii	KERNEL$B1
+
+.	push	a		. no longer a stack operation
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+				. the target network address is in 6:7
+
+				. this is called if udp sendto does not
+				. have a from-address available, which
+				. would prevent checksum
+	lcal	ip_route
+				. the from-address is the default local
+				. address of the interface of the route
+
+
+.	pop	a		. no longer a stack operation
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+	ii	B1$		. return to the caller's B1
+				. it's the same B1 if the caller was
+				. a protocol inline to the IP task
+
+				. otherwise return to the B1 of
+				. the separate application task
+
+	lret	0
+
+
+ip_route
+	lx	route_list
+ip_next_route
+	dl	ro:mask
+	and	6
+	andB	7
+	dan	ro:net
+	jdz	ip_route_x
+	lx	ro:next
+	tz	x
+	j	ip_next_route
+	lx, xi	route_(ROUTES)	. this should not happen
+ip_route_x
+	lret	0
+
+.	ip_send is a far call to allow a raw socket interface
+
+
+ip_send				. destination is already in 6:7
+
+				. temporary change to IP task B1
+				. goes here
+
+	la, xi	VECTOR_B1(1)
+	ii	KERNEL$B1
+.	push	a		. no longer a stack operation
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+	lcal	construct_xdgram
+
+	sx	8		. the descriptor
+	ds	10		. IP_DNF:datagramreassembledlength
+
+	lcal	ip_route
+				. on the emulated machine routing picks
+				. an emulated interface
+				. but does not really choose the
+				. the next hop. It is always as if
+				. the route were direct
+
+	lr	ro:i_f
+
+	dl	6		. direct route = next_hop is destination
+	tp	r
+	dl	ro:next_hop	. indirect route = gateway from route table
+
+
+
+	ly	8		. the descriptor
+	lx	descriptor:frame, y
+				. route table not now visible
+
+	ds	0, x		. presumably that's used later
+				. when we need to do ARP
+				. network address of next hop
+
+	la	r		. the interface #
+	and, xi	32767
+	aa, xi	i_f_pointer_array
+
+	lx	0, a		. the interface pointer address
+
+	dl	10		. DNF flag, length
+	jza	ip_send_now
+
+	lb	this_if:mtu
+	andB	(07FFFFF)	. compare without the retain flag
+	ana	b
+
+	la	8		. the descriptor
+	jc	ip_send_now1
+
+	lcal	net_free
+	lb, xi	-3
+	j	ip_send_x
+
+ip_send_now
+	la	8		. the descriptor
+ip_send_now1
+	call	this_if:tx_protocol
+
+	lb	11
+
+ip_send_x
+.	pop	a		. return to the caller's B1
+.				. no longer a stack operation
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+
+	ii	B1$		. if the caller is a protocol in this task,
+	fret	0		. the IP task, it's the same B1
+				. otherwise it isn't
+
+
+.	ipv4_rx, input driver for a system with fixed dual ported
+.	interface buffers
+
+.	this is an upward call from routine frames
+
+.	copying to socket-visible buffers is combined with
+.	checksumming
+
+.	each word in the interface buffers is read only once
+
+.	ipv4_rx pushes and checks the IP headers in the
+.	internal stack, which is a register array
+
+.	upper protocols obtain a buffer, then pop the IP headers
+.	into it ahead of their own protocol message for
+.	checksumming during transfer
+
+
+ipv4_rx	lx	sp	
+	sx	ONE_TIME_SAVE1
+
+	MIB_ICOUNT48	ipInReceives:i
+	
+	dpush	0, y		. 2 header words to internal
+				. stack
+
+	la	r
+	ana	dgram:bytes	. is the frame long enough
+	jnc	ipv4_rxz	. for the datagram?
+
+	la	dgram:vers_ihl_tos
+	dsr	12		. is it marked IPv4?
+	aa, xi	-4
+	jnza	ipv4_rxz
+
+	sbr	20		. how many option longwords?
+	sb	HEADER_LONGWORDS
+	ab, xi	-5		. less than zero is not good
+	jnc	ipv4_rxz
+
+	lr	b		. count of option longwords
+
+	sbl	1		. count of option words
+
+	lx	b
+	ax, i	10, y		. x -> 1st location after
+				. IP header
+
+	sx	TP_HEADER
+	sb	HEADER_WORDS
+
+	pop	a
+	pop	b
+
+	ds	6		. save a copy of the first two words
+
+	j	option_longword?
+option_longword!
+	ax, xi	-2		. option longwords ->internal stack
+	dpush	0, x
+	da	0, sp
+option_longword?
+	jdr	option_longword!
+
+	qpush	dgram:ipsource, y
+	qpush	dgram:id, y	. then the 10 known header words
+
+	dpush	6		. the original two first words
+
+	da	dgram:id
+	aa	dgram:ttl_protocol
+	da	dgram:ipsource
+	da	dgram:ipdest
+
+ipv4_rxsum
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	ipv4_rxsum
+
+	la	b
+	xor	(00FFFF)
+
+	ana	dgram:checksum
+	jnza	ipv4_rxz
+
+			. at this point we should decide
+			.	is it for us?
+			.	if not do we drop or forward?
+			.	ipForwarding in MIB-II
+
+			. not an issue for the emulated machine
+			. with feed from the firewall
+
+	la	dgram:bytes
+	aa, xi	1
+	sar	1
+
+	lx	rx_buffers
+	lcal	buy1
+
+	jza	ipv4_rxz
+
+	sa	fp	. we haven't used that one yet
+
+	lb	dgram:bytes
+	la	HEADER_LONGWORDS
+	sal	2
+	anb	a
+	sb	6	. byte count for upper protocol
+			. checksum
+
+	sb	descriptor:bytes
+
+	la	I_F_IDX
+	ds	descriptor:i_f	. interface index
+				. and tp byte count
+
+	lx	descriptor:frame	. this will be different with any DMA
+	sx	descriptor:dgram	. because then a MAC header is
+					. in the buffer
+					. and there is zero-copy
+
+			. therefore acw has frame and datagram pointers
+
+			. here we have a dual-ported interface
+			. and we copy the datagram out of it
+			. while checksumming if desired
+
+			. but we do not copy the MAC header
+			. although we could 
+	
+	la	dgram:ttl_protocol
+	and, xi	255
+	sa	7	. 6:7 contain the pair protocol:msize
+			. as used in all protocols for checksum
+
+	la	dgram:flags_fragment
+	and, xi	IP_MORE++IP_OFFSET_MASK
+	sa	8
+
+	dl	dgram:ipsource
+	da	dgram:ipdest
+	da	6
+	sa	6
+	la	7
+	sb	7	. upper protocol checksum is now begun
+			. in 6:7
+
+	pop	dgram:vers_ihl_tos, x
+	pop	dgram:bytes, x
+	qpop	dgram:id, x
+	qpop	dgram:ipsource, x
+
+	lr	HEADER_WORDS
+	j	option_word?
+option_word!
+	pop	10, x
+	lx, i	1, x
+option_word?
+	jdr	option_word!
+
+	lx, i	10, x
+	sx	descriptor:uproto
+
+			. at this point we need to re-use
+			. the earlier decision
+
+			.	is this for forwarding?
+			.	if so queue it outwards
+
+			. then we should decide
+
+			.	is this a fragment?
+
+			. neither forwarding nor fraction is
+			. is an issue for the
+			. emulated machine because the
+			. firewall divert has done all that
+
+			. in case UDP-without-checksum, and
+			. in case forwarding, the preliminary 
+			. checksumming for upper protocol
+			. is thrown away, but it only cost
+			. about 5 instructions
+
+			. in case fragment, the preliminary
+			. checksumming of the first fraction
+			. could be cached. The payload length
+			. component of each subsequent fraction
+			. then needs adding
+
+	tz	8
+	j	ipv4_fragment
+
+	anu, xi	IPPROTO_UDP
+	jzb	udp_rx
+
+	anu, xi	IPPROTO_TCP
+	jzb	tcp4_rx
+
+	anu, xi	IPPROTO_ICMP
+	jzb	icmp_rx
+
+
+	j	icmp_noproto
+
+ipv4_fragment
+	anu, xi	IPPROTO_UDP
+	jzb	ipv4_link_fragment
+	anu, xi	IPPROTO_TCP
+	jzb	ipv4_link_fragment
+	anu, xi	IPPROTO_ICMP
+	jzb	ipv4_link_fragment
+	la	8
+	and, xi	IP_OFFSET_MASK
+	jza	icmp_noproto
+	j	ipv4_drop	. this jump does something as soon
+ipv4_link_fragment		. as link_fragment does something
+ipv4_drop
+	la	fp
+	lx	rx_buffers
+	lcal	sell1
+
+			. this was acquired to simplify the
+			. task for the upper protocol
+			. but we can give it back now:
+			. the protocol requested is not
+			. on offer
+
+. the upper protocol receive routines can jump here to finish
+. but they need not.
+
+. they do need to restore K and SP in the same way as this
+
+ipv4_rxz
+	lx	ONE_TIME_SAVE1
+	sx	sp
+	lret	0
+
+TX_TRANSFER_DESCRIPTOR	$equ	d$save
+MTU			$equ	d$save1
+
+IP_DATAGRAM_DEVICEB	$equ	6
+IP_PAYLOAD_TRANSFER	$equ	7
+IP_HEADER_LENGTH	$equ	7
+
+TX_BYTES_POINTER	$equ	8
+TX_BYTES		$equ	8
+TX_POINTER		$equ	9
+TX_DATAGRAML		$equ	10
+
+ipv4_transcribe_tx
+	sy	TX_TRANSFER_DESCRIPTOR
+
+			. write datagram to dual ported transmit buffer
+			. device architecture independent
+			. target buffer contiguous for max fragment
+			. options have already been presented
+			. on buffer request
+			. target pointer is X
+			. mtu is in MTU
+			. outstanding payload bytes in [POINTER_]BYTES
+			. return after each fragment
+			. caller then checks for new device buffer
+			. rewrite payload read_pointer because next call
+			. to write more fragments may not be now
+
+	la	descriptor:bytes, y
+	ly	descriptor:dgram, y
+			. descriptor:bytes = IP payload only
+	dpush	dgram:id, y
+
+	lb	1, sp
+	andB,xi	IP_OFFSET_MASK
+	sbl	3	. convert to a byte pointer
+
+	and	(07FFFFF) . strip retain flag from payload length
+	ana	b	. subtract the part already sent from the
+			. total unfragmented payload
+
+	ds	TX_BYTES_POINTER
+
+	la	dgram:vers_ihl_tos, y
+	sa	6
+
+	sar	8
+	and,xi	15
+	sa	b
+	sbl	2
+	sb	IP_HEADER_LENGTH
+
+	aa, xi	-5
+	lr	a
+
+	lb	MTU
+	anb	IP_HEADER_LENGTH
+
+	la	TX_BYTES
+
+	anb	a
+	jc	ipv4_transcribe_tx_transfer	. you can send
+						. all of it
+
+	la	MTU
+	ana	IP_HEADER_LENGTH
+	and, xi	-8				. you can send
+						. this much payload
+
+	
+
+	lb	TX_POINTER			. the header on the		
+	ab	a				. next transmission
+	sbr	3				. after this one
+	sb	dgram:flags_fragment, y
+	
+
+
+
+	lb	1, sp				. flags_fragment word
+	orB, xi	IP_MORE				. on this transmission
+	sb	1, sp
+
+ipv4_transcribe_tx_transfer
+	lb	IP_HEADER_LENGTH
+	sa	IP_PAYLOAD_TRANSFER
+	ab	a
+	sb	TX_DATAGRAML
+	la	6
+
+	ds	dgram:vers_ihl_tos, x
+	da	0, sp
+	pop	dgram:id, x
+	pop	dgram:flags_fragment, x
+
+	push	dgram:ttl_protocol, y
+	aa	0, sp
+	pop	dgram:ttl_protocol, x
+
+	qpush	dgram:ipsource, y
+	da	0, sp
+	da	2, sp
+	qpop	dgram:ipsource, x
+
+	sx	IP_DATAGRAM_DEVICEB
+	ax, xi	10
+	j	ipv4_transcribe_tx_option?
+
+ipv4_transcribe_tx_option!
+	dpush	10, y
+	da	0, sp
+	pop	0, x
+	pop	1, x
+	ax, xi	2
+	ay, xi	2
+ipv4_transcribe_tx_option?
+	jdr	ipv4_transcribe_tx_option!
+
+ipv4_transcribe_tx_checksum
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	ipv4_transcribe_tx_checksum
+
+	la	(00FFFF)
+	xor	b
+	lb	IP_DATAGRAM_DEVICEB
+	sa	dgram:checksum, b
+
+	ly	TX_TRANSFER_DESCRIPTOR
+	ly	descriptor:uproto, y
+	la	TX_POINTER
+	sar	1		. offset in words
+	ay	a
+	la	IP_PAYLOAD_TRANSFER
+	
+	lcal	tx_nocheck
+
+	dl	TX_BYTES_POINTER
+	ana	IP_PAYLOAD_TRANSFER
+	ab	IP_PAYLOAD_TRANSFER
+
+	ly	TX_TRANSFER_DESCRIPTOR
+
+	lret	0
+
+ip_buy_datagram
+	push	b
+	sbr	7	. version / header L / TOS word
+	andB,xi	30	. number of words in header
+	lr	b	. length of IP header in words
+	aa, xi	5	. routing buffer + rounding
+	sar	1	. number of words in IP payload
+			. + routing header
+	aa	b	. number of words in buffer
+	lx	tx_buffers
+	lcal	buy1
+	pop	b
+	jza	ip_no_txbuffer
+
+	lx	descriptor:frame, a
+	z	0, x	. routing buffer
+	z	1, x
+	ax, xi	2
+	sx	descriptor:dgram, a
+	sx	TX_DATAGRAM
+	sb	dgram:vers_ihl_tos, x
+	z	dgram:flags_fragment, x
+	z	dgram:ipsource, x
+	z	dgram:ipsource+1, x
+	z	dgram:ipdest, x
+	z	dgram:ipdest+1, x
+
+	z	descriptor:i_f, a
+
+	ax	r	. length of IP header in words
+	sx	descriptor:uproto, a
+	sx	TP_HEADER
+ip_no_txbuffer
+	lret	0
+	

@@ -1,0 +1,267 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+$(67::,y)
+fsys	$filetag
+
+
+$(1:*1/$1)
+
+f_s_pointer_array		+	1
+?	$do	63,f_s(?)	+	0400001
+
+
+$(0::FS24_BANK)
+fs_1st*	$vector		fs_first
+fs_read* $vector	fs_next
+fs_find* $vector	fs_search
+fs_dsearch* $vector	fs_directory_search
+fs_xbase* $vector	fs_base_extent_advance
+
+
+	$do	64-$,	fret	0
+
+fs_first
+	ii	KERNEL$B1_1
+	la	f_s_pointer_array+1
+	ii	B1$
+
+	lb	(B_FS1*/18:s)
+fs_next	jdz	fs_first
+	ii	XBASE$(32)
+	push	1, b, i		. add the length field + 1 to b
+	lb	0, b
+	andB,xi	255
+	popA	b
+	fret	0
+
+fs_directory_search		. down one level
+	ii	XBASE$(32)
+	push	r		. # words in the search argument
+	push	x		. you just might like that saved
+	push	y		. search argument i.e. name
+	push	a		. bank of owning directory
+	la	0, b		. record format word
+	lk	(255*/16:s)
+	mta	('D'*/16)
+	j	fs_wrong_type
+	j	fs_forward
+
+fs_wrong_type
+	lb, xi	-2
+	j	fs_nogo
+
+fs_search			. search from somewhere
+	call	(fs_read)	. or from device start
+	push	r		. # words in the save argument
+	push	x		. you just might like that saved
+	push	y		. search argument i.e. name
+	push	a		. bank of this directory
+	lk	(0FF0000:s)
+
+fs_search1
+	la	fsys:e:rfw, b
+	mtane	('F'*/16)
+	j	fs_entity_file
+	mtane	('D'*/16)
+	j	fs_entity_directory
+.	mtane	('L'*/16)
+.	j	fs_entity_directory
+	mtane	('@'*/16)
+	j	fs_forward	. this won't quite be right
+	mtane	('V'*/16)
+	j	fs_entity_directory
+	mtane	(0)
+	j	fs_nohit	
+	mtane	('Z'*/16)
+	j	fs_nohit
+
+	and, xi	255
+	ab	1, a, i			. add the length field + 1 to b
+	j	fs_search1
+
+fs_entity_directory			. you can search for entities which
+					. which have a name. The name is at
+	lx, i	DIRECTORY_NAME_OFFSET$, b
+	j	fs_entity		. different offsets in the descriptor
+					. between files / directories
+					. the offsets  will grow / diminish
+					. independently from each other
+fs_entity_file				. with development
+
+	lx, i	DATAFILE_NAME_OFFSET$, b
+
+fs_entity
+	and, xi	255			. count of words after format word
+	aa, i	1, b			. calculate next record address
+	lr	a
+					. name length is next entry address
+	ana	x			. minus name field address
+	ana	3, sp			. if the length is different
+	jnza	fs_search_again		. then it aint the same label
+
+	ly	1, sp			. search argument address
+
+fs_testw
+	la	0, x
+	xor	0, y
+
+	jnza	fs_search_again
+	ax, xi	1
+	ay, xi	1
+	jxge	fs_found
+	j	fs_testw
+
+fs_forward
+	la	0, sp
+	and	(0400000++63)
+	sa	0, sp
+	dl	fsys:e:granule, b
+	dsl	12
+	and	(FS24$_BANK_HIGH_INDEX)
+
+	orB, xi	10*/6++B_FS1		. skip the 1st 10 words
+	rbr	6			. they are the links . ..
+					. if links are turned on
+					. this will misdirect you
+	sal	6
+	or	0, sp
+	sa	0, sp
+	ii	XBASE$(B_FS1)
+	j	fs_search1
+
+fs_search_again
+	lb	r
+	j	fs_search1
+
+fs_nohit
+	lb, xi	-1
+fs_nogo
+	z	0, sp
+
+fs_found
+	pop	a
+	pop	y
+	pop	x
+	pop	r
+	fret	0
+
+fs_base_extent_advance
+	push	x			. you might like x saved
+	push	a			. we might like a saved
+	ii	XBASE$(B_FS1)
+	la	0, b
+	lk	(0FF0000:s)
+	mtane	('F'*/16)
+	j	fs_extent
+	mtane	('X'*/16)
+	j	fs_extent
+
+	z	0, sp
+	lb, xi	-2			. = wrong entity type
+	j	fs_extent_x		. for this operation
+
+fs_extent
+	la	fsys:e:granules, b
+	sal	6
+	lr	a
+	la	0, sp
+	and	(0400000++63)		. mask device bits on
+	sa	0, sp
+	lx	b
+	dl	fsys:e:granule, b
+
+	dsl	12
+	orB, xi	B_FS1
+	rbr	6
+	ly	b
+
+	and	(FS24$_BANK_HIGH_INDEX)
+	sal	6
+
+	or	0, sp
+	push	fsys:e:next_offset, x
+	push	fsys:e:next, x
+	lb	fsys:e:next+1, x
+	ii	XBASE$(B_FS1)		. file data bank based
+					. now construct the next extent
+	pop	a			. next extent descriptor
+					. 48-bit granule #
+
+	dsl	6			. shift the long granule # left
+	ab	0, sp			. catenate the word offset
+					. by means of a biased add
+	sc	0, sp			. 
+	popA	a			. in case granule:offset were not
+					. normalised as they should be
+	jdz	fs_eofnext
+
+	dsl	6			.
+
+	and	(FS24$_BANK_HIGH_INDEX)
+
+	orB, xi	B_FS1			. construct the pointer in b
+	rbr	6
+
+	sal	6
+	or	0, sp			. construct the next extent
+fs_eofnext
+	sa	0, sp			. descriptor bank index
+					. but do not base it
+
+.	the bank containing the data extent is based
+.	the address of the extent data is in index register y
+.	the extent count in words is in r
+
+.	the long virtual address of the next extent
+.	descriptor is in a:b and is not based
+.	yew store it for the next call
+	
+fs_extent_x
+	pop	a
+	pop	x
+	fret	0
+
+	$do	$<256,$(0:256)

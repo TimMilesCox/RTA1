@@ -1,0 +1,377 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+$(66::,x)
+pool	mpool
+
+$(67::,y)
+queue	dq
+
+	$if	HVBANK
+$(67::,y)
+hvqueue	hvdq
+	$endif
+
+$(0)
+init_pool
+	aa	x		. top of pool
+	aa, xi	-ACW_SIZE*2	. minus 2 descriptors
+	sa	pool:next	. first assignable descriptor
+	sx	descriptor:frame+ACW_SIZE, a
+				. buffer in fixed top descriptor
+
+	lb, i	+(2+NET_FREECHAINS)//NET_GRANULE*NET_GRANULE, x
+	sb	descriptor:frame, a
+				. first assignable address in
+				. first assignable descriptor
+
+	dsr	48
+	ds	6
+
+?	$do	NET_FREECHAINS//4,	qs	pool:free(?*4-3)
+	z	pool:lock_cell
+	lret	0
+
+buy1	aa, xi	-1
+	jc	buy1_soon
+
+buy1_never		. requested size is out of range
+	la, xi	0	. result = no descriptor
+	lret	0
+buy1_soon
+	sar	NET_LOG
+	anu,xi	NET_FREECHAINS
+	jc	buy1_never
+
+	LOCK	pool:lock_cell
+
+	lb, i	1, a	. b = # granules
+	aa, i	pool:free(1)
+	ly	a
+	la	0, y	. free chain head
+	jza	buy1_new
+	lb	0, a	. second in chain
+	sb	0, y	. -> chain head
+
+	FREE	pool:lock_cell
+	lret	0
+
+buy1_new
+	la	pool:next
+	sbl	NET_LOG
+	ab	descriptor:frame, a
+				. new next buffer
+	aa, xi	-ACW_SIZE	. new next descriptor
+
+	ly	b
+	anu	b		. descriptor < buffer
+	jc	buy1_new_now	. if so unavailable
+
+	FREE	pool:lock_cell
+	la, xi	0		. result = no descriptor
+	lret	0
+
+buy1_new_now
+	sa	pool:next
+	sy	descriptor:frame, a
+	FREE	pool:lock_cell
+	la, i	ACW_SIZE, a
+	lret	0
+
+
+sell1	LOCK	pool:lock_cell
+
+	ly	pool:next	. is the candidate the
+	anu, i	ACW_SIZE, y	. desciptor above next
+	jnzb	sell1_list	. new?
+
+sell1_more			. yes, grow the heap
+	sa	pool:next	. replace next-new
+
+sell1_summit
+	lb	descriptor:frame, a
+				. buffer size of
+	anb	descriptor:frame+ACW_SIZE, a
+				. next buffer down
+				. <- next descriptor up
+
+	sbr	NET_LOG
+
+	ab, i	pool:free(1)-1	. free chain for size
+	la, i	ACW_SIZE, a	. next descriptor up
+	lr	b
+
+.	now keep looking to see if the new heap top
+.	buffer is on its free chain. If it is, it
+.	is the one at the far end, because the
+.	highest-positioned buffers are the last
+.	choice for re-use
+
+.	the stack of descriptors grows down towards
+.	the heap of buffers which grows up
+
+.	the stack of descriptors packs back up
+.	away from the heap of buffers which
+.	packs down
+
+
+
+sell1_free?			. move on chain
+	ly	r		. until next has a
+	lr	0, y		. lower address
+	
+
+	anu	r
+	jnc	sell1_free?	. keep on towards
+				. the stack top
+
+	jnzb	sell1_z		. not in the free 
+				. chain so stop now
+
+				. equal so take it
+	lb	0, a		. from the chain
+	sb	0, y		. and pack the heap
+
+	sa	pool:next	. this may change
+
+	OPEN	pool:lock_cell
+				. this is a window where
+				. this CPU may accept an
+				. interrupt and other
+				. CPUs may take the
+				. buffer pool
+
+	SHUT	pool:lock_cell
+
+	la	pool:next	. this may have changed
+
+	j	sell1_summit
+
+
+sell1_list			. it wasn't the one at
+				. the heap top
+
+	ly	a		. find free chain
+	ay, xi	-ACW_SIZE	. per buffer size
+	lb	descriptor:frame, y
+	anb	descriptor:frame, a
+
+	sbr	NET_LOG
+	ab, i	pool:free(1)-1
+	lr	b
+
+
+sell1_list?
+	ly	r
+	lr	0, y
+	
+	anu	r
+
+	jnc	sell1_list?	. keep moving towards
+				. the stack top
+
+	jzb	sell1_z		. equal, it's already free
+
+	sr	0, a		. chain it in
+	sa	0, y
+
+sell1_z	FREE	pool:lock_cell
+	lret	0
+	
+
+q2first?
+	tz	queue:head
+	j	q2z
+	sa	queue:head
+	sa	queue:tail
+	z	0, a
+	lret	1		. indicate this is a write
+				. to a previously empty q
+				. by skipping an instruction
+				. on return
+
+q2	tz	queue:head
+	j	q2z
+	sa	queue:head
+	sa	queue:tail
+	z	0, a
+	lret	0
+q2z	lb	queue:tail
+	sa	0, b
+	sa	queue:tail
+	z	0, a
+	lret	0	
+
+readq	la	queue:head
+	jza	readqz
+	lb	0, a
+	sb	queue:head
+readqz	lret	0
+
+        $if      QSIMULTANEOUS
+
+.	these use the i_f index word as a next pointer
+.	instead of the next pointer at the front of the
+.	descriptor
+
+.	this is so that TCP segments awaiting ACK
+.	can be on the interface queue and the
+.	connection's ACK wait queue at the same time
+
+.	the bytes count in the descriptor has
+.	bit 23 on to instruct the interface not
+.	to drop the buffer after it is sent
+
+.	in the case of high volume banks where a
+.	collection of TCP connections shares a
+.	switched output bank at B80000 for segments
+.	awaiting first window then ACK, separate
+.	from the fixed transmit buffers at F00000
+
+.	where the two owners of the buffer are
+.	the socket and the interface, it is the
+.	interface which uses the next_bdi pointer
+.	in the descriptor
+
+.	when actions are carried out on the socket
+.	its transmit buffer bank at B80000 is always
+.	based. This is only an issue of high volume
+.	transaction connections which are intended to
+.	exist in very large numbers and therefore
+.	cannot keep all their transmitted segments
+.	in the fixed  megaword at F00000 until remote
+.	ACK arrives from the network
+
+q2if	tz	queue:head
+	j	q2ifz
+	sa	queue:head
+	sa	queue:tail
+	z	descriptor:ifql, a
+	lret	0
+
+q2ifz	lb	queue:tail
+	sa	descriptor:ifql, b
+	sa	queue:tail
+	z	descriptor:ifql, a
+	lret	0
+
+readqif	la	queue:head
+	jza	rqifz
+	lb	descriptor:ifql, a
+	sb	queue:head
+rqifz	lret	0
+
+	$endif
+
+	$if	HVBANK
+	$if	QSIMULTANEOUS
+
+q2ifhv	tz	1, y
+	j	q2ifhv_tail
+	ds	hvqueue:head, y
+	ds	hvqueue:tail, y
+	z	descriptor:i_f, b
+	lret	0
+q2ifhv_tail
+	dpush	a
+	dl	hvqueue:tail, y
+	sabr	A$BUFFB
+	la	1, sp
+	sa	descriptor:i_f, b
+	pop	a
+	sa	descriptor:next_bdi, b
+	pop	b
+	ds	hvqueue:tail, y
+	sabr	A$BUFFB
+	z	descriptor:i_f, b
+	lret	0
+
+hvreadqif
+	dl	hvqueue:head, y
+	jzb	hvreadqifz
+	sabr	A$BUFFB
+	push	descriptor:next_bdi, b
+	push	descriptor:i_f, b
+	pop	1, y
+	pop	0, y
+hvreadqifz
+	lret	0
+
+	$endif	QSIMULTANEOUS within HVBANK
+
+.	these use the next pointer like readq and q2
+.	and are used in upper protocols
+
+q2hv	tz	1, y
+	j	q2hv_tail
+	ds	hvqueue:head, y
+	ds	hvqueue:tail, y
+	z	descriptor:next, b
+	lret	0
+q2hv_tail
+	dpush	a
+	dl	hvqueue:tail, y
+	sabr	A$BUFFB
+	la	1, sp
+	sa	descriptor:next, b
+	pop	a
+	sa	descriptor:next_bdi, b
+	pop	b
+	ds	hvqueue:tail, y
+	sabr	A$BUFFB
+	z	descriptor:next, b
+	lret	0
+
+hvreadq	dl	hvqueue:head, y
+	jzb	hvreadqifz
+	sabr	A$BUFFB
+	push	descriptor:next_bdi, b
+	push	descriptor:next, b
+	pop	1, y
+	pop	0, y
+	lret	0
+
+
+	$endif	HVBANK

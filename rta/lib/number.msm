@@ -1,0 +1,234 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is free processor architecture design.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+.	if the acquired mantissa fits in 72 bits use this conversion
+.	because this should be integer accurate if it is correct code
+
+.	the technique of adding together two overlapping numbers
+.	forces a small inaccuracy through hardware rounding. That
+.	can't be accepted if the mantissa was 100% representable
+.	in the first place
+
+
+u72tofloat*
+	z	6
+	tp	TRIPLE		. 
+	j	unsigned72	. allow 72-bit unsigned range 
+	dlsc	TRIPLE		. otherwise look for a sign change
+	lr, xi	25		. from sign zero
+	lx	6
+	jxge	around		. bit 47 is also zero
+	sa	TRIPLE
+	dl	TRIPLE+1	. working in unsigned at this point
+	dsl	0, x		. rotate up to 24 zeros
+	ds	TRIPLE+1	. into the LS 48 bits
+unsigned72
+	la	(0400048)	. midpoint + 72 - normalising count
+	j	exponent
+around	dlsc	TRIPLE+1	. rotate up to 72 zeros
+	z	TRIPLE+2	. into all of it
+	ds	TRIPLE
+	la	(0400030)	. midpoint + 48 - normalising count
+exponent
+	ana	6		. minus normalising count
+	xor	SIGNS		. now switch to working in signed
+	sa	QUAD
+	jpa	signed
+	n	TRIPLE		. floating architecture is
+	n	TRIPLE+1	. ones complement
+	n	TRIPLE+2
+signed	lret	0
+
+
+up*	$proc
+	src	SCALE
+	jnc	$+2
+	fm	(1*+(1*/?-1))
+	$end
+
+down*	$proc
+	src	SCALE
+	jc	$+2
+	fm	(1*-(1*/?-1))
+	$end
+
+apply_scale*
+	jnb	apply_minus_scale
+	sb	SCALE
+	ql	8
+?	$do	21,	up
+	lret	0
+
+apply_minus_scale
+	ab, xi	-1
+	sb	SCALE
+	ql	8
+?	$do	21,	down
+	lret	0
+
+
+fraction6*
+	lb	11
+	mf	(1000000)
+	sa	7
+	z	6
+	lb	10
+	mf	(1000000)
+	da	6
+	sb	10
+	sa	7
+	sc	6
+	lb	9
+	mf	(1000000)
+	da	6
+	sb	9
+	sa	11
+
+	lb	10
+	mf	(1000000)
+	sb	10
+	sa	7
+	z	6
+	lb	9
+	mf	(1000000)
+	da	6
+	sa	10
+
+	mf	(1000000)
+	sa	9
+	lret	0	
+
+	$if	1
+
+h2l*	$proc	*
+	fm	(1*-(1*/(21-?)))
+	mta	(0400000)
+	j	under
+	qs	8
+	$if	1*/21-?>32767
+	push	(1*/21-?)
+	$else
+	push,xi	1*/21-?
+	$endif
+	popA	SCALE
+under	ql	8
+	$end
+
+	$else
+
+cdown*	$proc	*
+	fm	(1*-(1262612/*?))
+	mta	(0400000)
+	j	toolow
+	qs	8
+
+	$if	1262612/*?<32768
+	push,xi	1262612/*?
+	$else
+	push	(1262612/*?)
+	$endif
+
+	popA	SCALE
+toolow
+	ql	8
+	$end
+
+	$endif
+
+climber* $proc
+	mta	(0)
+	j	over_midpoint
+
+	fm	(1*+(1*/(?-1)))
+
+	$if	1*/(?-1)<32768
+	push,xi	-1*/(?-1)
+	$else
+	push	(-1*/(?-1))
+	$endif
+
+	popA	SCALE
+	$end	
+
+
+scale_out*
+	z	SCALE
+	lk	(0400000)
+
+?	$do	21,	climber
+
+over_midpoint
+	qs	8
+
+	$if	1
+?	$do	21,	h2l
+	$else
+?	$do	20,	cdown
+	$endif
+
+	lret	0
+
+	$do	$<256,$(0:256)
+table_add*
+	ab	units, a
+	ab	tens, a
+	ab	hundreds, a
+	ab	thousands, a
+	ab	ten_thousands, a
+	ab	hundred_thousands, a
+
+units
+?	$do	10,	+	?*1-1
+tens
+?	$do	10,	+	?*10-10
+hundreds
+?	$do	10,	+	?*100-100
+thousands
+?	$do	10,	+	?*1000-1000
+ten_thousands
+?	$do	10,	+	?*10000-10000
+hundred_thousands
+?	$do	10,	+	?*100000-100000
+
