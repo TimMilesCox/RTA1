@@ -70,6 +70,10 @@ Another 4000 instructions run Telnet, MIB-II + snmpv1, a simple HTTP server,
 and an online floating point server program
 
 
-RTA1 is intended to work very fast without having operand cache. The large array of scratch registers is organised in an internal stack. One plane of scalability is intended to be the configuration of RTA1s as symmetric multiprocessors only connected by memory
+RTA1 is intended to work very fast without having operand cache
 
+The large array of scratch registers is organised as an internal stack
+
+Symmetric multiprocessors can be configured without any coherency
+electronics for data cache
 
