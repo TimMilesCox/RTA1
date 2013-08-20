@@ -69,11 +69,12 @@ IP, UDP and TCP in 3000 instructions which each take one storage location.
 Another 4000 instructions run Telnet, MIB-II + snmpv1, a simple HTTP server,
 and an online floating point server program
 
-
 RTA1 is intended to work very fast without having operand cache
 
 The large array of scratch registers is organised as an internal stack
 
-Symmetric multiprocessors can be configured without any coherency
-electronics for data cache
+RTA1 SMP scalability has a vast lateral dimension, without expensive
+electronic co-ordination. The internal stack minimises storage reads
+and writes without any operand cache
+
 
