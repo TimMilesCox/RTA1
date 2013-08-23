@@ -322,13 +322,8 @@ void execute(word instruction)
                dsa(ea);         /* double shift algebraic alu.c */
                break;
 
-            case JDZ:
-				/* jump	double zero		*/
-		v = a | b;
-                if (v & 0x00FFFFFF)
-                {
-                }
-		else apc = &b0p->w[ea];
+            case JAO:
+               if (a & 1) apc = &b0p->w[ea];
                break;
 
             case JPA:		
@@ -375,17 +370,18 @@ void execute(word instruction)
                apc = &b0p->w[ea];
                break;
 
-            case NOP:
+            case JPO:
+               v = a & k;
+               v &= 0x00FFFFFF;
+               v ^= v >> 16;
+               v ^= v >>  8;
+               v ^= v >>  4;
+               v ^= v >>  2;
+               v ^= v >>  1;
 
-               #if 0
-               if ((x & 0x00FFFFFF) < (r & 0x00FFFFFF))
-               {
-               }
-               else apc = &b0p->w[ea];
-               #endif
+               if (v & 1)  apc = &b0p->w[ea];
 
                break;
-
 
             case JZA:
 
@@ -419,20 +415,29 @@ void execute(word instruction)
                if (b & 0x00800000) apc = &b0p->w[ea];
                break;
 
-            case JAO:
-               if (a & 1) apc = &b0p->w[ea];
+            case JXGE:
+
+               /******************************************************
+                        JXGE instruction (jump x not less than r)
+               ******************************************************/
+
+               if ((x & 0x00FFFFFF) < (r & 0x00FFFFFF))
+               {
+               }
+               else apc = &b0p->w[ea];
+
                break;
 
-            case JPO:
-	       v = a & k;
-	       v &= 0x00FFFFFF;
-	       v ^= v >> 16;
-	       v ^= v >>  8;
-	       v ^= v >>  4;
-	       v ^= v >>  2;
-	       v ^= v >>  1;
+            case JYGE:
 
-               if (v & 1)  apc = &b0p->w[ea];
+               /******************************************************
+                        JYGE instruction (jump y not less than r)
+               ******************************************************/
+
+               if ((y & 0x00FFFFFF) < (r & 0x00FFFFFF))
+               {
+               }
+               else apc = &b0p->w[ea];
 
                break;
          }
@@ -1500,9 +1505,11 @@ void execute(word instruction)
                break;
 
             case POP:
+
                if (designator == I) break;
-               /******************************************************
-                        spare
+
+               /*******************************************************
+                                        spare
                *******************************************************/
 
 
@@ -1668,19 +1675,11 @@ void execute(word instruction)
 
             case TZ:
 
-               if (designator == I)
-               {
-                  /******************************************************
-			JXGE instruction (jump x not less than r)
-                  ******************************************************/
+               if (designator == I) break;
 
-                  if ((x & 0x00FFFFFF) < (r & 0x00FFFFFF))
-                  {
-                  }
-                  else apc = &b0p->w[ea];
-
-                  break;
-               }
+               /*******************************************************
+					spare
+               *******************************************************/
 
 
                if (designator == XI)
@@ -1712,19 +1711,19 @@ void execute(word instruction)
 
             case TP:
 
-              if (designator == I)
+               if (designator == I)
                {
                   /******************************************************
-                        JYGE instruction (jump y not less than r)
-                  ******************************************************/
+                        JDZ instruction
+                  *******************************************************/
 
-                  if ((y & 0x00FFFFFF) < (r & 0x00FFFFFF))
+                  if ((a | b) & 0x00FFFFFF)
                   {
                   }
                   else apc = &b0p->w[ea];
-
                   break;
                }
+
 
                if (designator == XI)
                {

@@ -438,8 +438,6 @@ ea &= 0x00FFFFFF;
 
 #define SABR	Z+I
 
-#define	JXGE	TZ+I
-#define	JYGE	TP+I
 
 #define	ON	SR+XI
 #define	OFF	SK+XI
@@ -473,11 +471,11 @@ ea &= 0x00FFFFFF;
 #define	SAA	128+6
 #define	SBA	136+6
 #define	DSA	144+6
-#define	JDZ	152+6
+#define	JAO	152+6
 #define	JPA	160+6
 #define	JPB	168+6
 #define	J	176+6
-#define	NOP	184+6
+#define	JPO	184+6
 
 #define	JZA	192+6
 #define	JZB	200+6
@@ -485,8 +483,8 @@ ea &= 0x00FFFFFF;
 #define	JNZB	216+6
 #define	JNA	224+6
 #define	JNB	232+6
-#define	JAO	240+6
-#define	JPO	248+6
+#define	JXGE	240+6
+#define	JYGE	248+6
 
 #define	TS	0+7
 #define	N	8+7

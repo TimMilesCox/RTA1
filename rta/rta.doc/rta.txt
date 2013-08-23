@@ -4,8 +4,16 @@
 <h1>
 	The RTA1 Processor Architecture
 </h1>
+<i>
+Copyright Tim Cox, 2012<br>
+RTA1 Architecture is freeware licensed with the GNU Public Licence Version 3<br>
+This processor programmable architecture specification is the principal and central subject of the licence<p>
+The same licence encompasses all accompanying software and documentation <br>
+The full licence text is included with these materials<br>
+See also the licensing notice at the foot of this document
+</i>
 <h2>
-	Architectural Specification
+	Programmable Architecture Specification
 </h2>
 </center>
 <h3>1. Overview and Address Spaces</h3>
@@ -21,22 +29,151 @@ The emulated prototype is interfaced to Internet Protocol networks and communica
 RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic. The limit of executable space (or system memory) is 16 gigawords.
 
 <p>
-Additional arrays up to one Teraword total which are not part of executable space may be added. These additional arrays are known in RTA1 documentation as "devices", and they may each contain up to 16 gigawords of 8- 16- or 24-bit memory, which may be video RAMs, dual-ported 16-bit network buffers, memory-addressable 24-bit filestores, removable 8-bit memory sticks, and so on.
+Additional arrays up to one teraword total which are not part of executable space may be added. These additional arrays are known in RTA1 documentation as "devices", and they may each contain up to 16 gigawords of 8- 16- or 24-bit memory, which may be video RAMs, dual-ported 16-bit network buffers, memory-addressable 24-bit filestores, removable 8-bit memory sticks, and so on.
 
 <p>
-System memory can be placed in the address space in ranges of 4096-word blocks or in ranges of 262144-word blocks. "Device" arrays can be placed in the address space in ranges of 262144-word blocks
+The reason why there are arrays outside executable space is the compact layout of the relocation registers
+These are very short to minimise cycles at context switch and to fit in one I/O port - relocation registers
+are implemented in I/O ports
+<pre>
+
+
+					executable space 16 gigawords
+					_____________________________
+
+			_________________________________________________
+			|  16 bank select bits	|6b.page| 12 offset bits|
+			|_______________________|select	|_______________|
+			|  16 bank select bits	|         18 offset bits|
+			|_______________________|_______________________|
+
+
+					array space 1 teraword
+					______________________
+
+		_________________________________________________________
+		|device|   16 bank select bits  |         18 offset bits|
+		|sel.6b|________________________|_______________________|
+
+ 
+
+
+</pre>
+System memory can be placed in the address space in ranges of 4096-word blocks
+or in ranges of 262144-word blocks.
 
 <p>
-There is a reserved technique for increasing the executable space up to 256 terawords. But only very unusual systems would ever need this extension, and the emulated prototype does not include it
+Device arrays can be placed in the address space in ranges of 262144-word blocks
 
 <p>
-The address space (as distinct from the executable space) is 16 Megawords divided into windows of either 4096 words or 262144 words
+16 gigawords is a large executable space
 
+<p>
+Applications may place the other 63 device spaces in address space windows
+and organise their contents by means of software
+
+<p>
+There is an outline for increasing the executable space to 256 terawords.
+Most applications do not need that, and the emulated prototype does not include it
+<pre>
+	_________________________________________________________________________________
+	|										|
+	|			ADDRESS SPACE AND EXECUTABLE SPACE			|
+	|_______________________________________________________________________________|
+	|										|
+        |                                                                               |
+	|	Definitions are offered for address space and executable space		|
+	|										|
+	|										|
+	|	Address space is the space which the effective address can reach	|
+	|                                                                               |
+        |                                                                               |
+	|	All programs have 64 memory address windows and may freely change	|
+	|	the memory spaces in those windows. Much more executable space than	|
+	|	the 16-megaword address space can be installed and switched into	|
+	|	the address space							|
+	|										|
+	|										|
+	|	Executable space is the total amount of program memory which could be	|
+	|	installed and available to go in the address windows. This is		|
+	|	memory  where code may be executed <i>and</i> program data			|
+	|	structured and worked <i>with a single consistent organisability</i>		|
+	|										|
+	|										|
+	|	A jump restarts the RTA1 program counter with an offset in a		|
+	|	range of 4K-word pages							|
+	|										|
+	|										|
+	|	Program data spaces in RTA1 executable space are assigned in ranges	|
+	|	of 4K-word pages <i>or</i> in ranges of 256K-word banks			|
+	|										|
+	|										|
+	|	This places the 16 gigawords space of device number zero in		|
+	|	executable space							|
+	|										|
+	|										|
+	|	Program data in executable space must respond to read-modify-write	|
+	|	cycles at least in SMP configurations. Applications will do		|
+	|	byte-read/writes on it, but that need not be a characteristic of	|
+	|	the memory itself							|
+	|										|
+	|										|
+	|	Arrays outside executable space need not perform all of that.		|
+	|	Their minimum service connected to RTA1 processors is to read data	|
+	|	words out and to store data words if they are writeable devices		|
+	|										|
+	|_______________________________________________________________________________|
+
+
+</pre>
+<p>
+The address space is 16 Megawords divided into windows of either 4096 words or 262144 words
+<pre>
+
+
+					address space 16 megawords
+					__________________________
+
+					__________________________________
+					| window|          18 offset bits|
+					|_______|________________________|
+					|000 000| window|  12 offset bits|
+					|_______|_______|________________|
+
+</pre>
 <p>
 Instructions are read from only one address window, which can be any size in contiguous blocks of 4096 words and is called Bank 0. The direct addressing range of jump instructions (and of all instructions) covers 32768 words. There is one instruction per word
+<pre>
 
+
+					instruction fetch from any size address window 0
+					________________________________________________
+
+						__________________________________________________	data plane
+	instruction plane................	|window0|window1|window2|window3|window4|window5.....................
+					:	|4Kwords|_____4K|_____4K|4K/256K|4K/256K|4K/256K
+					:	|	|		.	.	.
+					:	|4K more|
+					:	|	|
+					:	|4K more|
+					:	|	|
+					:	|4K more|
+	program counter------------------------->	|
+					:	|4K more|
+					:	|	|
+					:	|4K more|
+					:	|	|
+					:	|4K more|
+					:	|	|
+					:	|4K more|
+					:	.	.
+					:	.	.
+					:	.	.
+
+
+</pre>
 <p>
-Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP in 3000 instructions which each take one storage location. Another 4000 instructions run Telnet, MIB-II + snmpv1, a simple HTTP server, and an online floating point server program
+Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP in 3000 instructions which each take one storage location. Another 4000 instructions run Telnet, MIB-II plus a management agent, a simple HTTP server, and an online floating point server program
 
 <p>
 RTA1 is intended to work very fast without having operand cache. The large array of scratch registers is organised in an internal stack. One plane of scalability is intended to be the configuration of RTA1s as symmetric multiprocessors only connected by memory, which must be able to carry out atomic read/modify cycles. The internal stack in place of operand cache removes any need for expensive cache coherency measures
@@ -804,8 +941,8 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 	la	Load Arithmetic Register a
 	lb	Load Arithmetic Register b
 
-	tz	Test Zero				jxge	Jump x Not Less Than r			ii	Internal Interrupt
-	tp	Test Positive				jyge	Jump y Not Less Than r			ir	Interrupt Return
+	tz	Test Zero										ii	Internal Interrupt
+	tp	Test Positive				jdz	Jump Double Zero			ir	Interrupt Return
 
 	ax	Add to Index x
 	ay	Add to Index y
@@ -865,13 +1002,13 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 	sba	Shift b Algebraic			qpush	Quadruple Push
 
 	dsa	Double Shift Algebraic			ex	Execute
-	jdz	Jump Double Zero			dpush	Double Push
+	jao	Jump a Odd				dpush	Double Push
 
 	jpa	Jump Positive a				lsc	Load Shift and Count
 	jpb	Jump Positive b				mta	Masked Test a
 
 	j	Jump					sc	Store Carry
-							mlb	Masked Load b
+	jpo	Jump Parity Odd				mlb	Masked Load b
 
 	jza	Jump Zero a				ds	Double Store
 	jzb	Jump Zero b				dl	Double Load
@@ -882,8 +1019,8 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 	jna	Jump Negative a				dlsc	Double Load Shift and Count
 	jnb	Jump Negative b
 
-	jao	Jump a Odd				go	Far Bank Jump
-	jpo	Jump Parity Odd				call	Far Bank Call
+	jxge	Jump x Not Less Than r			go	Far Bank Jump
+	jyge	Jump y Not Less Than r			call	Far Bank Call
 
 
 </pre>
@@ -3175,7 +3312,7 @@ File 1 instructions can read or write thirdwords when PSR Flag <b>half$w</b> = 0
 
 <h5>Instruction File 4A</h5>
 <p>
-The nine instructions in Instruction File 4A use the effective address with or without indirection or indexing as an
+The eight instructions in Instruction File 4A use the effective address with or without indirection or indexing as an
 immediate operand
 <pre>
 
@@ -3409,42 +3546,27 @@ immediate operand
 
 
 
-	Jump x Greater or Equal	jxge
-	_______________________	___
+	Jump Double Zero	jdz
+	________________	___
 
 				_________________________________________________________
 				|							|
-				|	jump to EA unless Index Register x is less than	|
-				|	Repeat Counter r				|
+				|	jump to EA if the 48 bits of			|
+				|	Arithmetic Registers a and b are all 0		|
 				|_______________________________________________________|
 
-	assembler syntax	jxge	jump_address[, {x|y|a|b|fp|sp}]
-				jxge	*jump_pointer
 
-				_________________________________________________________
-	Instruction Code 14.4	| 0 1 1 1 0 | 1 0 0 | . . . .  . . . . . . . . . . . .  |
-				|___________|_______|___________________________________|
-
-
-
-
-
-
-	Jump y Greater or Equal	jyge
-	_______________________	____
-
-				_________________________________________________________
-				|							|
-				|	jump to EA unless Index Register y is less than	|
-				|	Repeat Counter r				|
-				|_______________________________________________________|
-
-	assembler syntax	jyge	jump_address[, {x|y|a|b|fp|sp}]
-				jyge	*jump_pointer
+	assembler syntax	jdz	jump_address[, {x|y|a|b|fp|sp}]
+				jdz	*jump_pointer
 
 				_________________________________________________________
 	Instruction Code 15.4	| 0 1 1 1 1 | 1 0 0 | . . . .  . . . . . . . . . . . .  |
 				|___________|_______|___________________________________|
+
+
+
+
+
 
 
 
@@ -3876,7 +3998,7 @@ The eight instructions in Instruction File 5A have a sign extended immediate ope
 <h5>Instruction File 6</h5>
 
 <p>
-The 31 instructions in Instruction File 6 use the effective address with or without indirection or indexing as an
+The 32 instructions in Instruction File 6 use the effective address with or without indirection or indexing as an
 immediate operand
 <pre>
 
@@ -4294,19 +4416,17 @@ immediate operand
 
 
 
-
-	Jump Double Zero	jdz
-	________________	___
-
+	Jump a Odd		jao
+	__________		___
+	
 				_________________________________________________________
 				|							|
-				|	jump to EA if the 48 bits of			|
-				|	Arithmetic Registers a and b are all 0		|
+				|	jump to EA if bit 0 of Arithmetic Register a = 1|
 				|_______________________________________________________|
 
 
-	assembler syntax	jdz	jump_address[, {x|y|a|b|fp|sp}]
-				jdz	*jump_pointer
+	assembler syntax	jao	jump_address[, {x|y|a|b|fp|sp}]
+				jao	*jump_pointer
 
 				_________________________________________________________
 	Instruction Code 19.6	| 1 0 0 1 1 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
@@ -4354,9 +4474,7 @@ immediate operand
 
 
 
-
-
-	Jump 			j
+	Jump			j
 	____			_
 
 				_________________________________________________________
@@ -4370,6 +4488,30 @@ immediate operand
 
 				_________________________________________________________
 	Instruction Code 22.6	| 1 0 1 1 0 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
+				|___________|_______|___________________________________|
+
+
+
+
+
+
+	Jump Parity Odd		jpo
+	_______________		___
+
+				_________________________________________________________
+				|							|
+				|	jump to EA if the AND sum of Arithmetic		|
+				|	Register a and Mask Register k has odd parity	|
+				|_______________________________________________________|
+
+
+
+	assembler syntax	jpo	jump_address[, {x|y|a|b|fp|sp}]
+				jpo	*jump_pointer
+
+
+				_________________________________________________________
+	Instruction Code 23.6	| 1 0 1 1 1 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
 				|___________|_______|___________________________________|
 
 
@@ -4418,7 +4560,6 @@ immediate operand
 
 
 
-
 	Jump NonZero a		jnza
 	______________		____
 	
@@ -4454,7 +4595,6 @@ immediate operand
 				_________________________________________________________
 	Instruction Code 27.6	| 1 1 0 1 1 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
 				|___________|_______|___________________________________|
-
 
 
 
@@ -4500,18 +4640,20 @@ immediate operand
 
 
 
+	Jump x Greater or Equal	jxge
+	_______________________	___
 
-	Jump a Odd		jao
-	__________		___
-	
 				_________________________________________________________
 				|							|
-				|	jump to EA if bit 0 of Arithmetic Register a = 1|
+				|	jump to EA unless Index Register x is less than	|
+				|	Repeat Counter r				|
 				|_______________________________________________________|
 
+	assembler syntax	jxge	jump_address[, {x|y|a|b|fp|sp}]
+				jxge	*jump_pointer
 
-	assembler syntax	jao	jump_address[, {x|y|a|b|fp|sp}]
-				jao	*jump_pointer
+
+
 
 				_________________________________________________________
 	Instruction Code 30.6	| 1 1 1 1 0 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
@@ -4520,20 +4662,18 @@ immediate operand
 
 
 
-
-	Jump Parity Odd		jpo
-	_______________		___
+	Jump y Greater or Equal	jyge
+	_______________________	____
 
 				_________________________________________________________
 				|							|
-				|	jump to EA if the AND sum of Arithmetic		|
-				|	Register a and Mask Register k has odd parity	|
+				|	jump to EA unless Index Register y is less than	|
+				|	Repeat Counter r				|
 				|_______________________________________________________|
 
+	assembler syntax	jyge	jump_address[, {x|y|a|b|fp|sp}]
+				jyge	*jump_pointer
 
-
-	assembler syntax	jpo	jump_address[, {x|y|a|b|fp|sp}]
-				jpo	*jump_pointer
 
 				_________________________________________________________
 	Instruction Code 31.6	| 1 1 1 1 1 | 1 1 0 | . . . .  . . . . . . . . . . . .  |
@@ -5788,6 +5928,65 @@ operate without lock in the register stack and with lock in storage.
 
 
 
+
+
+<i>
+
+    _____________________________________________________________________________________
+
+
+
+    LICENCE NOTICE
+
+
+
+    Copyright Tim Cox, 2012
+    TimMilesCox@gmx.ch
+
+    This processor programmable architecture specification
+    is the principal and central work delivered here.
+
+    It is the specification of the freeware processor architecture
+
+                RTA1
+
+    RTA1 is a free processor architecture design. It is licensed
+    under the GNU Public Licence Version 3
+
+    The executable emulation of RTA1 is free software.
+
+    Instruction code for the target RTA1 architecture is free software
+    if it is delivered with this software
+
+    Software programs delivered with this software to connect the
+    emulated RTA1 with real network interfaces in the emulator host
+    are free software
+
+    Scripts and programs delivered with this software for running
+    on other computers and interacting with the RTA1 are free software
+
+    The masmx target-independent meta-asembler delivered here
+    is free software whether it is used for constructing RTA1 code
+    or any other code. masmx is a separate free program by the
+    same author and included with this software to save searching for it
+
+    Scripts and utility programs for constructing RTA1 target
+    executable software are free software
+
+    You can redistribute it and/or modify RTA1
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    RTA1 is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with RTA1.  If not, see &lt;http://www.gnu.org/licenses/&gt;.
+
+</i>
 </pre>
 </div>
 </html>
