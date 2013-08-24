@@ -32,9 +32,9 @@
 #    You can redistribute it and/or modify RTA1
 #    under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version. 
+#    (at your option) any later version.
 #
-#    RTA1 is distributed in the hope that it will be useful,     
+#    RTA1 is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
@@ -44,37 +44,60 @@
 #
 #
 #
-#
-#
 
-pushd	../netifx
-gcc -m32 -c -funsigned-char -o ../emulator.rel/netbank.o netbank.c
-popd
 
-gcc -m32 -c -funsigned-char -o ../emulator.rel/idisplay.o idisplay.c
+script ./prun sets up an address which you can come from
+when you are on the same host as the emulator. By default
+this come-from address is
 
-if [ -z "$RTA_BINARY" ]
-then
-export RTA_BINARY="../binary.rta/osx.x86"
-echo    RTA_BINARY=$RTA_BINARY
-fi
+	172.29.7.6
 
-if      [ ! -d "$RTA_BINARY" ]
-then
-mkdir   "$RTA_BINARY"
-ls -l $RTA_BINARY
-fi
+Applications talking to the emulated RTA1 must prevent
+IP coming from the same address that it's going to
 
-gcc -m32 -o $RTA_BINARY/tiptoe	../engine.rel/rta.o		\
-				../engine.rel/ii.o		\
-				../engine.rel/memory.o		\
-				../emulator.rel/netbank.o	\
-				../engine.rel/rw.o		\
-				../engine.rel/alu.o		\
-				../engine.rel/fpu.o		\
-				../engine.rel/sr.o		\
-				../emulator.rel/idisplay.o	\
-				tiptoe.c
+That causes RTA1 to reply to its own address...
 
-echo	binaries in $RTA_BINARY
-ls -l $RTA_BINARY
+Applications talking from another computer won't have
+this problem, but must have a route to the RTA1,
+usually 172.29.7.7, via an interface of the emulator host
+
+The floating point interactor client ./fp in this
+directory can use argument 2 as a come-from address
+
+
+	$ ./fp	172.29.7.7	172.29.7.6
+
+	1234567890 + 123456789012345678900000000000
+
+	4.5e600000 / 5e-600000
+
+	3.7e+1262610 / 10
+
+	4.9e-1262610 * 10
+
+	.
+
+You have to compile fp if you are not driving an
+Intel OSX Mac
+
+	gcc -m32 -funsigned-char [-DINTEL] -o fp fp.c
+
+You must say -DINTEL if this host is little-endian
+
+telnet can use an option -s come-from address
+
+	telnet	-s 172.29.7.6	172.29.7.7
+
+snmp can have a come-from address in .snmp/snmp.conf
+of your home directory
+
+	clientaddr	172.29.7.6
+
+Browsing the web server of the emulated RTA1 over
+the emulator host loopback, you send to
+
+	http://172.29.7.6:8080
+
+and the firewall gives your traffic to the emulator
+RTA1's responses come to 172.29.7.6, which is you
+
