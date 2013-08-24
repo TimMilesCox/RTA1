@@ -33,8 +33,8 @@
 
 #endif
 
-#define	MAXTRY		4800
-#define	TWARP		4800
+#define	MAXTRY		1200
+#define	TWARP		2400
 
 static struct sockaddr_in	 target
 			= { 16, AF_INET, TARGET_PORT, { LISTEN } } ;
