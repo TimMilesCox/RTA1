@@ -89,6 +89,7 @@ extern void		 netbank();
 
 static void		 statement();
 static void		 action(char *request);
+static void		 load_fs(char *path);
 
 #ifdef SIGALERT
 static void signet(int sig);
@@ -192,12 +193,8 @@ int main(int argc, char *argv[])
 
    int			 f, count, image_size = 0;
 
-   #ifdef FILE32_24
-   char			*load_address = (char *) memory.array;
-   #else
    word			*load_address = memory.array;
    word			 data_word;
-   #endif
 
    #ifdef ASYNC
 
@@ -254,8 +251,6 @@ int main(int argc, char *argv[])
          if (flag['l'-'a']) printf("-l\tline per instruction\n");
       }
 
-      #ifndef	FILE32_24
-
       for (;;)
       {
          count = read(f, (void *) &data_word.t1, 3);
@@ -270,23 +265,6 @@ int main(int argc, char *argv[])
       base[124] = image_size >> 12;
       base[128] = PAGES_IN_MEMORY - 1;
 
-      #else
-
-      for (;;)
-      {
-         count = read(f, (void *) load_address, 4096);
-         if (count < 1) break;
-         load_address += count;
-         image_size += count;
-         if (flag['v'-'a']) printf("%d target words read\n", count >> 2);
-      }
-
-      printf("rom image %d target words read\n", image_size >> 2);
-      base[124] = image_size >> 14;
-      base[128] = PAGES_IN_MEMORY - 1;
-
-      #endif
-
       close(f);
    }
    else
@@ -296,6 +274,8 @@ int main(int argc, char *argv[])
    }
 
    netbank();
+
+   if (arguments > 1) load_fs(argument[1]);
 
    #ifdef SIGALERT
 
@@ -446,10 +426,8 @@ static void action(char request[])
 			 index,
                          base_index,
                          offset,
-                         absolute,
-                         f;
+                         absolute;
 
-   char			*loader;
    char			 path[360];
 
 
@@ -525,30 +503,36 @@ static void action(char request[])
       case 'l':
          x = sscanf(&request[1], "%s", path);
 
-         if (x == 1)
-         {
-            f = open(path, O_RDONLY, 0444);
-            if (f < 0) printf("E %d\n", errno);
-            else
-            {
-               index = 0;
-               loader = (char *) f_s;
-
-               for (;;)
-               {
-                  x = read(f, loader, 192);
-                  if (x < 0) break;
-                  if (!x) break;
-                  index++;
-                  loader += 192;
-               }
-
-               close(f);
-               printf("%d granules loaded\n", index);
-            }
-         }
+         if (x == 1) load_fs(path);
 
          break;
+   }
+}
+
+static void load_fs(char *path)
+{
+   int		 x,
+		 index = 0;
+
+   char		*loader = (char *) f_s;
+   int		 f = open(path, O_RDONLY, 0444);
+
+   if (f < 0) printf("file system image %s error %d\n", path, errno);
+   else
+   {
+      printf("loading file system image %s\n", path);
+
+      for (;;)
+      {
+         x = read(f, loader, 192);
+         if (x < 0) break;
+         if (!x) break;
+         index++;
+         loader += 192;
+      }
+
+      close(f);
+      printf("%d granules loaded\n", index);
    }
 }
 

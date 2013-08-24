@@ -72,6 +72,9 @@ void netbank()
    printf("netbank %d\n", mhandle);
    if (mhandle < 0)
    {
+      printf("no network bank is available\n"
+             "enter '.' to stop the emulator\n");
+      printf("run netifx first\n");
       printf("code %d\n", errno);
       return;
    }
