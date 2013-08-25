@@ -5,73 +5,78 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "argument.h"
+#include "../include.rta/argument.h"
+#include "fp.h"
 
-#define MTU		16384
 
-#ifdef	INTEL
-#define	TARGET_PORT	0x0012
-#define	LISTEN		0x07071DAC
+#ifdef	LINUX
+static struct sockaddr_in       target
+                        = {     AF_INET, PORT(FP_SERVICE) } ;
 
-#define	DEFAULT
-#ifdef	DEFAULT
-#define	CLIENT		0
-#else
-#define	CLIENT		0x06071DAC
+static struct sockaddr_in       local = {      PF_INET, 0 } ;
 #endif
 
-#else
 
-#define	TARGET_PORT	0x1200
-#define	LISTEN		0xAC1D0707
+#ifdef	OSX
+static struct sockaddr_in	target
+			= { 16, AF_INET, PORT(FP_SERVICE) } ;
 
-#ifdef	DEFAULT
-#define CLIENT		0
-#else
-#define	CLIENT		0xAC1D0706
+static struct sockaddr_in	local = {  16, PF_INET, 0 } ;
 #endif
 
-#endif
 
-#define	MAXTRY		1200
-#define	TWARP		2400
-
-static struct sockaddr_in	 target
-			= { 16, AF_INET, TARGET_PORT, { LISTEN } } ;
-
-static struct sockaddr_in	 local = { 16, PF_INET, 0, { CLIENT } } ;
-
-ARGUMENTS
+ARGUMENT
 
 int main(int argc, char *argv[])
 {
-   unsigned char	 sdata[MTU];
-   unsigned char	 rdata[MTU];
-   unsigned char	*p;
+   unsigned char	 sdata[TEXT];
+   unsigned char	 rdata[TEXT];
 
    int			 s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    int			 f = fcntl(s, F_GETFL, 0);
    int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
 
    int			 maxtry,
-			 x,
-			 y,
 			 symbol;
 
-   unsigned char	 newnet[FILENAMES][4];
+   unsigned char	 newnet[ARGUMENTS][4];
 
-   ARGUMENT
+   FILE			*config = fopen("config.fp", "r");
 
-   for (x = 0; x < filenames; x++)
+   ARGUMENT_XYPQ 
+   ARGUE
+
+   if (config)
    {
-      y = sscanf(filename[x], "%hhd.%hhd.%hhd.%hhd", &newnet[x][0],
+      while (p = fgets(rdata, TEXT-1, config))
+      {
+         x = sscanf(rdata, "%s %hhd.%hhd.%hhd.%hhd", sdata, &newnet[0][0],
+                                                            &newnet[0][1],
+                                                            &newnet[0][2],
+                                                            &newnet[0][3]);
+
+         if (strcmp(sdata, "fp-client") == 0)
+         {
+             local.sin_addr.s_addr = *((long *) newnet[0]);
+         }
+
+         if (strcmp(sdata, "fp-server") == 0) 
+         { 
+             target.sin_addr.s_addr = *((long *) newnet[0]);
+         }
+      }
+   }
+
+   for (x = 0; x < arguments; x++)
+   {
+      y = sscanf(argument[x], "%hhd.%hhd.%hhd.%hhd", &newnet[x][0],
                                                      &newnet[x][1],
                                                      &newnet[x][2],
                                                      &newnet[x][3]);
    }
 
-   if (filenames)    target.sin_addr.s_addr = *((long *) newnet[0]);
-   if (filenames > 1) local.sin_addr.s_addr = *((long *) newnet[1]);
+   if (arguments)    target.sin_addr.s_addr = *((long *) newnet[0]);
+   if (arguments > 1) local.sin_addr.s_addr = *((long *) newnet[1]);
 
    if (flag['v'-'a']) printf("[%8.8X > %8.8X]\n", local.sin_addr.s_addr,
                                                   target.sin_addr.s_addr);
@@ -85,7 +90,7 @@ int main(int argc, char *argv[])
 
    for (;;)
    {
-      p = fgets(sdata, MTU-20-8, stdin);
+      p = fgets(sdata, TEXT, stdin);
       if (!p) break;
       if (sdata[0] == '.') break;
 
@@ -97,7 +102,7 @@ int main(int argc, char *argv[])
       maxtry = MAXTRY;
       while (maxtry--)
       {
-         x = recv(s, rdata, MTU-20-8, 0);
+         x = recv(s, rdata, TEXT, 0);
          if (x < 0)
          {
             if ((errno == EAGAIN) || (errno == EWOULDBLOCK))

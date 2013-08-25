@@ -63,7 +63,7 @@
 #include <pthread.h>
 #endif
 
-#include "argule.h"
+#include "../include.rta/argument.h"
 #include "sifr_mm.h"
 #include "../rta.run/settings.h"
 
@@ -481,14 +481,10 @@ static void outputq(int s)
 int main(int argc, char *argv[])
 {
    int			 s = socket(AF_INET, SOCK_RAW, IPPROTO_DIVERT);
-   int			 x,
-   			 y;
 
    int			 dgraml,
 			 proto,
 			 symbol;
-
-   unsigned char	*p;
 
    mm_netbuffer         *rxdata;
 
@@ -506,7 +502,7 @@ int main(int argc, char *argv[])
 
    #endif
 
-
+   ARGUMENT_XYPQ
    ARGUE
 
    for (x = 0; x < arguments; x++)

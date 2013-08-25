@@ -51,7 +51,7 @@
 #include <sys/fcntl.h>
 #include <unistd.h>
 
-#include "argument.h"
+#include "../include.rta/argument.h"
 
 #define	BYTES_TARGETW	3
 
@@ -59,7 +59,7 @@ typedef struct { unsigned char		  parity,
 				t[BYTES_TARGETW];	} word;
 
 #define FILENAMES	4
-ARGUMENTS
+ARGUMENT
 
 int main(int argc, char *argv[])
 {
@@ -69,9 +69,7 @@ int main(int argc, char *argv[])
                          rom_words = 1024;
 
    int			 i, o;
-   int			 x, y, symbol;
-
-   char			*p;
+   int			 symbol;
 
    unsigned long	 sum, checksum, carry;
 
@@ -81,7 +79,8 @@ int main(int argc, char *argv[])
 
    unsigned char	 header[12];
 
-   ARGUMENT
+   ARGUMENT_XYPQ
+   ARGUE
 
    if (flag['h'-'a'])
    {
@@ -105,11 +104,11 @@ int main(int argc, char *argv[])
    }
 
    if (flag['v' - 'a']) printf("%s %s %s\n",
-                               argv[0], filename[0], filename[1]);
+                               argv[0], argument[0], argument[1]);
 
-   if (filenames > 1)
+   if (arguments > 1)
    {
-      i = open(filename[0], O_RDONLY, 0644);
+      i = open(argument[0], O_RDONLY, 0644);
 
       if (i < 0)
       {
@@ -117,7 +116,7 @@ int main(int argc, char *argv[])
       }
       else
       {
-         o = open(filename[1], O_RDWR | O_CREAT | O_TRUNC, 0644);
+         o = open(argument[1], O_RDWR | O_CREAT | O_TRUNC, 0644);
 
          if (o < 0)
          {
@@ -129,9 +128,9 @@ int main(int argc, char *argv[])
             if (flag['b'-'a']) rom_words = 262144;
             if (flag['m'-'a']) rom_words = 1048576;
 
-            if (filenames > 2)
+            if (arguments > 2)
             {
-               p = filename[2];
+               p = argument[2];
                if (*p == '0') sscanf(p, "%x", &rom_words);
                else           sscanf(p, "%d", &rom_words);
 
@@ -217,7 +216,7 @@ int main(int argc, char *argv[])
                      if (x < 0)
                      {
                         printf("%s write hex byte position %lld failed\n",
-                                                              filename[1],
+                                                              argument[1],
                                                  location * BYTES_TARGETW);
                         break;
                      }
@@ -237,7 +236,7 @@ int main(int argc, char *argv[])
 
                               if (y != BYTES_TARGETW)
                               {
-                                 printf("word not written %s\n", filename[1]);
+                                 printf("word not written %s\n", argument[1]);
                                  break;
                               }
 
@@ -253,7 +252,7 @@ int main(int argc, char *argv[])
                            }
                            else
                            {
-                              printf("%s 24 bits not read\n", filename[0]);
+                              printf("%s 24 bits not read\n", argument[0]);
                               break;
                            }
                         }
@@ -270,7 +269,7 @@ int main(int argc, char *argv[])
                         {
                            printf("%s checksum failed in string @ %llx ["
                                                        "%6.6lx:%6.6lx]\n",
-                                                              filename[0],
+                                                              argument[0],
                                                                  location,
                                                             checksum, sum);
                            break;
@@ -281,7 +280,7 @@ int main(int argc, char *argv[])
                   {
                      if (x)
                      {
-                        printf("unexpected termination in %s\n", filename[0]);
+                        printf("unexpected termination in %s\n", argument[0]);
                      }
 
                      break;
@@ -294,7 +293,7 @@ int main(int argc, char *argv[])
             {
                printf("%s\n"
                       "latest write to target word @ %6.6llx hex\n",
-                                                        filename[1],
+                                                        argument[1],
                                                      next_location);
 
                printf("highest write to target word @ %6.6llx hex\n",
