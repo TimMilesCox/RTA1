@@ -77,6 +77,16 @@ directory can use argument 2 as a come-from address
 
 	.
 
+Script ./prun also writes a configuration file for
+./fp, containing these lines, so you don't have to
+say any override addresses on the ./fp command line
+
+	fp-server	172.29.7.7
+	fp-client	172.29.7.6
+
+If you don't like these addresses, change the shell
+echo commands in ./prun
+
 You have to compile fp if you are not driving an
 Intel OSX Mac
 
