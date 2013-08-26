@@ -5,27 +5,24 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#include "../include.rta/argument.h"
+#include "../include.rta/argue.h"
+#include "../include.rta/address.h"
 #include "fp.h"
 
 
 #ifdef	LINUX
-static struct sockaddr_in       target
-                        = {     AF_INET, PORT(FP_SERVICE) } ;
+static struct sockaddr_in target = {     AF_INET, PORT(FP_SERVICE) } ;
 
-static struct sockaddr_in       local = {      PF_INET, 0 } ;
+static struct sockaddr_in local  = {     PF_INET, 0                } ;
 #endif
 
 
 #ifdef	OSX
-static struct sockaddr_in	target
-			= { 16, AF_INET, PORT(FP_SERVICE) } ;
+static struct sockaddr_in target = { 16, AF_INET, PORT(FP_SERVICE) } ;
 
-static struct sockaddr_in	local = {  16, PF_INET, 0 } ;
+static struct sockaddr_in local  = { 16, PF_INET, 0                } ;
 #endif
 
-
-ARGUMENT
 
 int main(int argc, char *argv[])
 {
@@ -36,15 +33,18 @@ int main(int argc, char *argv[])
    int			 f = fcntl(s, F_GETFL, 0);
    int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
 
-   int			 maxtry,
+   int			 x,
+			 y,
+			 maxtry,
 			 symbol;
+
+   unsigned char	*p;
 
    unsigned char	 newnet[ARGUMENTS][4];
 
    FILE			*config = fopen("config.fp", "r");
 
-   ARGUMENT_XYPQ 
-   ARGUE
+   argue(argc, argv);
 
    if (config)
    {

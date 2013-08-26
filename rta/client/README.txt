@@ -90,9 +90,18 @@ echo commands in ./prun
 You have to compile fp if you are not driving an
 Intel OSX Mac
 
-	gcc -m32 -funsigned-char [-DINTEL] -o fp fp.c
+	./make_fp
 
-You must say -DINTEL if this host is little-endian
+Adjust fp.h first if this platform is not OSX
+or is big-endian bus architecture
+
+Change #define INTEL to #undef INTEL if this host is big-endian
+
+OSX and Linux have different sockaddr
+
+For Linux #undef OSX and #define LINUX
+
+
 
 telnet can use an option -s come-from address
 

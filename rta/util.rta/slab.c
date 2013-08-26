@@ -32,7 +32,7 @@
     Scripts and utility programs for constructing RTA1 target
     executable software are free software
 
-    You can redistribute it and/or modify RTA1
+    You can redistribute and/or modify RTA1 and its materials
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -51,15 +51,12 @@
 #include <sys/fcntl.h>
 #include <unistd.h>
 
-#include "../include.rta/argument.h"
+#include "../include.rta/argue.h"
 
 #define	BYTES_TARGETW	3
 
 typedef struct { unsigned char		  parity,
 				t[BYTES_TARGETW];	} word;
-
-#define FILENAMES	4
-ARGUMENT
 
 int main(int argc, char *argv[])
 {
@@ -68,6 +65,7 @@ int main(int argc, char *argv[])
    int			 words,
                          rom_words = 1024;
 
+   int			 x, y;
    int			 i, o;
    int			 symbol;
 
@@ -78,9 +76,10 @@ int main(int argc, char *argv[])
                          high_location = 0;
 
    unsigned char	 header[12];
+   unsigned char	*p;
 
-   ARGUMENT_XYPQ
-   ARGUE
+
+   argue(argc, argv);
 
    if (flag['h'-'a'])
    {

@@ -30,7 +30,7 @@
     Scripts and utility programs for constructing RTA1 target
     executable software are free software
 
-    You can redistribute it and/or modify RTA1
+    You can redistribute and/or modify RTA1 and it materials
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -63,7 +63,7 @@
 #include <pthread.h>
 #endif
 
-#include "../include.rta/argument.h"
+#include "../include.rta/argue.h"
 #include "sifr_mm.h"
 #include "../rta.run/settings.h"
 
@@ -71,34 +71,26 @@
 #define	TWARP		3300
 
 #ifdef INTEL
-#define	FRAME	0x0080
-#define	IP	0x0008
-#define LLHL	0x0200
-#else
-#define	FRAME	0x8000
-#define	IP	0x0800
-#define LLHL	2
-#endif
-
-#ifdef  INTEL
-#define	LPROTOCOL	0x1100
+#define	FRAME		0x0080
+#define	IP		0x0008
+#define LLHL		0x0200
 #define TARGET_PORT     0x0012
-#define LOOPBACK        0x0100007F
-#define LISTEN          0x07071DAC
-#define	LISTEN1		0xBF00A8C0
-#define CLIENT          0x06071DAC
 #else
-#define	LPROTOCOL	17
+#define	FRAME		0x8000
+#define	IP		0x0800
+#define LLHL		0x0002
 #define TARGET_PORT     0x1200
-#define LOOPBACK        0x7F000001
-#define LISTEN          0xAC1D0707
-#define CLIENT          0xAC1D0706
 #endif
 
 #define	CONFIGURATION_MICROPROTOCOL 0x6969
 
+#ifdef	LINUX
 static struct sockaddr_in        target
-                        = { 16, AF_INET, TARGET_PORT, { 0 /* LISTEN */ } } ;
+                        = {     AF_INET, TARGET_PORT } ;
+#else
+static struct sockaddr_in        target
+                        = { 16, AF_INET, TARGET_PORT } ;
+#endif	
 
 static mm_netdevice     *netdata;
 
@@ -106,8 +98,6 @@ static mm_netbuffer	*txdata;
 
 static int		 alert_pid;
 static int		 halt_flag;
-
-ARGUMENT
 
 
 /**********************************************
@@ -482,7 +472,9 @@ int main(int argc, char *argv[])
 {
    int			 s = socket(AF_INET, SOCK_RAW, IPPROTO_DIVERT);
 
-   int			 dgraml,
+   int			 x,
+			 y,
+			 dgraml,
 			 proto,
 			 symbol;
 
@@ -494,6 +486,7 @@ int main(int argc, char *argv[])
    unsigned char	 newmask[4];
 
    unsigned char	 showrow[16];
+   unsigned char	*p;
 
    #ifdef ASYNC
 
@@ -502,8 +495,7 @@ int main(int argc, char *argv[])
 
    #endif
 
-   ARGUMENT_XYPQ
-   ARGUE
+   argue(argc, argv);
 
    for (x = 0; x < arguments; x++)
    {

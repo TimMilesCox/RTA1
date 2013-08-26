@@ -32,7 +32,7 @@
     Scripts and utility programs for constructing RTA1 target
     executable software are free software
 
-    You can redistribute it and/or modify RTA1
+    You can redistribute and/or modify RTA1 and its materials
     under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
