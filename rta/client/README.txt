@@ -61,6 +61,16 @@ Applications talking from another computer won't have
 this problem, but must have a route to the RTA1,
 usually 172.29.7.7, via an interface of the emulator host
 
+./prun needs to run before any client program can
+reach the emulated RTA1 on the emulator host's
+loopback. ./prun tests its own success by pinging
+
+RTA1 has servers for telnet, http and snmp, and for
+this supplied floating point client program
+
+fp
+__
+
 The floating point interactor client ./fp in this
 directory can use argument 2 as a come-from address
 
@@ -78,8 +88,8 @@ directory can use argument 2 as a come-from address
 	.
 
 Script ./prun also writes a configuration file for
-./fp, containing these lines, so you don't have to
-say any override addresses on the ./fp command line
+./fp containing these following lines. So you don't
+have to say any target or source  address overrides
 
 	fp-server	172.29.7.7
 	fp-client	172.29.7.6
@@ -87,30 +97,106 @@ say any override addresses on the ./fp command line
 If you don't like these addresses, change the shell
 echo commands in ./prun
 
+If you don't want defaults at all, change the shell
+echo commands in ./prun to
+
+	echo	fp_server	0.0.0.0  > config.fp
+	echo	fp_client	0.0.0.0	>> config.fp
+
+Otherwise tou still have an old config.fp
+
+If you are driving an PowerPC OSX Mac you must
+export RTA_BINARY in your shell profile
+
+	export	RTA_BINARY=../binary.rta/osx.ppc
+
+Add to your path as well. You will get the supplied
+OSX PowerPC binaries. Or copy the PowerPC binary
+to here if you're using ./fp from this wd
+
+	cp ../binary.rta/osx.ppc/fp .
+
+Type export and not just RTA_BINARY=etc
+
+Otherwise you may not ovveride some script defaults
+
 You have to compile fp if you are not driving an
-Intel OSX Mac
+Intel OSX at all
 
 	./make_fp
 
-Adjust fp.h first if this platform is not OSX
-or is big-endian bus architecture
+You must in the same way export RTA_BINARY command
+in your shell profile, for example
 
-Change #define INTEL to #undef INTEL if this host is big-endian
+	export	RTA_BINARY=../binary.rta/linux.x86
 
-OSX and Linux have different sockaddr
+If you are building on a big-endian platform
 
-For Linux #undef OSX and #define LINUX
+	./make_fp	sparc
+
+or
+
+	./make_fp	powerpc
+
+It makes no difference which. There is no
+cross-compilation. You are doing a native compile
+on the platform which you have. There is just
+one point in the code where compilation has to
+know your platform bus architecture. Default
+is little-endian
+
+If your platform OS does not have a length-byte
+on the front of struct sockaddr_in, you have to
+tell the compilation that this is not Mac Darwin
+Unix. You do this with argument 2 linux
+
+You can't get an argument 2 without an argument 1
+so for little endian you type something like
+
+	../make_fp 	intel	linux
+
+	../make_fp	arm	linux
+
+intel and arm don't mean anything except that they
+are not sparc or powerpc, so little-endian is
+understood
+
+If you have a big-endian platform which also has
+sockaddr-in like ubuntu and not like Darwin
+(i.e no length-byte on the front), one of these
+does it
+
+	../make_fp	sparc	linux
+
+	../make_fp	powerpc	linux
 
 
 
-telnet can use an option -s come-from address
+telnet
+______
+
+telnet client on your platform has  option -s
+or something similar for a come-from address
 
 	telnet	-s 172.29.7.6	172.29.7.7
 
-snmp can have a come-from address in .snmp/snmp.conf
-of your home directory
+
+snmp
+____
+
+netsnmp snmp manager standalone binaries, for example
+
+	snmpget
+
+	snmpwalk
+
+can have a come-from address in .snmp/snmp.conf of your
+home directory
 
 	clientaddr	172.29.7.6
+
+browsers
+________
 
 Browsing the web server of the emulated RTA1 over
 the emulator host loopback, you send to
