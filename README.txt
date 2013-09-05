@@ -46,6 +46,12 @@
 #
 
 
+_________________________________________________________________________
+This is the freeware code tree
+RTA1 downloads and documentation are at http://timmilescox.github.io/RTA/
+_________________________________________________________________________
+
+
 RTA1 is a computer processor architecture which has run in emulation
 on a Unix host computer since January 2012
 
