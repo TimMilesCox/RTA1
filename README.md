@@ -5,7 +5,7 @@ RTA1 is a freeware processor architecture intended for the embedded and realtime
 
 
 _________________________________________________________________________
-This is the freeware code tree
+This is the freeware code tree.
 RTA1 downloads and documentation are at http://timmilescox.github.io/RTA/
 _________________________________________________________________________
 
