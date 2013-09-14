@@ -255,6 +255,144 @@ $(0:64)
 
 </pre>
 
+<h2>More about Strings</h2>
+
+The last literal example was a string. Bytes are any size you
+say they are, padded with either zero or space to integral words
+<pre>
+
+$ masmx strings -ln
+MASMX 7r2
+3/strings.msm
+*EOF*
+  :                            1 	$set_option	"z"
+00:000000 737472696E67        +2 	"string"
+  :                            3 	$byte	12
+00:000002 07307407206906E067  +4 	"string"
+  :                            5 	$byte	16
+00:000005 0073007400720069006E0067
+                              +6 	"string"
+  :                            7 	$byte	24
+00:000009 00007300007400007200006900006E000067
+                              +8 	"string"
+  :                            9 	$byte	6
+00:00000F CF4CA9BA7000        +10 	"string"
+  :                            11 	$byte	7
+Note: strings.msm Line 12: trailing zero bits in last data word of string
+00:000011 E7D3969DD9C0        +12 	"string"
+  :                            13 	$byte	8
+00:000013 737472696E67        +14 	"string"
+  :                            15 
+*EOF*
+:$(00):000000:000015 
+
+</pre>
+String padding is zero with option <b>-c</b> or <b>-z</b> and space
+with neither or both <b>-cz</b>
+
+<h2>Constructing Banks and Address Windows</h2>
+
+There are four chief ways of using the location counter
+control in RTA1
+<pre>
+
+$(4:address/literal_pool_name)
+
+</pre>
+<b>/literal_pool_name</b> is optional in these examples
+
+<p>
+In the first and simplest example the address is both the
+program-relative address understood by the code, and also
+load-region-relative address passed to the loader
+
+<p>
+In the second example, the program-relative address is
+followed by a <i>different</i> load-region-relative
+address. The second address is passed to the loader
+<pre>
+
+$(0::0)
+
+$(0::16384)
+
+$(0::24576)
+
+</pre>
+These three banks are all at zero... but not all at once.
+They are all instruction banks called at different times.
+Their load addresses are in three different places, zero,
+16K and 24K relative to whatever place the program is
+loaded
+
+<p>
+Another use if this logical_space:load_address construct
+is a variable data segment loaded as part of the code,
+possibly included in a ROM. Initialisation must copy the
+values to the variable space:
+<pre>
+
+$ masmx startup -ln
+MASMX 7r2
+3/startup.msm
+*EOF*
+  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            2: 	$include	freeware/RTA1/rta/def/ii.def
+  :                            3 
+  :                            4 INTEGER_CONSTANT	$equ	99
+  :                            5 FLOATING_MANTISSA	$equ	100100100100100100100
+  :                            6 FLOATING_EXPONENT	$equ	1200000
+  :                            7 
+  :                            8 $(3:03000:16384+3072/bank3_literals)
+  :                            9 
+03:003000 000063              +10 one     +       INTEGER_CONSTANT
+03:003001 737472696E6720636F6E7374616E74
+                              +11 two            "string constant"
+03:003006 7CD3CD8E6809AA7EBE381207
+                              +12 three   +       FLOATING_MANTISSA*+FLOATING_EXPONENT
+  :                            13 four	$res	800
+  :                            14 
+  :                            15 $(0::16384)
+  :                            16 
+00:000000 B60040              +17 	j	startup
+  :                            20 	$list
+  :                            21 
+  :                            22 startup
+00:000040 650400              +23 	la, xi	1024	. obtain variable memory
+00:000041 750043              +24 	ii	BANK$
+00:000042 C6004D              +25 	jza	"can't"
+00:000043 340003              +26 	sabr	3	. base at window 03000
+  :                            27 
+00:000044 4500FF              +28 	lr, xi	1024/4-1
+00:000045 5D0C00              +29 	ly, xi	3072
+00:000046 553000              +30 	lx, xi	one
+  :                            31 
+  :                            32 transfer
+00:000047 8FB000              +33 	qpush	0, y	. into the internal stack
+00:000048 87A000              +34 	qpop	0, x	. into variable RAM
+00:000049 850004              +35 	ax, xi	4
+00:00004A 8D0004              +36 	ay, xi	4
+00:00004B 1E0047              +37 	jdr	transfer
+  :                            38 
+00:00004C 3D0001              +39 ready	fret	1	. good result
+  :                            40 
+  :                            41 "can't"
+00:00004D 3D0000              +42 	fret	0	. less good result
+*EOF*
+:$(00):000000:00004E :$(03):003000:00332A 
+
+</pre>
+Here the instruction bank at load address 16K (but program-relative address
+zero) has 1K words initial data values at program-relative address 3K (load
+address 16K + 3K)
+
+<p>
+The variables appear to code at addresses 03000 (12K). Initialisation copies
+the values to RAM at program-relative address 12K
+
+
+
+
 
 _____________________________________________________________________
 <pre>

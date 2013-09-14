@@ -82,13 +82,14 @@ static unsigned long long bankp[72];
 static char				 flag[28];
 static int				 format = S_RECORD;
 static int				 columns = 8-1;
+static int				 first = 73;
 
 void exout(int locator, long loc, char *b, int c, int handle, int flag)
 {
    static long long loc0 = 0;
    static char data[3*4096+16];
    static char plen[4];
-   static int index=12, sum=0, p=0, first = 73;
+   static int index=12, sum=0, p=0;
    register char digit;
 
    int					 t1, t2, t3;
@@ -475,6 +476,7 @@ main(int argc, char *argv[])
           break;
        }
 
+       first = 73;
        bankp[x] = bank;
        continue;
     }

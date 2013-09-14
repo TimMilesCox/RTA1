@@ -48,6 +48,7 @@
 **********************************************************************/
 
 #include <stdio.h>
+#include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -400,7 +401,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       labelv.label1.remainder   = next->label1.remainder;
       #endif
 
-      lseek(f, dstart_position, SEEK_SET);
+      lseek(f, (off_t) dstart_position, SEEK_SET);
       write(f, &labelv, DIRECTORY_BLOCK * 3);
       lseek(f, (off_t) 0, SEEK_END);
    }
@@ -416,11 +417,11 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
          if (f2 < 0) printf("input file E %d\n", errno);
          else
          {
-            p64 = lseek(f2, (long long) 0, SEEK_END);
-            if (p64 < 0) printf("end E %d\n", errno);
+            p64 = lseek(f2, (off_t) 0, SEEK_END);
+            if ((long long) p64 < 0) printf("end E %d\n", errno);
             else
             {
-               status = lseek(f2, (long long) 0, SEEK_SET);
+               status = lseek(f2, (off_t) 0, SEEK_SET);
 
                if (status < 0) printf("start E %d\n", errno);
                else
@@ -647,7 +648,7 @@ int main(int argc, char *argv[])
       label1.label3.ex.granule.octet[1] = gpointer >> 32;
       label1.label3.ex.granule.octet[0] = gpointer >> 40;
 
-      lseek(f, (long long) 0, SEEK_SET);
+      lseek(f, (off_t) 0, SEEK_SET);
       status = write(f, &label1, 1024 * 3);
       if (status < 0) printf("write error %d\n", errno);      
 
