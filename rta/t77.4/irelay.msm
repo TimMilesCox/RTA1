@@ -49,22 +49,39 @@
 .	until it's decided to have ip6 we'll just assume
 .	software loopback output is ip4
 
-txq_softwareloopback
-	push	a	. save the descriptor
+
+rxtx_softwareloopback
 
 			. x -> interface
-			. y -> datagram
-			. a = packet protocol i.e IP
-			. r = datagram length
 
-	lr	b	. for transmit is zeroed
-	ly	descriptor:dgram, a
-	sb	dgram:bytes, y
-	la, xi	IP
+	la	this_if:oq:head
+	jza	rxxx_software_loopback
+
+	ly	descriptor:frame, a
+	
+	lb, i	nframe:stack_index, y
+	ab	0, b
+
+	ly	1, b
+	lr	0, b	
+
+	la	nframe:llh:protocol_family, a
+
+	push	x
 	lcal	frame_to_protocol
+	pop	x
 
-	pop	a
+	lcal	if_readq1
+
+        MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+        MIB_ICOUNT48    this_if:outpackets
+	
 	tp	descriptor:bytes, a
-	lcal	net_free_txb
+	j	rxtx_softwareloopback
+
+	lcal	net_free_txbx
+	j	rxtx_softwareloopback
+
+rxxx_software_loopback
 	fret	0
 

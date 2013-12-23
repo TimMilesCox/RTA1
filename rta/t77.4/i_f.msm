@@ -307,9 +307,13 @@ i_f_pointer_array	. who wants to go multiplying subscripts?
 	+	1
 ?	$do	INTERFACES,	+	interface(?)
 
+i_f_last +	interface(1)
 
-?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,, $txq_lo	;
-						net_address(2),2040,firewall_relay, $rxtx_ift1, $txq_ift1,,,,, 00:12:01c:00:00:5
+?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,	;
+						0, $rxtx_lo				;
+											;
+						net_address(2),2040,firewall_relay,	;
+						$initial_ift1, $rxtx_ift1,,,,, 00:12:01c:00:00:5
 
 $(66::,x)
 this_if	i_f
@@ -331,9 +335,10 @@ locate_interfaces_again
 	inA	128, y
 	mta	k
 	j	locate_interfaces_next_device
-	j	start_ift1
 
-locate_interfaces_include
+	tz	this_if:initial
+	call	this_if:initial
+
 	inc	i_f_pointer_array
 	jxge	thats_enough_interfaces
 	ax, xi	interface(2)-interface(1)
@@ -345,20 +350,22 @@ locate_interfaces_next_device
 	jnc	locate_interfaces_again
 
 thats_enough_interfaces
+	sx	i_f_last
 	push	i_f_pointer_array
 	pop	ifNumber:i
 	lret	0
 
 
-frames	lx, xi	interface(2)
+frames	lx, xi	interface(1)
 test_if	tz	this_if:flags
-	j	traffic
-	lret	0
-traffic	tz	this_if:rxtx_interface
 	call	this_if:rxtx_interface
-
+	lr	i_f_last
+	jxge	i_f_leave
 	ax, xi	interface(2)-interface(1)
 	j	test_if
+i_f_leave
+	lret	0
+
 
 frame_to_protocol
 
