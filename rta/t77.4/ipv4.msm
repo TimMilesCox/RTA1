@@ -6,7 +6,7 @@
 .
 .                RTA1
 .
-.    RTA1 is free processor architecture design.
+.    RTA1 is a free processor architecture design.
 .
 .    The executable emulation of RTA1 is free software.
 .
@@ -42,10 +42,30 @@
 .
 .
 
-HEADER_WORDS	$set	d$save
-HEADER_LONGWORDS $set	d$save1
-TP_HEADER	$set	d$save2
-I_F_IDX		$set	d$save3
+HEADER_WORDS	$equ	d$save	. 16 used in receive
+HEADER_LONGWORDS $equ	d$save1	. 17 used in receive
+TP_HEADER	$equ	d$save2	. 18 used in receive and transmit
+I_F_IDX		$equ	d$save3	. 19 used in receive
+
+TX_AXW		$equ	8	. used in transmit
+TX_FRAME	$equ	9	. used in receive and transmit
+
+HEADER_BYTES	$equ	d$save	. 16 used in transmit
+MTU		$equ	d$save1	. 17 used in transmit
+I_F		$equ	d$save2	. 19 used in transmit
+
+TX_FLAG_OFFSET	$equ	10	. used in tranmsit
+TX_DATAGRAML	$equ	11	. used in transmit = unfragmented datagram
+				. generated in interfaces = xmitted frame
+
+DYNAMIC_IP_HEADER $equ	0
+		. if IP header length cannot be known at socket layer
+		. then make this a multiple of 4 > 20 and < 64
+		. to give a fixed large space for IP to add header
+		. options
+
+		. otherwise IP header size is fixed when the socket
+		. layer acquires a buffer
 
 $(71::,sp)
 dgram	datagram
@@ -55,6 +75,9 @@ descriptor acw
 
 $(66::, x)
 ro	route
+
+$(66::, x)
+nframe	netframe
 
 $(1)
 
@@ -77,24 +100,6 @@ net_address(?+2) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+
 $(0)
 
 ipv4
-	$if	0
-	lr	i_f_pointer_array	. process interface output queues
-	lx, xi	interface(1)
-	j	interface?
-interface!
-	la	this_if:type, x
-	jza	interfaces_last
-	anu, xi	SOFTWARELOOPBACK
-	jzb	txq_softwareloopback
-	anu, xi	FIREWALL_RELAY
-	jzb	txq_ift1_relay
-txq_next_interface
-	ax, xi	interface(2)-interface(1)
-interface?
-	jdr	interface!
-interfaces_last
-	$endif
-
 	lret	0
 
 construct_xdgram
@@ -124,6 +129,7 @@ construct_xdgram
 	lb	dgram:vers_ihl_tos, y
 	sbr	8-2
 	andB,xi	15*/2
+	sb	HEADER_BYTES
 	ab	descriptor:bytes, x
 	la	dgram:flags_fragment, y
 	and, xi	IP_DNF
@@ -137,7 +143,6 @@ ip_routadvance			. temporary change to IP task B1
 	la, xi	VECTOR_B1(1)
 	ii	KERNEL$B1
 
-.	push	a		. no longer a stack operation
 				. call before return B1$ takes B1
 				. from caller's vector bank
 				. so if you nest calls that both
@@ -155,7 +160,6 @@ ip_routadvance			. temporary change to IP task B1
 				. address of the interface of the route
 
 
-.	pop	a		. no longer a stack operation
 				. call before return B1$ takes B1
 				. from caller's vector bank
 				. so if you nest calls that both
@@ -198,7 +202,6 @@ ip_send				. destination is already in 6:7
 
 	la, xi	VECTOR_B1(1)
 	ii	KERNEL$B1
-.	push	a		. no longer a stack operation
 				. call before return B1$ takes B1
 				. from caller's vector bank
 				. so if you nest calls that both
@@ -207,8 +210,14 @@ ip_send				. destination is already in 6:7
 				. but you are not likely to do this
 
 	lcal	construct_xdgram
+	sy	TX_DATAGRAM
 
 	sx	8		. the descriptor
+	andB	(07FFFFF)	. reassembled datagram length
+				. i.e first IP header + payload
+
+				. a contains DNF flag or not
+
 	ds	10		. IP_DNF:datagramreassembledlength
 
 	lcal	ip_route
@@ -234,36 +243,41 @@ ip_send				. destination is already in 6:7
 				. when we need to do ARP
 				. network address of next hop
 
+	sx	TX_FRAME
+
 	la	r		. the interface #
 	and, xi	32767
 	aa, xi	i_f_pointer_array
 
 	lx	0, a		. the interface pointer address
+	sx	I_F
 
+	
 	dl	10		. DNF flag, length
+	push	this_if:mtu
+	pop	MTU
 	jza	ip_send_now
 
-	lb	this_if:mtu
-	andB	(07FFFFF)	. compare without the retain flag
+	la	MTU
 	ana	b
 
 	la	8		. the descriptor
 	jc	ip_send_now1
 
-	lcal	net_free
+	lcal	net_free_txb
 	lb, xi	-3
 	j	ip_send_x
 
 ip_send_now
 	la	8		. the descriptor
 ip_send_now1
-	call	this_if:tx_protocol
 
-	lb	11
+	push	11
+	lcal	ipq_write
+
+	pop	b
 
 ip_send_x
-.	pop	a		. return to the caller's B1
-.				. no longer a stack operation
 				. call before return B1$ takes B1
 				. from caller's vector bank
 				. so if you nest calls that both
@@ -517,158 +531,12 @@ ipv4_rxz
 	sx	sp
 	lret	0
 
-TX_TRANSFER_DESCRIPTOR	$equ	d$save
-MTU			$equ	d$save1
-
-IP_DATAGRAM_DEVICEB	$equ	6
-IP_PAYLOAD_TRANSFER	$equ	7
-IP_HEADER_LENGTH	$equ	7
-
-TX_BYTES_POINTER	$equ	8
-TX_BYTES		$equ	8
-TX_POINTER		$equ	9
-TX_DATAGRAML		$equ	10
-
-ipv4_transcribe_tx
-	sy	TX_TRANSFER_DESCRIPTOR
-
-			. write datagram to dual ported transmit buffer
-			. device architecture independent
-			. target buffer contiguous for max fragment
-			. options have already been presented
-			. on buffer request
-			. target pointer is X
-			. mtu is in MTU
-			. outstanding payload bytes in [POINTER_]BYTES
-			. return after each fragment
-			. caller then checks for new device buffer
-			. rewrite payload read_pointer because next call
-			. to write more fragments may not be now
-
-	la	descriptor:bytes, y
-	ly	descriptor:dgram, y
-			. descriptor:bytes = IP payload only
-	dpush	dgram:id, y
-
-	lb	1, sp
-	andB,xi	IP_OFFSET_MASK
-	sbl	3	. convert to a byte pointer
-
-	and	(07FFFFF) . strip retain flag from payload length
-	ana	b	. subtract the part already sent from the
-			. total unfragmented payload
-
-	ds	TX_BYTES_POINTER
-
-	la	dgram:vers_ihl_tos, y
-	sa	6
-
-	sar	8
-	and,xi	15
-	sa	b
-	sbl	2
-	sb	IP_HEADER_LENGTH
-
-	aa, xi	-5
-	lr	a
-
-	lb	MTU
-	anb	IP_HEADER_LENGTH
-
-	la	TX_BYTES
-
-	anb	a
-	jc	ipv4_transcribe_tx_transfer	. you can send
-						. all of it
-
-	la	MTU
-	ana	IP_HEADER_LENGTH
-	and, xi	-8				. you can send
-						. this much payload
-
-	
-
-	lb	TX_POINTER			. the header on the		
-	ab	a				. next transmission
-	sbr	3				. after this one
-	sb	dgram:flags_fragment, y
-	
-
-
-
-	lb	1, sp				. flags_fragment word
-	orB, xi	IP_MORE				. on this transmission
-	sb	1, sp
-
-ipv4_transcribe_tx_transfer
-	lb	IP_HEADER_LENGTH
-	sa	IP_PAYLOAD_TRANSFER
-	ab	a
-	sb	TX_DATAGRAML
-	la	6
-
-	ds	dgram:vers_ihl_tos, x
-	da	0, sp
-	pop	dgram:id, x
-	pop	dgram:flags_fragment, x
-
-	push	dgram:ttl_protocol, y
-	aa	0, sp
-	pop	dgram:ttl_protocol, x
-
-	qpush	dgram:ipsource, y
-	da	0, sp
-	da	2, sp
-	qpop	dgram:ipsource, x
-
-	sx	IP_DATAGRAM_DEVICEB
-	ax, xi	10
-	j	ipv4_transcribe_tx_option?
-
-ipv4_transcribe_tx_option!
-	dpush	10, y
-	da	0, sp
-	pop	0, x
-	pop	1, x
-	ax, xi	2
-	ay, xi	2
-ipv4_transcribe_tx_option?
-	jdr	ipv4_transcribe_tx_option!
-
-ipv4_transcribe_tx_checksum
-	aa	b
-	dsr	16
-	sbr	8
-	jnza	ipv4_transcribe_tx_checksum
-
-	la	(00FFFF)
-	xor	b
-	lb	IP_DATAGRAM_DEVICEB
-	sa	dgram:checksum, b
-
-	ly	TX_TRANSFER_DESCRIPTOR
-	ly	descriptor:uproto, y
-	la	TX_POINTER
-	sar	1		. offset in words
-	ay	a
-	la	IP_PAYLOAD_TRANSFER
-	
-	lcal	tx_nocheck
-
-	dl	TX_BYTES_POINTER
-	ana	IP_PAYLOAD_TRANSFER
-	ab	IP_PAYLOAD_TRANSFER
-
-	ly	TX_TRANSFER_DESCRIPTOR
-
-	lret	0
-
 ip_buy_datagram
 	push	b
 	sbr	7	. version / header L / TOS word
 	andB,xi	30	. number of words in header
 	lr	b	. length of IP header in words
-	aa, xi	5	. routing buffer + rounding
+	aa, xi	ROUTING_HEADER*2+1	. routing buffer + rounding
 	sar	1	. number of words in IP payload
 			. + routing header
 	aa	b	. number of words in buffer
@@ -680,7 +548,13 @@ ip_buy_datagram
 	lx	descriptor:frame, a
 	z	0, x	. routing buffer
 	z	1, x
-	ax, xi	2
+
+	push,xi 0800
+	pop	nframe:llh:protocol_family
+
+	z	nframe:stack_index
+
+	ax, xi	ROUTING_HEADER
 	sx	descriptor:dgram, a
 	sx	TX_DATAGRAM
 	sb	dgram:vers_ihl_tos, x

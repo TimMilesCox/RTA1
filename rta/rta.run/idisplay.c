@@ -61,7 +61,7 @@ static char *ifile_1_name[32] = { "sr","sk","sx","sy",
                                   "lr","lk","lx","ly",
                                   "la","lb","tz","tp",
                                   "ax","ay","or","orB",
-                                  "and","andB","xor","anu",
+                                  "and","andB","xor","xorB",
                                   "aa","ab","ana","anb",
                                   "m","mf","d","push" } ;
 

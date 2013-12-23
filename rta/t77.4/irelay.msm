@@ -46,38 +46,25 @@
 .	the discriminator is the 4-bit version at the
 .	start of the datagram
 
+.	until it's decided to have ip6 we'll just assume
+.	software loopback output is ip4
+
 txq_softwareloopback
-	ly, i	this_if:sif:q, x
-	lcal	readq
-	jza	txq_next_interface
-	sa	fp
-	push	x
-	lx	descriptor:dgram, fp
-	la	dgram:vers_ihl_tos, x
-	lk	(00F000)
-	mta	(004000)
-	j	loop_ipv6?
-	la	dgram:ttl_protocol, x
-	and, xi	225
-	anu, xi	IPPROTO_UDP
-	ly, xi	udpq
-	jzb	loop_iq
-	anu, xi	IPPROTO_TCP
-	ly, xi	tcpq
-	jzb	loop_iq
-	anu, xi	IPPROTO_ICMP
-	ly, xi	icmpq
-	jnzb	loop_discard
-loop_iq	la	fp
-	lcal	q2
-	pop	x
-	j	txq_softwareloopback
-loop_ipv6?
-	mta	(006000)
-	j	loop_discard
-loop_discard
-	la	fp
-	lcal	net_free
-	pop	x
-	j	txq_softwareloopback
+	push	a	. save the descriptor
+
+			. x -> interface
+			. y -> datagram
+			. a = packet protocol i.e IP
+			. r = datagram length
+
+	lr	b	. for transmit is zeroed
+	ly	descriptor:dgram, a
+	sb	dgram:bytes, y
+	la, xi	IP
+	lcal	frame_to_protocol
+
+	pop	a
+	tp	descriptor:bytes, a
+	lcal	net_free_txb
+	fret	0
 

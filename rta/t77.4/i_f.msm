@@ -308,8 +308,8 @@ i_f_pointer_array	. who wants to go multiplying subscripts?
 ?	$do	INTERFACES,	+	interface(?)
 
 
-?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback	;
-						net_address(2),2040,firewall_relay, jv_ift1_rxtx, jv_ift1_writeq,,,,, 00:12:01c:00:00:5
+?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,, $txq_lo	;
+						net_address(2),2040,firewall_relay, $rxtx_ift1, $txq_ift1,,,,, 00:12:01c:00:00:5
 
 $(66::,x)
 this_if	i_f
@@ -373,3 +373,62 @@ frame_to_protocol
 	MIB_ICOUNT48	this_if:inoproto
 
 	lret	0
+
+if_readq1
+	LOCK	this_if:lock_cell_q1
+	ly, i	this_if:oq
+	lcal	readqif
+	FREE	this_if:lock_cell_q1
+	lret	0
+
+if_readq2
+	LOCK	this_if:lock_cell_q2
+	ly, i	this_if:hvoq
+	lcal	hvreadqif
+	FREE	this_if:lock_cell_q2
+	lret	0
+
+q2ifoq
+	lk      (63*/18:s)
+	mta     (A$BUFFB*/18:s)
+	j       q2ifoq1
+	LOCK    this_if:lock_cell_q2
+	ly, i   this_if:hvoq
+	lcal    q2ifhv
+	FREE    this_if:lock_cell_q2
+	lret    0
+
+q2ifoq1
+	LOCK    this_if:lock_cell_q1
+	ly, i   this_if:oq
+	lcal    q2if
+	FREE    this_if:lock_cell_q1
+	lret    0
+
+if_dualport_txwrite
+	z	TX_DATAGRAML
+        la, i   nframe:stack_index, a
+
+        lb      0, a
+        aa      b
+
+        jpb     if_osentq
+if_osendq
+        dpush   a
+        ly      1, a
+        la      0, a
+
+        push    a
+        popA    TX_DATAGRAML
+
+        lcal    tx_nocheck
+
+        pop     a
+        pop     b
+        aa, xi  2
+        ab, xi  2
+        jnb     if_osendq
+
+if_osentq
+        lret	0
+

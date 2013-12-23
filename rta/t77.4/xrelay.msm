@@ -163,107 +163,108 @@ txq_ift1_relay
 	$if	HVBANK
 
 txq_ift1_otraffic1?
-	dl	this_if:ift1:hvoq:head, x
+	dl	this_if:hvoq:head, x
 	jzb	txq_ift1_otraffic2?
 	sabr	A$BUFFB
-	ly	b
-
-txq_ift1_fragment1
 
 	tz	xframe:flag, fp		. test interface buffer available
 	j	txq_next_interface	. or not
 
 	push	x
+
 	lx, i	4, fp
-	lcal	ipv4_transcribe_tx
-	pop	x
 
-	MIB_ACOUNT48	this_if:outoctets	TX_DATAGRAML
-	MIB_ICOUNT48	this_if:outpackets
+        la      descriptor:frame, b
+        push    nframe:llh:protocol_family, a
 
-	push	TX_DATAGRAML		. inform the interface logic
-	pop	xframe:frame_length, fp	. that the frame
-	push	(008000)		. is
-	pop	xframe:flag, fp		. complete
+	pop	xframe:protofamily, fp
 
-	lcal	txq_ift1_next_frame	. focus on the next available
-					. buffer of the interface
+	lcal	if_dualport_txwrite
+        pop     x               . the interface
 
-	ly	TX_TRANSFER_DESCRIPTOR
-	jnza	txq_ift1_fragment1	. send any remaining part
-					. as long as the interface
-					. has buffers
+        push,xi 2
+        pop     xframe:ll_hl, fp
 
-	lcal	ift1_readhvq
-.	ly, i	this_if:ift1:hvoq, x	. otherwise separate the datagram
-.	lcal	hvreadq			. from the interface xmit queue
+        push    TX_DATAGRAML
+        pop     xframe:frame_length, fp
+        push    (008000)
+        pop     xframe:flag, fp
 
-					. drop the datagram unless the
-					. upper protocol needs to keep it
+        lcal    txq_ift1_next_frame
+
+        lcal    if_readq1
+
+        MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+        MIB_ICOUNT48    this_if:outpackets
+
+
+
 	tp	descriptor:bytes, b	. test the retain bit
 	j	txq_ift1_otraffic1?
 
+	push	x
 	lx	(A$BUFFB*/18:s)
 
-	push	x
 	lcal	sell1
 	pop	x
 
 	j	txq_ift1_otraffic1?
 
 	$endif
-	
-txq_ift1_otraffic2?	
-	la	this_if:ift1:oq:head, x
-	jza	txq_next_interface
-	ly	a
 
-txq_ift1_fragment2
-	tz	xframe:flag, fp		. see if a device buffer 
-	j	txq_next_interface	. is free or not
+
+	
+txq_ift1_otraffic2?
+
+	la	this_if:oq:head, x
+	jza	txq_next_interface
+
+
+	tz	xframe:flag, fp
+	j	txq_next_interface
+
+	push	x	. the interface
+
+
+	lx, i	4, fp
+
+	la	descriptor:frame, a
+	push	nframe:llh:protocol_family, a
+	pop	xframe:protofamily, fp
+
+
+	lcal	if_dualport_txwrite
+
+
+	pop	x		. the interface
+
+	push,xi	2
+	pop	xframe:ll_hl, fp
+
+	push	TX_DATAGRAML
+	pop	xframe:frame_length, fp
+	push	(008000)
+	pop	xframe:flag, fp
+
+	lcal	txq_ift1_next_frame
+
+	lcal	if_readq1
+
+        MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+        MIB_ICOUNT48    this_if:outpackets
+
+	tp	descriptor:bytes, a
+	j	txq_ift1_otraffic2?
 
 	push	x
-	lx, i	4, fp
-	lcal	ipv4_transcribe_tx
-	pop	x
-
-	MIB_ACOUNT48	this_if:outoctets	TX_DATAGRAML
-	MIB_ICOUNT48	this_if:outpackets
-
-	push	TX_DATAGRAML		. inform the interface logic
-	pop	xframe:frame_length, fp	. this frame
-	push	(008000)		. is
-	pop	xframe:flag, fp		. complete
-
-	lcal	txq_ift1_next_frame	. focus on the next
-					. frame buffer of the interface
-
-
-	ly	TX_TRANSFER_DESCRIPTOR
-	jnza	txq_ift1_fragment2	. send any remaining part
-					. as long as the interface
-					. has buffers
-
-	ly, i	this_if:ift1:oq, x	. otherwise separate the datagram
-
-
-        $if      QSIMULTANEOUS
-	lcal	ift1_readq
-.	lcal	readqif
-	$else
-	lcal	readq			. from the interface xmit queue
-	$endif
-
-	tp	descriptor:bytes, a	. test the retain bit
-	j	txq_ift1_otraffic2?
-
-	push	x			. drop the transmitted frame unless
-	lcal	net_free_txb		. the upper protocol needs it again
+	lcal	net_free_txb
 	pop	x
 
 	j	txq_ift1_otraffic2?
+
 txq_next_interface
 	fret	0
+
 
 txq_ift1_next_frame
 	lb, xi	IFT1_TPAGEW
@@ -313,45 +314,9 @@ start_ift1
 	dl	(IFT1_RX_BASE*/18, IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:d)
 	sa	this_if:ift1:rx_cursor
 	sb	this_if:ift1:tx_cursor
-	z	this_if:ift1:oq:head
-	z	this_if:ift1:hvoq:head+1
+	z	this_if:oq:head
+	z	this_if:hvoq:head+1
 	$endif
 
 	j	locate_interfaces_include
 
-ift1_readq
-	LOCK	this_if:lock_cell_q1
-	ly, i	this_if:ift1:oq
-	lcal	readqif
-	tz	a
-	z	descriptor:i_f, a
-	FREE	this_if:lock_cell_q1
-	lret	0
-
-ift1_readhvq
-	LOCK	this_if:lock_cell_q2
-	ly, i	this_if:ift1:hvoq
-	lcal	hvreadqif
-	FREE	this_if:lock_cell_q2
-	lret	0
-
-ift1_writeq
-	tz	descriptor:i_f, a
-	fret	0
-	lk	(63*/18:s)
-	mta	(A$BUFFB*/18:s)
-	j	ift1_writeq1
-	LOCK	this_if:lock_cell_q2
-	ly, i	this_if:ift1:hvoq
-	lcal	q2ifhv
-	FREE	this_if:lock_cell_q2
-	fret	0
-
-ift1_writeq1
-	LOCK	this_if:lock_cell_q1
-	ly, i	this_if:ift1:oq
-	push	this_if:id
-	pop	descriptor:i_f, a
-	lcal	q2if
-	FREE	this_if:lock_cell_q1
-	fret	0
