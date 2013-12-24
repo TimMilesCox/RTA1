@@ -96,14 +96,14 @@ tcp4	la	tcpq.head
 
 	and, xi	TCP_SYN++TCP_ACK
 	ana, xi	TCP_SYN
-	jnza	tcp_reject_reset
+	jnza	tcp_reset_deflect
 					. either q the request to
 					. the listening socket owner
 					. or do this automatic accept
 	lcal	tcp_auto_accept
-	j	tcp_reject_reset	. connection not assigned
+	j	tcp_reset_deflect_lx	. connection not assigned
 	j	tcp_ripdown_reset	. connection assigned but not working
-					. connection SYN_ACK
+					. connection SYN_ACK, 3rd return
 	ly, xi	tcpq
 	lcal	net_drop
 	j	tcp4
@@ -508,8 +508,7 @@ tcp_rx_ack_nopayload
 	j	tcp_ack_point
 
 tcp_finwait1
-	push,xi	TCP_DELETETCB
-	pop	transmission:state
+	lcal	tcp_ripdown
 tcp_deletetcb
 tcp_synreceived
         j	tcp_stepover_response
@@ -518,12 +517,7 @@ tcp_ripdown_reset
 	lcal	tcp_reset
 	j	$+1			. there are two returns
 tcp_ripdown_silently
-	lcal	tcp_ripdown		. the ? descriptor is in X
-					. the previous ? descriptor is in Y
-	j	tcp_stepover_response	. there are two returns
-
-tcp_reject_reset
-	lcal	tcp_reject		. fp must -> incoming descriptor
+	lcal	tcp_ripdown
 
 tcp_closewait
 tcp_stepover_response
@@ -893,6 +887,8 @@ tcp_options_complete
 	
 
 tcp_ripdown
+	push,xi	TCP_DELETETCB
+	pop	transmission:state
 	lret	0
 
 tcp_locate_connection
@@ -1021,8 +1017,14 @@ tcp4_rx	ly	TP_HEADER
 	sabr	BSOCKET		.	look at the port socket structure
 	tz	1, b		.	is the port bound?
 	j	tcp_qthru	.	yes, queue it to protocol 2nd part
+
+tcp_reset_deflect_lx
+	lx	TP_HEADER	.	in case you started from somewhere else
 tcp_reset_deflect
-				.	no, repool the buffer
+	la	transfer:hl_code
+	and, xi	TCP_RST		.	no, repool the buffer
+	jnza	ipv4_drop	.	don't try to reset a reset
+
 	lcal	tcp_reject
 				.	send a reset
 	j	ipv4_drop	.	and drop the input
@@ -1374,11 +1376,11 @@ tcp_reject		. this is when TCP_RST must be sent
 	dsr	16
 	sbr	8
 	jnza	$-3
-	la	b
-	xor	(00FFFF)
-	sa	transfer:checksum, x
+	xorB	(00FFFF)
+	sb	transfer:checksum, x
 
 	pop	x			. the descriptor
+	ly	TX_DATAGRAM
 	call	(ipsend)
 	
 tcp_noresetbuffer
