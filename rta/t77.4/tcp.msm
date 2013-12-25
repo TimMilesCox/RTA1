@@ -95,13 +95,17 @@ tcp4	la	tcpq.head
 	sa	HL_FLAGS
 
 	and, xi	TCP_SYN++TCP_ACK
-	ana, xi	TCP_SYN
-	jnza	tcp_reset_deflect
+	xor, xi	TCP_SYN
+	jnza	tcp_reset_dq		. similar case to IP input loop
+					. nothing listening, but we must
+					. dq from tcpq and drop, send RST
+					. and continue in this loop here
+
 					. either q the request to
 					. the listening socket owner
 					. or do this automatic accept
 	lcal	tcp_auto_accept
-	j	tcp_reset_deflect_lx	. connection not assigned
+	j	tcp_reset_dq_lx		. connection not assigned
 	j	tcp_ripdown_reset	. connection assigned but not working
 					. connection SYN_ACK, 3rd return
 	ly, xi	tcpq
@@ -512,6 +516,17 @@ tcp_finwait1
 tcp_deletetcb
 tcp_synreceived
         j	tcp_stepover_response
+
+
+tcp_reset_dq_lx
+	lx	TP_HEADER
+tcp_reset_dq				. and the descriptor for tcp_reject
+					. is still in fp
+	la	transfer:hl_code
+	and, xi	TCP_RST
+	jza	tcp_stepover_response	. don't answer an incoming RST please
+	lcal	tcp_reject		. no connection
+	j	tcp_stepover_response
 
 tcp_ripdown_reset
 	lcal	tcp_reset
@@ -1018,8 +1033,6 @@ tcp4_rx	ly	TP_HEADER
 	tz	1, b		.	is the port bound?
 	j	tcp_qthru	.	yes, queue it to protocol 2nd part
 
-tcp_reset_deflect_lx
-	lx	TP_HEADER	.	in case you started from somewhere else
 tcp_reset_deflect
 	la	transfer:hl_code
 	and, xi	TCP_RST		.	no, repool the buffer
