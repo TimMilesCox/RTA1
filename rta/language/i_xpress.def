@@ -1,8 +1,10 @@
 "$ASIDE"	$set	8
 
 "$push"*        $proc
-                $do     $ASIDE>8,       ;
+                $if     $ASIDE>8
                 $flag   aside buffer needs to be dynamic, written twice
+		$trace	$ASIDE
+		$endif
                 ds      8
 "$ASIDE"************************	$set    $ASIDE+2
                 $end
@@ -21,7 +23,7 @@ inward		$set	$ASIDE
 p		$proc
 
 "$i_testequal"* $name
-                dan     p(1)
+                dan     p(1)		. a result is double
                 jdz     $+3
                 dsr     48
                 j       $+2
@@ -29,13 +31,13 @@ p		$proc
                 $return
 
 "$i_testunequal"* $name
-                dan     p(1)
+                dan     p(1)		. a result is double
                 jdz     $+3
                 la, xi  0
                 lb, xi  1
                 $return
 
-"$i_testgreater"* $name
+"$i_testgreater"* $name			. a result is double
                 dan     p(1)
                 jdz     $+6
                 jna     $+4
@@ -56,20 +58,28 @@ p		$proc
                 $return
 
 "$i_shift"*	$name
-		dsl	+p(1)
+		$if	p(1, *1)++p(1, 2)
+		dsl	p(1)
+		$else			. shift distance is ea as immediate
+		dsl	+p(1)		. including 1 word indirect ea
+		$endif
                 $return
 
 "$i_shift_right"* $name
-                dsr     +p(1)
+		$if	p(1, *1)++p(1, 2)
+		dsa	p(1)
+		$else
+                dsa     +p(1)		. suppress literal generation
+		$endif
                 $return
 
 "$i_or"*	$name
-"$ea"           $equf   p(1)
+"$ea"           $equf   p(1)		. booleans are two words in parallel
                 or      $ea
                 orB     $ea+1
                 $return
 
-"$i_xor"*	$name
+"$i_xor"*	$name			
 "$ea"           $equf   p(1)
                 xor     $ea
                 xorB    $ea+1
@@ -82,7 +92,7 @@ p		$proc
                 $return
 
 "$i_add"*	$name
-		da	p(1)
+		da	p(1)		. add / subtract are double
 		$return
 
 "$i_subtract"*	$name
@@ -90,17 +100,21 @@ p		$proc
 		$return
 
 "$i_multiply"*	$name
-		push	b
+"$ea"		$equf	p(1)		. multiplier / divisor are single
+
+		sb	7
 		lb	a
-		m	p(1)
+		m	$ea
 		sb	6
-		pop	b
-		mf	p(1)
+		lb	7
+		mf	$ea
 		aa	6
+
 		$return
 
 "$i_divide"*	$name
-		d	p(1)
+"$ea"		$equf	p(1)
+		d	$ea
 		sb	7	. save the remainder
 		lb	a
 		la	6
@@ -119,17 +133,35 @@ p		$proc
 		$return
 
 "$i_load"*	$name
+		$if	(p(1,3)=1)++;
+			(p(1,3)=2)++;
+			(p(1,3)=3)++;
+			(p(1,3)=4)++;
+			(p(1,3)=5)
+		la	p(1)
+		dsa	24
+		$else
 		dl	p(1)
+		$endif
 		$return
 
 "$i_load_negative"* $name
+		$if	(p(1,3)=t1)++;
+			(p(1,3)=t2)++;
+			(p(1,3)=t3)++;
+			(p(1,3)=i)++;
+			(p(1,3)=xi)
+		la, xi	0
+		ana	p(1)
+		dsa	24
+		$else
 		dsr	48
 		dan	p(1)
+		$endif
 		$return
 
-"$i_reserve"*	$name
+"$i_reserve"*	$name			. setaside is always double
 		$push
-		$trace	$ASIDE
 		$return
 
 
@@ -168,14 +200,14 @@ p		$proc
 		dsr	48
                 $return
 
-"$i_retrieve_shift"* $name
-"$ea"           $equ    $pop
+"$i_retrieve_shift"* $name		. setaside shift count is LS word
+"$ea"           $equ    $pop		. and is indirect
 		dsl	*$ea+1
 		$return
 
 "$i_retrieve_shift_right"* $name
 "$ea"           $equ    $pop
-		dsr	*$ea+1
+		dsa	*$ea+1
 		$return
 
 "$i_retrieve_or"* $name
@@ -201,19 +233,20 @@ p		$proc
 		$return
 
 "$i_retrieve_subtract"*	$name
-		$trace	$ASIDE
 		dan	$pop
 		$return
 
 "$i_retrieve_multiply"*	$name
 "$ea"           $equ    $pop
-		push	b
-		sa	b
+
+		sb	7
+		lb	a
 		m	$ea+1
-		sb	5
-		pop	b
+		sb	6
+		lb	7
 		mf	$ea+1
 		aa	6
+
 		$return
 
 "$i_retrieve_divide"*	$name
