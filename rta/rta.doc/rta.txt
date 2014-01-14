@@ -22,23 +22,42 @@ RTA1 is a computer processor architecture which has run in emulation on a Unix h
 <p>
 Scalability is claimed for the RTA1 architecture. It can run simple dedicated microcontroller applications in a few dozen words of
 storage, and it can run as a major system maintaining some millions of TCP connections simultaneously
-<p>
-RTA1 is also designed from the start for symmetric multiprocessing, a second plane of scalability
-<p>
-RTA specification has I/O space as well as memory space. I/O space is a third
-plane of scalability for peripheral configuration
-<p>
-The emulated prototype is interfaced to Internet Protocol networks and communicates with other computers with the Telnet, SNMP, HTTP and ICMP-Echo (Ping) protocols. A floating-point server application also runs over UDP to demonstrate the power and range of the RTA1 96-bit floating architecture
-<p>
-RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic. The limit of executable space (or system memory) is 16 gigawords.
 
 <p>
-Additional arrays up to one teraword total which are not part of executable space may be added. These additional arrays are known in RTA1 documentation as "devices", and they may each contain up to 16 gigawords of 8- 16- or 24-bit memory, which may be video RAMs, dual-ported 16-bit network buffers, memory-addressable 24-bit filestores, removable 8-bit memory sticks, and so on.
+RTA1 is designed for symmetric multiprocessing, an important plane of scalability
+<p>
+RTA specification has I/O space as well as memory space, making a further plane of scalability
+<p>
+The emulated prototype is interfaced to Internet Protocol networks and communicates
+with other computers with the Telnet, SNMP, HTTP and ICMP-Echo (Ping) protocols.
 
 <p>
-The reason why there are arrays outside executable space is the compact layout of the relocation registers
-These are very short to minimise cycles at context switch and to fit in one I/O port - relocation registers
-are implemented in I/O ports
+A floating-point server application runs over UDP for interaction with RTA1 96-bit floating architecture
+
+<p>
+RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic
+
+<p>
+The addressable storage location is the 24-bit computer word. Instructions are one computer word in size 
+
+<p>
+The limit of executable space (or system memory) is 16 gigawords.
+
+<p>
+Additional arrays up to one teraword total which are not part of executable space may be added.
+ These additional arrays are known in RTA1 documentation as "devices", and they may each contain
+up to 16 gigawords of 8- 16- or 24-bit memory, which may be video RAMs, dual-ported 16-bit network buffers,
+memory-addressable 24-bit filestores, removable 8-bit memory sticks, and so on.
+
+<p>
+System memory or executable space is Device 0, and there may be 63 more devices
+
+<p>
+There are arrays outside executable space because only one space can be organised
+in banks of 4K Words. That's needed for executable space. The other 63 spaces can
+be organised in banks of 256K words. This keeps the relocation registers at one
+word in size. That minimises cycles at context switch and fits each relocation
+pointer in one I/O port - relocation registers are implemented in I/O ports
 <pre>
 
 
@@ -46,8 +65,8 @@ are implemented in I/O ports
 					_____________________________
 
 			_________________________________________________
-			|  16 bank select bits	|6b.page| 12 offset bits|
-			|_______________________|select	|_______________|
+			|  22 page select bits	        | 12 offset bits|
+			|_______________________________|_______________|
 			|  16 bank select bits	|         18 offset bits|
 			|_______________________|_______________________|
 
@@ -57,86 +76,101 @@ are implemented in I/O ports
 
 		_________________________________________________________
 		|device|   16 bank select bits  |         18 offset bits|
-		|sel.6b|________________________|_______________________|
+		|______|________________________|_______________________|
 
- 
+
+
+
+
+					relocation values
+					________________________________
+
+
+
+					relocation value, 4K bank (page)
+					________________________________
+
+				_________________________________________
+				|00|		22 bank select bits	|
+				|__|____________________________________|
+
+
+
+					relocation value, 256K bank
+					________________________________
+
+				________________________________________
+ 				|01|	16 bank select bits	|device|
+				|__|____________________________|______|
 
 
 </pre>
-System memory can be placed in the address space in ranges of 4096-word blocks
-or in ranges of 262144-word blocks.
+Bit 22 of the relocation pointer value in the I/O port is "big" or "big bank".
+Device 0 is system memory, so system memory is placed the address space
+in ranges of 4096-word blocks or in ranges of 262144-word blocks.
 
 <p>
 Device arrays can be placed in the address space in ranges of 262144-word blocks
 
 <p>
-16 gigawords is a large executable space
-
-<p>
-Applications may place the other 63 device spaces in address space windows
-and organise their contents by means of software
-
-<p>
 There is an outline for increasing the executable space to 256 terawords.
 Most applications do not need that, and the emulated prototype does not include it
 <pre>
+
 	_________________________________________________________________________________
 	|										|
 	|			ADDRESS SPACE AND EXECUTABLE SPACE			|
 	|_______________________________________________________________________________|
 	|										|
         |                                                                               |
-	|	Definitions are offered for address space and executable space		|
+	|	These definitions are offered for address space and executable space	|
 	|										|
 	|										|
 	|	Address space is the space which the effective address can reach	|
-	|                                                                               |
-        |                                                                               |
-	|	All programs have 64 memory address windows and may freely change	|
-	|	the memory spaces in those windows. Much more executable space than	|
-	|	the 16-megaword address space can be installed and switched into	|
-	|	the address space							|
+	|       i.e. the space which code can see at one moment             		|
+	|										|
+	|	Different memory can be in the address space at different times		|
+	|										|
+	|	So long as it's the sort of memory that can be used for both code	|
+	|	and data, that's executable space					|
+	|										|
+	|	In the RTA1 case that's the maximum 16 Gigawords of Device 0		|
+	|	which is 1024 times the address space					|
+	|										|
+	|	RTA1 needs program memory to be						|
+	|										|
+	|		addressable in 4K words banks some of the time			|
+	|										|
+	|		able to do atomic read-modify-write, at least when SMP		|
 	|										|
 	|										|
-	|	Executable space is the total amount of program memory which could be	|
-	|	installed and available to go in the address windows. This is		|
-	|	memory where code may be executed <i>and</i> program data			|
-	|	structured and worked <i>with a single consistent organisability</i>		|
 	|										|
-	|										|
-	|	A jump restarts the RTA1 program counter with an offset in a		|
-	|	range of 4K-word pages							|
-	|										|
-	|										|
-	|	Program data spaces in RTA1 executable space are assigned in ranges	|
-	|	of 4K-word pages <i>or</i> in ranges of 256K-word banks			|
-	|										|
-	|										|
-	|	This places the 16 gigawords space of device number zero in		|
-	|	executable space							|
-	|										|
-	|										|
-	|	Program data in executable space must respond to read-modify-write	|
-	|	cycles at least in SMP configurations. Applications will also do	|
-	|	byte-read/writes on data in executable space, but byte reads and	|
-	|	writes need not be a characteristic of the memory itself		|
-	|										|
-	|										|
-	|	Arrays outside executable space need not perform all of that.		|
-	|	Their minimum service connected to RTA1 processors is to read data	|
-	|	words out and to store data words if they are writeable devices		|
+	|	Arrays outside executable space cannot be based at 4K words and		|
+	|	need not necessarily read-rewrite atomically				|
 	|										|
 	|_______________________________________________________________________________|
 
 
 </pre>
 <p>
-The address space is 16 Megawords divided into windows of either 4096 words or 262144 words
+Operand address space starts with the 256 registers
+
+<p>
+Above address 256, operand address space is 16 megawords in 64 windows
+
+<p>
+Up to address 262144, the window is bits 17..12 of the effective address
+
+<p>
+From address 262144, the window is bits 23..18 of the address. They are
+the same 64 windows
+
+<p>
+The 6-bit window index corresponds the a relocation pointer in I/O ports 0..63
+(or to certain switchable alternatives in I/O ports 65..71)
 <pre>
 
 
-					address space 16 megawords
-					__________________________
 
 					__________________________________
 					| window|          18 offset bits|
@@ -146,47 +180,38 @@ The address space is 16 Megawords divided into windows of either 4096 words or 2
 
 </pre>
 <p>
-Instructions are read from only one address window, which can be any size in contiguous blocks of 4096 words and is called Bank 0. The direct addressing range of jump instructions (and of all instructions) covers 32768 words. There is one instruction per word
-<pre>
-
-
-					instruction fetch from any size address window 0
-					________________________________________________
-
-						__________________________________________________	data plane
-	instruction plane................	|window0|window1|window2|window3|window4|window5.....................
-					:	|4Kwords|_____4K|_____4K|4K/256K|4K/256K|4K/256K
-					:	|	|		.	.	.
-					:	|4K more|
-					:	|	|
-					:	|4K more|
-					:	|	|
-					:	|4K more|
-	program counter------------------------->	|
-					:	|4K more|
-					:	|	|
-					:	|4K more|
-					:	|	|
-					:	|4K more|
-					:	|	|
-					:	|4K more|
-					:	.	.
-					:	.	.
-					:	.	.
-
-
-</pre>
-<p>
-Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP in 3000 instructions which each take one storage location. Another 4000 instructions run Telnet, MIB-II plus a management agent, a simple HTTP server, and an online floating point server program
+Unlike operands, instructions are always in window zero. Instruction window is any
+size in 4K-granularity. Program counter is absolute and window zero base value is
+used to make jump addresses absolute and to make saved addresses program-relative
 
 <p>
-RTA1 is intended to work very fast without having operand cache. The large array of scratch registers is organised in an internal stack. One plane of scalability is intended to be the configuration of RTA1s as symmetric multiprocessors only connected by memory, which must be able to carry out atomic read/modify cycles. The internal stack in place of operand cache removes any need for expensive cache coherency measures
+Words 256..4095 of window zero are in the operand address space as well as the
+instruction window
 
 <p>
-The internal stack is nothing like as large as even modest Level-One caches, and its effect is not identical. RTA1 may be programmed for very precise economy in storage reads and writes
+Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP
+in 3250 instructions which each take one storage location. Another 4000 instructions run Telnet,
+MIB-II and snmp v1, a simple HTTP server, and an online floating point server program
 
 <p>
-The part of the register stack available to an application is 128 words, and the part of it organised in an internal stack is 104 words. The working of the internal stack is somewhat inverse to an external stack. Pushes and pops generate an operand effective address like all other instructions. A push is a load in RTA1, and a pop is a store
+RTA1 is intended to work very fast without having operand cache. The large array of
+scratch registers is organised in an internal stack. Cache coherency measures are not
+needed. Applications claim data by test and set in SMP configurations, and double
+update is avoided by recognising the scope of test-and-set locks
+
+<p>
+The internal stack is very small compared to any known layer-one cache, but can
+produce a very large performance advantage
+
+<p>
+The part of the register stack available to an application is 128 words, and the part
+of it organised in an internal stack is 104 words. The working of the internal stack is
+somewhat inverse to an external stack.
+
+<p>
+Pushes and pops generate an operand effective address like all other instructions.
+
+A push is a load into CPU registers in RTA1, and a pop is a store
 <pre>
 
 
@@ -253,16 +278,19 @@ The part of the register stack available to an application is 128 words, and the
 Instruction acquisition has one window, which is the instruction bank currently executing and may be several times 4096 words in size
 
 <p>
-The program counter is a non-addressable register 48 bits in size containing the absolute address of the next instruction to be fetched. When a jump instruction supplies the effective address, the start address of Bank 0 is added to obtain the new absolute address. When a call or interrupt instruction stores the intra-Bank-0 relative address, this is obtained by subtracting the start address of Bank 0 from the absolute program counter
+The program counter is a non-addressable register 48 bits in size containing the absolute address
+of the next instruction to be fetched. When a jump instruction supplies the effective address,
+the start address of Bank 0 is added to obtain the new absolute address. When a call or interrupt
+instruction stores the intra-Bank-0 relative address, this is obtained by subtracting the start
+address of Bank 0 from the absolute program counter
 
 <p>
-Execution can and does jump between different instruction banks. Each instruction bank is based at Bank 0 until it returns or calls another instruction bank
+Execution can and does jump between different instruction banks. Each instruction bank is based
+at Bank 0 until it returns or calls another instruction bank
 
 <p>
-Operand acquisition has 65 addressing windows although memory may only appear in 64 windows. The 256 registers are the first 256 locations of operand space but are not in instruction space. Instructions may be fetched from the start of Bank 0
-
-<p>
-Not every instruction has a storage operand. Those that do, follow these rules to translate the effective operand address to the physical address of the target computer word
+Not every instruction has a storage operand. Those that do, follow these rules to translate the
+effective operand address to the physical address of the target computer word
 <pre>
 
 
@@ -498,13 +526,16 @@ or else they are thirdwords (8 bits) with sign extension on read
 </pre>		
 <p>
 
-But it is very undesirable that the File 1 Instructions should all have five different encodings for accessing bytes. There are three byte-select encodings available in those instructions, and flag <b>half$w</b> = 1 = halfword access, otherwise the application may access thirdwords
+But it is very undesirable that the File 1 Instructions should all have five different encodings
+for accessing bytes. There are three byte-select encodings available in those instructions,
+and flag <b>half$w</b> = 1 = halfword access, otherwise the application may access thirdwords
 
 <p>
 Flags 6 5 and 4 adjust the <b>Bit Stream Read Channel</b> and <b>Bit Stream Write Channel</b>
 
 <p>
-Flag 6 <b>b$streamZR</b> affects the operation of the <b>Read Staging Register</b> instruction <b>rsr</b>, which makes a stream of bits or bytes serially available to the arithmetic registers
+Flag 6 <b>b$streamZR</b> affects the operation of the <b>Read Staging Register</b> instruction <b>rsr</b>,
+which makes a stream of bits or bytes serially available to the arithmetic registers
 
 <p>
 <b>b$streamZR</b> states that bits from the staging register <b>RDATA</b> shall be shifted into a cleared arithmetic register, saving an extra instruction to mask the desired field. Otherwise the previous arithmetic register contents are shifted towards the high order bit positions as new bits are transferred from <b>RDATA</b>
@@ -897,9 +928,6 @@ Hardware implementations must wire the real memory and device information to I/O
 <h4>2.4.1 Instruction Summary</h4>
 
 <p>
-This instruction summary should assist when consulting the detailed explanations further down.
-
-<p>
 RTA1 instructions are grouped in 5 columns called instruction files. The five instruction files map to eight operand characteristics.
 <p>
 Instruction File 1 spans six of the eight operand types. Instruction File 1 is the group of much-used simple operations with a choice of operand type. Operands can be a word, part of a word, an immediate
@@ -1199,7 +1227,7 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 			Byte writes to storage are from the low-order bits of the
 			source register, including byte writes to system memory
-			from the register at the internal stack top
+			from the register at the internal stack top----------------->		pop[,t1|t2|t3]	target
 
 			Only 24-bit words are read from registers addressed as storage
 			Only 24-bit words are written to registers addressed as storage
@@ -1280,10 +1308,11 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 				bits 23..8 are unchanged on store
 
-				PARTIAL WORDS ARE ONLY LOADED AND STORED IN			xor, t3		keyvalue
-				SYSTEM MEMORY
+				PARTIAL WORDS MAY ONLY BE READ FROM SYSTEM			xor, t3		keyvalue
+				MEMORY AND WRITTEN TO SYSTEM MEMORY
 
-				REGISTERS ONLY READ AND WRITE WORDS
+				REGISTERS ARE 24-BIT WORD SCALARS
+				OR MULTI-WORD-SCALARS
 
 
 				 23		                                                 0
@@ -1316,7 +1345,7 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
                         Byte writes to storage are from the low-order bits of the
                         source register, including byte writes to system memory
-                        from the register at the internal stack top 
+                        from the register at the internal stack top----------------->		pop[,h2|h2]	 target
 
                         Only 24-bit words are read from registers addressed as storage
                         Only 24-bit words are written to registers addressed as storage
