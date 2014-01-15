@@ -22,26 +22,148 @@ There are no compiler languages yet for RTA1. Every instruction in it
 has been assembled with the masmx meta-assembler
 
 <p>
-This document is about the formal calling sequences which are used in
-structured assembler code
+This document is about
+
+<ol>
+	<li>
+	formal calling sequences used in structured assembly language code
+	</li>
+	<li>
+	runtime algorithmic expressions
+	</li>
+
+</ol>
+
+<h3>1. Formal Calling Sequences used in Structured Assembly Language Code</h3>
+<p>
+These call sequences have made some parts of the kernel simpler to write
 
 <p>
-These sequences are constructed with macro language. They
-structure the internal stack as a non-volatile register list
+They  construct a non-volatile register list in the internal stack
 
 <p>
-It is hoped that these calling sequences will be useful for C compiler
-developers, and that languages organisationally different from C
-will use the same calling sequences as C, giving a single consistent
-call interface
+They sacrifice no efficiency at all
 
 <p>
-This macro file <b>language/stack.def</b> provides four services to "near"
-routines <b>lcal ... lret</b> and to "far" routines <b>call ... fret</b>
+Simpler assembly subroutines are easier to write without this structuring
+because they then have more freedom for stack manipulation
 
 <p>
-Three services are contained in the macro <b>$head_near/far</b> and one
-service is contained in the macro <b>c / lc</b>
+As well as simplifying code development in assembly language,
+these calling sequences are intended to support future C compilers
+and to make a single call interface available for any style of
+programming language
+
+<p>
+Macro definition file <b>language/stack.def</b> constructs five services
+to "near" routines <b>lcal ... lret</b> and to "far" routines
+<b>call ... fret</b>
+
+<p>
+The simplest of these five services is <b>$vector</b> which constructs
+the compressed routine address value which is used as a handle for calling
+a far routine. This value is the storage constant operand of
+<b>go</b> and <b>call</b> instructions
+<pre>
+
+
+	<b>$vector</b> goes in the first 64 words of a bank
+	on a 4K word bank edge.
+	The 64 entries at the bank start are a jump pad
+
+	23  21		       6|5    0
+	________________________|_______
+	|00|   bank identifier	|offset|
+	|__|____________________|______|
+
+
+	Instruction banks at addresses from 256 Megawords
+	to 16 Gigawords are assigned at a granularity of 32K words
+	and have eight entry vectors
+
+        23  21                    3|2 0
+        ___________________________|____
+        |01|   bank identifier	   |off|
+        |__|_______________________|set|
+
+
+</pre>
+<p>
+The target bank is any size, but
+only 64 or 8 vector locations are externally addressable
+
+<p>
+Three stack management services are contained in
+the macro <b>$head_near/far</b> and one internal stack
+management service is contained in the macro <b>c / lc</b>
+
+<p>
+Macro <b>$head_near/far</b> constructs up to three lists of names which
+are base+displacement definitions on internal stack pointer <b>sp</b>
+or external stack pointer <b>fp</b>
+
+<p>
+These lists are called <b>params() scalars() xframe()</b>
+
+<p>
+<b>$head_near/far</b> macro constructs data in
+two of those lists, <b>scalars</b> in the internal stack
+and <b>xframe</b> in the external stack
+
+<p>
+<b>params()</b> and <b>scalars()</b> feature here:
+
+<pre>
+
+
+
+$ masmx rtxample -ln
+MASMX 7r3
+3/rtxample.msm
+*EOF*
+  :                            1 	$path		../def
+  :                            2: 	$include	rta.def
+  :                            3 	$path		../language
+  :                            4: 	$include	stack.def
+  :                            5: 	$include	fpxpress.def
+  :                            6 	$path
+  :                            7 $(0:0)
+  :                            8 
+00:000000 B60040              +9 floating_algorithm*  $vector fp_routine
+  :                            10 
+  :                            11 $(0:64)
+  :                            12 
+  :                            13 fp_routine 
+                                	$head_far	 params(one,	float		;
+                                				two,	float		;
+                                				three,	float)		;
+                                							;
+Note: rtxample.msm Line 18: add $$frame to sp before return
+00:000040 F80002              +18 			scalars(temp1,	int,	x)
+  :                            19 
+00:000041 4FF004              +20 	$xqt_fp		one*1.75*+1200000*two/3.0*-625000-three
+00:000042 770100              +20 
+00:000043 77F008              +20 
+00:000044 7F0104              +20 
+00:000045 6FF00C              +20 
+  :                            21 
+  :                            22 
+00:000046 50F000              +23 	lx		temp1
+  :                            24 
+00:000047 FCF001              +25 	push, i		$$frame, sp
+00:000048 38000F              +26 	pop		sp
+00:000049 3D0000              +27 	fret		0
+  :                            28 
+  :                            29 	$do		$<256,$(0:256)
+  :                            30 	
+*EOF*
+00:000100+7CD38BB7B396D7AA20B6E083
+00:000104+2051D5B8447B77478A23F5F7
+:$(00):000000:000108 
+rtxample.msm: object code 229 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
 
 <p>
 The <b>c / lc</b> macro embeds far and near call instructions
@@ -49,498 +171,270 @@ The <b>c / lc</b> macro embeds far and near call instructions
 internal stack, and afterwards clearing the internal stack
 
 <p>
-Macro <b>$head_near/far</b> constructs up to three lists of names which
-are base+displacement definitions on one or other stack pointer
+<b>c / lc</b> finalises the parameter list by pushing a stack walkback before
+the <b>call / lcal</b> instruction and popping the internal stack pointer on
+return. If there are no parameters, it doesn't. Then the effect is the same
+as issuing a <b>call</b> or <b>lcal</b> instruction directly
 
-<p>
-<b>$head_near/far</b> also constructs the data corresponding to
-two of those three lists of names
+<pre>
 
-<p>
-<b>$head_near/far</b> has three embedded macros, <b>params() scalars() xframe()</b>
+$ masmx ruxample -lnk
+MASMX 7r3
+3/ruxample.msm
+*EOF*
+  :                            1 	$path		../def
+  :                            2: 	$include	rta.def
+  :                            3 	$path		../language
+  :                            4: 	$include	stack.def
+  :                            5 	$path
+  :                            6 
+  :                            7 
+  :                            8 $(3:03000)
+  :                            9 left	$res	4
+  :                            10 right	$res	4
+  :                            11 centre	$res	4
+  :                            12 	$lit
+  :                            13 
+  :                            14 $(0:64)
+  :                            15 
+  :                            16 
+                                	c	(fp_algorithm)	left,,		float		;
+                                				(1.875:d),,	floating_packed	;
+00:000040 8F3004              +19 				right,,		float
+00:000041 5F300C              +19 
+00:000042 8F3000              +19 
+00:000043 FCF00C              +19 
+00:000044 FF300E              +19 
+00:000045 38000F              +19 
+  :                            20 
+00:000046 473008              +21 	qs	centre
+  :                            22 
+  :                            23 
+  :                            24 	$do	$<256,$(0:256)
+  :                            25 
+*EOF*
+03:00300c+401F00000000
+03:00300e+[0000]18:000000
+:$(00):000040:000100 :$(03):003000:00300F 
+ruxample.msm: object code 174 bytes: 0 errors: 1 undefined labels
 
+
+</pre>
 <p>
 <b>params()</b> maps names onto the parameters pushed in <b>c / lc</b>
 
 <p>
-<b>scalars()</b> constructs and names the dynamic variable list in the
-internal stack based on Stack Pointer sp
+<b>scalars()</b> constructs and names dynamic variables in the
+internal stack based on <b>sp</b>
 
 <p>
-<b>xframe()</b> constructs a second dynamic variables list in the
-in the external stack based on Frame Pointer Register fp. This is for
+<b>xframe()</b> constructs dynamic variables in the
+in the external stack based on <b>fp</b>. <b>xframe()</b> is for
 structures and arrays. The internal stack is only large enough for scalars
 and pointers
+<pre>
+
+$ masmx tempbuff -ln
+MASMX 7r3
+3/tempbuff.msm
+*EOF*
+  :                            1 		$path		../def
+  :                            2: 		$include	rta.def
+  :                            3 		$path		../language
+  :                            4: 		$include	stack.def
+  :                            5 		$path
+  :                            6 
+                                routine1        $head_near       params(left,	long			;
+                                                                        right,	long)			;
+                                									;
+                                                                scalars(down,	int,	0		;
+                                                                        up,	int,	2048//3-1)	;
+                                									;
+Note: tempbuff.msm Line 13: add $$frame to sp before return
+00:000000 F80000              +13                                  xframe(sorting_buffer, 2048//3)
+00:000001 F802AA              +13 
+00:000002 FDFD55              +13 
+00:000003 2F000E              +13 
+Note: tempbuff.msm Line 13: add $$xframe to fp before return
+  :                            14 
+  :                            15 .
+  :                            16 .
+  :                            17 
+  :                            18 
+  :                            19 
+00:000004 FCE2AB              +20                 push, i         $$xframe, fp
+00:000005 38000E              +21                 pop             fp
+00:000006 FCF002              +22                 push, i         $$frame, sp
+00:000007 38000F              +23                 pop             sp
+  :                            24 
+00:000008 350000              +25                 lret            0
+  :                            26 
+*EOF*
+:$(00):000000:000009 :$(46):000000:0002AB 
+tempbuff.msm: object code 159 bytes: 0 errors: 0 undefined labels
+
+</pre>
+<p>
+These macros do not use a cover pointer for internal stack frames
+based on <b>sp</b>. The overhead of maintaining a cover pointer has
+been eliminated
 
 <p>
-Both <b>$head_near/far</b> and <b>c / lc</b> adjust with the
+<b>$head_near/far</b> and <b>c / lc</b> adjust with the
 deepening stack displacement of objects already in the stack
 as they add more objects
 
 <p>
-This eliminates linkage overheads
-
-<p>
-A separate cover pointer is not used, so the routine body should
-not change the stack pointer except with <b>c / lc </b> macro calls
-other routines
+Routines constructed with this framework should therefore not change
+<b>sp</b> except with <b>c / lc </b> macros
 
 <p>
 Very simple assembler routines need not use this framework of macros
 at all. They can alter the stack freely
 
 <p>
-The correct way within this macro framework to save a register in
-mid-routine is to have a dynamic variable for it in the
-<b>scalars()</b> list. This can also save registers at routine start,
+The practical way within this macro framework to save a register
+during a routine is to assign it to a dynamic variable in the
+<b>scalars()</b> list. This saves the register at routine start,
 because the dynamic frame is constructed by pushing things
-
-<p>
-A dynamic scalar is a scratch register in the internal stack
-
-<p>
-<b>c / lc</b> finalises the parameter list by pushing a stack walkback before
-the <b>call / lcal</b> instruction and popping the internal stack pointer on
-return. If there are no parameters, it doesn't. Then the effect is the same
-as issuing a <b>call</b> or <b>lcal</b> instruction directly
-
-<p>
-This assembly of a skeletal application fragment <b>stack.msm</b> is followed by a listing
-of the the macro source in <b>../language/stack.def</b>
-
-The three code routines in <b>stack.msm</b> are <b>$tree ... $root</b> blocks so that
-their internal names need not be unique. Those names are visible outside the
-routines as catenated after the routine name
 <pre>
 
-$ masmx stack -kln
-MASMX 7r1
-3/stack.msm
+$ masmx -ln saverlod.msm
+MASMX 7r3
+3/saverlod.msm
 *EOF*
-  :                            1 .	I am a demonstration code fragment
-  :                            2 .	for the ../language/stack macro complex
-  :                            3 
-  :                            4: 	$include ../def/rta.def
-  :                            5: 	$include ../language/stack.def
+  :                            1 		$path		../def
+  :                            2: 		$include	rta.def
+  :                            3 		$path		../language
+  :                            4: 		$include	stack.def
+  :                            5 		$path
   :                            6 
-  :                            7 
-  :                            8 number_table* $proc
-  :                            9 *	$tree
-  :                            10 ?	$do	15,	+	1.75*+?
-  :                            11 	$root
-  :                            12 	$end
-  :                            13 
+  :                            7 $(0:64)
+                                my_name		$head_near	scalars(caller_a,	int,	a	;
+                                					caller_b,	int,	b	;
+Note: saverlod.msm Line 10: add $$frame to sp before return
+00:000040 F80004              +10 					caller_x,	int,	x)
+00:000041 F80005              +10 
+00:000042 F80002              +10 
+  :                            11 
+  :                            12 .		a b x of the calling routine are in the internal
+  :                            13 .		stack and can be loaded as required
   :                            14 
-  :                            15 $(0:64)
-  :                            16 
-  :                            17 f1	$tree
-                                	$head_near	 params(word12x,	int	;
-                                				keyname,	long	;
-                                				factor,		float)	;
-                                							;
-                                			scalars(lower,	int	;
-                                				upper,	int	;
-Note: stack.msm Line 24: add $$frame to sp before return
-00:000040 FD0000              +24 				list,	int,	a)
-00:000041 FD0000              +24 
-00:000042 F80004              +24 
-  :                            25 
-                                	lc	f2	factor,,FLOATING		;
-                                			0,,xi				;
-00:000043 F8F000              +28 			list
-00:000044 FD0000              +28 
-00:000045 8FF00A              +28 
-00:000046 FCF006              +28 
-00:000047 3E004C              +28 
-00:000048 38000F              +28 
+  :                            15 .
+  :                            16 .
+00:000043 50F002              +17 		lx              caller_a	. reference caller's data
+  :                            18 .
+  :                            19 .
+00:000044 60F001              +20 		la              caller_b	. reference caller's data
+  :                            21 .
+  :                            22 .
+00:000045 60F002              +23 		la		caller_a	. restore caller's registers
+00:000046 68F001              +24 		lb		caller_b
+00:000047 50F000              +25 		lx		caller_x
+00:000048 FCF003              +26 		push, i		$$frame, sp
+00:000049 38000F              +27 		pop		sp
+00:00004A 350000              +28 		lret		0
   :                            29 
   :                            30 
-00:000049 FCF003              +31 	push, i	$$frame, sp
-00:00004A 38000F              +32 	pop	sp
-00:00004B 350000              +33 	lret	0
-  :                            34 	$root
-  :                            35 
-  :                            36 f2	$tree
-                                	$head_near	 params(factor, float	;
-                                				zeroflag, int	;
-                                				list, int)	;
-                                						;
-                                			scalars(temp, int	;
-                                				temp1, float	;
-                                				temp2, float)	;
-                                						;
-                                			 xframe(primed, number_table, (number_table)	;
-                                				seed1,	float,	(3.75e-1262611)		;
-Note: stack.msm Line 47: add $$frame to sp before return
-00:00004C FD0000              +47 				seed2,	float,	(3.75e+1262610))
-00:00004D 5F0100              +47 
-00:00004E 5F0100              +47 
-00:00004F FDFFBC              +47 
-00:000050 2F000E              +47 
-00:000051 9F0002              +47 
-00:000052 F80000              +47 
-00:000053 54E000              +47 
-00:000054 5C0102              +47 
-00:000055 45000E              +47 
-00:000056 3E0077              +47 
-00:000057 380000              +47 
-00:000058 380002              +47 
-00:000059 380003              +47 
-00:00005A 8F013E              +47 
-00:00005B 87E03C              +47 
-00:00005C 8F0142              +47 
-00:00005D 87E040              +47 
-Note: stack.msm Line 47: add $$xframe to fp before return
-  :                            48 
-  :                            49 
-00:00005E FCE044              +50 	push, i	$$xframe, fp
-00:00005F 38000E              +51 	pop	fp
-00:000060 FCF009              +52 	push,i	$$frame, sp
-00:000061 38000F              +53 	pop	sp
-00:000062 350000              +54 	lret	0
-  :                            55 	$root
-  :                            56 
-  :                            57 entry	$tree
-                                	$head_far	 params(keyname, long)				;
-                                									;
-                                			scalars(save_caller_x, int,	x		;
-                                				save_caller_a, int,	a)		;
-                                									;
-Note: stack.msm Line 63: add $$frame to sp before return
-00:000063 F80002              +63 			 xframe(transient_key, long, keyname)
-00:000064 F80004              +63 
-00:000065 FDFFFE              +63 
-00:000066 2F000E              +63 
-00:000067 9FF005              +63 
-00:000068 38E000              +63 
-00:000069 38E001              +63 
-Note: stack.msm Line 63: add $$xframe to fp before return
-  :                            64 
-  :                            65 
-                                	lc	f1	12,x,i						;
-                                			keyname,,LONG					;
-00:00006A 5F0146              +68 			(1.875d),,PACKED_FLOATING
-00:00006B 9FF009              +68 
-00:00006C FCA00C              +68 
-00:00006D FCF007              +68 
-00:00006E 3E0040              +68 
-00:00006F 38000F              +68 
-  :                            69 
-  :                            70 
-00:000070 50F001              +71 	lx	save_caller_x
-00:000071 60F000              +72 	la	save_caller_a
-  :                            73 
-00:000072 FCE002              +74 	push,i	$$xframe, fp
-00:000073 38000E              +75 	pop	fp
-  :                            76 
-00:000074 FCF002              +77 	push,i	$$frame, sp
-00:000075 38000F              +78 	pop	sp
-00:000076 3D0000              +79 	fret	0
-  :                            80 	$root
-  :                            81 
-00:000077 8FB000              +82 	SEGMENT_QL
-00:000078 87A000              +82 
-00:000079 850004              +82 
-00:00007A 8D0004              +82 
-00:00007B 1E0077              +82 
-00:00007C 350000              +82 
-00:00007D F8B000              +82 
-00:00007E 38A000              +82 
-00:00007F 850001              +82 
-00:000080 8D0001              +82 
-00:000081 1E007D              +82 
-00:000082 350000              +82 
-  :                            83 
-  :                            84 	$do	$<256,$(0:256)
-  :                            85 
+  :                            31 
 *EOF*
-00:000100+FFFFFFFFFFFF
-00:000102+4000058C0000000000000000
-400008AF0000000000000000
-40000BDAC000000000000000
-40000F88B800000000000000
-400012AAE600000000000000
-400015D59F80000000000000
-4000198583B0000000000000
-40001CA6E49C000000000000
-40001FD09DC3000000000000
-400023826299E00000000000
-400026A2FB40580000000000
-400029CBBA106E0000000000
-40002CFEA894898000000000
-4000309F295CD5F000000000
-400033C6F3B40B6C00000000
-00:00013e+000003F7CEC07F62DB171749
-00:000142+7FFFFEB9F360BBB221C7199A
-00:000146+401F00000000
-:$(00):000040:000148 :$(46):000000:000002 
-stack.msm: object code 1171 bytes: 0 errors: 0 undefined labels
-
-
-
-$ cat ../language/stack.def
-p		$proc	*
-"$head_far"*	$name	3
-"$head_near"*	$name	2
-"$$list"	$set	p(0, 0)
-
-"$SP_LOWER_LIMIT"       $equ    0
-
-
-int	$equ		1
-long	$equ		2
-float	$equ		4
-floating_packed $equ	4
-
-params*	$func		*
-param*	$func
-	$do	$stack_macro_remarks^=0,	;
-	$note		param
-"param(1, 1)"*** $equf	$$list+iframe, sp
-	$return		param(1, 2)
-	$end
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking params
-?	$do		params(),"$$list"*	$set	$$list+param(params(?))
-	$return		$$list
-	$end
-
-
-scalars* $func
-
-scalar*	$proc		$(0)
-floating_packed $equ	-4
-        $do     $stack_macro_remarks^=0,        ;
-	$note		scalar
-
-	  $if		scalar(1, 4)=sp
-          $do     $stack_macro_remarks^=0,        ;
-	  $note		sp is decrementing
-"$$extra" $set		frame
-	  $else
-"$$extra" $set		0
-
-	  $endif
-	$if		scalar(1, 2)=floating_packed
-frame*	  $set		frame-4
-	  $if		scalar(1)>2
-		fpx	scalar(1, 3)+$$extra, scalar(1, 4)
-	  $else
-		fpx	(-0.0:d)
-	  $endif
-	$else
-	  $if		scalar(1, 2)=int
-	    $if		scalar(1)>2
-		push	scalar(1, 3)+$$extra, scalar(1, 4), scalar(1, 5)
-	    $else
-		push,xi	0
-	    $endif
-	  $elseif		scalar(1, 2)=long
-	    $if		scalar(1)>2
-		dpush	scalar(1, 3)+$$extra, scalar(1, 4)
-	    $else
-		dpush	(0:d)
-	    $endif
-	  $elseif		scalar(1, 2)=float
-	    $if		scalar(1)>2
-		qpush	scalar(1, 3)+$$extra, scalar(1, 4)
-	   
-	    $else
-		fpx	(-0.0:d)
-	    $endif
-	  $elseif		(scalar(1, 2)>0)**(scalar(1, 2)<25)
-	    $do	scalar(1, 2)**3,	push, xi	0
-	    $do	scalar(1, 2)>3,		fpx		(0.0:d)
-	    $do	scalar(1, 2)/4-1,	qpush		0, sp
-	  $else
-	    $flag		internal stack item size of of range
-	    $return
-	  $endif
-frame*	$set		frame-scalar(1, 2)
-	$endif
-
-
-"scalar(1, 1)"***  $equf   frame, sp
-
-	$end
-
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking scalars
-
-frame	$set		0
-?	$do	scalars(),frame	$set	frame+scalars(?, 2)
-
-iframe* $set frame
-	$if		frame
-	$note		add $$frame to sp before return
-
-$(71)
-?	$do	scalars(),	scalar	scalars(?)
-	$endif
-	$return	frame
-	$end
-
-xframe*	$func
-
-p	$proc		$(70)
-load_string* $name
-        $do     $stack_macro_remarks^=0,        ;
-	$note		load string
-
-
-	$if		($t(p(1, 2))=$name)++($t(p(1, 2))=$proc)
-"p(1, 1)"***		p(1, 2)
-	$else
-"p(1, 1)"***	$res	p(1, 2)
-	$endif
-
-
-words	$set		$(70)-p(1, 1)
-
-$(0)
-	$if		p(1)>2
-	  $if		words=1
-		push	p(1, 3), p(1, 4), p(1, 5)
-		pop	p(1, 1),, p(1, 6)
-	  $elseif	words=2
-		dpush	p(1, 3), p(1, 4)
-		pop	p(1, 1)
-		pop	p(1, 1)+1
-	  $elseif	words=4
-		qpush	p(1, 3), p(1, 4)
-		qpop	p(1, 1)
-	  $else
-		dpush	x
-		push	r
-		lx, i	p(1, 1)
-		ly, i	p(1, 3), p(1, 4)
-		$if	words/4
-		lr, xi	words/4-1
-		lcal	segment_ql
-		$endif
-		$if	words///4
-		lr, xi	words///4-1
-		lcal	segment_sl
-		$endif
-		pop	r
-		pop	x
-		pop	y
-	  $endif
-	$endif
-	 
-	$end
-
-$(0)
-	push, xi	-lframe
-	popA		fp
-
-$(71)
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking dynamic load strings
-?	$do	xframe(),	load_string	xframe(?)
-	$note		add $$xframe to fp before return
-	$return		$(70)
-	$end
-
-	
-
-$(70::,fp)
-$(71)
-
-	$do	$t(iframe)=0,iframe	$set	0
-
-?	$do	p(),part(?)*	$set	p(?, 1)
-lframe		$set	$(70)
-$(0)
-"$$frame"*	$set	iframe
-"$$xframe"*	$set	$(70)
-	$end
-
-p	$proc
-c*	$name	1
-lc*	$name	0
-
-INT	$equ	100
-LONG	$equ	101
-PACKED_FLOATING $equ 102
-FLOATING $equ	103
-
-p	$proc
-vpush*	$name
-
-	$if	p(1, 2)=sp
-"$$extra" $set	$$dispo
-	$else
-"$$extra" $set	0
-	$endif
-
-	$if	p(1, 3)=FLOATING
-	qpush	p(1, 1)+$$extra, p(1, 2)
-"$$dispo"* $set	$$dispo+4
-	$elseif	p(1, 3)=PACKED_FLOATING
-	fpx	p(1, 1)+$$extra, p(1, 2)
-"$$dispo"* $set	$$dispo+4
-	$elseif	p(1, 3)=LONG
-	dpush	p(1, 1)+$$extra, p(1, 2)
-"$$dispo"* $set	$$extra+2
-	$else
-	push	p(1, 1)+$$extra, p(1, 2), p(1, 3)
-"$$dispo"* $set	$$dispo+1
-	$endif
-
-	$end
-
-alist	$set	p()
-
-"$$dispo" $set	0
-
-.	la	sp
-?	$do	alist-1,	vpush	p(alist+1-?)
-
-	$do	alist>1,	;
-	push	$$dispo, sp, i
-
-	$do	p(0, 0)=c,	call	p(1)
-	$do	p(0, 0)=lc,	lcal	p(1)
-
-	$do	alist>1,	;
-	pop	sp
-	$end
-
-	$end
-
-"$vector"* $proc
-	$do	$bank_index**4095^=0,	$flag	bank misaligned
-	$do	$>63,			$flag	vector outside bank locations 0..63
-*	$equ	$bank_index/*6++$
-	j	$vector(1)
-	$end
-
-SEGMENT_QL* $proc	*
-
-segment_ql*
-	qpush	0, y
-	qpop	0, x
-	ax, xi	4
-	ay, xi	4
-	jdr	segment_ql
-	lret	0
-
-segment_sl*
-	push	0, y
-	pop	0, x
-	ax, xi	1
-	ay, xi	1
-	jdr	segment_sl
-	lret	0
-
-	$end
-
-"$stack_macro_remarks"	$set	0
-
+:$(00):000040:00004B 
+saverlod.msm: object code 147 bytes: 0 errors: 0 undefined labels
 
 
 </pre>
+
+<h3>2. Runtime Algorithmic Expressions</h3>
+
+Here a simple algorithm with five inputs is executed in five instructions, including
+operand acquisition from storage
+<pre>
+
+
+$ masmx -ln r2xample.msm
+MASMX 7r3
+3/r2xample.msm
+*EOF*
+  :                            1 	$path		../def
+  :                            2: 	$include	rta.def
+  :                            3 	$path		../language
+  :                            4: 	$include	stack.def
+  :                            5: 	$include	fpxpress.def
+  :                            6 	$path
+  :                            7 $(0:0)
+  :                            8 
+00:000000 B60040              +9 floating_algorithm*  $vector fp_routine
+  :                            10 
+  :                            11 $(0:64)
+  :                            12 
+  :                            13 fp_routine 
+                                	$head_far	 params(one,	float		;
+                                				two,	float		;
+  :                            16 				three,	float)
+  :                            17 
+00:000040 4FF003              +18 	$xqt_fp		one*1.75*+1200000*two/3.0*-625000-three
+00:000041 770100              +18 
+00:000042 77F007              +18 
+00:000043 7F0104              +18 
+00:000044 6FF00B              +18 
+  :                            19 
+  :                            20 
+00:000045 3D0000              +21 	fret		0
+  :                            22 
+  :                            23 	$do		$<256,$(0:256)
+  :                            24 	
+*EOF*
+00:000100+7CD38BB7B396D7AA20B6E083
+00:000104+2051D5B8447B77478A23F5F7
+:$(00):000000:000108 
+r2xample.msm: object code 190 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+Simply explained, the masmx assembler has taken an expression with five operands and
+four operators, and turned it into a sequence of five instructions which deliver the
+four-word floating result of the operations in the result registers <b>a:b:6:7</b>
+
+<p>
+Assemblers mostly solve expressions whose tokens are all known at assembly time
+
+<p>
+But three of these tokens are identifiers whose content is only known at runtime
+
+<p>
+<b>$xqt_fp</b> directive scans an expression and calls macro code to write an
+instruction plan. The tokens which could be solved at assembly time
+appear as literals at the foot of the program
+
+<p>
+Run-time expression-solving is required in compilers as distinct from
+assemblers. But RTA1 has no compilers at present, so the <b>$xqt_fp</b>
+directive supports future compilers and supports run-time expressions
+right now
+
+<p>
+Exactly five instructions for five operands is as efficient as straight-line
+computing can get
+
+<p>
+Load-store triadic architectures need at least ten instructions to load
+and then compute. RTA1 reduces this to five instructions
+with its seamless operand hierarchy of registers and memory
+
+<p>
+masmx.7r3 has of course a <b>$xqt_i</b> directive which applies arithmetic, boolean,
+shift and comparison operations to integers, at assembly as far as possible
+and in an instruction plan thereafter
+
+<p>
+<b>$xqt_fp</b> and <b>$xqt_i</b> directives essentially and initially plan
+a load to the result registers. If masmx can solve the whole expression at
+assembly time, only a constant load instruction is generated
+
+<p>
+Macro code to realise each successive operation in the algorithm is target-specific
+and described in the manuals <b>masmx for RTA1</b> and <b>masmx.7r3</b>
+
 <i>
 <pre>
 
