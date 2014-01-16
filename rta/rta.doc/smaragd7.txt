@@ -16,96 +16,86 @@ See also the licensing notice at the foot of this document
 
 </center>
 
-<pre>
+<ol>
 
-	Quick Description
+	<li>API</li>
+	<ol>
+		<li>Posix Layer and Low Level Interface</li>
 
-	API
+		<li>Kernel Call Interface and Internal Interrupt Interface</li>
+	</ol>
+	<li>Primitive Kernel Routines</li>
+	<ol>
+		<li>Launching, Switching and Ending Tasks</li>
 
-		Primitives Versus Kernel Calls
+		<li>Adding and Releasing Task Storage</li>
+	</ol>
+	<li>Network API</li>
+	<ol>
+		<li>The Posix Network API</li>
 
-		Launching, Switching and Ending Tasks
+		<li>The High-Volume Network API</li>
+	</ol>
+	
+	<li>API Service Primitive Building Blocks</li>
 
-		Adding and Releasing Task Storage
+	<li>Appendix A: Prototype Online File System</li>
 
-		The Posix Network API
 
-		The High-Volume Network API
-		
+</ol>
 
-	API Service Building Blocks
+<h2>1. API</h2>
 
-	Appendix A: Calling Sequences on the Internal Stack
-
-	Appendix B: Prototype Online File System
-
-	Appendix C: smaragd7 Kernel Structure
-
-</pre>
-
-<h2>Quick Description</h2>
-
-<p>
-The smaragd7 kernel is constructed to support a set of Posix services
-
-<p>
-The primitive components of these services are exposed in lower level APIs
-for faster processing
+<h3>1.1 Posix Layer and Low Level Interface</h3>
 
 <p>
-Initially the kernel is prototyped with the Posix interface incomplete
-and the lower-level realtime interfaces far more complete
+The smaragd7 kernel has services on a Posix model
 
 <p>
-The realtime interfaces support not only quicker access than the Posix
-interfaces, but services on a far larger scale
+The services are also addressable at a lower layer than the handle-based
+Posix-model API
+
+<p>
+The lower level interfaces allow services on a far larger scale as well
+as shortening software paths
 
 <p>
 For example, Posix networking is centred on the handle, an integer token
-for a socket. The integer value shares a number space with file handles
+for a socket. Sockets share a number space with file handles
 
 <p>
-RTA1 with smaragd7 kernel supports transaction servers with initially
-over 5 million active TCP connections. The remote transacton session
-is modelled on the TCP connection. So there are millions of sustained
-TCP connections, not dozens of in-and-out connections
+On RTA1 with smaragd7 kernel, a single application may have several million
+sustained TCP connections
 
 <p>
-A transaction domain does not have 5..10 million socket handles, but
+The application does not have 5..10 million socket handles, but
 instead binds to TCP service at a low level
 
-
-<h2>API</h2>
-
-<h3>Primitives versus Kernel Calls</h3>
-
-System calls have a call interface and their
-arguments are on the internal stack. This is identical to a
-call between application functions or a library call
+<p>
+The remote user session is modelled on the TCP connection. One server
+thread may have  millions of sustained TCP connections, not dozens of
+in-and-out connections
 
 <p>
-A small number of system calls are internal interrupts and are called via
-the <b>ii</b> internal interrupt instruction, or via a functional wrapper
+So many socket handles are not modelled in the process handle space.
+There are instead low-level APIs
+
+
+
+<h3>1.2 Kernel Call Interface and Internal Interrupt Interface</h3>
+
+Most kernel routines have a call interface and their
+arguments are on the internal stack
 
 <p>
-Macro language supports the same call interface to system and
-application functions alike. This example sequence
-<pre>
+Some calls are internal interrupts. They are called with
+the <b>ii</b> internal interrupt instruction. Functional
+wrappers can be place around these system calls
 
-	c	<i>vector</i>	<i>argument<b>1</b></i>
-
-</pre>
-generates this instruction sequence
-<pre>
-
-	push	<i>argument<b>1</b></i>
-	push, i	1, sp
-	call	<i>vector</i>
-	pop	sp
-
-</pre>
-
-There is a more complex example at <b>Appendix A: Calling Sequences on the Internal Stack</b>
+<p>
+Macro language supports a structured call interface for application
+calls and kernel calls. Detailed explanation is in the separate
+document <b>Towards High-Level Languages for RTA1</b>
 
 <p>
 Kernel routines which temporarily alter the address space are
@@ -115,7 +105,8 @@ implemented as internal interrupts
 Return from interrupt restores the caller's environment
 
 <p>
-Arguments for these primitive routines are typically in accumulators or index registers
+Arguments for internal interrups are typically in the applicatio
+accumulator registers
 <pre>
 
 	la, xi	<i>argument</i>
@@ -123,19 +114,44 @@ Arguments for these primitive routines are typically in accumulators or index re
 
 </pre>
 <p>
-A vector, whether of an interrupt or of a far call routine, is a value
-with a 16-bit bank pointer and a 6-bit offset
+
+Interrupt vector values have the same layout as far call vector values.
+
+<p>
+A vector is a value with a 16-bit bank pointer and a 6-bit offset
 <pre>
 
 	00 bbbb bbbb bbbb bbbb offset
 
 </pre>
+The vector value is the sign-extended-immediate operand of the internal
+interrupt instruction <b>ii</b>
+<pre>
 
-The operand of the internal interrupt instruction <b>ii</b> is a
-16-bit immediate sign extended to 24 bits
+	ii	ISR_VECTOR
+
+</pre>
+<p>
+The operand of the far call instruction <b>call</b>
+instruction is a variable or a literal constant
+<pre>
+
+	call	(CALL_INTERFACE_VECTOR)
+
+</pre>
+<p>
+ISRs and kernel call routines are not interchangeable in call method
 
 <p>
-In practice, all ISRs which are kernel targets of <b>ii</b> are in a
+An ISR reads parameters from the application arithmetic registers,
+and returns by executing an interrupt return instruction <b>ir</b>
+
+<p>
+A far call routine executes in application mode and reads parameters 
+from the internal stack. It returns by executing a far return instruction <b>fret</b>
+
+<p>
+All ISRs which are internal interrupt targets are in the
 4096-word bank at absolute address 4096, i.e. the second page of storage. 
 
 <p>
@@ -146,9 +162,50 @@ So these vector values are all in the range
 	000000 000000 000001 xxxxxx
 
 </pre>
+<p>
+The kernel call interface vectors are in 4096-word instruction banks
+starting from absolute address 8192, or the third page of system memory
 
 <p>
-They are
+Instruction banks can be any size up, but the kernel banks are the minimum
+size of 4096 words for modularity
+
+<p>
+Network calls are in bank 2 at address 8192 and file system calls in bank 5
+at address 20480
+
+<p>
+So those kernel call routines have vector values in these ranges
+<pre>
+
+        2*64++[0..63]
+        00 0000 0000 0000 0010 yyyyyy
+
+        5*64++[0..63]
+        00 0000 0000 0000 0101 xxxxxx
+
+</pre>
+<p>
+Because a 16-bit bank pointer to a 4K-granularity bank edge only addresses
+256 megawords of executable space, application  <b>call</b> operand vectors
+may be a 19-bit pointer to a bank at a 32678-word boundary, with a 3-bit vector
+offset, covering all 16 gigawords of executable space
+<pre>
+
+        00 bbbb bbbb bbbb bbbb vector   call vector value up to 256 MWord
+
+        01 bbbb bbbb bbbb bbbb bbbvvv   call vector value up to 16 GWord
+
+</pre>
+
+<p>
+High-memory vectors are not expected in kernel calls
+
+
+<h2>2. Primitive Kernel Routines</h2>
+<p>
+The principal internal interrupts are these. There are more
+used as building blocks for services
 <pre>
 
 	SPAWN$             66		= bank 1  vector  2
@@ -199,76 +256,19 @@ They are
 
 </pre>
 
-<p>
-Internal interrupts and far calls both jump to a vector address in
-the first 64 words of the target bank
-
-<p>
-The operand of a call instruction is a storage word instead of an immediate
-
-<p>
-Call vectors are similarly a 16-bit bank pointer and 6-bit vector,
-or alternatively a 19-bit bank pointer and a 3-bit vector field 
-
-<p>
-Because a 16-bit bank pointer only covers 256 megawords of executable
-space (banks start at 4096-word boundaries), application vectors may be
-a 19-bit pointer to a bank at a 32678-word boundary, with a 3-bit vector
-offset, covering all 16 gigawords of executable space
-<pre>
-
-	00 bbbb bbbb bbbb bbbb vector	call vector value up to 256 MWord
-
-	01 bbbb bbbb bbbb bbbb bbbvvv	call vector value up to 16 GWord
-
-</pre>
-
-<p>
-The kernel call interface vectors are in 4096-word instruction banks
-starting from absolute address 8192, or the third page of system memory
-
-<p>
-Instruction banks can be any size up to and beyond the direct address
-range of 32768 words, but the kernel banks are the minimum size of
-4096 words for modularity. IP network calls are in bank 2 at
-address 8192 and file system calls in bank 5 at address 20480
-
-<p>
-So the kernel call-interface routines have, for example, the vector keys
-<pre>
-
-	2*64++[0..63]
-	00 0000 0000 0000 0010 yyyyyy
-
-	5*64++[0..63]
-	00 0000 0000 0000 0101 xxxxxx
-
-</pre>
-
-<p>
-The operand of <b>call</b> instruction is a variable or a constant,
-and is often a coded as a literal
-<pre>
-
-	call	(vector)
-
-</pre>
-
-<h3>Launching, Switching and Ending Tasks:SPAWN$:YIELD$:TWAIT$:EXIT$</h3>
+<h3>2.1 Launching, Switching and Ending Tasks: SPAWN$ YIELD$ TWAIT$ EXIT$</h3>
 
 One task launches another with the SPAWN$ primitive
 <pre>
 
-	ql	(start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
-	ii	SPAWN$
+        ql      (start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
+        ii      SPAWN$
 
 </pre>
 
-<p>
-PRIORITY may not be < zero or > PRIORITIES-1
 
 <p>
-PRIORITIES is in kernel assembly
+PRIORITY may not be < zero or > PRIORITIES-1
 
 <p>
 The highest priority is zero and the lowest PRIORITIES-1
@@ -309,12 +309,9 @@ The instruction bank containing the start vector must be loaded before
 SPAWN$
 
 <p>
-A primitive to launch threads is planned
-
-<p>
 <b>YIELD$</b> is a voluntary task switch. Practically, it only benefits
 equal or higher priority tasks, unless the task descriptor has been marked
-to block on an event
+to block on an event in steps combined with the <b>YIELD$</b> call
 <pre>
 
 	ii	YIELD$
@@ -349,7 +346,7 @@ far return instruction <b>fret</b> can be used to end and delete a task
 </pre>
 
 
-<h3>Adding and Releasing Task Storage:BANK$:ARRAY$:BANK$FREE</h3>
+<h3>2.2 Adding and Releasing Task Storage: BANK$ ARRAY$ BANK$FREE</h3>
 
 <p>
 These primitives acquire or free storage banks up to 16 Gigawords in
@@ -403,19 +400,19 @@ application register a is the bank pointer
 	ii	BANK$FREE
 
 </pre>
-<h3>The Network API</h3>
+<h2>3. Network API</h2>
 <p>
-The network API has call interfaces. There is a conventional handle-based
-interface and additionally a set of lower-level calls for greater
-efficiency and for handling sockets in number-orders of millions at one
-application endpoint
+The network API is a handle-based call interface
 
 <p>
-A departure from the totally conventional socket interface is that
-error return values are a variety of negative numbers indicating the
-actual problem. There is no errno variable
+An application using thousands or millions of sockets
+calls a lower-level set of network calls
 
-<h3>The Posix Network API</h3>
+<p>
+Errors conditions return a range of negative values identifying the
+problem. There is no errno variable
+
+<h3>3.1 The Posix Network API</h3>
 <pre>
 
 	<b>la	([IPPROTO_TCP|IPPROTO_UDP]*/16)
@@ -500,7 +497,7 @@ tcp_ack_fin     $equ            T77_V++11
 xaccept         $equ            T77_V++49
 
 </pre>
-<h3>The High-Volume Network API</h3>
+<h3>3.2 The High-Volume Network API</h3>
 
 
 <p>
@@ -515,17 +512,13 @@ There are two reasons for making this lower-level interface available
 to applications
 
 <p>
-Firstly some processing is sidestepped which retrieves the
-socket value via the task control block and the kernel vector bank
-
-<p>
-Secondly the network architecture is designed to allow one server
+The network architecture is designed to allow one server
 endpoint to have some millions of TCP connections. So many handles
-could neither be contructed nor to any effect used
+could not be assigned or used
 
 <p>
-Instead the application traverses the transmission control blocks in
-order to serve realtime traffic needs
+Some processing is also sidestepped
+
 
 
 <pre>
@@ -668,14 +661,13 @@ udp_txbuffer    $equ            T77_V++62
 udp_acw_send    $equ            T77_V++63
 net_disengage   $equ            T77_V++3
 </pre>
-<h3></h3>
 
 
 
 
-<h2>API Service Building Blocks</h2>
 
-<h3></h3>
+<h2>4. API Service Building Blocks</h2>
+
 
 These internal interrupt primitives are used as building blocks
 in system services
@@ -767,68 +759,9 @@ in system services
 
 
 </pre>
-<p>
-These internal interrupts can be further documented on request
 
-<p>
-The kernel source code is also open
+<h2>Appendix A: Prototype Online File System</h2>
 
-
-<h3></h3>
-<h3></h3>
-
-<h2>Appendix A: Calling Sequences on the Internal Stack</h2>
-
-
-This macro language for example
-
-<pre>
-
-
-	c	<i>vector</i>	<i>argument<b>1</b></i>[,[xreg], [INT]]		;
-			[<i>*argument<b>2</b></i>]				;
-			[<i>value<b>3</b></i>,,XI]				;
-			[<i>value<b>4</b></i>,[xreg],I]			;
-			[<i>long_integer<b>5</b></i>,[xreg], LONG]		;
-			[<i>floating_number<b>6</b></i>,[xreg], FLOATING]	;
-			[<i>packed_floating_number<b>7</b></i>,[xreg], PACKED_FLOATING]
-		
-
-</pre>
-
-<p>
-generates this instruction sequence
-<pre>
-
-	[fpx	<i>packed_floating_number<b>7</b></i>]
-	[qpush	<i>floating_number<b>6</b></i>]
-	[dpush	<i>long_integer<b>5</b></i>]
-	[push,i	<i>value<b>4</b></i>]
-	[push,xi	<i>value<b>3</b></i>]
-	[push	<i>*argument<b>2</b></i>]
-	push	<i>argument<b>1</b></i>
-	push, i	<i><b>argument_words</b></i>, sp
-	call	<i>vector</i>
-	pop	sp
-
-</pre>
-
-<p>
-Any kind of argument may be *indirect
-
-<p>
-Any argument may be a literal instead of a name, for example
-<b>(1.875*+1262607),,FLOATING</b>
-
-<p>
-The <i>vector</i> operand of the far call is a variable or a constant,
-and may be a literal
-<pre>
-
-	call	(<i>vector</i>)
-	c	(<i>vector</i>)
-
-</pre>
 
 <i>
 <pre>
