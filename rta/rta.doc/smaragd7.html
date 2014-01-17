@@ -102,8 +102,9 @@ Arguments for internal interrupts are typically in the application
 accumulator registers
 <pre>
 
-	la, xi	<i>argument</i>
-	ii	<i>vector</i>
+	la	<i>argument</i>
+	ii	<i>isr_vector</i>
+
 
 </pre>
 <p>
@@ -117,7 +118,7 @@ A vector is a value with a 16-bit bank pointer and a 6-bit offset
 	00 bbbb bbbb bbbb bbbb offset
 
 </pre>
-The vector value is the sign-extended-immediate operand of the internal
+An ISR vector value is the immediate operand of the internal
 interrupt instruction <b>ii</b>
 <pre>
 
@@ -126,10 +127,13 @@ interrupt instruction <b>ii</b>
 </pre>
 <p>
 The operand of the far call instruction <b>call</b>
-instruction is a variable or a literal constant
+is a variable or a constant containing the vector value
+of the target routine
 <pre>
 
 	call	(CALL_INTERFACE_VECTOR)
+
+	call	variable
 
 </pre>
 <p>
@@ -144,11 +148,11 @@ A far call routine executes in application mode and reads parameters
 from the internal stack. It returns by executing a far return instruction <b>fret</b>
 
 <p>
-All ISRs which are internal interrupt targets are in the
+All ISRs which are internal interrupt targets in OS smaragd7 are in the
 4096-word bank at absolute address 4096, i.e. the second page of storage. 
 
 <p>
-So these vector values are all in the range
+So these ISR vector values are all in the range
 <pre>
 
 	64++[0..63]
@@ -156,8 +160,8 @@ So these vector values are all in the range
 
 </pre>
 <p>
-The kernel call interface vectors are in 4096-word instruction banks
-starting from absolute address 8192, or the third page of system memory
+The kernel call interface vectors in OS smaragd7 are in 4096-word instruction
+banks starting from absolute address 8192, or the third page of system memory
 
 <p>
 Instruction banks can be any size up, but the kernel banks are the minimum
@@ -232,6 +236,9 @@ used as building blocks for services
 
 					task switch
 
+					on preemptive event
+					or event wait
+					or voluntarily
 
 
 	TWAIT$             91		= bank 1  vector  27
@@ -239,7 +246,6 @@ used as building blocks for services
 					task switch and wait milliseconds
 					application register a contains
 					millisecond count
-
 
 
 	EXIT$              70		= bank 1  vector  6
@@ -277,7 +283,7 @@ banks the application requires in its private B1 stack. The default is
 
 <p>
 B1 banks are distinct from application data banks because their content
-is encapsulated in the owning application or service. Adresses in B1
+is encapsulated in the owning application or service. Addresses in B1
 are not available to called or calling entities.
 
 <p>
@@ -302,9 +308,16 @@ The instruction bank containing the start vector must be loaded before
 SPAWN$
 
 <p>
-<b>YIELD$</b> is a voluntary task switch. Practically, it only benefits
-equal or higher priority tasks, unless the task descriptor has been marked
-to block on an event in steps combined with the <b>YIELD$</b> call
+<b>YIELD$</b> is a voluntary task switch.
+
+<p>
+<b>YIELD$</b> may  be embedded in an event handler which is preemptive
+and not voluntary,<br>
+or in a service request which marks the task descriptor to block on events
+
+<p>
+<b>YIELD$</b> benefits only tasks of equal or higher priority if it is called
+independently of preemptive or blocking events
 <pre>
 
 	ii	YIELD$
@@ -312,7 +325,13 @@ to block on an event in steps combined with the <b>YIELD$</b> call
 </pre>
 
 <p>
-<b>TWAIT$</b> is a voluntary task yield for a time in milliseconds.
+<b>TWAIT$</b> is a voluntary task yield for a time in milliseconds
+
+<p>
+<b>TWAIT$</b> may  be embedded in an event handler which is preemptive
+and not voluntary
+
+<p>
 When the wait time is expired, the task becomes a candidate for switching
 <pre>
 

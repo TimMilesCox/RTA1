@@ -36,7 +36,7 @@ This document is about
 
 <h3>1. Formal Calling Sequences used in Structured Assembly Language Code</h3>
 <p>
-These call sequences have made some parts of the kernel simpler to write
+These calling sequences have made some parts of the kernel simpler to write
 
 <p>
 They  construct a non-volatile register list in the internal stack
@@ -45,25 +45,40 @@ They  construct a non-volatile register list in the internal stack
 They sacrifice no efficiency at all
 
 <p>
-Simpler assembly subroutines are easier to write without this structuring
+Many simpler assembly language subroutines are easier to write without this structuring,
 because they then have more freedom for stack manipulation
 
 <p>
-As well as simplifying code development in assembly language,
-these calling sequences are intended to support future C compilers
+These call sequences support development of assembler code especially where
+subroutine arguments are several and where register use is hard to remember.
+
+<p>
+They are intended to support future C compilers
 and to make a single call interface available for any style of
 programming language
 
 <p>
-Macro definition file <b>language/stack.def</b> constructs five services
-to "near" routines <b>lcal ... lret</b> and to "far" routines
-<b>call ... fret</b>
+Macro definition file <b>language/stack.def</b> implements five services
+for subroutine calls
 
 <p>
-The simplest of these five services is <b>$vector</b> which constructs
-the compressed routine address value which is used as a handle for calling
-a far routine. This value is the storage constant operand of
-<b>go</b> and <b>call</b> instructions
+The simplest of these five services is <b>$vector</b>
+
+<p>
+<b>$vector</b> is about routines which are the target
+of a far <b>call</b> instruction. It's a procedural macro coded
+at the front of the containing bank. It generates the jump
+instruction at one of the 64 jump pad positions and labels the
+handle value which identifies its bank:vector tuple
+<pre>
+
+handle_name*	<b>$vector</b>	bank_internal_name
+
+</pre> 
+The handle value is placed in the single-word constant or
+variable operand of <b>go</b> and <b>call</b> instructions.
+It encodes the target bank identifier and a six-bit offset
+location of <b>$vector</b>
 <pre>
 
 
@@ -234,7 +249,7 @@ structures and arrays. The internal stack is only large enough for scalars
 and pointers
 <pre>
 
-$ masmx tempbuff -ln
+$ masmx -ln tempbuff.msm
 MASMX 7r3
 3/tempbuff.msm
 *EOF*
@@ -250,28 +265,31 @@ MASMX 7r3
                                                                 scalars(down,	int,	0		;
                                                                         up,	int,	2048//3-1)	;
                                 									;
-Note: tempbuff.msm Line 13: add $$frame to sp before return
-00:000000 F80000              +13                                  xframe(sorting_buffer, 2048//3)
-00:000001 F802AA              +13 
-00:000002 FDFD55              +13 
-00:000003 2F000E              +13 
-Note: tempbuff.msm Line 13: add $$xframe to fp before return
-  :                            14 
-  :                            15 .
+                                                                 xframe(sorting_buffer, 2048//3		;
+Note: tempbuff.msm Line 14: add $$frame to sp before return
+00:000000 F80000              +14 					midpoint_cursor, int, 2048//3/2, fp, i)
+00:000001 F802AA              +14 
+00:000002 FDFD54              +14 
+00:000003 2F000E              +14 
+00:000004 FCE155              +14 
+00:000005 38E2AB              +14 
+Note: tempbuff.msm Line 14: add $$xframe to fp before return
+  :                            15 
   :                            16 .
-  :                            17 
+  :                            17 .
   :                            18 
   :                            19 
-00:000004 FCE2AB              +20                 push, i         $$xframe, fp
-00:000005 38000E              +21                 pop             fp
-00:000006 FCF002              +22                 push, i         $$frame, sp
-00:000007 38000F              +23                 pop             sp
-  :                            24 
-00:000008 350000              +25                 lret            0
-  :                            26 
+  :                            20 
+00:000006 FCE2AC              +21                 push, i         $$xframe, fp
+00:000007 38000E              +22                 pop             fp
+00:000008 FCF002              +23                 push, i         $$frame, sp
+00:000009 38000F              +24                 pop             sp
+  :                            25 
+00:00000A 350000              +26                 lret            0
+  :                            27 
 *EOF*
-:$(00):000000:000009 :$(46):000000:0002AB 
-tempbuff.msm: object code 159 bytes: 0 errors: 0 undefined labels
+:$(00):000000:00000B :$(46):000000:0002AC 
+tempbuff.msm: object code 184 bytes: 0 errors: 0 undefined labels
 
 </pre>
 <p>
