@@ -39,9 +39,14 @@ See also the licensing notice at the foot of this document
 	
 	<li>API Service Primitive Building Blocks</li>
 
-	<li>Appendix A: Prototype Online File System</li>
+	<li>File System Interface</li>
+	<ol>
+		<li>POSIX API</li>
 
+		<li>File System Types and Low-Level Interfaces</li>
 
+		<li>RTA1 Memory Array File System</li>
+	</ol>
 </ol>
 
 <h2>1. API</h2>
@@ -499,14 +504,6 @@ problem. There is no errno variable
 	a result of -2 indicates that the handle is neither
 	a UDP socket not a TCP connection
 
-bind            $equ            T77_V++2
-recv            $equ            T77_V++6
-send            $equ            T77_V++7
-ipsend          $equ            T77_V++8
-tcp_accept      $equ            T77_V++9
-tcp_send_push   $equ            T77_V++10
-tcp_ack_fin     $equ            T77_V++11
-xaccept         $equ            T77_V++49
 
 </pre>
 <h3>3.2 The High-Volume Network API</h3>
@@ -654,29 +651,7 @@ Some processing is also sidestepped
 	The application protocol then filters the credentials of the remote socket owner
 
 
-tcp_release_rxline      $equ    T77_V++50
-
-tcp_rx          $equ            T77_V++53
-tcp_tx          $equ            T77_V++54
-tcp_addbyte     $equ            T77_V++55
-tcp_pushbytes   $equ            T77_V++56
-
-udgram_rx       $equ            T77_V++57
-udgram_tx       $equ            T77_V++58
-tfer_dgram      $equ            T77_V++4
-release_udgram  $equ            T77_V++5
-
-udp_acw_send_nocheck $equ       T77_V++59
-udp_rtxbuffer   $equ            T77_V++60
-udp_send        $equ            T77_V++61
-udp_txbuffer    $equ            T77_V++62
-udp_acw_send    $equ            T77_V++63
-net_disengage   $equ            T77_V++3
 </pre>
-
-
-
-
 
 <h2>4. API Service Building Blocks</h2>
 
@@ -772,7 +747,279 @@ in system services
 
 </pre>
 
-<h2>Appendix A: Prototype Online File System</h2>
+<h2>5. File System InterFace</h2>
+
+<h3>5.1 POSIX API</h3>
+
+The targeted file system interface has a POSIX-like API
+<pre>
+
+	int open(char *path, int flags, int permissions);
+
+	int read(int handle, char *buffer, int octets);
+
+	int write(int handle, char *buffer, int octets);
+
+	unsigned long lseek(int handle, long target, int whence);
+
+	int close(int handle);
+
+</pre>
+<b>open()</b> returns a handle identifier unique within the process
+This value shares a number space with <b>socket()</b>
+
+<p>
+Returned value less than zero indentifies a problem in all file
+system calls. A range of negative values indicates the problem
+directly. There is no errno buffer
+
+<p>
+The file handle value is the first argument in the other calls
+
+<h3>5.2 File System Types and Low-Level Interfaces</h3>
+
+Below the Posix-like API there are driver interfaces for NFS client,
+removable Flash memory-stick / card, and RTA1 memory array file system
+
+<p>
+The first to be implemented is RTA1 memory array file system. It is
+accessible at a low-level interface below the Posix-like interface
+
+
+<h3>5.3 RTA1 Memory Array File System</h3>
+
+The memory array file system is an array of up to 17,179,869,184
+24-bit words outside executable space. Each memory array file system
+occupies one of the 63 devices configurable outside executable space
+
+<p>
+Device memory contains all descriptors and data in the memory array
+file system. To use the same calls for file systems which are
+not memory arrays, the drivers would need to buffer the descriptors and
+data before returning pointers to the caller
+
+<p>
+This file system has been implemented initially as a read-only store
+constructed offline and loaded with the emulator
+
+<p>
+The memory array file system is hierarchic and organised in directories
+and file extents
+
+<p>
+The lookup calls available return a pointer to a buffered directory entry
+or to a buffered file extent
+
+<p>
+The call <b>fs_find</b> advances from a 48-bit starting point in registers
+<b>a:b</b> to locate the directory or file named in the string addressed by
+<b>y</b>
+<pre>
+
+        lr, xi  1		. # words in search name
+        ly, xi  $1("web")	. search name in ASCII
+        dsr     48		. default start point
+        call    (fs_find)
+	ds	web_directory_start_point	
+
+</pre>
+The starting point is the pointer to the first block of a directory.
+It is a  long virtual address with the layout
+<pre>
+
+		big.large_bank_identifier.device.memory_space_address
+
+
+	 46|		       30|    24|			       0|	
+	___|_____________________|______|_______________________________|
+	|01|large_bank_identifier|device|      memory space address	|
+	|__|_____________________|______|_______________________________|
+
+</pre>
+If the starting point is zero, the driver starts at the root directory
+of the default device
+
+<p>
+The target string can be the name of a directory or a file, or a link
+
+<p>
+The string only has zero-padding, not zero termination. The length in register
+<b>r</b> is the containing number of words of the name
+
+<p>
+The return value in <b>a:b</b> is a new long virtual address pointing
+to the target file or directory target entry. If the target is not found,
+the return is zero
+
+<p>
+The long virtual address does not need to be based before the call
+
+<p>
+<b>fs_dsearch</b> is similar to <b>fs_find</b>, except the input long
+virtual address must point to a directory descriptor. A search
+will take place within that directory
+<pre>
+
+	dl	web_directory_start_point
+	lx, xi	("document.html")
+	lr, xi	5
+	call	(fs_dsearch)	
+	ds	file_cursor
+	jdz	not_found
+	
+</pre>
+<b>fs_dsearch</b> returns the long virtual address of the first extent
+descriptor of the file in <b>a:b</b>
+
+<p>
+<b>fs_xbase</b> places the file extent data pointed by extent descriptor
+<b>a:b</b> into the memory space, and returns the long virtual
+address of the following extent descriptor in registers <b>a:b</b>
+<pre>
+
+	dl	file_cursor
+	jdz	end_of_file
+	call	(fs_xbase)
+
+	ds	file_cursor
+	sr	bytes_available
+	sy	data_address
+	
+</pre>
+Register <b>y</b> points to the file data. The whole extent is in the
+address space. <b>r</b> contains the number of octets in the extent.
+<b>a:b</b> contain the long virtual address of the following extent
+descriptor
+
+<p>
+Routines <b>fs_1st</b> and <b>fs_read</b> in the memory array file system
+interface are components for more complex calls. <b>fs_1st</b> returns the
+long virtual address of the first directory entry in the default file system.
+<b>fs_read</b> returns the directory next entry. The caller must filter and
+interpret the returned entries
+
+<p>
+File space in the memory array file system is awarded in multiples of 64
+words. A single file extent is a maximum if 262144 words in size
+
+<p>
+space for directories is awarded in chained blocks of 1024 words
+
+<p>
+The directory entry structures start with a format word which identifies
+the entry type and size in words, excluding the format word itself
+<pre>
+
+	directory format word
+	_____________________
+	
+	      16|      8|      0|
+	________|_______|_______|
+	|  type |       | words |
+	|_______|_______|_______|
+
+
+	
+
+
+	filetree (directory) label
+	__________________________
+
+	47					       0
+	_________________________________________________
+	|  'T'  |   0   | words | granules first extent	|
+	|_______|_______|_______|_______________________|
+        | 		   start granule		|
+	|_______________________________________________|
+	|   granule containing next extent descriptor	|
+	|_______________________________________________|
+	|   word offset next	|words written dir.block|
+	|___extent descriptor___|_______________________|
+	|words free in dir.block|        name...        ...         ...
+	|_______________________|_______________________|
+	
+
+
+	volume label (top directory)
+	____________________________
+
+        47                                             0
+        _________________________________________________
+        |  'V'  |   0   | words |  granules in device	|
+        |_______|_______|_______|_______________________|
+        |            next assignable granule            |
+        |_______________________________________________| 
+        |words written dir.block|words free in dir.block|       
+        |___extent descriptor___|_______________________|
+        |        name...        ...         ...
+        |_______________________|_______________________|
+
+
+
+	file label
+	__________
+
+        47                                             0
+        _________________________________________________
+        |  'F'  |   0   | words | granules first extent |
+        |_______|_______|_______|_______________________|
+        |                  start granule                |
+        |_______________________________________________|
+        |   granule containing next extent descriptor   |
+        |_______________________________________________| 
+        |   word offset next    |file total octets 47..24     
+        |___extent descriptor___|_______________________|
+        |file total octets 23..0|	name...		...	   ...
+        |_______________________|_______________________|
+
+
+
+	file extent label
+	_________________
+
+        47                                             0
+        _________________________________________________
+        |  'X'  |   0   | words | granules this extent  |
+        |_______|_______|___=_7_|_______________________|
+        |                  start granule                |
+        |_______________________________________________|
+        |   granule containing next extent descriptor   |
+        |_______________________________________________|
+        |   word offset next    |
+        |___extent descriptor___|
+
+
+
+	link
+	____
+
+        47                                             0
+        _________________________________________________
+        |  'L'  |   0   | words |   word offset target  |
+        |_______|_______|_______|___________descriptor__|
+        |      granule containing target descriptor     |
+        |_______________________________________________|
+        |	name...		...		...
+        |_______________________|
+
+
+
+
+
+	relay (directory extension block pointer)
+	_________________________________________
+
+        71								       0
+        _________________________________________________________________________
+        |  'J'  |   0   | words |	start granule next block of directory	|
+        |_______|_______|_______|_______________________________________________|
+
+
+
+
+</pre>
+
+
 
 
 <i>
