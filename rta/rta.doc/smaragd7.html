@@ -32,9 +32,11 @@ See also the licensing notice at the foot of this document
 	</ol>
 	<li>Network API</li>
 	<ol>
-		<li>The Posix Network API</li>
+		<li>The POSIX Network API</li>
 
-		<li>The High-Volume Network API</li>
+		<li>UDP Server Response Low-Level Calls</li>
+
+		<li>TCP Low-Level Calls and the High-Volume Network API</li>
 	</ol>
 	
 	<li>API Service Primitive Building Blocks</li>
@@ -426,11 +428,15 @@ An application using thousands or millions of sockets
 calls a lower-level set of network calls
 
 <p>
-Errors conditions return a range of negative values identifying the
+Error conditions return a range of negative values identifying the
 problem. There is no errno variable
 
-<h3>3.1 The Posix Network API</h3>
+<h3>3.1 The POSIX Network API</h3>
 <pre>
+
+	acquiring a socket handle
+	_________________________
+
 
 	<b>la	([IPPROTO_TCP|IPPROTO_UDP]*/16)
 	call	(__socket)</b>
@@ -443,7 +449,11 @@ problem. There is no errno variable
 
 
 
-	<b>[dl	(net_address*/16++port:d)|dsr	48]
+
+	binding to a port and optionally to a network address
+	_____________________________________________________
+
+	<b>{ dl	($net_socket 10.0.0.63:PORT) | dsr	48 }
 	ds	6
 	la	socket
 	[lb, xi	0]
@@ -457,6 +467,10 @@ problem. There is no errno variable
 	-4	= no resource to model the socket
 
 
+
+
+	receive
+	_______
 
 	<b>c	(recv)	socket_handle	buffer	bytes	flags</b>
 
@@ -488,6 +502,21 @@ problem. There is no errno variable
 
 
 
+	receive from
+	____________
+
+	source addresses of User Datagrams can be retrieved
+	on receive from the containing IP datagram
+
+	a <b>receive from()</b> function which reads a destination
+	from a <b>sockaddr_in</b> structure will be added with
+	C compiler development
+
+
+
+	send
+	____
+
 	<b>c	(send)	socket_handle	buffer	bytes	flags</b>
 
 	socket_handle is the integer handle number
@@ -499,15 +528,137 @@ problem. There is no errno variable
 
 	If the socket is NON_BLOCKING,
 	if the transmission could not be immediately resourced
-	actual bytes sent is in a and outstanding count in b
+	actual bytes sent is in <b>a</b> and outstanding count in <b>b</b>
 
 	a result of -2 indicates that the handle is neither
 	a UDP socket not a TCP connection
 
 
-</pre>
-<h3>3.2 The High-Volume Network API</h3>
 
+	send to
+	_______
+
+	destination addresses for User Datagrams can be set
+	before send
+
+	a <b>send to()</b> function which reads addresses from
+	a <b>sockaddr_in</b> structure will be added with
+        C compiler development
+
+
+
+	listen, TCP only
+	________________
+
+	Argument 1 is the socket bound to a TCP port,
+	not to a TCP connection
+
+	Argument 2 sets the socket in BLOCKING or in
+	NON_BLOCKING mode
+
+	NON_BLOCKING	$equ	0
+
+		la	handle1				. no limit
+		lb, xi	NON_BLOCKING			. = NON_BLOCKING
+		call	(tcp_listen)
+		
+		la	handle2				. nonzero limit
+		lb, xi	CONNECTION_WAITQ_MAXIMUM	. = BLOCKING
+		call	(tcp_listen)
+
+	there will be an error return in <b>a</b> if
+	the handle in <b>a</b> is not a bound TCP port
+
+	If the socket is BLOCKING, connections are
+	only admitted with <b>tcp_accept</b> which
+	always blocks
+
+	If the socket is NON_BLOCKING, connections
+	are accepted automatically
+
+	Servers running in the IP task must not block
+
+
+
+	tcp_accept, TCP only
+	____________________
+
+
+		la	handle
+		call	(tcp_accept)
+
+	<b>tcp_accept</b> blocks and should only be called
+	on blocking sockets. The new connection handle must
+	be saved before another <b>tcp_accept</b> is called
+
+	The remote address is in the transmission control
+	block, and if it is required anywhere else it must
+	be copied from there
+
+	an <b>accept()</b> function which writes a <b>sockaddr_in</b>
+	structure will be added with C compiler development
+
+	<b>accept</b> is a blocking call
+
+	Servers running in the IP task must not block
+
+	Incoming connections are accepted automatically on
+	NON_BLOCKING sockets
+
+
+
+	connect
+	_______
+
+		dl	($net_socket 10.0.0.65:REMOTE_PORT)
+		ds	6
+		la	socket
+		call	(connect)
+
+	<b>connect</b> in UDP associates the local
+	socket with a remote socket, but causes no
+	external protocol activity
+
+ 	<b>connect</b> in TCP returns a new handle to a
+	new transmission control block
+
+        <b>connect</b> is a blocking call
+        
+        Servers running in the IP task must not block
+
+	NON_BLOCKING call <b>tcp_start_connection</b> in the
+	high-volume interface starts the negotiation of
+	a remote connection for asynchronous completion
+ 
+        a <b>connect()</b> function which reads addresses from
+        a <b>sockaddr_in</b> structure will be added with
+        C compiler development
+
+
+
+
+
+
+</pre>
+<h3>3.2 UDP Server Response Low-Level Calls</h3>
+
+These network routines make UDP servers simpler to construct
+and allow responses to be transmitted at very low overhead
+
+<pre>
+
+	udp_acw_send_nocheck
+	udp_rtxbuffer
+
+	udp_txbuffer
+	udp_acw_send
+
+	release_udgram
+
+
+</pre>
+
+<h3>3.3 TCP Low-Level Calls and The High-Volume Network API</h3>
 
 <p>
 The following are low-level network calls which are the building blocks
@@ -527,7 +678,6 @@ could not be assigned or used
 
 <p>
 Some processing is also sidestepped
-
 
 
 <pre>
@@ -892,7 +1042,7 @@ address space. <b>r</b> contains the number of octets in the extent.
 descriptor
 
 <p>
-routines <b>fs_1st</b> and <b>fs_read</b> in the memory array file system
+Routines <b>fs_1st</b> and <b>fs_read</b> in the memory array file system
 interface are components for more complex calls. <b>fs_1st</b> returns the
 long virtual address of the first directory entry in the default file system.
 <b>fs_read</b> returns the directory next entry. The caller must filter and
