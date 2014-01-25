@@ -20,7 +20,7 @@ See also the licensing notice at the foot of this document
 
 	<li>API</li>
 	<ol>
-		<li>Posix Layer and Low Level Interface</li>
+		<li>POSIX Layer and Low Level Interface</li>
 
 		<li>Kernel Call Interface and Internal Interrupt Interface</li>
 	</ol>
@@ -53,21 +53,21 @@ See also the licensing notice at the foot of this document
 
 <h2>1. API</h2>
 
-<h3>1.1 Posix Layer and Low Level Interface</h3>
+<h3>1.1 POSIX Layer and Low Level Interface</h3>
 
 <p>
-The smaragd7 kernel has services on a Posix model
+The smaragd7 kernel has services on a POSIX model
 
 <p>
 The services are also addressable at a lower layer than the handle-based
-Posix-model API
+POSIX-model API
 
 <p>
 The lower level interfaces allow services on a far larger scale as well
 as shortening software paths
 
 <p>
-Posix networking is centred on the handle, an integer token
+POSIX networking is centred on the handle, an integer token
 for a socket. Sockets share a number space with file handles
 
 <p>
@@ -658,7 +658,7 @@ and allow responses to be transmitted at very low overhead
 
 </pre>
 
-<h3>3.3 TCP Low-Level Calls and The High-Volume Network API</h3>
+<h3>3.3 TCP Low-Level Calls</h3>
 
 <p>
 The following are low-level network calls which are the building blocks
@@ -672,12 +672,13 @@ There are two reasons for making this lower-level interface available
 to applications
 
 <p>
-The network architecture is designed to allow one server
-endpoint to have some millions of TCP connections. So many handles
-could not be assigned or used
+IP Protocols implementation <b>T77.4</b> allows one server
+endpoint to have some millions of TCP connections.
+See <b>3.4 The High-Volume Network API</b> below.
+No process may have millions of handles
 
 <p>
-Some processing is also sidestepped
+Some processing is also sidestepped with these low-level calls
 
 
 <pre>
@@ -687,6 +688,8 @@ Some processing is also sidestepped
 
 	move a passive connect from <b>SYNC_RECEIVED</b> to <b>ESTABLISHED</b> state
 	the transmission control block address is in x
+
+	TCP_SYN_ACK is sent to the remote socket with MSS option
 
 	<b>xaccept</b> is the building block of the <b>accept()</b> call
 
@@ -710,29 +713,38 @@ Some processing is also sidestepped
 	chain address at <b>bind</b>. A randomly numbered listening port is
 	conceivable with services bound to <b>portmapper()</b>
 
+	This is an example of a very simple server called
 
-		$(1)
-		tcp_socket_handle	+	0
-		connections_bank	+	0
-		port_socket_long_address +	0:d
+
+		$(1)						. private data bank
+
+		tcp_socket_handle	+	0		. cached handle
+		connections_bank	+	0		. cached connections array bank ID
+		port_socket_long_address +	0:d		. cached Bank ID / offset of port socket
 
 		connection_chain_head
 			+	BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(LISTENING_PORT)
 
-		listening_port		+	LISTENING_PORT		
+		listening_port		+	LISTENING_PORT
+		connection		+	0
 
-		$(69::,b)
+
+		$(69::,b)					. pointer
 		s		socket
 
-		$(66::,x)
+		$(66::,x)					. pointer
 		transmission	tcp_connection
 
-		$(67::,y)
+		$(67::,y)					. pointer to array of connections
 		tlist		tbank
 
-		$(0)
+		$(3)						. application data bank
 
-		first_time	la	(IPPROTO_TCP*/16)
+		application_data $res	MAXIMUM_MESSAGE
+
+		$(0)						. instruction bank
+
+		first_time	la	(IPPROTO_TCP*/16)	. acquire a socket
 				<b>call	(__socket)</b>
 				jna	socket_error
 
@@ -741,20 +753,23 @@ Some processing is also sidestepped
 
 				sb	7
 				z	6
-				<b>call	(bind)</b>
+				<b>call	(bind)</b>		. bind to the port
 
 				jna	bind_error
 
-				dl	10
-				ds	port_socket_long_address
+				dl	10			. save the long virtual address
+				ds	port_socket_long_address . of the port socket
 
-				sabr	BSOCKET
+				sabr	BSOCKET			. and base it
 
 				.	register b is now a pointer to
 				.	the port socket structure
 
-				push	s:tbase
-				pop	connections_bank
+				push	s:tbase			. cache the bank ID
+				pop	connections_bank	. of the connections array
+
+				. conditional assembly where the port number
+				. is not known at assembly time
 
 				$if	LISTENING_PORT=0
 				.	if <b>bind</b> chose the port number
@@ -767,41 +782,83 @@ Some processing is also sidestepped
 
 				$endif
 
-		subsequently	la	connections_bank
+		subsequently	la	connections_bank	. base the connections array
 				sabr	BSOCKET
 
-				lx      connection_chain_head
+				lx      connection_chain_head	. walk the chain which includes this port
 
-				lk	(00FFFF)	. compare mask for
-							. local port # in chain
+				lk	(00FFFF)		. compare mask for
+								. local port # in chain
 
-		walk		lx	transmission:next
+		walk		lx	transmission:next	. move along the hash chain
 				tz	x
 				j	a_connection
 				j	no_more_connections
 
 		a_connection	la	transmission:socket_address+1
-				mta	listening_port	. chains are shareable
+				mta	listening_port		. chains are shareable
 				j	walk
+
+				.	connection found for this port
 
 				la	transmission:state
 				anu, xi	<b>TCP_ESTABLISHED</b>
 				jzb	traffic?
 				anu, xi	<b>TCP_SYNRECEIVED</b>
-				jnzb	walk		. TCP will service any other state
+				jnzb	walk			. TCP will service any other state
 
-				<b>call	(xaccept)</b>
+				<b>call	(xaccept)</b>		. move the state to TCP_ESTABLISHED
+
+				sx	connection		. application processing will
+								. certainly use register x
 
 		traffic?	la	transmission:receiveq:head
-				jza	walk	
+				jza	walk
+
+				. if the traffic is known to be IP_DNF and TCP_PSH
+				. the server can process the message in the socket buffer
+				. otherwise the data must be read from the socket 
 
 
-	Listening sockets for very large numbers of connections have dedicated connection
-	banks per port, and TCP accepts incoming connections to these automatically.
-	The application protocol then filters the credentials of the remote socket owner
+				$if	GUARANTEED_SIMPLE_MESSAGE
 
+				lr	descriptor:bytes, a
+				push	descriptor:apdata, a
+				pop	q
+				on	b$stream$16r		. the socket buffer uses LS 16 bits of each word
+				lcal	scan_and_respond	. the application code however that is
+				lx	connection
+				call	(tcp_release_rxline)	. sorted
 
+				$else
+
+				. 	for the sake of example this is something like
+				. 	an XDR marked record and a 4-byte message length
+				. 	needs to be read
+
+				c	(recv)	socket	application_data,,xi 4 0
+				dl	application_data
+				dsr	16
+				push	b
+				c	(recv)	socket	application_data,,xi b 0
+				pop	r
+				push	application_data,,xi
+				pop	q
+				off	b$stream16r		. the internal buffer uses 24 data bits per word
+				lcal	scan_and_respond
+				lx	connection
+				
+				$endif
+
+				j	walk
 </pre>
+
+<h3>3.4 The High-Volume Network API</h3>
+
+Listening sockets for very large numbers of connections have dedicated connection
+banks per port, and TCP accepts incoming connections to these automatically.
+The application protocol then filters the credentials of the remote socket owner
+
 
 <h2>4. API Service Building Blocks</h2>
 
@@ -928,12 +985,12 @@ The file handle value is the first argument in the other calls
 
 <h3>5.2 File System Types and Low-Level Interfaces</h3>
 
-Below the Posix-like API there are driver interfaces for NFS client,
+Below the POSIX-like API there are driver interfaces for NFS client,
 removable Flash memory-stick / card, and RTA1 memory array file system
 
 <p>
 The first to be implemented is RTA1 memory array file system. It is
-accessible at a low-level interface below the Posix-like interface
+accessible at a low-level interface below the POSIX-like interface
 
 
 <h3>5.3 RTA1 Memory Array File System</h3>

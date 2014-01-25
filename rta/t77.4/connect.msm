@@ -1,0 +1,76 @@
+tcp_await_connection $head_far params(port_socket, int)
+
+	la	port_socket
+	ii	READ_HANDLE$
+
+	lk	(255*/16:s)
+	mta	(IPPROTO_TCP*/16)
+	j	tcp_porthandle_wrong
+
+	sa	6
+	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
+	dsr	9		.	ppp ppp ppp 000 000 000 bbb bbb
+	rbr	12		.	000 000 bbb bbb ppp ppp ppp 000
+
+	and, xi	127
+	lx,xi	tsockb(1)
+	ax	a
+	ii	READ_XVECTOR$
+	sabr	BSOCKET
+
+	la	s:tbase
+	sabr	BSOCKET
+
+	lx	(tlist:chain(1)+(BSOCKET*/12))
+	
+	la	6
+	and	(00FFFF)
+	call	(tcp_hash_localsocket)
+	ax	a
+
+	sx	7
+
+	la	6
+	lk	(00FFFF)
+
+tcp_search_new
+	lx	transmission:next
+	tz	x
+	j	tcp_test_new
+	ii	YIELD$
+	lx	7
+
+	j	tcp_search_new
+	
+tcp_test_new
+	mta	transmission:socket_address+1
+	j	tcp_search_new
+
+	mlb	transmission:state
+	ab, xi	-TCP_ESTABLISHED
+
+	jnzb	tcp_test_new
+
+	lcal	tcp_newhandle
+	j	tcp_awaitx
+
+tcp_porthandle_wrong
+	la, xi	-1
+tcp_awaitx
+	fret	0
+
+tcp_newhandle
+	la	(TCP_TCB*/16:s)
+	ii	HANDLE$
+	jna	tcp_newhandle_x
+	sa	d$save
+	lb	x
+	andB	0FF8,,xi
+	sb	7
+	la	r
+
+	ii	UHANDLE$
+	la	d$save
+
+tcp_newhandle_x
+	lret	0
