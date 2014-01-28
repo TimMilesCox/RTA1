@@ -400,14 +400,16 @@ tcp_rbuffer_next
 	jza	tcp_rbuffer_x
 	jzb	tcp_rbuffer_x
 
-	push	b			. # bytes sought again
+.	push	b			. # bytes sought again
 
 	la	descriptor:bytes
 	lr	descriptor:readpoint
 	ana	r			. # in this buffer
 	jza	tcp_rbuffer_free
 
-	anb	a
+	push	b			. bytes outstanding
+	anb	a			. minus bytes available
+
 	jc	tcp_readtransfer	. transfer # bytes in
 					. the buffer
 
@@ -443,11 +445,17 @@ tcp_read_words
 
 	pop	b
 	jnb	tcp_rbuffer_x
-	jzb	tcp_rbuffer_x
+.	jzb	tcp_rbuffer_x
 
 tcp_rbuffer_free
+	push	b
 	lcal	tcp_read_rxq
+
+	ii	KERNEL$B1_1
 	lcal	net_free
+	ii	B1$
+	pop	b
+
 	j	tcp_rbuffer_next
 
 tcp_rbuffer_x
@@ -482,8 +490,8 @@ udp_rbuffer_y
 	push	a
 	la	*p
 	lb	WDATA
-	dsl	*WDATAC
-	rar	*WDATAC
+	sal	*WDATAC
+	drr	*WDATAC
 	sa	*p
 	pop	a
 	lret	0

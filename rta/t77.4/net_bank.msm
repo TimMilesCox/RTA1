@@ -111,16 +111,66 @@ large_netbank
 	lret	0
 
 emergency_netbank
-	la	(IPV4_DINITIAL_BANK/*12)
-	sabr	NET_BASE
-	lx	(NET_BASE*/12)
+
+	.	can we get 16K then?
+
+	la, xi	4096*4
+	ii	BANK$
+	jza	minimal_emergency_netbank
+
+	lx	(NET_BASE*/12:s)
+	sx	rx_buffers
+
+?	$do	3,	base_netpage
+	sabr	NET_BASE+RX_BANKS	. keep 60*/18 as a reliable
+					. pointer to transmission buffers
+	la, xi	3*4096
+	lcal	init_pool
+
+	lx	(NET_BASE+RX_BANKS*/12)
+	sx	tx_buffers
+
+	la, xi	4096
+	lcal	init_pool
+	lret	0
+
+
+minimal_emergency_netbank
+
+	.	this memory is very small
+	.	if we can get one page at startup
+	.	keep 60*/18 as a reliable pointer to
+	.	the transmission buffers
+	.	and place rx_buffers 1K higher than that
+
+	.	transmission buffers must be found without
+	.	reading tx_buffers pointer from kernel space
+
+	.	whereas rx_buffers start address is only
+	.	ever referenced from the kernel IP task
+	.	and can be a pointer in kernel space
+
+	la, xi	4096
+	ii	BANK$
+	jza	nowhere_to_go_netbank
+	sabr	NET_BASE+RX_BANKS
+
+	lx	(NET_BASE+RX_BANKS*/12++1024)
 	sx	rx_buffers
 	la, xi	3072
 	lcal	init_pool
-	lx	(NET_BASE*/12++3072)
+
+	lx	(NET_BASE+RX_BANKS*/12)
 	sx	tx_buffers
 	la, xi	1024
 	lcal	init_pool
+	lret	0
+
+nowhere_to_go_netbank
+
+.	we could program a flash to say it's always full
+.	and no buffer is ever available in it
+
 	lret	0
 
 net_free
