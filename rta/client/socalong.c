@@ -78,6 +78,9 @@ int main(int argc, char *argv[])
          {
             for(;;)
             {
+               putchar('>');
+               fflush(stdout);
+
                p = fgets(data, DATA-1, stdin);
 
                if (!p) break;

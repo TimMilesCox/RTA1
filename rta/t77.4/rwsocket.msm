@@ -45,7 +45,7 @@
 SOCKET_CALL_FLAGS $equ 27
 RECORD_MARK	  $equ d$save1
 RECORD_MARK_FLAG  $equ d$save
-NON_BLOCKING	  $equ d$save2
+NON_BLOCKING	  $equ SOCKET_CALL_FLAGS
 
 
 sendbytepair* $proc
@@ -282,7 +282,7 @@ tcp_release
 
 	lr	transfer:hl_code, b
 						. we need to know if it turned on
-	xor	r				. this instant
+	xor	r				. after the segment was started
 	and, xi	TCP_PSH
 	jza	tcp_nopushupdate		. it hasn't changed
 
@@ -343,6 +343,8 @@ tcp_add_x
 	lcal	tcp_send_on_window
 	pop	fp
 	pop	a
+	tp	b
+	lb, xi	0
 	ana	b
 	fret	0
 
@@ -812,12 +814,28 @@ socket_receive_tcp?
 	off	b$stream16w
 	z	WDATAC
 	dl	rxbytes
-	sb	SOCKET_CALL_FLAGS
-	j	tcp_read
-	
+	andB	MSG_NONBLOCK,,xi	. for TCP receive,
+	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
+
+	lb	transmission:state
+	ab, xi	-TCP_ESTABLISHED
+	jzb	tcp_read
+
+	.	something like a remote close has happened
+	.	or you tried to receive before it was established
+
+	la	SOCKET_CALL_FLAGS	. blocking
+	jza	receive_socket_x	. report no data
+
+	la, i	TCP_ESTABLISHED, b	. non_blocking
+	xor, xi	-1			. ^state
+
+	fret	0
+
 receive_socket_protocol_wrong
 transmit_socket_protocol_wrong
-	lx, xi	-2
+	lx, xi	-22			. more minus than a negative state
+
 transmit_socket_x
 receive_socket_x
 	fret	0
