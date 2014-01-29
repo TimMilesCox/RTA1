@@ -57,11 +57,6 @@ base_netbank* $proc
 	$end
 
 
-$(1)
-. rx_buffers +	0
-. tx_buffers +	0
-
-
 $(0)
 net_bank
 	inA	device$flags
@@ -146,8 +141,8 @@ minimal_emergency_netbank
 	.	transmission buffers must be found without
 	.	reading tx_buffers pointer from kernel space
 
-	.	whereas rx_buffers start address is only
-	.	ever referenced from the kernel IP task
+	.	whereas rx_buffers start address is less
+	.	often referenced from the kernel IP task
 	.	and can be a pointer in kernel space
 
 	la, xi	4096
@@ -173,12 +168,16 @@ nowhere_to_go_netbank
 
 	lret	0
 
+net_free_app
+	ii	RX$B
+	j	sell1
+
 net_free
 	lx	rx_buffers
 	j	sell1
 
 net_free_txb
-	lx	tx_buffers
+	lx	(NET_BASE+RX_BANKS*/18:s)
 	j	sell1
 
 	$if	RX_FRAGMENTS
@@ -212,19 +211,23 @@ net_drop
 .	from queue is	y
 
 	push	x
+	ii	RX$B
+	push	x
 
 net_drop1
 	lcal	readq
 	jza	net_dropx
 	lb	descriptor:dgram, a
+	lx	0, sp
 	push	dgram:flags_fragment, b
 	push	y
-	lcal	net_free
+	lcal	sell1
 	pop	y
 	pop	a
 	and,xi	IP_MORE
 	jnza	net_drop1
 net_dropx
+	pop	x
 	pop	x
 	lret	0
 
