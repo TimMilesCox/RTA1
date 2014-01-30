@@ -132,48 +132,45 @@ emergency_netbank
 
 minimal_emergency_netbank
 
-	.	this memory is very small
-	.	if we can get one page at startup
-	.	keep 60*/18 as a reliable pointer to
-	.	the transmission buffers
-	.	and place rx_buffers 1K higher than that
+	.	can we get 8K then?
 
-	.	transmission buffers must be found without
-	.	reading tx_buffers pointer from kernel space
-
-	.	whereas rx_buffers start address is less
-	.	often referenced from the kernel IP task
-	.	and can be a pointer in kernel space
-
-	la, xi	4096
+	la, xi	4096*2
 	ii	BANK$
 	jza	nowhere_to_go_netbank
+
+	lx	(NET_BASE*/12:s)
+	sx	rx_buffers
+
+	base_netpage
 	sabr	NET_BASE+RX_BANKS
 
-	lx	(NET_BASE+RX_BANKS*/12++1024)
-	sx	rx_buffers
-	la, xi	3072
+	la, xi	4096
 	lcal	init_pool
 
 	lx	(NET_BASE+RX_BANKS*/12)
 	sx	tx_buffers
-	la, xi	1024
+
+	la, xi	4096
 	lcal	init_pool
 	lret	0
 
+
 nowhere_to_go_netbank
 
+.	if we couldn't get 8K for network buffers
+.	then we won't start any new tasks either
+
+.	we should maybe set an LED pattern
+.	and exit the IP process
+
+.	otherwise
 .	we could program a flash to say it's always full
 .	and no buffer is ever available in it
 
 	lret	0
 
-net_free_app
-	ii	RX$B
-	j	sell1
-
 net_free
-	lx	rx_buffers
+	lx	(NET_BASE*/18:s)
 	j	sell1
 
 net_free_txb
@@ -211,23 +208,19 @@ net_drop
 .	from queue is	y
 
 	push	x
-	ii	RX$B
-	push	x
 
 net_drop1
 	lcal	readq
 	jza	net_dropx
 	lb	descriptor:dgram, a
-	lx	0, sp
 	push	dgram:flags_fragment, b
 	push	y
-	lcal	sell1
+	lcal	net_free
 	pop	y
 	pop	a
 	and,xi	IP_MORE
 	jnza	net_drop1
 net_dropx
-	pop	x
 	pop	x
 	lret	0
 

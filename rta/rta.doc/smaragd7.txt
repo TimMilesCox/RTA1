@@ -421,7 +421,7 @@ application register a is the bank pointer
 </pre>
 <h2>3. Network API</h2>
 <p>
-The network API is a handle-based call interface
+The network API has a handle-based socket interface
 
 <p>
 An application using thousands or millions of sockets
@@ -584,16 +584,14 @@ problem. There is no errno variable
 	____________________
 
 
-		la	handle
-		call	(tcp_accept)
+		c	(tcp_accept)	handle
 
-	<b>tcp_accept</b> blocks and should only be called
-	on blocking sockets. The new connection handle must
-	be saved before another <b>tcp_accept</b> is called
+	<b>tcp_accept</b> awaits an incoming connection
+	on a listening socket
 
-	The remote address is in the transmission control
-	block, and if it is required anywhere else it must
-	be copied from there
+	The remote address is in the new transmission control
+	block, and if it is required anywhere else it must be
+	copied from there
 
 	an <b>accept()</b> function which writes a <b>sockaddr_in</b>
 	structure will be added with C compiler development
@@ -607,27 +605,181 @@ problem. There is no errno variable
 
 
 
-	connect
-	_______
+	connect and close
+	_________________
 
-		dl	($net_socket 10.0.0.65:REMOTE_PORT)
-		ds	6
-		la	socket
-		call	(connect)
+		
+		c	(connect)	socket_handle	($net_socket 10.0.0.65:REMOTE_PORT),,long
+
+		c	(close)		socket_handle
+
+
+	connect UDP socket
+	__________________
 
 	<b>connect</b> in UDP associates the local
 	socket with a remote socket, but causes no
-	external protocol activity
+	external protocol activity. UDP socket connect
+	therefore returns immediately
 
- 	<b>connect</b> in TCP returns a new handle to a
-	new transmission control block
 
-        <b>connect</b> is a blocking call
+	close UDP socket
+	________________
+
+	<b>close</b> in UDP voids the socket and unbinds the port
+
+
+	connect TCP socket
+	__________________
+
+ 	<b>connect</b> in TCP changes the socket handle
+	to the handle of a connection and negotiates that
+	connection with the remote socket over TCP and IP
+	protocols
+
+	The handle may already be bound to a port
+	and optionally to a local network address
+
+	Otherwise connect() binds the socket to a unique
+	port in the range for arbitrary assignment, and to
+	the default network address of the outgoing interface
+
+	There may be multiple bindings on TCP port sockets
+	which are not in the range for arbitrary assigment
+
+	Some application protocols use a well-known port
+	number at both ends the connection
+
+	However a new connection with addresses and ports
+	all identical to an existing connection will error
+
+	A clashing outgoing connection is stopped internally
+	so that the remote host does not reset the existing
+	connection
+
+	The port remains shareable on connect() if it is
+	outside the range for arbitrary assignment, but 
+	only listen() enables incoming connections on the port
+
+	The sequence for outgoing connections is
+
+				 _______________
+				(    bind()	)
+				 ---------------
+					|
+			any port	|   specific port
+			________________|________________
+			|				|
+		________|________			|
+		| TCP names port|			|
+		|_______________|			|
+			|				|
+			|_______________________________|
+					|
+					|
+				________|________
+				| bind the port	|
+				| to address:	|
+				| may be 0.0.0.0|
+				|_______________|
+					|
+				________|________
+				| handle -> port|
+				|_______________|
+
+
+
+
+				 _______________
+				(   connect()	)
+				 ---------------
+					|
+					|
+			not bound	|	    bound
+			________________|________________
+			|				|
+		________|________			|
+		|   bind to	|			|
+		|   0.0.0.0:0	|			|
+		|_______________|			|
+			|				|
+			|_______________________________|
+					|
+					|
+					|
+				________|________
+				|   construct	|
+				|   connection	|
+				|_______________|
+					|
+				________|________
+				| copy local net|
+				| address from	|
+				| port socket	|
+				|_______________|
+					|
+					|
+					|
+			local network	|  local network
+			address=0.0.0.0	|address^0.0.0.0
+			________________|________________
+			|				|
+			|				|
+			|				|
+		________|________			|
+		|local address	|			|
+		|of connection =|			|
+		|default address|			|
+		|of interface on|			|
+		|default route	|			|
+		|to remote host	|			|
+		|_______________|			|
+			|				|
+			|				|
+			|_______________________________|
+					|
+					|
+					|
+					|
+				________|________
+				|	handle	|
+				| -> connection	|
+				|_______________|
+					|
+					|
+				________|________
+				| send TCP_SYN	|
+				|_______________|
+					|
+					|
+				________|________
+				| await SYN_ACK	|
+				|_______________|
+					|
+					|
+					|
+
+
+	close TCP connection
+	____________________
+
+
+	close() will remove the connection and free the port
+	from the connection
+
+	If the port is in the range for arbitrary assignment
+	it is unbound
+
+	otherwise the port remains bound and shareable
+
+	close() voids the handle unconditionally
+
+        TCP socket <b>connect</b> is a blocking call
         
         Servers running in the IP task must not block
 
 	NON_BLOCKING call <b>tcp_start_connection</b> in the
-	high-volume interface starts the negotiation of
+	low-level interface starts the negotiation of
 	a remote connection for asynchronous completion
  
         a <b>connect()</b> function which reads addresses from
