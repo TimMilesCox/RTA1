@@ -494,12 +494,20 @@ problem. There is no errno variable
 
 	the result in application register a is bytes read
 
-	result -2 means the handle is neither a UDP socket
+	result -22 means the handle is neither a UDP socket
 	nor a TCP connection
 
-	result -99 means a TCP connection has received remote
-	close
+	result 0 on a BLOCKING receive means a TCP connection
+	has received remote close
 
+	On a NON_BLOCKING receive, result 0 means there
+	is no data. If the connection state is no longer
+	TCP_ESTABLISHED, then a negative result indicating
+	the connection state in 1s-complement is returned
+
+	This is a departure from the EAGAIN / EWOULDBLOCK
+	convention. There is no errno in RTA1. The zero
+	return means no data at present, like an empty file
 
 
 	receive from
@@ -626,16 +634,16 @@ problem. There is no errno variable
 	close UDP socket
 	________________
 
-	<b>close</b> in UDP voids the socket and unbinds the port
+	<b>close</b> in UDP renders the port inactive
+	and makes the socket handle unassigned
 
 
 	connect TCP socket
 	__________________
 
- 	<b>connect</b> in TCP changes the socket handle
-	to the handle of a connection and negotiates that
-	connection with the remote socket over TCP and IP
-	protocols
+ 	<b>connect</b> in TCP changes the socket to a
+	connection handle and negotiates that connection
+	with the remote socket over TCP and IP protocols
 
 	The handle may already be bound to a port
 	and optionally to a local network address
@@ -644,24 +652,37 @@ problem. There is no errno variable
 	port in the range for arbitrary assignment, and to
 	the default network address of the outgoing interface
 
-	There may be multiple bindings on TCP port sockets
-	which are not in the range for arbitrary assigment
+	There may be multiple bindings and connections on
+	a TCP port which has not been automatically bound
+	by connect()
 
 	Some application protocols use a well-known port
-	number at both ends the connection
+	number at both sides the connection
 
-	However a new connection with addresses and ports
-	all identical to an existing connection will error
+	However an outgoing connection with all addresses and
+	ports identical to an existing connection is declined
+	internally, so that the remote host does not reset
+	the existing connection
 
-	A clashing outgoing connection is stopped internally
-	so that the remote host does not reset the existing
-	connection
+	A port specifically bound before outgoing connect()
+	remains shareable, just as  it remains shareable on
+	incoming connection accept()
 
-	The port remains shareable on connect() if it is
-	outside the range for arbitrary assignment, but 
-	only listen() enables incoming connections on the port
+        TCP socket <b>connect</b> is a blocking call
 
-	The sequence for outgoing connections is
+        Servers running in the IP task must not block
+
+        NON_BLOCKING call <b>tcp_start_connection</b> in the
+        low-level interface starts the negotiation of
+        a remote connection for asynchronous completion
+
+        a <b>connect()</b> function which reads addresses from
+        a <b>sockaddr_in</b> structure will be added with
+        C compiler development
+
+	The sequence for outgoing connections is (starting with
+	the optional preliminary separate bind() step)
+
 
 				 _______________
 				(    bind()	)
@@ -764,27 +785,15 @@ problem. There is no errno variable
 	____________________
 
 
-	close() will remove the connection and free the port
-	from the connection
+	close() removes the connection and makes the socket
+	handle unassigned
 
-	If the port is in the range for arbitrary assignment
-	it is unbound
+	If the port has been bound automatically on outgoing
+	connect() it becomes inactive
 
-	otherwise the port remains bound and shareable
+	otherwise the port remains active and shareable
 
-	close() voids the handle unconditionally
-
-        TCP socket <b>connect</b> is a blocking call
-        
-        Servers running in the IP task must not block
-
-	NON_BLOCKING call <b>tcp_start_connection</b> in the
-	low-level interface starts the negotiation of
-	a remote connection for asynchronous completion
- 
-        a <b>connect()</b> function which reads addresses from
-        a <b>sockaddr_in</b> structure will be added with
-        C compiler development
+	close() returns immediately. There is no blocking
 
 
 
