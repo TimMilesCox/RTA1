@@ -1089,29 +1089,19 @@ v64*	$name
         lb, xi  return_exit
         ds      RSAVE+126
         la, i   126
-        ds      RSAVE+15        . set user SP
+        ds      RSAVE+sp	. set user SP
 
 	dl	(080:d)		. default halfword-sensitive
 				. just for now
 	ds	UPACKET
 
-	ts	banks_lock_cell
-	j	$-1
 
-	la	free_tdescriptor
-	jza	new_tdescriptor
+	lcal	tdescriptor
+	j	no_new_task_descriptor
 
-	lb	0, a
-	sb	free_tdescriptor
 
-	j	tdescriptor2
-new_tdescriptor
-	la	next_tdescriptor_sp
-	aa, xi	-4
-	tanu	next
-	jc	tdescriptor1
-
-	z	banks_lock_cell
+	$if	0
+no_new_task_descriptor
 	la	BANK_CHAIN
 	lcal	bank_free
 no_new_task
@@ -1120,13 +1110,8 @@ priority_out_of_range
 	pop	b_x
 	dsr	0
 	lret	0
+	$endif
 
-tdescriptor1
-	sa	next_tdescriptor_sp
-
-tdescriptor2
-	lx	a_x
-	z	banks_lock_cell
 
 	lb	1, sp
 	sb	1, x
@@ -1136,9 +1121,6 @@ tdescriptor2
 	inA	65
 	sa	3, x
 	sa	0, sp
-
-.	la, xi	-1		. stop it running
-.	sa	2, x		. it is not loaded
 
 	z	2, x
 
@@ -1178,10 +1160,51 @@ zero4vectors
 	sa	HANDLES
 	z	FREE_HANDLE
 
+	z	THREADS
+	z	NEXT_THREAD
+
 	pop	a_x
 	pop	b_x
 
 	lret	0
+
+no_new_task_descriptor
+	la	BANK_CHAIN
+	lcal	bank_free
+
+no_new_task
+priority_out_of_range
+	pop	a_x
+	pop	b_x
+	dsr	48
+	lret	0
+
+tdescriptor
+	ts	banks_lock_cell
+	j	$-1
+
+	lx	free_tdescriptor
+	tz	x_x
+	j	found_tdescriptor
+	lx	next_tdescriptor_sp
+	ax, xi	-4
+	lr	next
+	jxge	new_tdescriptor
+	z	banks_lock_cell
+	lret	0
+
+new_tdescriptor
+	sx	next_tdescriptor_sp
+	z	banks_lock_cell
+	lret	1
+
+found_tdescriptor
+	push	0, x
+	pop	free_tdescriptor
+	z	banks_lock_cell
+	lret	1
+
+
 
 return_exit			. this is application code
 	ii	EXIT$		. return to here
