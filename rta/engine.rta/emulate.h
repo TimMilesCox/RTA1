@@ -382,6 +382,8 @@ ea &= 0x00FFFFFF;
 
 
 #define	GUARD_INTERRUPT	ii(XBASE_U);
+#define	EXIT_INTERRUPT	ii(II_TXIT);
+
 #define	GUARD_RANGE_SP	24
 #define	GUARD_RANGE_UP	128
 

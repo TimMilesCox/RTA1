@@ -47,6 +47,7 @@
 
 
 
+#define	II_TXIT	70
 #define	XBASE_U	95
 
 extern void ii(int ea);

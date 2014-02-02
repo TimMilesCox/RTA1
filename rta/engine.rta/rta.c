@@ -1473,6 +1473,12 @@ void execute(word instruction)
                   }
                   else
                   {
+                     if (sp == GUARD_RANGE_UP + 1)
+                     {
+                        EXIT_INTERRUPT;
+                        break;
+                     }
+
                      if (sp > GUARD_RANGE_UP)
                      {
                         GUARD_INTERRUPT
@@ -1528,6 +1534,12 @@ void execute(word instruction)
                   }
                   else
                   {
+                     if (sp == GUARD_RANGE_UP + 2)
+                     {
+                        EXIT_INTERRUPT;
+                        break;
+                     }
+
                      if (sp > GUARD_RANGE_UP)
                      {
                         GUARD_INTERRUPT
