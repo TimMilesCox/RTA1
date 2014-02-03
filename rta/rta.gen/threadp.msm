@@ -1,0 +1,101 @@
+
+replicate_abt* $proc
+	outB		65
+	qpush		ABT+?*4-4
+	outA		65
+	qpop		ABT+?*4-4
+	$end
+
+thread	la		b
+	jna		no_new_thread
+	aa, xi		-PRIORITIES
+	jc		no_new_thread
+
+	on		see$1
+
+	la, xi		4096
+	lcal		bank
+	jza		no_new_thread
+
+	lcal		tdescriptor
+	j		no_new_thread_descriptor
+
+	.		the new thread is now a certainty
+
+	z		0, b
+
+	push		b_x
+	push		THREADS
+
+	inB		65
+	outA		65
+
+	pop		NEXT_THREAD
+	pop		BANK_CHAIN
+
+	z		2, x
+	sa		3, x
+	sx		TDESCRIPTOR
+
+?	$do		48/4,	replicate_abt
+
+	z		ULIMIT
+
+	dpush		a_x
+	la		a
+	sal		1
+	jna		thread_large_ibank
+
+	dsr		6+1
+	sbr		18
+
+	j		thread_store_entry_vector
+
+thread_large_ibank
+	dsr		3+1
+	sbr		21
+	sal		3
+
+thread_store_entry_vector
+	ds		UPACKET+2
+	la, xi		0
+	lb		1, fp		. copy input PSR
+	andB, xi	080
+	ds		UPACKET
+
+	la, xi		128
+	sa		RSAVE+sp
+
+	ts		switch_lock_cell
+	j		$-1
+	
+	lb		b		. priority in 
+	sbl		2		. application register b
+	ab, xi		stem(1)
+
+	la		3, b		. trailing uplink
+	sx		0, a		. new is last->next
+	sb		0, x		. stem is new->next
+	sx		3, b		. new is stem->uplink
+
+	z		switch_lock_cell
+
+	pop		a_x
+	pop		b_x
+
+	lx		x
+	sx		RSAVE+a		. parameter for thread
+
+	z		THREADS
+
+	outB		65
+	sa		THREADS
+	
+	ir		0
+
+no_new_thread_descriptor
+	la		b
+	lcal		bank_free
+
+no_new_thread
+	ir		0
