@@ -20,7 +20,7 @@ See also the licensing notice at the foot of this document
 
 	<li>API</li>
 	<ol>
-		<li>POSIX Layer and Low Level Interface</li>
+		<li>POSIX API and Low Level Interface</li>
 
 		<li>Kernel Call Interface and Internal Interrupt Interface</li>
 	</ol>
@@ -53,31 +53,31 @@ See also the licensing notice at the foot of this document
 
 <h2>1. API</h2>
 
-<h3>1.1 POSIX Layer and Low Level Interface</h3>
+<h3>1.1 POSIX API and Low Level Interface</h3>
 
 <p>
-The smaragd7 kernel has services on a POSIX model
+The smaragd7 kernel has services with POSIX-like API
 
 <p>
 The services are also addressable at a lower layer than the handle-based
-POSIX-model API
+POSIX-model
 
 <p>
-The lower level interfaces allow services on a far larger scale as well
+Low level interfaces allow services on a far larger scale as well
 as shortening software paths
 
 <p>
-POSIX networking is centred on the handle, an integer token
-for a socket. Sockets share a number space with file handles
+POSIX APIs are centred on the handle, an integer token for a network socket
+or a file. Socket and file handles share a number space
 
 <p>
 On RTA1 with smaragd7 kernel, a single server application may have
-several million sustained TCP connections. The remote user session
-is modelled on the TCP connection.
+several million sustained TCP connections. The remote client session
+is carried on a sustained TCP connection.
 
 <p>
-The application does not have 5..10 million socket handles, but
-instead binds to TCP service at a low level
+Applications do not have millions socket handles, but may serve
+millions of TCP connections over a low-level API
 
 
 
@@ -89,8 +89,11 @@ arguments are on the internal stack
 
 <p>
 Some calls are internal interrupts. They are called with
-the <b>ii</b> internal interrupt instruction. Functional
-wrappers can be place around these system calls
+the <b>ii</b> internal interrupt instruction
+
+<p>
+Functional wrappers will be placed around internal interrupt system calls
+for a single and simple C-Language interface
 
 <p>
 Macro language supports a structured call interface for application
@@ -138,14 +141,11 @@ is a variable or a constant containing the vector value
 of the target routine
 <pre>
 
-	call	(CALL_INTERFACE_VECTOR)
+	call	(CALL_TARGET_VECTOR_VALUE:s)
 
 	call	variable
 
 </pre>
-<p>
-ISRs and kernel call routines are not interchangeable in call method
-
 <p>
 An ISR reads parameters from the application arithmetic registers,
 and returns by executing an interrupt return instruction <b>ir</b>
@@ -165,21 +165,23 @@ So these ISR vector values are all in the range
 	64++[0..63]
 	000000 000000 000001 xxxxxx
 
+        [example]<i>
+        location: instruction			source</i>
+        <b>
+	00:00004C 750047              +50 	ii		THREAD$
+	</b>
+
 </pre>
 <p>
-The kernel call interface vectors in OS smaragd7 are in 4096-word instruction
-banks starting from absolute address 8192, or the third page of system memory
-
-<p>
-Instruction banks can be any size up, but the kernel banks are the minimum
+Instruction banks can be any size, but the kernel banks are the minimum
 size of 4096 words for modularity
 
 <p>
-Network calls are in bank 2 at address 8192 and file system calls in bank 5
-at address 20480
+Network call routines are in bank 2 at address 8192 and file system call
+routines are in bank 5 at address 20480
 
 <p>
-So those kernel call routines have vector values in these ranges
+Their vector values are these ranges
 <pre>
 
         2*64++[0..63]
@@ -188,6 +190,16 @@ So those kernel call routines have vector values in these ranges
         5*64++[0..63]
         00 0000 0000 0000 0101 xxxxxx
 
+
+        [example]<i>
+        location: instruction                   source</i>
+	<b>					
+	00:000047 FF0E74              +122      call    (__socket)
+	</b><i>
+	location: operand</i>
+	<b>
+	00:000e74+000081
+	</b>
 </pre>
 <p>
 Because a 16-bit bank pointer to a 4K-granularity bank edge only addresses
@@ -214,7 +226,7 @@ used as building blocks for services
 
 	SPAWN$             66		= bank 1  vector  2
 
-					task launch
+					process launch
 					4 parameters in application
 					registers a b mantissa2 mantissa3
 
@@ -260,11 +272,16 @@ used as building blocks for services
 					end task
 
 
+	THREAD$		   71		= bank 1  vector  7
+
+					start a new thread of the current
+					process
+
 </pre>
 
-<h3>2.1 Launching, Switching and Ending Tasks: SPAWN$ YIELD$ TWAIT$ EXIT$</h3>
+<h3>2.1 Launching, Switching and Ending Tasks: SPAWN$ YIELD$ TWAIT$ EXIT$ THREAD$</h3>
 
-One task launches another with the SPAWN$ primitive
+The SPAWN$ primitive launches processes
 <pre>
 
         ql      (start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
@@ -272,34 +289,31 @@ One task launches another with the SPAWN$ primitive
 
 </pre>
 
-
-<p>
-PRIORITY may not be < zero or > PRIORITIES-1
-
 <p>
 The highest priority is zero and the lowest PRIORITIES-1
 
 <p>
-DATA_SPACE is the amount of application data storage which the
-application will receive and base in banks B3..B31
+DATA_SPACE is the size of application data. The kernel writes the
+start address of assigned storage in the process vector bank. The
+application bases the space in relocation registers B3..B31
 
 <p>
 -B1_OCCURENCES is a negative number indicating the number of 4096-word
-banks the application requires in its private B1 stack. The default is
+frames the application requires in its private B1 stack. The default is
 -1, which means the application uses one private B1 bank
 
 <p>
-B1 banks are distinct from application data banks because their content
+B1 frames are distinct from application data banks because their content
 is encapsulated in the owning application or service. Addresses in B1
-are not available to called or calling entities.
+are not available to called or calling entities
 
 <p>
-A simple application has one B1 bank. A service disposing tabled resources
+A simple application has a single B1 frame. A service disposing tabled resources
 has one or more
 
 <p>
-Subprogramming application models may also have a linear stack of B1 banks
-or a service aligned multiple of B1 banks
+Subprogramming application models may also have a linear stack of B1 frames
+or a service aligned multiple of B1 frames
 
 <p>
 The kernel assigns a single storage area starting with B1 banks, then a
@@ -308,7 +322,7 @@ application will base in B2, then the initial DATA_SPACE
 
 <p>
 The kernel writes the base adresses of all banks initially supplied to the
-task and all entry point vectors in the initial instruction bank into the vector bank
+process and all entry point vectors in the initial instruction bank into the vector bank
 
 <p>
 The instruction bank containing the start vector must be loaded before
@@ -348,7 +362,8 @@ When the wait time is expired, the task becomes a candidate for switching
 </pre>
 
 <p>
-<b>EXIT$</b> deletes the task and pools its resources
+<b>EXIT$</b> deletes the thread. If that is the process main thread, all threads
+in the process exit, all handles close, and all resources are surrendered
 <pre>
 
 	ii	EXIT$
@@ -356,16 +371,40 @@ When the wait time is expired, the task becomes a candidate for switching
 </pre>
 
 <p>
-If the application internal stack is exactly as at task entry, the
-far return instruction <b>fret</b> can be used to end and delete a task
+If the application internal stack is empty (sp = 128), hardware raises
+internal interrupt 70 EXIT$ on local return instruction <b>lret</b> and
+far return instruction <b>fret</b>
 <pre>
 
-	fret	0
+	{lret|fret}	0
 
 </pre>
+<p>
+If <b>sp</b> has any underflowed or overflowed value different from 128
+at the return instruction or other stack operation, guard interrupt 95 is raised
+
+<p>
+<b>THREAD$</b> starts a new thread of the current process
+
+<pre>
 
 
-<h3>2.2 Adding and Releasing Task Storage: BANK$ ARRAY$ BANK$FREE</h3>
+	ql	(start_address, thread_priority, parameter, initial_fp:q)
+	ii	THREAD$
+
+</pre>
+The thread <b>start_address</b> is in the current instruction bank<br>
+
+<b>thread_priority</b> is in the range <b>0..PRIORITIES-1</b><br>
+
+<b>parameter</b> is an integer value or address delivered in register <b>a</b>
+of the new thread<br>
+
+<b>initial_fp</b> is the value of external stack pointer <b>fp</b> at
+thread execution start
+
+
+<h3>2.2 Adding and Releasing Program Storage: BANK$ ARRAY$ BANK$FREE</h3>
 
 <p>
 These primitives acquire or free storage banks up to 16 Gigawords in
@@ -373,10 +412,21 @@ size. The banks acquired are not automatically based and
 may be too large to base all at once
 
 <p>
-This service is not similar to C-Language library calls for
-obtaining buffers by pointer. C-Library manages memory which the task
-already has, and does not return it to the smaragd7 kernel but to the 
-application internal management
+This service is not similar to C-Language <b>stdlib.h</b> calls for
+obtaining buffers by pointer. C-Library manages memory which the program
+already has, and does not return it to the smaragd7 kernel but to the heap
+within the application
+
+
+<p>
+<b>BANK$/ARRAY$</b> deliver system memory to the application in 4K-word
+or 256K-word granularity
+
+<p>
+<b>BANK$FREE</b> delivers system memory back to the kernel
+
+<p>
+Bank pointer or index is the 4K-word block where a bank starts = physical address / 4096
 
 <p>
 <b>BANK$</b> obtains a bank from 1 to 16777215 words in size and
@@ -391,8 +441,9 @@ pointer. Zero = no memory granted
 </pre>
 
 <p>
-<b>BANK$</b> granularity of memory grant is 4096-word blocks up to 262144
-words and 262144-word blocks beyond
+The parameter is the number of words required. <b>BANK$</b> memory grant
+is 4096-word blocks up to 262144 words and 262144-word blocks beyond.
+The bank is a single linear block
 
 <p>
 <b>ARRAY$</b> obtains a bank from 4096 words to 16 Gigawords in size
@@ -407,7 +458,8 @@ pointer. Zero = no memory granted
 
 </pre>
 <p>
-<b>ARRAY$</b> granularity of memory grant is 262144-word blocks
+The parameter is words required // 4096. <b>ARRAY$</b>  memory grant is
+in 262144-word blocks. The bank is a single linear block
 
 <p>
 <b>BANK$FREE</b> returns a bank of any size to the kernel. If the task
@@ -425,7 +477,7 @@ The network API has a handle-based socket interface
 
 <p>
 An application using thousands or millions of sockets
-calls a lower-level set of network calls
+calls a lower-level API
 
 <p>
 Error conditions return a range of negative values identifying the
@@ -450,12 +502,12 @@ problem. There is no errno variable
 
 
 
-	binding to a port and optionally to a network address
-	_____________________________________________________
+	binding a handle to a port and optionally to a network address
+	______________________________________________________________
 
 	<b>{ dl	($net_socket 10.0.0.63:PORT) | dsr	48 }
 	ds	6
-	la	socket
+	la	socket_handle
 	[lb, xi	0]
 	call	(bind)</b>
 
@@ -488,11 +540,13 @@ problem. There is no errno variable
 	if a TCP connection has less data available than
 	requested it blocks if flag bit 22 = 0
 
-	sockets receiving XDR data require BLOCKING to work
-	correctly. Applications protocols with BLOCKING
-	sockets must be separate tasks from the IP task
+	TCP sockets receiving XDR data require BLOCKING to
+	obtain a complete result atomically
 
-	the result in application register a is bytes read
+	Application protocols with BLOCKING sockets must be
+	separate processes or threads from the IP main thread
+
+	<b>recv</b> returns bytes read in register <b>a</b>
 
 	result -22 means the handle is neither a UDP socket
 	nor a TCP connection
@@ -584,7 +638,7 @@ problem. There is no errno variable
 	If the socket is NON_BLOCKING, connections
 	are accepted automatically
 
-	Servers running in the IP task must not block
+	Servers running in the IP main thread must not block
 
 
 
@@ -606,7 +660,7 @@ problem. There is no errno variable
 
 	<b>accept</b> is a blocking call
 
-	Servers running in the IP task must not block
+	Servers running in the IP main thread must not block
 
 	Incoming connections are accepted automatically on
 	NON_BLOCKING sockets
@@ -652,25 +706,34 @@ problem. There is no errno variable
 	port in the range for arbitrary assignment, and to
 	the default network address of the outgoing interface
 
-	There may be multiple bindings and connections on
-	a TCP port which has not been automatically bound
-	by connect()
+	A small number of application protocols have a
+	well-known and constant client port number
 
-	Some application protocols use a well-known port
-	number at both sides the connection
+	Some port numbers therefore support being bound to
+	multiple sockets for outgoing connect. The sockets
+	may be of one process or many
 
 	However an outgoing connection with all addresses and
 	ports identical to an existing connection is declined
 	internally, so that the remote host does not reset
 	the existing connection
 
-	A port specifically bound before outgoing connect()
-	remains shareable, just as  it remains shareable on
-	incoming connection accept()
+	The kernel call
+
+		c	(share_port)	{TCP,,xi|UDP,,xi}		;
+					{PORT_NUMBER,,xi|port_number_variable}
+
+	allows multiple sockets to bind to the local port number
+
+	The individual socket moves from the port to
+	the connection on connect() and is lost on close()
+
+	To use that local port for another connect() a new
+	socket must first be bound to it
 
         TCP socket <b>connect</b> is a blocking call
 
-        Servers running in the IP task must not block
+        Servers running in the IP main thread must not block
 
         NON_BLOCKING call <b>tcp_start_connection</b> in the
         low-level interface starts the negotiation of
@@ -680,8 +743,8 @@ problem. There is no errno variable
         a <b>sockaddr_in</b> structure will be added with
         C compiler development
 
-	The sequence for outgoing connections is (starting with
-	the optional preliminary separate bind() step)
+	The sequence for outgoing connections is, starting with
+	the optional separate bind() step
 
 
 				 _______________
@@ -788,10 +851,11 @@ problem. There is no errno variable
 	close() removes the connection and makes the socket
 	handle unassigned
 
-	If the port has been bound automatically on outgoing
-	connect() it becomes inactive
-
-	otherwise the port remains active and shareable
+	a shareable port remains available for <b>bind()</b>
+	and may still have sockets bound to it
+	
+	a port not configured for sharing becomes reassignable
+	for binding to one socket
 
 	close() returns immediately. There is no blocking
 
@@ -834,9 +898,10 @@ to applications
 
 <p>
 IP Protocols implementation <b>T77.4</b> allows one server
-endpoint to have some millions of TCP connections.
+thread to have some millions of TCP connections.
 See <b>3.4 The High-Volume Network API</b> below.
-No process may have millions of handles
+No process may have millions of handles. It is not desirable
+to have have process tables with millions of elements
 
 <p>
 Some processing is also sidestepped with these low-level calls
@@ -874,7 +939,7 @@ Some processing is also sidestepped with these low-level calls
 	chain address at <b>bind</b>. A randomly numbered listening port is
 	conceivable with services bound to <b>portmapper()</b>
 
-	This is an example of a very simple server called
+	This is an example of a simple server
 
 
 		$(1)						. private data bank
@@ -1348,7 +1413,7 @@ the entry type and size in words, excluding the format word itself
         47                                             0
         _________________________________________________
         |  'X'  |   0   | words | granules this extent  |
-        |_______|_______|___=_7_|_______________________|
+        |_______|_______|___=_6_|_______________________|
         |                  start granule                |
         |_______________________________________________|
         |   granule containing next extent descriptor   |
@@ -1381,7 +1446,8 @@ the entry type and size in words, excluding the format word itself
         _________________________________________________________________________
         |  'J'  |   0   | words |	start granule next block of directory	|
         |_______|_______|_______|_______________________________________________|
-
+	|	zero pad words...	...	...
+	|___________________________
 
 
 
