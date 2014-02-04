@@ -60,11 +60,11 @@ The smaragd7 kernel has services with POSIX-like API
 
 <p>
 The services are also addressable at a lower layer than the handle-based
-POSIX-model
+POSIX model
 
 <p>
 Low level interfaces allow services on a far larger scale as well
-as shortening software paths
+as shorter instruction paths
 
 <p>
 POSIX APIs are centred on the handle, an integer token for a network socket
@@ -76,7 +76,7 @@ several million sustained TCP connections. The remote client session
 is carried on a sustained TCP connection.
 
 <p>
-Applications do not have millions socket handles, but may serve
+Applications do not have millions of socket handles, but may serve
 millions of TCP connections over a low-level API
 
 
@@ -134,6 +134,12 @@ interrupt instruction <b>ii</b>
 
 	ii	ISR_VECTOR
 
+        [example]<i>
+        location: instruction                   source</i>
+        <b>
+        00:00004C 750047              +50       ii              THREAD$
+        </b>
+
 </pre>
 <p>
 The operand of the far call instruction <b>call</b>
@@ -145,8 +151,18 @@ of the target routine
 
 	call	variable
 
+
+	[example]<i>
+        location: instruction                   source</i>
+        <b>
+        00:000047 FF0E74              +122      call    (__socket)
+        </b><i>
+        location: operand</i>
+        <b>
+        00:000e74+000081
+        </b>
+
 </pre>
-<p>
 An ISR reads parameters from the application arithmetic registers,
 and returns by executing an interrupt return instruction <b>ir</b>
 
@@ -277,11 +293,15 @@ used as building blocks for services
 					start a new thread of the current
 					process
 
+                                        4 parameters in application
+                                        registers a b mantissa2 mantissa3
+
+
 </pre>
 
 <h3>2.1 Launching, Switching and Ending Tasks: SPAWN$ YIELD$ TWAIT$ EXIT$ THREAD$</h3>
 
-The SPAWN$ primitive launches processes
+<b>SPAWN$</b> launches a process
 <pre>
 
         ql      (start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
@@ -290,17 +310,21 @@ The SPAWN$ primitive launches processes
 </pre>
 
 <p>
+<b>start_vector</b> is the bank.vector value where the process initial
+thread starts
+
+<p>
 The highest priority is zero and the lowest PRIORITIES-1
 
 <p>
-DATA_SPACE is the size of application data. The kernel writes the
+<b>DATA_SPACE</b> is the size of application data. The kernel writes the
 start address of assigned storage in the process vector bank. The
 application bases the space in relocation registers B3..B31
 
 <p>
--B1_OCCURENCES is a negative number indicating the number of 4096-word
+<b>-B1_OCCURENCES</b> is a negative number indicating the number of 4096-word
 frames the application requires in its private B1 stack. The default is
--1, which means the application uses one private B1 bank
+-1, which means the application uses one private B1 frame
 
 <p>
 B1 frames are distinct from application data banks because their content
@@ -312,21 +336,118 @@ A simple application has a single B1 frame. A service disposing tabled resources
 has one or more
 
 <p>
-Subprogramming application models may also have a linear stack of B1 frames
-or a service aligned multiple of B1 frames
+Recursive application models may also have a linear stack of B1 frames
+plus a service aligned multiple of B1 frames
 
 <p>
 The kernel assigns a single storage area starting with B1 banks, then a
 4096-word Task Control Block, then a 4096-word vector bank which the
-application will base in B2, then the initial DATA_SPACE
+application will base in B2, then the initial <b<DATA_SPACE</b>
 
 <p>
-The kernel writes the base adresses of all banks initially supplied to the
-process and all entry point vectors in the initial instruction bank into the vector bank
+The kernel writes the base pointer of each B1 frame and of the initial
+<b>DATA_SPACE</b> into the vector bank of the new process. The vector bank
+also contains 64 call vectors to the load address of the process instruction
+bank or instruction bank collection
+<pre>
 
+
+	.--  -->
+	|	       [B1.n]
+	|
+	|--  -->
+	|	       [B1.2]
+	|
+	|------>|---------------|		.------>-----------------
+	|	|	B1.1	|		|------>| instruction	|
+	|	|		|		|------>| bank vectors	|
+	|	|---------------|		|------>| 0..63		|
+	|	|	TCB	|		|	|		|
+	|	|		|		|	|		|
+	|	|---------------|		|	|_______________|
+	<-------| B2		|---------------:
+	.-------| vector bank	|
+	:------>|---------------|
+		|   data space	|
+		|   B3..B31	|
+		|		|
+
+
+
+	the 64 instruction bank vectors allow an application loaded
+	at an arbitrary address to locate its own inter-bank call
+	addresses
+
+	an instruction bank collection is a large application
+	constructed in a multiple of 32K-word banks
+
+	the kernel at SPAWN$ writes into the vector bank the values
+	of eight vectors in each instruction bank of the application
+
+
+        .--  -->       [B1.n]
+	|
+	|
+        |--  -->
+        |              [B1.2]
+        |
+        |------>|---------------|               .------>-----------------
+        |       |       B1.1    |               |------>|1st instruction|
+        |       |               |               |------>| bank vectors  |
+        |       |---------------|               |------>| 0..7		|
+        |       |       TCB     |               |       |               |
+        |       |               |               ^	|		|
+        |       |---------------|               |	|_______________|
+        <-------| B2            |---------------:
+        .-------| vector bank   |		|
+        :------>|---------------|		|
+                |   data space  |               :------>-----------------
+                |   B3..B31     |               |------>|2nd instruction|
+                |               |               |------>| bank vectors  |
+						|------>| 0..7          |
+						|       |               |
+						|	|		|
+						|	|_______________|
+						|
+						|
+						:------>-----------------
+						|------>|3rd instruction|
+						|------>| bank vectors	|
+						|------>| 0..7          |
+						|	|		|
+						|       |		|
+						|	|_______________|
+						|
+						|
+                                                :------>-----------------
+                                                |------>|4th instruction|
+                                                |------>| bank vectors  |
+                                                |------>| 0..7          |
+                                                |       |               |
+                                                |       |		|
+                                                |	|_______________|
+                                                |
+						.
+						.
+                                                .------>-----------------
+                                                |------>|nth instruction|
+                                                |------>| bank vectors  |
+                                                .------>| 0..7          |
+                                                        |               |
+                                            		|		|
+							|_______________|
+
+
+
+
+
+
+
+
+</pre>
 <p>
-The instruction bank containing the start vector must be loaded before
-SPAWN$
+The instruction bank containing the <b>start_vector</b> must be loaded before
+<b>SPAWN$</b>
 
 <p>
 <b>YIELD$</b> is a voluntary task switch.
@@ -671,7 +792,8 @@ problem. There is no errno variable
 	_________________
 
 		
-		c	(connect)	socket_handle	($net_socket 10.0.0.65:REMOTE_PORT),,long
+		c	(connect)	socket_handle				;
+					($net_socket 10.0.0.65:REMOTE_PORT),,long
 
 		c	(close)		socket_handle
 
@@ -720,7 +842,7 @@ problem. There is no errno variable
 
 	The kernel call
 
-		c	(share_port)	{TCP,,xi|UDP,,xi}		;
+		c	(share_port)	{IPPROTO_TCP,,xi|IPPROTO_UDP,,xi}		;
 					{PORT_NUMBER,,xi|port_number_variable}
 
 	allows multiple sockets to bind to the local port number
@@ -912,171 +1034,204 @@ Some processing is also sidestepped with these low-level calls
 	<b>lx	connection
 	call	(xaccept)</b>
 
-	move a passive connect from <b>SYNC_RECEIVED</b> to <b>ESTABLISHED</b> state
-	the transmission control block address is in x
+</pre>
 
-	TCP_SYN_ACK is sent to the remote socket with MSS option
+<p>
+<b>xaccept</b> moves a passive connect from <b>SYNC_RECEIVED</b> to <b>ESTABLISHED</b> state
 
-	<b>xaccept</b> is the building block of the <b>accept()</b> call
+<p>
+The transmission control block address is in <b>x</b>
 
-	to walk the open and half-open connnections attached to a
-	port, it is necessary to bind a listening socket to that port
+<p>
+TCP_SYN_ACK is sent to the remote socket with MSS option
 
-	<b>bind</b> returns the bank:offset address in kernel space of the
-	listening socket in registers 10:11. This address must be based in
-	the space <b>BSOCKET</b> and the socket structure attribute <b>tbase</b>
-	retrieved to identify the bank where this socket has connections
+<p>
+<b>xaccept</b> is the building block of the <b>accept()</b> call
 
-	The bank containing connection blocks is then based at <b>BSOCKET</b>
+<p>
+to walk the open and half-open connnections attached to a
+port, it is necessary to bind a listening socket to that port
 
-	the connections in this bank are in 32 ordered chains and the
-	chain for the local port is a function of the local port number
+<p>
+<b>bind</b> returns the bank:offset address in kernel space of the
+listening port cell in registers 10:11
 
-	the local port number may be known at assembly time and the
-	chain function can then be resolved at assembly
+<p>
+The bank containing the port cell is based at address window
+<b>BSOCKET</b>
 
-	a local port number picked at runtime must be resolved to its
-	chain address at <b>bind</b>. A randomly numbered listening port is
-	conceivable with services bound to <b>portmapper()</b>
+<p>
+The socket attribute <b>tbase</b> is retrieved to identify the bank
+where this socket has connections
 
-	This is an example of a simple server
+<p>
+The bank containing connection blocks is based at address window
+<b>BSOCKET</b>
+
+<p>
+the connections in this bank are in 32 ordered chains and the
+chain for the local port is a function of the local port number
+
+<p>
+the local port number may be known at assembly time and the
+chain function can then be resolved at assembly
+
+<p>
+a local port number picked at runtime must be resolved to its
+chain address at <b>bind</b>. A randomly numbered listening port is
+possible with services bound to <b>portmapper()</b>
+<pre>
+
+	
+	A simple server application example
+	___________________________________
 
 
-		$(1)						. private data bank
+	$(1)					. private data bank
 
-		tcp_socket_handle	+	0		. cached handle
-		connections_bank	+	0		. cached connections array bank ID
-		port_socket_long_address +	0:d		. cached Bank ID / offset of port socket
+	tcp_socket_handle	+	0	. cached handle
+	connections_bank	+	0	. cached connections array bank ID
+	port_socket_long_address +	0:d	. cached Bank / offset of port cell
 
-		connection_chain_head
-			+	BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(LISTENING_PORT)
+	connection_chain_head
+		+	BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(LISTENING_PORT)
 
-		listening_port		+	LISTENING_PORT
-		connection		+	0
+	listening_port		+	LISTENING_PORT
+	connection		+	0
 
 
-		$(69::,b)					. pointer
-		s		socket
+	$(69::,b)				. pointer
+	s		socket
 
-		$(66::,x)					. pointer
-		transmission	tcp_connection
+	$(66::,x)				. pointer
+	transmission	tcp_connection
 
-		$(67::,y)					. pointer to array of connections
-		tlist		tbank
+	$(67::,y)				. pointer to array of connections
+	tlist		tbank
 
-		$(3)						. application data bank
+	$(3)					. application data bank
 
-		application_data $res	MAXIMUM_MESSAGE
+	application_data $res	MAXIMUM_MESSAGE
 
-		$(0)						. instruction bank
+	$(0)					. instruction bank
 
-		first_time	la	(IPPROTO_TCP*/16)	. acquire a socket
-				<b>call	(__socket)</b>
-				jna	socket_error
+	first_time
+		la	(IPPROTO_TCP*/16) . acquire a socket
+		<b>call	(__socket)</b>
+		jna	socket_error
 
-				sa	tcp_socket_handle
-				lb, xi	LISTENING_PORT
+		sa	tcp_socket_handle
+		lb, xi	LISTENING_PORT
 
-				sb	7
-				z	6
-				<b>call	(bind)</b>		. bind to the port
+		sb	7
+		z	6
+		<b>call	(bind)</b>	. bind to the port
 
-				jna	bind_error
+		jna	bind_error
 
-				dl	10			. save the long virtual address
-				ds	port_socket_long_address . of the port socket
+		dl	10		. save the long virtual address
+		ds	port_socket_long_address . of the port socket
 
-				sabr	BSOCKET			. and base it
+		sabr	BSOCKET		. and base it
 
-				.	register b is now a pointer to
-				.	the port socket structure
+				. register b is now a pointer to
+				. the port socket structure
 
-				push	s:tbase			. cache the bank ID
-				pop	connections_bank	. of the connections array
+		push	s:tbase		. cache the bank ID
+		pop	connections_bank . of the connections array
 
 				. conditional assembly where the port number
 				. is not known at assembly time
 
-				$if	LISTENING_PORT=0
-				.	if <b>bind</b> chose the port number
-				la	s:socket_address+1
-				and	(00FFFF)
-				sa	listening_port
-				<b>call	(tcp_hash_localsocket)</b>
-				aa	(BSOCKET*/12++tlist:chain(1))
-				sa	connection_chain_head
+		$if	LISTENING_PORT=0
 
-				$endif
+		.	if <b>bind</b> chose the port number
 
-		subsequently	la	connections_bank	. base the connections array
-				sabr	BSOCKET
+		la	s:socket_address+1
+		and	(00FFFF)
+		sa	listening_port
+		<b>call	(tcp_hash_localsocket)</b>
+		aa	(BSOCKET*/12++tlist:chain(1))
+		sa	connection_chain_head
 
-				lx      connection_chain_head	. walk the chain which includes this port
+		$endif
 
-				lk	(00FFFF)		. compare mask for
-								. local port # in chain
+	subsequently
+		la	connections_bank . base the connections array
+		sabr	BSOCKET
 
-		walk		lx	transmission:next	. move along the hash chain
-				tz	x
-				j	a_connection
-				j	no_more_connections
+		lx      connection_chain_head
+					. walk the chain which includes this port
 
-		a_connection	la	transmission:socket_address+1
-				mta	listening_port		. chains are shareable
-				j	walk
+		lk	(00FFFF)	. compare mask for
+					. local port # in chain
 
-				.	connection found for this port
+	walk	lx	transmission:next . move along the hash chain
+		tz	x
+		j	a_connection
+		j	no_more_connections
 
-				la	transmission:state
-				anu, xi	<b>TCP_ESTABLISHED</b>
-				jzb	traffic?
-				anu, xi	<b>TCP_SYNRECEIVED</b>
-				jnzb	walk			. TCP will service any other state
+	a_connection
+		la	transmission:socket_address+1
+		mta	listening_port	. chains are shareable
+		j	walk
 
-				<b>call	(xaccept)</b>		. move the state to TCP_ESTABLISHED
+		.	connection found for this port
 
-				sx	connection		. application processing will
-								. certainly use register x
+		la	transmission:state
+		anu, xi	<b>TCP_ESTABLISHED</b>
+		jzb	traffic?
+		anu, xi	<b>TCP_SYNRECEIVED</b>
+		jnzb	walk		. TCP will service any other state
 
-		traffic?	la	transmission:receiveq:head
-				jza	walk
+		<b>call	(xaccept)</b>	. move the state to TCP_ESTABLISHED
 
-				. if the traffic is known to be IP_DNF and TCP_PSH
-				. the server can process the message in the socket buffer
-				. otherwise the data must be read from the socket 
+		sx	connection	. application processing will
+					. certainly use register x
+
+	traffic?
+		la	transmission:receiveq:head
+		jza	walk
+
+		. if the traffic is known to be IP_DNF and TCP_PSH
+		. the server can process the message in the socket buffer
+		. otherwise the data must be read from the socket 
 
 
-				$if	GUARANTEED_SIMPLE_MESSAGE
+		$if	GUARANTEED_SIMPLE_MESSAGE
 
-				lr	descriptor:bytes, a
-				push	descriptor:apdata, a
-				pop	q
-				on	b$stream$16r		. the socket buffer uses LS 16 bits of each word
-				lcal	scan_and_respond	. the application code however that is
-				lx	connection
-				call	(tcp_release_rxline)	. sorted
+		lr	descriptor:bytes, a
+		push	descriptor:apdata, a
+		pop	q
+		on	b$stream$16r	. the socket buffer uses
+					. 16 data bits per word
 
-				$else
+		lcal	scan_and_respond . the application code
+		lx	connection
+		call	(tcp_release_rxline)	. sorted
 
-				. 	for the sake of example this is something like
-				. 	an XDR marked record and a 4-byte message length
-				. 	needs to be read
+		$else
 
-				c	(recv)	socket	application_data,,xi 4 0
-				dl	application_data
-				dsr	16
-				push	b
-				c	(recv)	socket	application_data,,xi b 0
-				pop	r
-				push	application_data,,xi
-				pop	q
-				off	b$stream16r		. the internal buffer uses 24 data bits per word
-				lcal	scan_and_respond
-				lx	connection
+		. 	for the sake of example this is something like
+		. 	an XDR marked record and a 4-byte message length
+		. 	needs to be read
+
+		c	(recv)	socket	application_data,,xi 4 0
+		dl	application_data
+		dsr	16
+		push	b
+		c	(recv)	socket	application_data,,xi b 0
+		pop	r
+		push	application_data,,xi
+		pop	q
+		off	b$stream16r	. the internal buffer uses
+					. 24 data bits per word
+		lcal	scan_and_respond
+		lx	connection
 				
-				$endif
+		$endif
 
-				j	walk
+		j	walk
 </pre>
 
 <h3>3.4 The High-Volume Network API</h3>
