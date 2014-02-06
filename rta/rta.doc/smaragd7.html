@@ -16,6 +16,9 @@ See also the licensing notice at the foot of this document
 
 </center>
 
+
+<h3>smaragd7 Kernel Components and APIs</h3>
+
 <ol>
 
 	<li>API</li>
@@ -117,9 +120,6 @@ accumulator registers
 
 
 </pre>
-<p>
-
-Interrupt vector values have the same layout as far call vector values.
 
 <p>
 A vector is a value with a 16-bit bank pointer and a 6-bit offset
@@ -219,7 +219,7 @@ Their vector values are these ranges
 </pre>
 <p>
 Because a 16-bit bank pointer to a 4K-granularity bank edge only addresses
-256 megawords of executable space, the application <b>call</b> operand
+256 megawords of executable space, the <b>call</b> instruction operand
 may be a 19-bit pointer to a bank at a 32768-word boundary, with a 3-bit vector
 offset, covering all 16 gigawords of executable space
 <pre>
@@ -278,9 +278,10 @@ used as building blocks for services
 
 	TWAIT$             91		= bank 1  vector  27
 
-					task switch and wait milliseconds
+					task switch and wait microseconds
+
 					application register a contains
-					millisecond count
+					microsecond count
 
 
 	EXIT$              70		= bank 1  vector  6
@@ -301,11 +302,16 @@ used as building blocks for services
 
 <h3>2.1 Launching, Switching and Ending Tasks: SPAWN$ YIELD$ TWAIT$ EXIT$ THREAD$</h3>
 
+
+<h4>2.1.1 SPAWN$</h4>
+
 <b>SPAWN$</b> launches a process
 <pre>
+        $include        ii.def
 
-        ql      (start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
-        ii      SPAWN$
+
+        ql      	(start_vector, PRIORITY, DATA_SPACE, -B1_OCCURENCES:q)
+        ii      	SPAWN$
 
 </pre>
 
@@ -317,9 +323,13 @@ thread starts
 The highest priority is zero and the lowest PRIORITIES-1
 
 <p>
-<b>DATA_SPACE</b> is the size of application data. The kernel writes the
-start address of assigned storage in the process vector bank. The
-application bases the space in relocation registers B3..B31
+<b>DATA_SPACE</b> is the size of application initial data which has
+program names and addresses, i.e. <b>static</b> and <b>global</b>
+
+<p>
+The kernel writes the start address of program storage in the process
+vector bank. The application bases the assigned storage in relocation
+registers B3..B31
 
 <p>
 <b>-B1_OCCURENCES</b> is a negative number indicating the number of 4096-word
@@ -329,26 +339,36 @@ frames the application requires in its private B1 stack. The default is
 <p>
 B1 frames are distinct from application data banks because their content
 is encapsulated in the owning application or service. Addresses in B1
-are not available to called or calling entities
+are not in the address space of called or calling entities
 
 <p>
-A simple application has a single B1 frame. A service disposing tabled resources
-has one or more
+A simple application has a single B1 frame. A service disposing tabled
+resources has one or more
 
 <p>
 Recursive application models may also have a linear stack of B1 frames
 plus a service aligned multiple of B1 frames
 
 <p>
-The kernel assigns a single storage area starting with B1 banks, then a
-4096-word Task Control Block, then a 4096-word vector bank which the
-application will base in B2, then the initial <b<DATA_SPACE</b>
+The kernel assigns a single storage area containing
+
+<ol>
+
+	<li>B1 banks</li>
+
+	<li>Task (or initial thread) Control Block</li>
+
+	<li>a vector bank</li>
+
+	<li>the program data space</li>
+
+</ol>
 
 <p>
 The kernel writes the base pointer of each B1 frame and of the initial
 <b>DATA_SPACE</b> into the vector bank of the new process. The vector bank
-also contains 64 call vectors to the load address of the process instruction
-bank or instruction bank collection
+also contains 64 call vectors pointing to the load address of the process
+initial instruction bank or instruction bank collection
 <pre>
 
 
@@ -446,9 +466,44 @@ bank or instruction bank collection
 
 </pre>
 <p>
+The vector bank is already based in address window B2 at application start.
+The application bases its program data in as many address windows B3..B31
+as required
+<pre>
+	$include	vector.def
+
+
+
+        la      VECTOR_D
+        sabr    3
+        [la, i  1, a
+         sabr   4
+         .
+         .
+         la, i  1, a
+         sabr   n]
+
+</pre>
+A macro <b>$base_d</b> does this
+<pre>
+	$include	vector.def
+
+
+        $base_d		DATA_SPACE
+
+</pre>
+DATA_SPACE is the size in words of memory with program names and addresses,
+or the program data sections
+
+<p>
+The application can acquire array storage up to total memory at runtime
+
+<p>
 The instruction bank containing the <b>start_vector</b> must be loaded before
 <b>SPAWN$</b>
 
+
+<h4>2.1.2 YIELD$</h4>
 <p>
 <b>YIELD$</b> is a voluntary task switch.
 
@@ -462,12 +517,16 @@ or in a service request which marks the task descriptor to block on events
 independently of preemptive or blocking events
 <pre>
 
-	ii	YIELD$
+	$include	ii.def
+
+
+	ii		YIELD$
 
 </pre>
 
+<h4>2.1.3 TWAIT$</h4>
 <p>
-<b>TWAIT$</b> is a voluntary task yield for a time in milliseconds
+<b>TWAIT$</b> is a voluntary task yield for a time in microseconds
 
 <p>
 <b>TWAIT$</b> may  be embedded in an event handler which is preemptive
@@ -477,15 +536,22 @@ and not voluntary
 When the wait time is expired, the task becomes a candidate for switching
 <pre>
 
-	la, xi	milliseconds
-	ii	TWAIT$
+        $include        ii.def
+
+
+	la, xi		microseconds
+	ii		TWAIT$
 
 </pre>
 
+<h4>2.1.4 EXIT$</h4>
 <p>
 <b>EXIT$</b> deletes the thread. If that is the process main thread, all threads
 in the process exit, all handles close, and all resources are surrendered
 <pre>
+
+        $include        ii.def
+
 
 	ii	EXIT$
 
@@ -500,14 +566,15 @@ far return instruction <b>fret</b>
 	{lret|fret}	0
 
 </pre>
-<p>
-If <b>sp</b> has any underflowed or overflowed value different from 128
-at the return instruction or other stack operation, guard interrupt 95 is raised
 
+<h4>2.1.5 THREAD$</h4>
 <p>
 <b>THREAD$</b> starts a new thread of the current process
 
 <pre>
+
+        $include        ii.def
+
 
 
 	ql	(start_address, thread_priority, parameter, initial_fp:q)
@@ -549,12 +616,16 @@ or 256K-word granularity
 <p>
 Bank pointer or index is the 4K-word block where a bank starts = physical address / 4096
 
+<h4>2.2.1 BANK$</h4>
 <p>
 <b>BANK$</b> obtains a bank from 1 to 16777215 words in size and
 records it in the task control block. The argument in application
 register a is words requested. value returned in a is the bank
 pointer. Zero = no memory granted
 <pre>
+
+        $include        ii.def
+
 
 	la, xi	WORDS_REQUESTED
 	ii	BANK$
@@ -566,6 +637,7 @@ The parameter is the number of words required. <b>BANK$</b> memory grant
 is 4096-word blocks up to 262144 words and 262144-word blocks beyond.
 The bank is a single linear block
 
+<h4>2.2.2 ARRAY$</h4>
 <p>
 <b>ARRAY$</b> obtains a bank from 4096 words to 16 Gigawords in size
 and records it in the task control block. The argument in application
@@ -573,6 +645,9 @@ register a is 4096-word blocks requested. value returned in a is the bank
 pointer. Zero = no memory granted
 
 <pre>
+
+        $include        ii.def
+
 
 	la, xi	4K_BLOCKS_REQUESTED
 	ii	ARRAY$
@@ -582,11 +657,15 @@ pointer. Zero = no memory granted
 The parameter is words required // 4096. <b>ARRAY$</b>  memory grant is
 in 262144-word blocks. The bank is a single linear block
 
+<h4>2.2.3 BANK$FREE</h4>
 <p>
 <b>BANK$FREE</b> returns a bank of any size to the kernel. If the task
 does not possess the bank, no action is taken. The argument in
 application register a is the bank pointer
 <pre>
+
+        $include        ii.def
+
 
 	la	BANK_INDEX
 	ii	BANK$FREE
@@ -606,6 +685,11 @@ problem. There is no errno variable
 
 <h3>3.1 The POSIX Network API</h3>
 <pre>
+
+        $include        ip.def
+
+
+
 
 	acquiring a socket handle
 	_________________________
@@ -824,9 +908,9 @@ problem. There is no errno variable
 	The handle may already be bound to a port
 	and optionally to a local network address
 
-	Otherwise connect() binds the socket to a unique
-	port in the range for arbitrary assignment, and to
-	the default network address of the outgoing interface
+	Otherwise connect() binds the socket to an available
+	unique local port, and to the default network address
+	of the outgoing interface
 
 	A small number of application protocols have a
 	well-known and constant client port number
