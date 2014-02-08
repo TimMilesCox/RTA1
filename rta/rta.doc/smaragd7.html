@@ -35,7 +35,15 @@ See also the licensing notice at the foot of this document
 	<ol>
 		<li>The POSIX Network API</li>
 
-		<li>UDP Server Response Low-Level Routines</li>
+		<li>UDP Server Low-Overhead Routines</li>
+		<ol>
+			<li>Zero-Copy Reference to User Datagrams</li>
+                        <li>Constructing a User Datagram Response: udp_rtxbuffer</li>
+                        <li>Transmitting the Response: udp_acw_send</li>
+                        <li>Discarding the Input: release_udgram</li>
+		</ol>
+
+		<li>Network Buffer Descriptor</li>
 
 		<li>TCP Low-Level Routines</li>
 
@@ -640,16 +648,23 @@ far return instruction <b>fret</b>
 </pre>
 </div>
 
-The thread <b>start_address</b> is in the current instruction bank<br>
+<p>
+The thread <b>start_address</b> is in the current instruction bank
 
-<b>thread_priority</b> is in the range <b>0..PRIORITIES-1</b><br>
+<p>
+<b>thread_priority</b> is in the range <b>0..PRIORITIES-1</b>
 
+<p>
 <b>parameter</b> is an integer value or address delivered in register <b>a</b>
-of the new thread<br>
+of the new thread
 
+<p>
 <b>initial_fp</b> is the value of external stack pointer <b>fp</b> at
 thread execution start
 
+<p>
+The new thread has a new thread control block. All other resources are as
+the calling thread. All threads have visibility of the handles list
 
 <h3>2.2 Adding and Releasing Program Storage: BANK$ ARRAY$ BANK$FREE</h3>
 
@@ -1197,6 +1212,8 @@ bind() returns the bank index and word offset of the port in registers 10:11
 <pre>
 				 
 00:000050 CF000A              +132      dl      10
+(+01)0f
+00:000051 C702ED              +133      ds      portcb_lva . save that
 
 </pre>
 </div>
@@ -1209,13 +1226,13 @@ The receive input queue is sampled
 
 00:000055 34002F              +139      sabr    BSOCKET
   :                            140 
-<div    style="color:FF0000">00:000056 68D006              +141 fp_rx1 lb      s:udp:socket_inq.head, b</div>
-00:000057 CE0092              +142      jzb     fp_no_traffic
+<div    style="color:FF0000">00:000056 68D006              +141 fp_rx1 lb      s:udp:socket_inq.head, b
+</div>00:000057 CE0092              +142      jzb     fp_no_traffic
 
 </pre>
 </div>
 
-<h4>3.2.2 Constructing a Response: udp_rtxbuffer</h4>
+<h4>3.2.2 Constructing a User Datagram Response: udp_rtxbuffer</h4>
 
 <b>udp_rtxbuffer</b> constructs a response datagram addressed to the remote
 socket. It doesn't yet have data or checksums, but it has everything else
@@ -1230,8 +1247,8 @@ digits and up to seven exponent digits. Some edit characters as well
 <pre>
 
 00:00005D 650020              +151      la, xi  21+7+1+2+1
-<div    style="color:FF0000">00:00005E FF0E76              +152      call    (udp_rtxbuffer)</div>
-00:00005F C6008E              +153      jza     fp_release
+<div    style="color:FF0000">00:00005E FF0E76              +152      call    (udp_rtxbuffer)
+</div>00:00005F C6008E              +153      jza     fp_release
 
 </pre>
 </div>
@@ -1365,7 +1382,7 @@ and call <b>udp_acw_send</b> with the descriptor address in register <b>x</b>
 If checksums are not required, the equivalent routine is <b>udp_acw_send_nocheck</b>
 
 <p>
-<h4>3.2.3 Discarding the Input: release_udgram</h4>
+<h4>3.2.4 Discarding the Input: release_udgram</h4>
 The received user datagram has been sampled but not taken from the port queue
 
 <p>
@@ -1380,8 +1397,10 @@ The parameter of <b>release_udgram</b> is the port structure address in register
 
   :                            212
   :                            213 fp_release
+(+01)0f
 00:00008E 5002EE              +214      lx      portcb                  . port structure
-<div    style="color:FF0000">00:00008F FF0E7C              +215      call    (release_udgram)</div>
+<div    style="color:FF0000">00:00008F FF0E7C              +215      call    (release_udgram)
+</div>(+01)0f
 00:000090 6802EE              +216      lb      portcb                  . port structure
 00:000091 B60056              +217      j       fp_rx1
   :                            218 fp_no_traffic
@@ -1390,17 +1409,6 @@ The parameter of <b>release_udgram</b> is the port structure address in register
 </pre>
 </div>
 
-<h4>3.2.3 Output without Reference to Input: udp_txbuffer</h4>
-
-<b>udp_rtxbuffer</b> constructs a response to a received datagram. To obtain a
-user datagram output buffer without reference to a received message, call
-<b>udp_txbuffer</b> with application data size in <b>a</b>.
-
-<p>
-<b>udp_txbuffer</b> can be used for unsolicited user datagram transmissions
-like SNMP Traps. No socket is required. Addresses and data must be added to
-the datagram, then <b>response_acw</b> or <b>response_acw_nocheck</b> called with
-the descriptor address in <b>x</b>
 
 <p>
 
@@ -1420,7 +1428,7 @@ block containing stacked pointers
 	|_______________________|
 	|	*i_f		|	receiving interface ID
 	|_______________________|
-	|	 bytes		|	data octets count
+	|	 bytes		|	data octets count / byte write cursor
 	|_______________________|
 	|	*dgram		|	IP datagram address
 	|_______________________|
@@ -1428,7 +1436,7 @@ block containing stacked pointers
 	|_______________________|
 	|	*apdata		|	application data address
 	|_______________________|
-	|	 read/writepoint|	byte cursor read or write
+	|	 readpoint	|	byte read cursor
 	|_______________________|
 
 
@@ -1446,21 +1454,36 @@ moves downwards from the socket layer to the interface
 On *frame receive, the link layer writes the *dgram pointer, IP writes the UDP/TCP/ICMP
 PDU pointer, UDP or TCP writes the application pointer. Overlapping receive fragments
 in IP cause *uproto and *apdata to go up and the byte count to go down. The pointers
-are addresses. read/writepoint is not an address but a tally of octets read or written.
+are addresses. readpoint is not an address but a tally of octets read.
 
 <p>
 Overlapping TCP segments on receive cause readpoint to go up and the byte count to go down
-Each data word in network buffers contains eight zero bits and 16 data bits, so
-readpoint/writepoint may designate an even or odd byte in a data word.
+Each data word in network buffers contains eight zero bits and 16 data bits
 
 <p>
-Where readpoint/writepoint is used (chiefly TCP socket read/writes) the read/write word
-address is *apdata+readpoint/2
+readpoint advances in TCP socket reads. The read word address is *apdata+readpoint/2
 
 <p>
-On socket send data is added to a transmit buffer. UDP is datagram quantum and the
-transmit buffer is always initial at send(). TCP accumulates writepoint and the byte count
-Some application protocols direct TCP to send a segment directly with each socket write
+readpoint designates an even or odd byte position at the start of a read request
+
+<p>
+The segment is read when readpoint reaches bytes
+
+<p>
+bytes advances in TCP socket write. The write word address is *apdata+bytes/2
+
+<p>
+bytes designates an even or odd byte position at the start of a write request
+
+<p>
+The segment is full when bytes reaches MSS
+
+<p>
+The socket user may direct TCP to send a segment directly with each socket write
+
+<p>
+UDP write is datagram quantum
+
 
 <h3>3.4 TCP Low-Level Routines</h3>
 
@@ -1469,7 +1492,7 @@ The following are low-level network calls which are the building blocks
 of the well-known socket interface
 
 <p>
-Instead of passing handles these routines use the kernel socket structures
+Instead of passing handles these routines use the kernel port and connection structures
 
 <p>
 There are two reasons for making this lower-level interface available
