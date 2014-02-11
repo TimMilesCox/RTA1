@@ -47,10 +47,13 @@ p		$proc	*
 "$head_near"*	$name	2
 "$$list"	$set	p(0, 0)
 
-"$$zero_stack"	$equ	1
-zero_stack	$set	0
-		$do	p(0, 2)=$$zero_stack,;
-zero_stack	$set	1 	
+"$zero_stack"	$equ	1
+
+"$$zero_stack"*	$set	0
+		$do	p(0, 2)=$zero_stack,;
+"$$zero_stack"*	$set	1
+"$$call_space"*	$set	p(0,0)
+"$$params"*	$set	0
 
 "$$pass"* $func	*
 	$return	1
@@ -63,10 +66,8 @@ floating_packed $equ	4
 
 params*	$func
 param*	$func
-	$do	$stack_macro_remarks^=0,	;
-	$note		param
 
-	$if		zero_stack
+	$if		$$zero_stack
 "param(1, 1)"*** $equf	$$list, fp
 	$else
 "param(1, 1)"*** $equf	$$list+iframe, sp
@@ -74,9 +75,8 @@ param*	$func
 	$return		param(1, 2)
 	$end
 
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking params
 ?	$do		params(),"$$list"*	$set	$$list+param(params(?))
+"$$params"** $set	params()
 	$return		$$list
 	$end
 
@@ -85,12 +85,8 @@ scalars* $func
 
 scalar*	$proc		$(0)
 floating_packed $equ	-4
-        $do     $stack_macro_remarks^=0,        ;
-	$note		scalar
 
 	  $if		scalar(1, 4)=sp
-          $do     $stack_macro_remarks^=0,        ;
-	  $note		sp is decrementing
 "$$extra" $set		frame
 	  $else
 "$$extra" $set		0
@@ -139,15 +135,13 @@ frame*	$set		frame-scalar(1, 2)
 
 	$end
 
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking scalars
 
 frame	$set		0
 ?	$do	scalars(),frame	$set	frame+scalars(?, 2)
 
 iframe* $set frame
 	$if		frame
-	$note		add $$frame to sp before return
+	$do     $o('V'),	$note	buy internal $$frame
 
 $(71)
 ?	$do	scalars(),	scalar	scalars(?)
@@ -159,8 +153,6 @@ xframe*	$func
 
 p	$proc		$(70)
 load_string* $name
-        $do     $stack_macro_remarks^=0,        ;
-	$note		load string
 
 word1	$set		$
 
@@ -208,25 +200,26 @@ $(0)
 	 
 	$end
 
+
 $(70::,fp)
-	$do	zero_stack,"$$outlay"**	$res	$$list
+	$do	$$params=0,"$$list"*	$set	$$list-1
+	$do	$$zero_stack,		$res	$$list
 $(0)
 	push, xi	-lframe
 	popA		fp
 
-	$if	zero_stack
+	$if	$$zero_stack
+	$do     $o('V'),	$note	internal stack zero net use
 	$do	iframe^=0,	;
-	$flag	scalars() not possible before xframe() with $$zero_stack
-?	$do	$$list///4,	pop	$$outlay+?-1
-?	$do	$$list/4,	qpop	$$outlay+$$list///4+?*4-4
-	$note	push walkback from $$outlay before attempting return
+	$flag	scalars() not possible before xframe() with $zero_stack
+?	$do	$$list///4,	pop	+?-1, fp
+?	$do	$$list/4,	qpop	$$list///4+?*4-4, fp
+
 	$endif
 
 $(71)
-        $do     $stack_macro_remarks^=0,        ;
-	$note		walking dynamic load strings
 ?	$do	xframe(),	load_string	xframe(?)
-	$note		add $$xframe to fp before return
+	$do     $o('V'),	$note	buy external $$xframe
 	$return		$(70)
 	$end
 
@@ -244,15 +237,60 @@ $(0)
 "$$xframe"*	$set	$(70)
 	$end
 
+"$ret"* $proc
+	$if	$$frame
+	$do     $o('V'), $note	sell internal $$frame
+	push, i	$$frame, sp
+	pop	sp
+	$endif
+
+	$if	$$zero_stack
+	$do     $o('V'), $note	internal stack zero net use
+	$if	$$call_space=$head_near
+	$do     $o('V'), $note	near return
+	$if	$$params
+	$do     $o('V'), $note	parameter list walkback
+	dpush	0, fp
+	$else	
+	push	0, fp
+	$endif
+	$elseif	$$call_space=$head_far
+	$do     $o('V'), $note	far return
+	$if	$$params
+	$do     $o('V'), $note	parameter list walkback
+	push	2, fp
+	$endif
+	dpush	0, fp
+	$else
+	$flag	surely some mistake
+	$endif
+	$endif
+
+	$if	$$xframe
+	$do     $o('V'), $note	 sell external $$xframe
+	push, i	$$xframe, fp
+	pop	fp
+	$endif
+
+	$if	$$call_space=$head_near
+	lret	$ret(1, 1)
+	$elseif	$$call_space=$head_far
+	fret	$ret(1, 1)
+	$else
+	$flag	routine neither $head_near nor $head_far
+	ii	31
+	$endif
+	$end
+
 p	$proc
 c*	$name	1
 lc*	$name	0
 
 
-INT	$equ	100		. these keyword values
-LONG	$equ	101		. must not be the same as
-PACKED_FLOATING  $equ 102	. ,,i ,,xi ,,h1 ,,h2
-FLOATING $equ	103		. ,,t1 ,,t2 ,,t3
+INT	$equ	101		. these keyword values
+LONG	$equ	102		. must not be the same as
+PACKED_FLOATING  $equ 103	. ,,i ,,xi ,,h1 ,,h2
+FLOATING $equ	104		. ,,t1 ,,t2 ,,t3
 
 
 p	$proc
