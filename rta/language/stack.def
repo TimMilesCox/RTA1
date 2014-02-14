@@ -55,8 +55,20 @@ p		$proc	*
 "$$call_space"*	$set	p(0,0)
 "$$params"*	$set	0
 
-"$$pass"* $func	*
-	$return	1
+"$$minimum"* $proc	$(0)
+	la	$$call_space-1, sp
+	ana, i	$$list, sp
+	jc	$+2
+	ii	95
+	$do	$o('V'), $note	runtime check minimum frame
+	$end
+
+"$$exact"* $proc	$(0)
+	la	$$call_space-1, sp
+	ana, i	$$list, sp
+	jza	$+2
+	ii	95
+	$do	$o('V'), $note	runtime check absolute frame
 	$end
 
 int	$equ		1
@@ -77,6 +89,10 @@ param*	$func
 
 ?	$do		params(),"$$list"*	$set	$$list+param(params(?))
 "$$params"** $set	params()
+	$if	$$params
+	$do	$o('W'),	$$minimum
+	$do	$o('U'),	$$exact
+	$endif
 	$return		$$list
 	$end
 
@@ -201,10 +217,11 @@ $(0)
 	$end
 
 
-$(70::,fp)
+$(70)
 	$do	$$params=0,"$$list"*	$set	$$list-1
 	$do	$$zero_stack,		$res	$$list
 $(0)
+	$do	$o('V'),	$note	buy external $$xframe
 	push, xi	-lframe
 	popA		fp
 
@@ -219,12 +236,12 @@ $(0)
 
 $(71)
 ?	$do	xframe(),	load_string	xframe(?)
-	$do     $o('V'),	$note	buy external $$xframe
 	$return		$(70)
 	$end
 
 	
 
+$(70::,fp)
 
 $(71)
 
@@ -235,6 +252,7 @@ lframe		$set	$(70)
 $(0)
 "$$frame"*	$set	iframe
 "$$xframe"*	$set	$(70)
+"$$list"*	$set	$$list
 	$end
 
 "$ret"* $proc
@@ -246,8 +264,13 @@ $(0)
 
 	$if	$$zero_stack
 	$do     $o('V'), $note	internal stack zero net use
+	$if	$o('S')**$$params
+	$do	$o('V'), $note	restore internal $$list
+?	$do	$$list/4,	qpush	$$list-?*4, fp
+	$do	$$list**2=2,	dpush   $$list**1, fp
+	$do	$$list**1,	push	0, fp
+	$else
 	$if	$$call_space=$head_near
-	$do     $o('V'), $note	near return
 	$if	$$params
 	$do     $o('V'), $note	parameter list walkback
 	dpush	0, fp
@@ -255,7 +278,6 @@ $(0)
 	push	0, fp
 	$endif
 	$elseif	$$call_space=$head_far
-	$do     $o('V'), $note	far return
 	$if	$$params
 	$do     $o('V'), $note	parameter list walkback
 	push	2, fp
@@ -263,6 +285,7 @@ $(0)
 	dpush	0, fp
 	$else
 	$flag	surely some mistake
+	$endif
 	$endif
 	$endif
 
@@ -273,8 +296,10 @@ $(0)
 	$endif
 
 	$if	$$call_space=$head_near
+	$do	$o('V'), $note	near return
 	lret	$ret(1, 1)
 	$elseif	$$call_space=$head_far
+	$do	$o('V'), $note	far return
 	fret	$ret(1, 1)
 	$else
 	$flag	routine neither $head_near nor $head_far

@@ -26,6 +26,11 @@ See also the licensing notice at the foot of this document
 		<li>why isn't it triadic floating operation?</li>
 	</ol>
 	<li>can RTA1 access bytes efficiently?</li>
+	<li>does the internal stack run out of space?</li>
+	<ol>
+		<li>structured realtime in the internal stack</li>
+		<li>recursive programming and zero-net internal stack</li>
+	</ol>
 </ol>
 
 
@@ -60,7 +65,7 @@ than the mantissa length
 <p>
 This means that RTA1 floating-point is 100% deterministic
 and integer-accurate with any total of multiplicand and
-and multiplier significands up to 72
+multiplier significands up to 72
 
 <p>
 like a multiplicand 35 bits wide and multiplier 37 bits
@@ -234,6 +239,275 @@ implements byte-writes. You save two thirds of your instructions
 
 <p>
 And for many applications, the perfect byte-size is... 24 bits
+
+<h2>3. Does the Internal Stack run out of Space?</h2>
+
+<h3>3.1 Structured Realtime in the Internal Stack</h3>
+
+This extract from the accompanying document <b>Towards Compiler Languages for RTA1
+Architecture</b> describes internal stack use for two contrasting needs
+
+The RTA1 internal stack is a register array for  realtime programming.
+Realtime problem solving typically executes routines to a depth of between
+four and eight nested subroutine calls, each with between two and six
+parameter words in the stack
+
+<p>
+The internal stack contains approaching twice this intended maximum
+Here a routine is called with two  parameter words on the internal stack
+<pre>
+
+  :                            242
+00:000553 FCF003              +243      lc   ber_sequence_scan a snmp_rseq,,i
+00:000554 F80004              +243
+00:000555 FCF002              +243
+00:000556 3E0755              +243
+00:000557 38000F              +243
+  :                            244
+
+
+</pre>
+There are also a return address and a stack walkback pointer in each call,
+so the stack use in this  call is four words. The application can keep on
+like this for a nested depth of 26 calls
+
+<p>
+If the the internal stack overflows, the guard interrupt removes the thread
+from the switch list
+
+<p>
+If that problem has been avoided, all the operands in the instruction path
+are in a register array, namely the internal stack
+
+<p>
+That's the realtime intention of RTA1
+
+<p>
+If applications need more stack, there is no solution in building  a
+larger internal stack into RTA1. That would make task switch slower and
+applications could still overflow the internal stack
+
+<p>
+Some kinds of processing are not realtime, and must go about things in
+a different way
+
+<h3>3.2 Recursive Programming and Zero-Net Internal Stack</h3>
+
+<p>
+Recursion is a programming technique used rather indiscriminately
+because of its popularity in education circles and because of a
+widespread reluctance to understand anything in detail
+
+<p>
+Nevertheless recursive programming is really needed in some applications.
+Macro language supports net-zero internal stack use applied to individual
+routines within a program
+
+<p>
+In realtime use, the <b>$head_near/far</b> macro claims and maps internal
+stack words at the head of a routine
+
+<p>
+The addition of the <b>$zero_stack</b> keyword keeps the internal stack
+pointer <b>sp</b> at the same place however many nested calls routines
+with <b>$zero_stack</b> make to themselves or to each other
+
+<pre>
+
+$ masmx recursiv -ln
+MASMX 7r3
+3/recursiv.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta/def
+  :                            2: 	$include	rta.def
+  :                            3 	$path
+  :                            4: 	$include	stack.def
+  :                            5 
+  :                            6 $(0:64)
+  :                            7 
+                                inwego	$head_near,$zero_stack	 params(one,	float	;
+                                					two,	float	;
+                                					three,	float)	;
+                                							;
+00:000040 FDFFF2              +12 				 xframe()
+00:000041 2F000E              +12 
+00:000042 38E000              +12 
+00:000043 38E001              +12 
+00:000044 87E002              +12 
+00:000045 87E006              +12 
+00:000046 87E00A              +12 
+00:000047 780010              +13 	tp	16
+00:000048 B60054              +14 	j	enough
+00:000049 1F0010              +15 	dec	16
+  :                            16 
+00:00004A 4FE002              +17 	ql	one
+00:00004B 77E006              +18 	fm	two
+00:00004C 770100              +19 	fm	(0.875)
+00:00004D 67E00A              +20 	fa	three
+  :                            21 
+00:00004E 8FE00A              +22 	lc	inwego	a,,float two,,float three,,float
+00:00004F 8FE006              +22 
+00:000050 8F0004              +22 
+00:000051 FCF00C              +22 
+00:000052 3E0040              +22 
+00:000053 38000F              +22 
+  :                            23 
+  :                            24 enough
+00:000054 9FE000              +25 	$ret
+00:000055 FCE00E              +25 
+00:000056 38000E              +25 
+00:000057 350000              +25 
+  :                            26 
+  :                            27 	$do	$<256,$(0:256)
+*EOF*
+00:000100+400000E00000000000000000
+:$(00):000040:000104 :$(46):000000:00000E 
+recursiv.msm: object code 279 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+Routines constructed with <b>$zero_stack</b> can interact completely
+with routines constructed without
+
+<p>
+The external stack pointer <b>fp</b> must point to the high-memory
+end of a sufficient buffer
+
+<p>
+Call sequences constructed with the <b>c/lc</b> macro push the parameter
+list onto the internal stack. This is not different where <b>$zero_stack</b>
+is opted. There is no faster or better way of delivering a parameter list
+of arbitrary size. The <b>lc</b> macro shown above pushes twelve parameter
+words and a walkback pointer, then calls the target routine, itself in
+this example
+<pre>
+
+	.------> _________________________________________________________________
+	|	|   floating parameter three					|
+	|	|_______________|_______________|_______________|_______________|
+	|	|   floating parameter two					|
+	|	|_______________|_______________|_______________|_______________|
+	|	|   floating parameter one from [a:b:mantissa2:mantissa3]	|
+	|	|_______________|_______________|_______________|_______________|
+	._______| stack walkback| return address|
+		|_______________|_______________|
+
+
+</pre>
+If there are no parameters, the <b>c/lc</b> macro does not push a walkback
+pointer or pop it afterwards. This follows a principle, that routines which
+do not expect parameters can be called with <b>call</b> <b>lcal</b> instructions
+directly and without preliminaries.
+<b>c/lc</b> macro is present to help, not to confine the programmer (and to
+help construct a path for future compilers). In realtime programming, instructions
+which do not do anything are avoided where possible
+
+<p>
+A called routine with <b>$zero_stack</b> unloads the call frame that it expects.
+Its <b>xframe()</b> is larger than otherwise by the size of the expected call frame
+
+<p>
+<b>xframe()</b> must be declared when <b>$zero_stack</b> is opted, even if
+<b>xframe()</b> is otherwise void. <b>c/lc</b> macro uses uppercase <b>-V</b>
+option to highlight its path. masmx has not assigned <b>-VUWS</b> for itself
+<pre>
+
+                                inwego	$head_near,$zero_stack	 params(one,	float	;
+                                					two,	float	;
+                                					three,	float)	;
+                                							;
+Note: recursiv.msm Line 12: buy external $$xframe
+00:000040 FDFFF2              +12 				 xframe()
+00:000041 2F000E              +12 
+Note: recursiv.msm Line 12: internal stack zero net use
+00:000042 38E000              +12 
+00:000043 38E001              +12 
+00:000044 87E002              +12 
+00:000045 87E006              +12 
+00:000046 87E00A              +12 
+
+
+</pre>
+The expected call frame is popped in four-word blocks per instruction,
+and the parameter names are mapped to the external stack locations
+
+<p>
+Without <b>$zero_stack</b> the parameter names are mapped to their internal
+stack locations
+
+<p>
+If variables are constructed in <b>scalars()</b> they are in the internal stack.
+To flat-line the internal stack dynamic variables must be in <b>xframe()</b>
+
+<p>
+The default behaviour of a <b>$zero_stack</b> routine before return is to
+push the stack walkback word if parameters were expected and then to push
+the return address. Because there is optional behaviour, a <b>$ret</b>
+macro is supplied to match the <b>$head_near/far</b> macro
+<pre>
+
+  :                            23 
+  :                            24 enough
+Note: recursiv.msm Line 25: internal stack zero net use
+Note: recursiv.msm Line 25: parameter list walkback
+00:000054 9FE000              +25 	$ret
+Note: recursiv.msm Line 25: sell external $$xframe
+00:000055 FCE00E              +25 
+00:000056 38000E              +25 
+Note: recursiv.msm Line 25: near return
+00:000057 350000              +25 
+  :                            26 
+
+
+</pre>
+<p>
+Alternatively the <b>-S</b> flag opts to push all of the call frame back
+into the internal stack. This mostly makes no difference, because <b>c/lc</b>
+macro immediately frees the call frame by popping the walkback word onto the
+internal stack pointer
+<pre>
+
+  :                            23 
+  :                            24 enough
+Note: recursiv.msm Line 25: internal stack zero net use
+Note: recursiv.msm Line 25: restore internal stack $$list -S
+00:000054 8FE00A              +25 	$ret
+00:000055 8FE006              +25 
+00:000056 8FE002              +25 
+00:000057 9FE000              +25 
+Note: recursiv.msm Line 25: sell external $$xframe
+00:000058 FCE00E              +25 
+00:000059 38000E              +25 
+Note: recursiv.msm Line 25: near return
+00:00005A 350000              +25 
+  :                            26 
+
+
+</pre
+<p>
+A difference which <b>-S</b> option does make is that changes which the called
+routine makes inside its parameters are written back to the internal stack,
+which is also the effect without <b>$zero_stack</b>
+
+<p>
+That might be an unorthodox way of passing results which are otherwise passed
+in the accumulator registers <b>a:b:mantissa2:mantissa3</b>
+
+<p>
+<b>-S</b> restore to the internal stack can also paint over some accidental damage
+where it has not been given the correct internal stack frame in the first place.
+The <b>$zero_stack</b> routine pops the call frame it thinks it has, and <b>sp</b>
+points some words below (address-wise above) the stack top. Further call and push
+activity now overwrites previously stacked words energetically. If the called
+<b>$zero_stack</b> routine has <i>not</i> written to its copied parameters in the
+external stack frame, the complete restore may undo a problem. If this makes a
+difference, it should only be done diagnostically and not used to bring faulty code
+into service. The parameters which the <b>$zero_stack</b> routine thinks it has
+are not the intended parameters until the real problem is fixed
+
+<p>
+<i>For the accompanying discussion <b>Trapping Wrong Argument Lists</b> please see
+the accompanying document <b>Towards Compiler Languages for RTA1 Architecture</b></i>
 
 <i>
 <pre>
