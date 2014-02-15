@@ -71,8 +71,8 @@ System memory or executable space is Device 0, and there may be 63 more devices
 
 <p>
 There are arrays outside executable space because the relocation register format
-can organise one space of 16 gigawords in in banks of 4K Words. 4K organisation
-is needed for executable space
+can organise one space of 16 gigawords in banks of 4K Words. 4K organisation is
+needed for executable space
 
 <p>
 Another 63 * 16-gigaword spaces can be organised in banks of 256K words
@@ -105,8 +105,6 @@ is implemented in one I/O port
 
 
 
-					relocation values
-					________________________________
 
 
 
@@ -187,7 +185,7 @@ Most applications do not need that, and the emulated prototype does not include 
 <h3>1.3 Address Space</h3>
 
 <p>
-RTA1 has a 24-bit address space for instructions and operands. The address space
+RTA1 has a 16 megaword address space for instructions and operands. The address space
 has many simultaneous fixed and moving windows on the 16 gigaword executable space
 and the teraword array space
 
@@ -259,7 +257,7 @@ In the absence of operand cache, SMP configurations do not need cache coherency 
 Software avoids double updates by recognising the scope of test-and-set locks
 
 <p>
-The internal stack has an logic footprint infinitessimally smaller than any layer-one cache, 
+The internal stack has a logic footprint infinitessimally smaller than any level-one cache, 
 but can produce a very large performance advantage
 
 <p>
@@ -350,20 +348,20 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	from the 63 actual application data banks,
 	from the seven alternative data banks used by the kernel
 
-	Applications can have millions of blocks of storage
-	totalling 4096 words to 16 Gigawords
+	An application may have gigawords of storage
+	in blocks from 4096 words to 16 gigawords in size
 
-	63 blocks of 4096 words or 262144 storage words
-	are at any moment visible in 63 address windows
+	Up to 63 blocks of 4096 words or 262144 words
+	are at any time visible in 63 address windows
 
 	Relocation Registers 1..63 are I/O ports 1..63
 
-	Applications can freely alter which storage banks
-	are based in any of their 63 data address windows
+	Applications can change which storage banks
+	are based in their 63 data address windows
 
 	The tasks's current data spaces do not need to
 	be saved at context switch. They are already
-	mirrored in the Task Control Block
+	mirrored in the Thread Control Block
 
 
 
@@ -477,7 +475,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 
-	Arrays are one linear storage range of any size up to 16 gigawords. The prototype
+	An array is one linear storage block of any size up to 16 gigawords. The prototype
 	RTOS smaragd7 responds to memory requests with a single pointer
 
 	When an array is many times the address space in size, address windows
@@ -574,7 +572,8 @@ Hardware implementations must wire the real memory and device information to I/O
 Two registers are not addressable. The program counter which contains an absolute address 48 bits in size, and the Processor State Register, which contains settings and the carry bit
 
 <p>
-The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Bank 0 is saved on interrupts and calls. On interrupts and far (inter-bank) calls a representation of the Bank 0 base address is also saved
+The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Bank 0
+is saved on interrupts and calls. On interrupts and far (inter-bank) calls Bank 0 identity is also saved
 
 <p>
 The Processor State Register is saved on interrupts
@@ -596,10 +595,10 @@ PSR flags 15..0 are directly application programmable with instructions <b>on</b
 <p>
 Flag 23 <b>I</b> is on during an interrupt. CPU-side registers, that is those which receive computation results
 or are stack pointers, index registers, the target of load instructions or the source of store instructions, automatic
-counter or automatic mask, are in interrupt mode within the range 128..255. The application registers are 0..127
+counter or mask register, are in interrupt mode in the range 128..255. The application registers are 0..127
 
 <p>
-Registers at the storage operand effective address of instructions are absolute locations in a 256-word array
+Registers addressed as storage operands are absolute locations in a 256-word array
 regardless of ISR / application mode. However applications cannot write the interrupt registers
 
 <p>
@@ -648,17 +647,28 @@ Flag 6 <b>b$streamZR</b> affects the operation of the <b>Read Staging Register</
 which makes a stream of bits or bytes serially available to the arithmetic registers
 
 <p>
-<b>b$streamZR</b> states that bits from the staging register <b>RDATA</b> shall be shifted into a cleared arithmetic register, saving an extra instruction to mask the desired field. Otherwise the previous arithmetic register contents are shifted towards the high order bit positions as new bits are transferred from <b>RDATA</b>
+<b>b$streamZR</b> states that bits from the staging register <b>RDATA</b> shall be shifted into a cleared arithmetic register,
+saving an extra instruction to mask the desired field. Otherwise the previous arithmetic register contents are shifted towards
+the high order bit positions as new bits are transferred from <b>RDATA</b>
 
 <p>
-Flag 5 <b>b$stream16r</b> also affects the operation of <b>Read Staging Register</b>. Only 16 bits are delivered from each input data word if <b>b$stream16r</b> = 1. The high-order bits 23..16 are discarded when <b>b$stream16r</b> = 1. Network software manipulates network data below the socket interface with far greater efficiency at 16 data bits per storage word. If <b>b$stream16r</b> = 0 successive <b>rsr</b> instructions deliver all the 24 bits read from storage.
+Flag 5 <b>b$stream16r</b> also affects the operation of <b>Read Staging Register</b>.
+Only 16 bits are delivered from each input data word if <b>b$stream16r</b> = 1.
+The high-order bits 23..16 are discarded when <b>b$stream16r</b> = 1.
+This allows efficient handling with network data and with 16-bit peripherals.
+If <b>b$stream16r</b> = 0 successive <b>rsr</b> instructions deliver all the 24 bits read from storage.
 
 <p>
-Flag 4 <b>b$stream16w</b> affects the operation of <b>Write Staging Register</b> instruction <b>wsr</b> which writes a stream of bits or bytes from the arithmetic registers. Bits shifted into Staging Register <b>WDATA</b> are stored at 16 bits per data word when <b>b$stream16w</b> = 1. This is to enable network software below the socket interface to manipulate PDUs more efficiently. If <b>b$stream16w</b> = 0 successive <b>wsr</b> instructions compose 24 bits for each storage write.
+Flag 4 <b>b$stream16w</b> affects the operation of <b>Write Staging Register</b> instruction <b>wsr</b>
+which writes a stream of bits or bytes from the arithmetic registers. Bits shifted into Staging Register
+<b>WDATA</b> are stored at 16 bits per data word when <b>b$stream16w</b> = 1.
+This allows efficient handling with network data and with 16-bit peripherals.
+If <b>b$stream16w</b> = 0 successive <b>wsr</b> instructions compose 24 bits for each storage write.
 
 <p>
 Flag 0 <b>carry$</b> is set or cleared by this subset of the fixed point instructions
 <ul>
+
 	<li><b>aa</b>	Add to Register <b>a</b></li>
 	<li><b>ab</b>	Add to Register <b>b</b></li>
 	<li><b>ana</b>	Add Negative to Register <b>a</b></li>
@@ -670,11 +680,16 @@ Flag 0 <b>carry$</b> is set or cleared by this subset of the fixed point instruc
 	<li><b>popA</b>	Pop and AddTo</li>
 
 </ul>
-<p>
-Only these instructions write <b>carry$</b>. The instructions which add the twos complement of the operand, <b>ana</b> <b>anb</b> <b>dan</b>, have exactly the same result as positive adds which have that twos complement as input operand. Carry is set if the last addition in the register high order bit position carries, in all these add and negative-add instructions
 
 <p>
-There are no PSR condition bits other than <b>carry$</b>. All other conditions are available in the register containing the computation result. Many different results can be examined long after they are generated. The conditional jump instructions examine a result register or storage word for zero/polarity/parity/low-bit/lock-bit
+The instructions which add the twos complement of the operand, <b>ana</b> <b>anb</b> <b>dan</b>,
+have the same result in <b>carry$</b> as positive adds which have that twos complement as input operand.
+Carry is set if addition at the register high order bit position carries, in all these instructions
+
+<p>
+There are no PSR condition bits other than <b>carry$</b>. All other conditions are available in the register
+containing the instruction result. Many different results can be examined long after they are generated
+
 
 <p>
 The conditional jump instructions which examine carry or a register or storage word are
@@ -709,20 +724,28 @@ RTA1 registers occur twice. The application has 128 registers and interrupts hav
 All 256 registers are in the operand address space as one linear array
 
 <p>
-Some registers are implictly addressed as the register operand of an instruction. These register-side operands are compartmented by
-application / interrupt context
+Some registers are implictly addressed as the register operand of an instruction.
+These register-side operands are compartmented by application / interrupt context
 
 <p>
-The interrupt register set is a replica of the application register set, and has the same arithmetic registers, index registers and special-purpose registers, with some minor differences
+The interrupt register set is a replica of the application register set, and has the same arithmetic registers,
+index registers and special-purpose registers, with some minor differences
 
 <p>
-Having one set of interrupt registers does not mean that interrupts are not nested. It means that certain much-used ISRs which are never nested in execution have a set of registers which can be used without saving. Other ISRs wich may run nested must save registers before they change them. Interrupts also have an internal stack made from 104 of their 128 registers.
+Having one set of interrupt registers does not mean that interrupts are not nested.
+It means that certain much-used ISRs which are never nested in execution have a set of registers which can be used without saving.
+Other ISRs wich may run nested must save registers before they change them.
+Interrupts also have an internal stack made from 104 of their 128 registers.
 
 <p>
-An important category of interrupts which are never nested is, any application-callable kernel routines which are implemented as internal interrupts. These work very efficiently, precisely because they have a set of registers for immediate free use, and they only need to touch the application registers in order to read parameters and write results. It is advisable to implement a kernel routine as an internal interrupt instead of a call, if the routine temporarily manipulates the address space via the PSR flags. On return from interrupt the PSR returns to its previous state
+An important category of interrupts which are never nested is application-callable kernel routines
+which are implemented as internal interrupts. These have a set of registers for immediate free use,
+and they only need to touch the application registers in order to read parameters and write results
 
 <p>
-The depth of the application internal stack is unknown at interrupt, but the interrupt internal stack is known to be not overloaded because it is not subject to application flow
+It is advisable to implement a kernel routine as an internal interrupt instead of a call if the routine
+temporarily manipulates the address space via the PSR flags. On return from interrupt the the saved PSR
+is reloaded and all flags are restored
 
 
 <pre>
@@ -871,9 +894,12 @@ The depth of the application internal stack is unknown at interrupt, but the int
 
 
 <p>
-RTA1 instructions are grouped in 5 columns called instruction files. The five instruction files map to eight operand characteristics.
+RTA1 instructions are grouped in 5 columns called instruction files.
+The five instruction files map to eight operand characteristics.
+
 <p>
-Instruction File 1 spans six of the eight operand types. Instruction File 1 is the group of much-used simple operations with a choice of operand type. Operands can be a word, part of a word, an immediate
+Instruction File 1 spans six of the eight operand types. Instruction File 1 is integer operations with single word operand.
+The 24-bit operand may be read from a word, a half or third word, or an immediate value
 
 <p>
 Instruction Files 4A and 5A are a small number of special instructions which only need an effective address immediate or a sign-extended immediate.
@@ -1440,7 +1466,10 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 												________________________
 
 												ax, xi		-FRAME_SIZE
-												ly, xi		$literal("ISBN %s Title %s Author %s\n")
+
+												ly, xi		$literal("ISBN %s ":;
+															 "Title %s ":;
+															 "Author %s\n")
 
 												push, xi	-12500
 
@@ -1489,7 +1518,7 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				operand is one or two or four words at the			________________________
 				effective address I X U
 
-												fm		$literals_B3(1.633*-1200009)
+												fm	$literals_B3(1.633*-1200009)
 
 												qpush		segment:sequence
 												
@@ -5099,38 +5128,67 @@ operate without lock in the register stack and with lock in storage.
 
 
 
-	Floating Pop and Pack	fpp								   ms characteristic bit ++ characteristic bits 9..0
-	_____________________	___								   _________________________________________________
-												   |	    |
-												47 |	     35				       0
-				_________________________________________________________	_________________________________________________
-				|							|	|s|m	    |					|		Storage Words
-				|	compress the 96-bit floating number at the	|	|_|_________|___________________________________|		_____________
-				|	Internal Stack Top and store it as two words to	|	|   |45     |					|
-				|	register / storage at EA			|	|   |       |					|
+	Floating Pop and Pack	fpp
+	_____________________	___
+
+
+				_________________________________________________________
 				|							|
-				|	bits 21..10 of the characteristic are discarded	|	|   |       |					|
-				|	retaining the midpoint of the characteristic	|	|   |	    |____________			|____________
-				|	and its 10 low-order bits			|	|   |			|				    |
-				|							|	|   |__________		|				    |
-				|	bits 35..0 of the mantissa are discarded. fpp	|	|   |	      |		|				    |
-				|	is strictly a logical movement of bit values	|	|   |	      |		|				    |	Floating Number at Stack Top
-				|	and no rounding takes place			|	|   |	      |		|				    |	____________________________
-				|							|	_________________________________________________________________________________________________
-				|	a number should only be packed to store if the	|	|s|m    characteristic	|				mantissa				|
-				|	48-bit format can represent it			|	|_|_____________________|_______________________________________________________________________|
-				|							|	95  94			 71								       0
+				|	compress the 96-bit floating number at the	|
+				|	Internal Stack Top and store it as two words to	|
+				|	register / storage at EA			|
+				|							|
+				|	bits 21..10 of the characteristic are discarded	|
+				|	retaining the midpoint bit of the characteristic|
+				|	and its 10 low-order bits			|
+				|							|
+				|	bits 35..0 of the mantissa are discarded. fpp	|
+				|	is strictly a logical movement of bit values	|
+				|	and no rounding takes place			|
+				|							|
+				|	a number should only be packed to store if the	|
+				|	48-bit format can represent it			|
+				|							|
 				|	high-order bits 47..24 of the compressed number	|						
 				|	are stored at EA				|
 				|							|
 				|	low-order bits 23..0 of the compressed number	|
-				|	are stored at EA+1				|	The compressed floating number has an 11-bit midpointed characteristic
-				|							|	and a 36-bit mantissa
+				|	are stored at EA+1				|
+				|							|
 				|	increment the Internal Stack Pointer sp by 4	|
-				|							|	47	     35				       0
-				|_______________________________________________________|	_________________________________________________
-				|	store address EA is any word address		|	|s|	    |					|
-				|_______________________________________________________|	|_|_________|___________________________________|
+				|							|
+				|_______________________________________________________|
+				|	store address EA is any word address		|
+				|_______________________________________________________|
+
+
+
+
+	<div	style="font-size:8pt">
+
+                                 95                                                                                                                           0
+                                _________________________________________________________________________________________________________________________________
+        4-word source from	| sxyy yyyy yyyy yyxx xxxx xxxx | mmmm mmmm mmmm mmmm mmmm mmmm | mmmm mmmm mmmm nnnn nnnn nnnn | nnnn nnnn nnnn nnnn nnnn nnnn |
+        internal stack top      |_______________________________|_______________________________|_______________________________|_______________________________|
+        __________________     
+
+
+        discarded bits              yy yyyy yyyy yy								 nnnn nnnn nnnn   nnnn nnnn nnnn nnnn nnnn nnnn
+        ______________              _______________                                                              ______________________________________________
+                                    exponent bits 21..10							 mantissa bits 35..0
+
+
+
+                                _________________________________________________________________
+        2-word stored		| sxxx xxxx xxxx mmmm mmmm mmmm | mmmm mmmm mmmm mmmm mmmm mmmm |
+        pop target		|_______________________________|_______________________________|
+        _____________		 47							      0
+
+	</div>
+
+
+
+
 
 
 
@@ -5154,28 +5212,52 @@ operate without lock in the register stack and with lock in storage.
 	Floating Push and Expand	fpx
 	________________________	___
 
-												95  94			 71				     35				       0
-				_________________________________________________________	_________________________________________________________________________________________________
-				|							|	|s|m    characteristic	|		mantissa	    |		    signs		|
-				|	decrement the Internal Stack Pointer sp by 4	|	|_|_|___fill____|_______|_______________________________________________________________________|
-				|							|	|   |93       82|	|				    |
-				|	load the 48-bit compressed floating number from	|	|   |		|	|				    |
-				|	registers / storage at EA						|							Floating Number at
-				|							|	|   |        	|	|				    |		Internal Stack Top
-				|	place it on the Internal Stack Top in 96-bit	|	|   |___________|	|				    |		__________________
-				|	computing format				|	|   |			|				    |
-				|							|	|   |	    ____________|			____________|
-				|	12 sign bits are added between bits 10 and 9 of	|	|   |	    |					|
-				|	the compressed characteristic or 12 reverse	|	|   |	    |					|
-				|	signs if the characteristic is below midpoint	|	|   |	    |					|	
-				|	and the number is nonzero and normalised	|	_________________________________________________
-				|							|	|s|	    |					|			Storage
-				|	36 sign bits are added to the mantissa		|	|_|_________|___________________________________|			_______
-				|							|	47	     35				       0
+
+				_________________________________________________________
+				|							|
+				|	decrement the Internal Stack Pointer sp by 4	|
+				|							|
+				|	load the 48-bit compressed floating number from	|
+				|	registers / storage at EA			|
+				|							|
+				|	place it on the Internal Stack Top in 96-bit	|
+				|	computing format				|
+				|							|
+				|	12 sign bits are added between bits 10 and 9 of |
+				|	the compressed characteristic or 12 reverse	|
+				|	signs if the characteristic is below midpoint	|	
+				|	and the number is nonzero and normalised	|
+				|							|
+				|	36 sign bits are added to the mantissa		|
+				|							|
 				|_______________________________________________________|
 				|	load address EA is any word address		|
 				|_______________________________________________________|
 
+
+
+	<div    style="font-size:8pt">
+
+				 95															      0
+				_________________________________________________________________________________________________________________________________
+	4-word result on	| sxff ffff ffff ffxx xxxx xxxx	| mmmm mmmm mmmm mmmm mmmm mmmm	| mmmm mmmm mmmm ssss ssss ssss	| ssss ssss ssss ssss ssss ssss	|
+	internal stack top	|_______________________________|_______________________________|_______________________________|_______________________________|
+	__________________	
+				
+
+	inserted bits		    ff ffff ffff ff								 ssss ssss ssss	  ssss ssss ssss ssss ssss ssss
+	_____________		    _______________	    							 ______________________________________________
+    				    12 * sign ^ midpoint ^ 1 							 36 * sign
+
+
+
+				_________________________________________________________________
+	2-word loaded		| sxxx xxxx xxxx mmmm mmmm mmmm | mmmm mmmm mmmm mmmm mmmm mmmm	| 
+	push source		|_______________________________|_______________________________|
+	____________		 47							      0
+
+
+	</div>
 
 
 
@@ -5488,8 +5570,9 @@ operate without lock in the register stack and with lock in storage.
 
 	assembler example
 
-		next_column	jxge		frame_scanned				key_difference
-				ex		key_difference, x			column	$do	ARRAY_LIMIT,	xor	frame+(column-1)/2, b, h1+(column-1)///2
+
+		next_column	jxge		frame_scanned
+				ex		key_difference, x
 				ax, xi		1
 				and, xi		4095
 				aa		crc12_table_pointer
@@ -5497,18 +5580,32 @@ operate without lock in the register stack and with lock in storage.
 				j		next_column
 
 
+		key_difference
+		column		$do		ARRAY_LIMIT,    ;
+				xor		frame+(column-1)/2, b, h1+(column-1)///2
+
+		........................................................................
 
 				lx		bytes
 				lb, xi		0
 				on		b$streamZR
 
-		next_digit	rsr		BYTE					raise	ab	units-'0', a
-				ax, xi		-1						ab	tens-'0', a
-				ex		raise, x					ab	hundreds-'0', a
-				tz		x						ab	thousands-'0', a
-				j		next_digit					ab	ten_thousands-'0', a
-												ab	hundred_thousands-'0', a
+		next_digit	rsr		BYTE
+				ax, xi		-1
+				ex		raise,x 
+				tz		x
+				j		next_digit
+
 				
+
+		raise		ab		units-'0', a
+				ab		tens-'0', a
+				ab		hundreds-'0', a
+				ab		thousands-'0', a
+				ab		ten_thousands-'0', a
+				ab		hundred_thousands-'0', a
+
+
 
 					
 
