@@ -16,7 +16,10 @@ See also the licensing notice at the foot of this document
 	Programmable Architecture Specification
 </h2>
 </center>
-<h3>1. Overview and Address Spaces</h3>
+<h2>1. Overview and Address Spaces</h2>
+
+<div	style="margin-left:60pt">
+<i>
 <p>
 RTA1 is a computer processor architecture which has run in emulation on a Unix host computer since January 2012
 <p>
@@ -25,39 +28,59 @@ storage, and it can run as a major system maintaining some millions of TCP conne
 
 <p>
 RTA1 is designed for symmetric multiprocessing, an important plane of scalability
+
 <p>
 RTA specification has I/O space as well as memory space, making a further plane of scalability
-<p>
-The emulated prototype is interfaced to Internet Protocol networks and communicates
-with other computers with the Telnet, SNMP, HTTP and ICMP-Echo (Ping) protocols.
 
 <p>
-A floating-point server application runs over UDP for interaction with RTA1 96-bit floating architecture
+Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP
+in 3250 instructions which each take one storage location. Another 4000 instructions run Telnet,
+MIB-II and snmp v1, a simple HTTP server, and an online floating point server program
 
+<p>
+IP in the emulated prototype is interfaced to real networks. RTA1 Telnet, SNMP, HTTP and ICMP interact
+with other computers
+
+<p>
+The floating-point server application runs over UDP for interaction with RTA1 96-bit floating architecture
+</i>
+</div>
+
+<h3>1.1 Overview</h3>
 <p>
 RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic
 
 <p>
 The addressable storage location is the 24-bit computer word. Instructions are one computer word in size 
 
+<h3>1.2	Executable Space and Array Space</h3>
+
 <p>
 The limit of executable space (or system memory) is 16 gigawords.
 
 <p>
-Additional arrays up to one teraword total which are not part of executable space may be added.
- These additional arrays are known in RTA1 documentation as "devices", and they may each contain
-up to 16 gigawords of 8- 16- or 24-bit memory, which may be video RAMs, dual-ported 16-bit network buffers,
-memory-addressable 24-bit filestores, removable 8-bit memory sticks, and so on.
+Additional arrays up to one teraword total which are not part of executable space
+may be added.
+RTA1 documentation calls these additional arrays devices, and they may each contain
+up to 16 gigawords of 8- 16- or 24-bit memory. The devices may include among others
+video RAMs, dual-ported 16-bit network buffers, memory-addressable 24-bit filestores,
+and removable 8-bit memory sticks
 
 <p>
 System memory or executable space is Device 0, and there may be 63 more devices
 
 <p>
-There are arrays outside executable space because only one space can be organised
-in banks of 4K Words. That's needed for executable space. The other 63 spaces can
-be organised in banks of 256K words. This keeps the relocation registers at one
-word in size. That minimises cycles at context switch and fits each relocation
-pointer in one I/O port - relocation registers are implemented in I/O ports
+There are arrays outside executable space because the relocation register format
+can organise one space of 16 gigawords in in banks of 4K Words. 4K organisation
+is needed for executable space
+
+<p>
+Another 63 * 16-gigaword spaces can be organised in banks of 256K words
+
+<p>
+Relocation registers are one word in size to minimise cycles at context switch
+and to make relocation values the width of I/O ports. Each relocation register
+is implemented in one I/O port
 <pre>
 
 
@@ -105,7 +128,7 @@ pointer in one I/O port - relocation registers are implemented in I/O ports
 
 
 </pre>
-Bit 22 of the relocation pointer value in the I/O port is "big" or "big bank".
+Bit 22 of the relocation pointer is "big" or "big bank".
 Device 0 is system memory, so system memory is placed the address space
 in ranges of 4096-word blocks or in ranges of 262144-word blocks.
 
@@ -139,19 +162,37 @@ Most applications do not need that, and the emulated prototype does not include 
 	|										|
 	|	RTA1 needs program memory to be						|
 	|										|
-	|		addressable in 4K words banks some of the time			|
+	|		relocation-register-selectable in 4K-word banks			|
+	|		and in 256K-word banks						|
 	|										|
-	|		able to do atomic read-modify-write, at least when SMP		|
+	|		24-bit-word writable / readable					|
+	|										|
+	|			optimally readable in bursts of 1 / 2 / 4 / 8 words	|
+	|			at any 24-bit word address				|
+	|										|
+	|			optimally writable in bursts of 1 / 2 / 4 words		|
+	|			at any 24-bit word address				|
+	|										|
+	|		able to do atomic read-modify-write on a single word		|
+	|		at least when in SMP configuration				|
 	|										|
 	|										|
-	|										|
-	|	Arrays outside executable space cannot be based at 4K words and		|
-	|	need not necessarily read-rewrite atomically				|
+	|	Arrays outside executable space cannot be based at 4K-word granularity	|
+	|	and need not necessarily read-rewrite atomically			|
 	|										|
 	|_______________________________________________________________________________|
 
 
 </pre>
+<h3>1.3 Address Space</h3>
+
+<p>
+RTA1 has a 24-bit address space for instructions and operands. The address space
+has many simultaneous fixed and moving windows on the 16 gigaword executable space
+and the teraword array space
+
+
+<h3>1.4 Operand Address Space</h3>
 <p>
 Operand address space starts with the 256 registers
 
@@ -159,49 +200,67 @@ Operand address space starts with the 256 registers
 Above address 256, operand address space is 16 megawords in 64 windows
 
 <p>
-Up to address 262144, the window is bits 17..12 of the effective address
+Up to effective address 262144, address bits 17..12 select window 0..63
+<pre>
 
+					__________________________________
+					| 0000 0000 0000 0000 | register |
+					|_____________________|__________|
+
+					__________________________________
+					|000 000| window| 12 offset bits |
+					|_______|_______|________________|
+					| window|         18 offset bits |
+					|_______|________________________|
+
+
+</pre>
 <p>
-From address 262144, the window is bits 23..18 of the address. They are
-the same 64 windows
+From effective address 262144, address bits 23..18 select window 1..63.
+
+They are the same windows wider open
 
 <p>
 The 6-bit window index corresponds to a relocation pointer in I/O ports 0..63
 (or to certain switchable alternatives in I/O ports 65..71)
-<pre>
 
-
-
-					__________________________________
-					| window|          18 offset bits|
-					|_______|________________________|
-					|000 000| window|  12 offset bits|
-					|_______|_______|________________|
-
-</pre>
-<p>
-Unlike operands, instructions are always in window zero. Instruction window is any
-size in 4K-granularity. Program counter is absolute and window zero base value is
-used to make jump addresses absolute and to make saved addresses program-relative
+<h3>1.5 Instruction Address Space</h3>
 
 <p>
-Words 256..4095 of window zero are in the operand address space as well as the
+instructions are read in window B0. Window B0 is the physical bank at
+the 4K-word bank-edge pointed by relocation register B0 in I/O Port 0
+
+<p>
+B0 is switchable between different physical instruction banks
+
+<p>
+Instructions are read from the leading edge of window B0 and not from
+registers or any different address window
+
+<p>
+Window B0 is any size in 4K-granularity. The 48-bit program counter is absolute
+and B0 base value is used to make jump addresses absolute and to make saved
+addresses program-relative
+
+<p>
+Words 256..4095 of window B0 are in the operand address space as well as the
 instruction window
 
-<p>
-Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP
-in 3250 instructions which each take one storage location. Another 4000 instructions run Telnet,
-MIB-II and snmp v1, a simple HTTP server, and an online floating point server program
 
+<h3>1.6 The Internal Stack</h3>
 <p>
 RTA1 is intended to work very fast without having operand cache. The large array of
-scratch registers is organised in an internal stack. Cache coherency measures are not
-needed. Applications claim data by test and set in SMP configurations, and double
-update is avoided by recognising the scope of test-and-set locks
+scratch registers is organised in an internal stack.
 
 <p>
-The internal stack is very small compared to any known layer-one cache, but can
-produce a very large performance advantage
+In the absence of operand cache, SMP configurations do not need cache coherency electronics
+
+<p>
+Software avoids double updates by recognising the scope of test-and-set locks
+
+<p>
+The internal stack has an logic footprint infinitessimally smaller than any layer-one cache, 
+but can produce a very large performance advantage
 
 <p>
 The part of the register stack available to an application is 128 words, and the part
@@ -274,63 +333,21 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 </pre>
 
 
-<p>
-Instruction acquisition has one window, which is the instruction bank currently executing and may be several times 4096 words in size
 
-<p>
-The program counter is a non-addressable register 48 bits in size containing the absolute address
-of the next instruction to be fetched. When a jump instruction supplies the effective address,
-the start address of Bank 0 is added to obtain the new absolute address. When a call or interrupt
-instruction stores the intra-Bank-0 relative address, this is obtained by subtracting the start
-address of Bank 0 from the absolute program counter
+<h3>1.7 Address Space Summary and Diagram</h3>
 
-<p>
-Execution can and does jump between different instruction banks. Each instruction bank is based
-at Bank 0 until it returns or calls another instruction bank
-
-<p>
-Not every instruction has a storage operand. Those that do, follow these rules to translate the
-effective operand address to the physical address of the target computer word
 <pre>
-
-
-	The effective address is less than 256
-	The operand is a register
-		___________________________________
-		| 0000 0000 0000 0000 | xxxx xxxx |
-		|_____________________|___________|
-		 23			7	 0
-
-
-	The effective address is 256..262143
-	Bits 17..12 of the effective address index which based bank contains the operand
-        the low order 12 bits of the effective address form a word offset in the target bank
-		___________________________________
-		| 0000 00|base id|  word offset   |
-		|________|_______|________________|
-		 23       17      11             0
-
-
-	The effective address is 262144+
-	Bits 23..18 of the effective address index which based bank contains the operand
-	The low order 18 bits of the effective address form a word offset in the target bank
-		___________________________________
-		|base id |      word offset       |
-		|________|________________________|
-		 23	  17			 0
-
-
-
 
 	Summary of Instruction and Operand Address Spaces
 	_________________________________________________
 
 
-	Instructions are only obtained from Bank 0
+	Instructions are only obtained from window B0
+	and B0 switches between instruction banks
 
 	Operands may be obtained from the registers,
-	from part of Instruction Bank 0,
-	from the 63 currently based application data banks,
+	from part of the actual instruction bank in window B0,
+	from the 63 actual application data banks,
 	from the seven alternative data banks used by the kernel
 
 	Applications can have millions of blocks of storage
@@ -339,7 +356,7 @@ effective operand address to the physical address of the target computer word
 	63 blocks of 4096 words or 262144 storage words
 	are at any moment visible in 63 address windows
 
-	Data Bank Base Registers 1..63 are I/O ports 1..63
+	Relocation Registers 1..63 are I/O ports 1..63
 
 	Applications can freely alter which storage banks
 	are based in any of their 63 data address windows
@@ -360,13 +377,13 @@ effective operand address to the physical address of the target computer word
 	|			|255____________________|				TCB and six kernel banks can be
 	|			 256			|				switched into address windows 1..7
 	|						| 
-	|		Bank 0				|				their relocation base registers are
+	|	  Bank 0				|				their relocation base registers are
 	|						|				I/O Ports 65..71
 	|			 4095___________________|________________________
-	|			|4096			|4096 alternative	|	TCB Bank 65 is architecturally
-	|			|			|			|	bound to the task address
-	|			|	Bank 1		|       Bank 65		|	environment. B65 is visible instead 
-	|			|			|	TCB		|	of Bank 1 if PSR Flag see$1 = 1
+	|			|4096			|4096 alternative	|	TCB B65 holds an automatic copy of
+	|			|			|			|	current relocation registers B2..B63
+	|			|	Bank 1		|       Bank 65		|	B65 is visible instead of B1
+	|			|			|	TCB		|	if PSR Flag see$1 = 1
 	|			|8191___________________|_______________________|
 	|			|8192			|8192 alternative	|	kernel banks 66..71 are populated
 	|			|			|			|	to the extent of kernel requirement
@@ -374,7 +391,7 @@ effective operand address to the physical address of the target computer word
 	|			|	Vector List	|	Kernel Vectors	|
 	|			|12287__________________|_______________________|	kernel banks are visible instead
 	|			|12288 or 786432	|12K / 768K alternative	|	of application data banks B2..B7
-	|			|			|			|	as PSR Flag see$2..see$7 = 1
+	|			|			|			|	as PSR Flags see$2..see$7 = 1
 	|			|	Bank 3		|	Bank 67
 	|			|			|
 	|			|16383_or_1048575_______|_______________________
@@ -459,18 +476,18 @@ effective operand address to the physical address of the target computer word
 
 
 
-	It is intended that storage operand absolute addresses are generated only once
-	each, and operands of two or four words are read or written in a single burst
 
-	Adjacent physical blocks are based in adjacent windows. Arrays are
-	linear storage. The prototype RTOS smaragd7 grants memory at any
-	size up to 16 gigawords
+	Arrays are one linear storage range of any size up to 16 gigawords. The prototype
+	RTOS smaragd7 responds to memory requests with a single pointer
 
 	When an array is many times the address space in size, address windows
 	are used as cursors in the array
 
-	If structures in the array straddle banks, the cursor is two or more
+	If structures in the array straddle banks, the cursor should be two or more
 	adjacent physical banks based in adjacent windows
+
+	This allows the physical address of two or four word operands to be generated
+	only once and data read or written in a single burst if memory supports that
 
 
 	For example
@@ -508,6 +525,47 @@ effective operand address to the physical address of the target computer word
 
 	
 </pre>
+
+
+<h3>1.8 Device Array Protection</h3>
+
+<p>
+Banks in devices outside system memory can only be based by interrupt code. This is to prevent
+accidental damage to anything like a static RAM file system. An inadvertant attempt to base
+a device from an application raises the guard interrupt
+
+
+<h3>1.9 Thread Switch and Address Space</h3>
+
+Task current relocation pointers are not saved on task switch because they are
+already mirrored in the TCB
+
+<p>
+Typically &frac34; of relocation registers are part of task context, OS depending
+
+<p>
+47 relocation registers are reloaded in 25 instructions
+
+
+<p>
+<h3>1.10 I/O Ports other than Relocation Registers</h3>
+
+<p>
+The emulated machine detects from Port 124 <b>ram$threshold</b> on system start how large its ROM is,
+whether the ROM contains a system or just a boot page, and where RAM starts.
+
+<p>
+In the emulated machine, the boot ROM size is exactly the containing number of 4096-word blocks
+where the emulator has loaded a complete system ROM image. RAM starts at the next page after that.
+
+<p>
+The emulated machine goes on to detect the size of system memory from Port 128 <b>device$flags</b>.
+Devices like network interfaces and local file systems are detected by reading I/O ports 129 onwards.
+These values are primed by the emulator to help the emulated machine to run.
+Hardware implementations must wire the real memory and device information to I/O Ports 124, 128+ upwards
+
+
+
 <h2>2. Registers and Instruction Set</h2>
 
 <h3>2.1 Non-Addressable Registers</h3>
@@ -534,36 +592,47 @@ The layout of the Processor State Register is
 The PSR flags shown as 0 are not currently used
 <p>
 PSR flags 15..0 are directly application programmable with instructions <b>on</b> and <b>off</b>
-<p>
-Flag 23 <b>I</b> is on during an interrupt. The registers implicitly used by instructions in interrupt mode are in the range 128..255, where the application registers are 0..127
-<p>
-Any registers named as storage operands in the address field of an instruction are absolute locations unaffected by ISR / application mode. However applications cannot write the interrupt registers
 
 <p>
-Flags 18..16 <b>iii</b> are the interrupt mask. Both applications and ISRs can swap and restore the interrupt mask with the <b>Switch Interrupt Mask</b> instruction <b>sim</b>
+Flag 23 <b>I</b> is on during an interrupt. CPU-side registers, that is those which receive computation results
+or are stack pointers, index registers, the target of load instructions or the source of store instructions, automatic
+counter or automatic mask, are in interrupt mode within the range 128..255. The application registers are 0..127
 
 <p>
-Flags 14..8 <b>see$1..see$7</b> individually make the TCB and kernel banks visible in address windows 1..7, instead of application data banks B1..B7
+Registers at the storage operand effective address of instructions are absolute locations in a 256-word array
+regardless of ISR / application mode. However applications cannot write the interrupt registers
 
 <p>
-Flag 7 <b>half$w</b> concerns instructions which can take a byte operand as an alternative to a word operand. RTA1 is not a byte addressing machine, and any byte other than a 24-bit byte is a field of a
-storage location. The 32 instructions in Instruction File 1 may take a storage word or part of a storage word as operand. These bytes are either halfwords (12 bits) with sign extension on read
+Flags 18..16 <b>iii</b> are the interrupt mask. Both applications and ISRs can swap and restore the
+interrupt mask with the <b>Switch Interrupt Mask</b> instruction <b>sim</b>
+
+<p>
+Flags 14..8 <b>see$1..see$7</b> individually make the TCB and kernel banks visible in address windows 1..7,
+instead of application data banks B1..B7
+
+<p>
+Flag 7 <b>half$w</b> concerns instructions which can take a byte operand as an alternative to a word operand.
+RTA1 is not a byte addressing machine, and any byte other than a 24-bit byte is a field of a storage location.
+
+The 32 instructions in Instruction File 1 may take a storage word or part of a storage word as operand.
+These bytes are either halfwords (12 bits) with sign extension on read
 <pre>
 
-		 23				   11			          0
-		____________________________________________________________________
-		|		  h1	          |		  h2		   |
-		|_________________________________|________________________________|
+		 23			 11		       0
+		_________________________________________________
+		|	    h1		|	  h2		|
+		|_______________________|_______________________|
 
 </pre>
 <p>
 or else they are thirdwords (8 bits) with sign extension on read
 <pre>
 
-		 23		        15                   7                    0
-		____________________________________________________________________
-		|	   t1	       | 	  t2	    |	       t3	   |
-		|______________________|____________________|______________________|
+		 23		 15		 7	       0
+		_________________________________________________
+		|	t1	|	t2	|	t3	|
+		|_______________|_______________|_______________|
+
 </pre>		
 <p>
 
@@ -676,10 +745,7 @@ The depth of the application internal stack is unknown at interrupt, but the int
 		stack is completely empty. At sp = 24 the internal stack is completely full
 		Stack range violation raises the guard interrupt at vector 1:31
 
-		Interrupt code has the complete set of registers for bit stream processing
-		but is not expected to do that very much
-
-		DAYCLOCK$U DAYCLOCK$ are a feature not of RTA1 architecture but of the
+		DAYCLOCK$U:DAYCLOCK$ are a feature not of RTA1 architecture but of the
 		smaragd7 kernel developed to run the emulated prototype.
 
 		The 48-bit millisecond counter is intended to be incremented by a timer
@@ -687,8 +753,9 @@ The depth of the application internal stack is unknown at interrupt, but the int
 		additionally much finer-granule timer services. The emulated
 		machine retrieves time periodically from the emulator host instead
 
-		This millisecond counter in two scratch registers of the interrupt stack
-		is readable to all tasks and accessed atomically with 48-bit instructions
+		DAYCLOCK$U:DAYCLOCK$ are maintained in two scratch registers of the
+		interrupt stack. All tasks can read them atomically as a pair with
+		48-bit-operand instructions
 
 		PRIORITY$ is a feature not of RTA1 architecture, but of the smaragd7 kernel
 		developed to run the emulated prototype. It is a copy of the running task's
@@ -798,176 +865,10 @@ The depth of the application internal stack is unknown at interrupt, but the int
 
 
 </pre>
-<h3>2.3 Relocation Registers and other I/O Ports</h3>
-<h4>2.3.1 Relocation Registers</h4>
 
-<p>
-Relocation registers are implemented in 24-bit I/O Ports 0..63, 65..71
 
-<p>
-A relocation register points to a block either of 4096 words or of 262144 words
+<h3>2.3 Instruction Set Summary</h3>
 
-<p>
-An operating system may attach most or all of relocation pointers B1..B63 to the task context.
-
-<p>
-Task switch can be nevertheless very efficient. Relocation pointers are not saved on task switch
-because they are already in the TCB mirroring the relocation registers. The incoming task typically
-has 47 data banks B1..B47 (populated or not) in its context. 47 bank base pointers are reloaded
-with 25 instructions
-<p> 
-
-<p>
-The format of the value stored to the relocation register is
-<pre>
-
-
-		  23  22 21                                          0
-		_______________________________________________________
-		| 0 | B |	   storage bank identity	      |
-		|___|___|_____________________________________________|
-
-
-		Where B at bit position 22 selects between
-
-			a 22-bit pointer to a 4096-word memory block
-			a 16-bit pointer to a memory block of 262144 words
-
-		Instruction fetch is absolute, and only jumps and program
-		counter saves require reference to the Bank 0 pointer
-
-		Operand effective addresses 256..4095 are made absolute
-		with instruction Bank 0 pointer and are words 256..4095
-		from the start of Bank 0
-
-		Storage operand resolution selects one of the 64 memory address
-		windows according to a field of the effective address. This is
-		ea bits 23..18 if they are nonzero, otherwise ea bits 17..12
-
-		If a large effective address with a higher offset than
-		4095 is presented and a block of only 4096 words is based
-		the guard interrupt is raised
-
-
-					    23       18   17       12   11                    0
-					  _______________________________________________________
-		small effective address	  | 0 0 0 0 0 0 |base register|  12-bit offset to word  |
-					  |_____________|_____________|_________________________|			
-		large effective address	  |base register|	18-bit offset to word in bank	|
-					  |_____________|_______________________________________|
-
-
-
-
-
-		4096-Word Block Based
-		_____________________
-
-
-		If relocation base register bit 22 is 0, bits 21..0 select a 
-		4096-word block in system memory:
-
-		a 34-bit absolute operand address in system memory is formed by
-		by catenating the 12 low-order-bits of the effective address
-
-
-		  23  22 21                                          0
-		_______________________________________________________
-		| 0 | 0 | pointer to 4096-word block, system memory   |
-		|___|___|_____________________________________________|__________________________
-								      |       ea bits 11..0     |
-								      |_________________________|
-
-
-
-
-
-
-
-
-
-		262144-Word Block Based
-		_______________________
-
-
-                If bit 22 of the relocation register is 1 and bits 5..0 are zero
-		bits 21..6 select a 262144-word block in system memory:
-
-		a 34-bit absolute operand address in system memory is formed by
-		catenating the 18 or 12 offset bits of the effective address
-		to the 16-bit block pointer
-
-
-		  23  22 21                            6  5          0
-		_______________________________________________________
-		| 0 | 1 | pointer to 262144-word block  | 0 0 0 0 0 0 |
-		|___|___|_______________________________|_____________|___________________________
-							|   effective address offset bits 17..0  |
-							|________________________________________|
-
-
-
-
-
-
-		Bank in Device Array Based
-		__________________________
-
-		If bit 22 of the relocation register is 1 and any of bits 5..0 is nonzero
-		bits 21..6 select a 262144-word block in a device other than system memory:
-
-		a 34-bit operand address in the device array is formed by catenating
-		the 18 or 12 offset bits of the effective address to the 16-bit block pointer 
-
-
-		  23  22 21                           6   5         0
-		_______________________________________________________
-		| 0 | 1 | pointer to 262144-word block, | d e v i c e |
-		|___|___|_______________________________|_____________|___________________________
-							|   effective address offset bits 17..0  |
-							|________________________________________|
-
-
-
-
-
-
-</pre>
-<p>
-Bank identifiers with bit 23 = 1 are reserved for a future space of identifiers which translate.
-
-<p>
-Translating bank identifiers are not implemented in the emulated machine. They are part of the
-structure of a much larger executable space of 256 terawords instead of 16 gigawords. That will
-not be needed in every application
-
-<p>
-Banks in devices outside system memory can only be based by interrupt code. This is to prevent
-accidental damage to anything like a static RAM file system. An inadvertant attempt to base
-a device from an application raises the guard interrupt
-
-<p>
-<h4>2.3.2 I/O Ports other than Relocation Registers</h4>
-
-<p>
-The emulated machine detects from Port 124 <b>ram$threshold</b> on system start how large its ROM is,
-whether the ROM contains a system or just a boot page, and where RAM starts.
-
-<p>
-In the emulated machine, the boot ROM size is exactly the containing number of 4096-word blocks
-where the emulator has loaded a complete system ROM image. RAM starts at the next page after that.
-
-<p>
-The emulated machine goes on to detect the size of system memory from Port 128 <b>device$flags</b>.
-Devices like network interfaces and local file systems are detected by reading I/O ports 129 onwards.
-These values are primed by the emulator to help the emulated machine to run.
-Hardware implementations must wire the real memory and device information to I/O Ports 124, 128+ upwards
-
-
-
-<h3>2.4 Instruction Set</h3>
-
-<h4>2.4.1 Instruction Summary</h4>
 
 <p>
 RTA1 instructions are grouped in 5 columns called instruction files. The five instruction files map to eight operand characteristics.
@@ -1098,7 +999,7 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 
 </pre>
 
-<h4>2.4.1 The Instruction Layout and Effective Address Generation</h4>
+<h3>2.4 Instruction Layout and Effective Address Generation</h3>
 
 <p>
 The operand code is marked J and determines the operand type
@@ -1125,10 +1026,12 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 <pre>
 
 
-			  23           18      15                                          0
-	  		_____________________________________________________________________
-			|       F     |   J   |			address  	            |
-			|_____________|_______|_____________________________________________|
+                                 23         18   15                            0
+                                _________________________________________________
+                                |     F    | J  |            address            |       instruction word
+                                |__________|____|_______________________________|       ________________
+
+
 
 
 
@@ -1143,10 +1046,12 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 
 
-			 23            18      15  14      11				   0
-	  		_____________________________________________________________________
-			|       F     |   J   | I |   X   |		      U             |
-			|_____________|_______|___|_______|_________________________________|
+                                 23         18     14    11                    0
+                                _________________________________________________
+                                |     F    | J  |I|  X  |           U           |       instruction word
+                                |__________|____|_|_____|_______________________|       ________________
+						|
+						|15
 
 
 
@@ -1175,18 +1080,19 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				________________________________________________________
 
 
-				 23								   0
-				_____________________________________________________________________
-				|		    	index value 24 bits			    |	index register [x|y|a|b|fp|sp]
-				|___________________________________________________________________|	______________________________
-								  |				    |
-								  |	    + displacement	    |
-								  |	    12 bits unsigned	    |
-				 23            18      15  14      11				   0
-	  			_____________________________________________________________________
-				|       F     |   J   | I |   X   |		   U		    |	instruction word
-				|_____________|_______|___|_______|_________________________________|	________________
-
+				 23					       0
+				_________________________________________________
+				|		index value 24 bits		|	index register [x|y|a|b|fp|sp]
+				|_______________________________________________|	______________________________
+							|			|
+							|    + displacement	|
+							|    12 bits unsigned	|
+				 23         18     14	 11	               0
+	  			_________________________________________________
+				|     F    | J  |I|  X  |	    U		|	instruction word
+				|__________|____|_|_____|_______________________|	________________
+						|
+						|15			
 
 
 				if X = 2
@@ -1243,18 +1149,27 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 												________________________
 
 
-				 23		                                                  0
-				____________________________________________________________________
-				|   								   |	register
-				|__________________________________________________________________|	________
-				|								   |
+				 23					       0
+				_________________________________________________
+				|						|	register
+				|_______________________________________________|	________
+				|						|
 
-				|				   				   |
+				|						|
 
-				|__________________________________________________________________|
-				|   								   |	memory
-				|__________________________________________________________________|	______
-				 23								  0
+				|						|
+
+				|_______________________________________________|
+				|		       w0			|	storage
+				|_______________________________________________|	_______
+				 23					       0
+
+
+
+
+ 
+
+
 
 
 
@@ -1287,19 +1202,27 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				bits 15..0 of the memory word are unchanged on store
 
 
-				 23		                                                  0
-				____________________________________________________________________
-				| <-------------------------- sign extended			   |	register
-				|__________________________________________________________________|	________
-                                                                             |          	   |
-				_____________________________________________|			   |
-				|		       		 	  			   |
-				|		       ____________________________________________|
-				|		       |
-				|______________________|____________________________________________
-				|	    t1	       |		    |			   |	memory
-				|______________________|____________________|______________________|	______
-				 23		     16
+
+
+
+				 23					       0
+				_________________________________________________
+				|<------- sign extension on read:		|	register
+				|_______________________________________________|	________
+								|		|
+								|		
+				<------------------------------->		|
+				|						
+										|
+				|		<------------------------------->
+						|		
+				|_______________|_______________________________
+				|	t1	|		|		|	storage
+				|_______________|_______________|_______________|	_______
+				 23	      16
+
+
+
 
 
 
@@ -1320,19 +1243,30 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 
 
-				 23		                                                  0
-				____________________________________________________________________
-				| <-------------------------- sign extended			   |	register
-				|__________________________________________________________________|	________
-                                                                            |          		   |
-						       _____________________|			   |
-						       |	 	  			   |
-						       |	   	    _______________________|
-						       |		    |
-				_______________________|____________________|_______________________
-				|		       | 	 t2	    |			   |	memory
-				|______________________|____________________|______________________|	______
-							15		   8
+ 
+
+
+
+ 
+
+
+				 23					       0
+				_________________________________________________
+				|<------- sign extension on read:		|	register
+				|_______________________________________________|	________
+								|		|
+								|		
+						<--------------->		|
+						|				
+										|
+						|		<--------------->
+								|		
+				________________|_______________|_______________
+				|		|	t2	|		|	storage
+				|_______________|_______________|_______________|	_______
+						 15	       8
+
+
 
 
 
@@ -1356,19 +1290,25 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				OR MULTI-WORD-SCALARS
 
 
-				 23		                                                 0
-				____________________________________________________________________
-				| <-------------------------- sign extended			   |	register
-				|__________________________________________________________________|	________
-									    |			   |
-								  	    |			   |
-							 	  	    |			   |
-								 	    |			   |
-						 	          	    |			   |
-				____________________________________________|______________________|
-				|		       |		    |	       t3	   |	memory
-				|______________________|____________________|______________________|	______
-									      7			 0
+
+
+
+
+				 23					       0
+				_________________________________________________
+				|<------- sign extension on read:		|	register
+				|_______________________________________________|	________
+								|		|
+										
+								|		|
+										
+								|		|
+												
+				|_______________________________|_______________|
+				|		|		|	t3	|	storage
+				|_______________|_______________|_______________|	_______
+								 7	       0
+
 
 
 
@@ -1405,21 +1345,30 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				bits 11..0 of the memory word are unchanged on store
 
 
-				 23		                                                 0
-				___________________________________________________________________
-				|   <-----------   sign extended  				  |	register
-				|_________________________________________________________________|	________
-                                                                  |                    		  |
-				__________________________________|				  |
-				|			 	  				  |
-				|				  ________________________________|
-				|		 	          |
-				|_________________________________|________________________________
-				|		 h1		  |				  |	memory
-				|_________________________________|_______________________________|	______
-				 23				12
+
+ 
 
 
+				 23					       0
+				_________________________________________________
+				|<------- sign extension:			|	register
+				|_______________________________________________|	________
+							|			|
+							|			
+				<----------------------->			|
+				|						
+										|
+				|			<----------------------->
+							|		
+				|_______________________|_______________________
+				|	    h1		|			|	storage
+				|_______________________|_______________________|	_______
+				 23		      12
+
+
+
+
+ 
 
 
 
@@ -1438,19 +1387,25 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 				bits 23..12 of the memory word are unchanged on store
 
 
-				 23		                                                 0
-				___________________________________________________________________
-				|   <-----------   sign extended  				  |	register
-				|_________________________________________________________________|	________
-                                                                  |                    		  |
-								  |				  |
-							 	  |				  |
-								  |				  |
-						 	          |				  |
-				__________________________________|_______________________________|
-				|				  | 		  h2		  |	memory
-				|_________________________________|_______________________________|	______
-								    11                           0
+
+
+
+				 23					       0
+				_________________________________________________
+				|<------- sign extension:			|	register
+				|_______________________________________________|	________
+							|			|
+										
+							|			|
+										
+							|			|		
+				________________________|_______________________|
+				|			|	   h2		|	storage
+				|_______________________|_______________________|	_______
+							 11		       0
+
+
+
 
 
 
@@ -1489,16 +1444,25 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 												push, xi	-12500
 
-				  23							  0
-				_____________________________________________________________
-				| <----- sign extended 	immediate value			    |	operand value
-				|___________________________________________________________|	_____________
-						      |					    |
-						      |					    |
-				  23           18      15                                 0
-		  		_____________________________________________________________
-				|       F     |  101  |	immediate value			    |	instruction word
-				|_____________|_______|_____________________________________|	________________
+
+
+				 23					       0
+			 	_________________________________________________
+				|+sign extension+				|	register
+				|_______________________________________________|	_______
+						|				|
+										
+						|				|
+										
+										
+						|				|
+				________________|_______________________________|
+				| ffff f  | 101	|	   immediate		|	instruction
+				|_________|_____|_______________________________|	___________
+						 15			       0
+
+
+
 
 
 
@@ -1539,7 +1503,7 @@ Instructions in File 7 take a one-word two-word or four-word operand according t
 
 </pre>
 
-<h4>2.4.2 The Instructions</h4>
+<h3>2.5 Instructions</h3>
 
 <h5>Note on Instruction Layout vs Assembly Language Syntax</h5>
 
