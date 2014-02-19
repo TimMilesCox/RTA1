@@ -2584,7 +2584,7 @@ Note: image.msm Line 417: this tests a_x not a
 00:000004 B60261              +77 tfer_dgram*	$vector		net_pass_xcall
 00:000005 B60570              +78 release_udgram*	$vector		udp_drop_dgram
   :                            79 
-00:000006 B60B2C              +80 recv*		$vector		socket_receive
+00:000006 B60B2E              +80 recv*		$vector		socket_receive
 00:000007 B60B57              +81 send*		$vector		socket_send
 00:000008 B60283              +82 ipsend*		$vector		ip_send
 00:000009 B607E5              +83 tcp_accept*	$vector		tcp_respond_syn_ack
@@ -2644,11 +2644,11 @@ Note: image.msm Line 417: this tests a_x not a
   :                            107 
 00:000035 B60AC2              +108 tcp_rx*		$vector		tcp_read
 00:000036 B609EC              +109 tcp_tx*		$vector		tcp_add
-00:000037 B60AD1              +110 tcp_addbyte*	$vector		tcp_add1byte
-00:000038 B60AE1              +111 tcp_pushbytes*	$vector		tcp_pushline
+00:000037 B60AD3              +110 tcp_addbyte*	$vector		tcp_add1byte
+00:000038 B60AE3              +111 tcp_pushbytes*	$vector		tcp_pushline
   :                            112 
-00:000039 B60B18              +113 udgram_rx*	$vector		udgram_read
-00:00003A B60B28              +114 udgram_tx*	$vector		udgram_transmit
+00:000039 B60B1A              +113 udgram_rx*	$vector		udgram_read
+00:00003A B60B2A              +114 udgram_tx*	$vector		udgram_transmit
   :                            115 
 00:00003B B60487              +116 udgram_acw_send_nocheck* $vector udp_txaw_nocheck
 00:00003C B60497              +117 udp_rtxbuffer*	$vector		udp_response_buffer
@@ -9217,410 +9217,413 @@ Note: image.msm Line 417: this tests a_x not a
 00:000AC1 350000              +476 	lret	0		. giving bytes received
   :                            477 
   :                            478 tcp_read
-00:000AC2 F8000E              +479 	push	fp
-00:000AC3 3E0A94              +480 	lcal	tcp_rbuffer
-00:000AC4 C60AC7              +481 	jza	tcp_rbuffer_z	. because you read nothing
-00:000AC5 700016              +482 	tz	WDATAC
-00:000AC6 3E0AC9              +483 	lcal	tcp_rbuffer_y	. write the staging register through
-  :                            484 tcp_rbuffer_z
-00:000AC7 38000E              +485 	pop	fp
-00:000AC8 3D0000              +486 	fret	0
-  :                            487 
-  :                            488 tcp_rbuffer_y
-  :                            489 udp_rbuffer_y
-00:000AC9 F80004              +490 	push	a
-00:000ACA 60800C              +491 	la	*p
-00:000ACB 680017              +492 	lb	WDATA
-00:000ACC 268016              +493 	sal	*WDATAC
-00:000ACD 568016              +494 	drr	*WDATAC
-00:000ACE 20800C              +495 	sa	*p
-00:000ACF 380004              +496 	pop	a
-00:000AD0 350000              +497 	lret	0
-  :                            498 
-  :                            499 XDR_TCP_INLINE $set 0
-  :                            500 	$if	XDR_TCP_INLINE
+00:000AC2 0D0010              +479 	off	b$stream16w	. target store 3 octets / word
+00:000AC3 300016              +480 	z	WDATAC		. starting on a word edge
+  :                            481 
+00:000AC4 F8000E              +482 	push	fp
+00:000AC5 3E0A94              +483 	lcal	tcp_rbuffer
+00:000AC6 C60AC9              +484 	jza	tcp_rbuffer_z	. because you read nothing
+00:000AC7 700016              +485 	tz	WDATAC
+00:000AC8 3E0ACB              +486 	lcal	tcp_rbuffer_y	. write the staging register through
+  :                            487 tcp_rbuffer_z
+00:000AC9 38000E              +488 	pop	fp
+00:000ACA 3D0000              +489 	fret	0
+  :                            490 
+  :                            491 tcp_rbuffer_y
+  :                            492 udp_rbuffer_y
+00:000ACB F80004              +493 	push	a
+00:000ACC 60800C              +494 	la	*p
+00:000ACD 680017              +495 	lb	WDATA
+00:000ACE 268016              +496 	sal	*WDATAC
+00:000ACF 568016              +497 	drr	*WDATAC
+00:000AD0 20800C              +498 	sa	*p
+00:000AD1 380004              +499 	pop	a
+00:000AD2 350000              +500 	lret	0
   :                            501 
-  :                            502 .	there is no detailed guidance from IETF, SUN or anywhere else
-  :                            503 .	whether marked record fragments can split fields up
+  :                            502 XDR_TCP_INLINE $set 0
+  :                            503 	$if	XDR_TCP_INLINE
   :                            504 
-  :                            505 .	Apple's NFS / TCP is written as if that was possible, so this
-  :                            506 .	is also written as if a new record mark could start in the
-  :                            507 .	middle of an opaque or number field
-  :                            508 
-  :                            509 .	these XDR calls will only work on a blocking connection
-  :                            510 .	so the socket owner may not be the IP stack itself for these
+  :                            505 .	there is no detailed guidance from IETF, SUN or anywhere else
+  :                            506 .	whether marked record fragments can split fields up
+  :                            507 
+  :                            508 .	Apple's NFS / TCP is written as if that was possible, so this
+  :                            509 .	is also written as if a new record mark could start in the
+  :                            510 .	middle of an opaque or number field
   :                            511 
-  :                            512 
-  :                            513 
-  :                            514 tcp_rbuffer_marked
-  :                            515 	lb	RECORD_MARK
-  :                            516 	jzb	tcp_read_record_mark
-  :                            517 	anb	a
-  :                            518 	push,xi	0
-  :                            519 	jc	tcp_rbuffer_record
-  :                            520 	ana	RECORD_MARK
-  :                            521 	sa	0, sp
-  :                            522 	la	RECORD_MARK
-  :                            523 	lb, xi	0
-  :                            524 
-  :                            525 tcp_rbuffer_record
-  :                            526 	sb	RECORD_MARK
-  :                            527 	lcal	tcp_rbuffer
-  :                            528 	pop	a
-  :                            529 	jnza	tcp_read_record_mark
-  :                            530 	wsr	16
-  :                            531 	lret	0
-  :                            532 
-  :                            533 tcp_read_record_mark
-  :                            534 	tp	RECORD_MARK_FLAG
-  :                            535 	j	tcp_read_record_alignment_error
-  :                            536 	push	a
-  :                            537 	push	WDATA
-  :                            538 	push	WDATAC
-  :                            539 	push	p
-  :                            540 	push,xi	6
-  :                            541 	pop	p
-  :                            542 	z	WDATAC
-  :                            543 	la, xi	4
-  :                            544 	lcal	tcp_rbuffer
-  :                            545 	wsr	16
-  :                            546 	dl	6
-  :                            547 	dsa	16
-  :                            548 	ds	RECORD_MARK_FLAG
-  :                            549 	pop	p
-  :                            550 	pop	WDATAC
-  :                            551 	pop	WDATA
-  :                            552 	pop	a
-  :                            553 	j	tcp_rbuffer_marked
-  :                            554 
-  :                            555 tcp_read_record_alignment_error
-  :                            556 	la, xi	-99
-  :                            557 	lret	0
-  :                            558 
-  :                            559 
-  :                            560 
-  :                            561 tcp_read_opaque
-  :                            562 	push	fp
-  :                            563 	z	WDATAC
-  :                            564 			. ask for the number of bytes you actually want
-  :                            565 			. round up the descriptor:readpointer
-  :                            566 			. in the final buffer read
-  :                            567 			. push out the last delivered word to 24 bits
-  :                            568 
-  :                            569 	push	a	. how much you want
-  :                            570 
-  :                            571 	lcal	tcp_rbuffer_marked
-  :                            572 	jnzb	tcp_incomplete_opaque_read
+  :                            512 .	these XDR calls will only work on a blocking connection
+  :                            513 .	so the socket owner may not be the IP stack itself for these
+  :                            514 
+  :                            515 
+  :                            516 
+  :                            517 tcp_rbuffer_marked
+  :                            518 	lb	RECORD_MARK
+  :                            519 	jzb	tcp_read_record_mark
+  :                            520 	anb	a
+  :                            521 	push,xi	0
+  :                            522 	jc	tcp_rbuffer_record
+  :                            523 	ana	RECORD_MARK
+  :                            524 	sa	0, sp
+  :                            525 	la	RECORD_MARK
+  :                            526 	lb, xi	0
+  :                            527 
+  :                            528 tcp_rbuffer_record
+  :                            529 	sb	RECORD_MARK
+  :                            530 	lcal	tcp_rbuffer
+  :                            531 	pop	a
+  :                            532 	jnza	tcp_read_record_mark
+  :                            533 	wsr	16
+  :                            534 	lret	0
+  :                            535 
+  :                            536 tcp_read_record_mark
+  :                            537 	tp	RECORD_MARK_FLAG
+  :                            538 	j	tcp_read_record_alignment_error
+  :                            539 	push	a
+  :                            540 	push	WDATA
+  :                            541 	push	WDATAC
+  :                            542 	push	p
+  :                            543 	push,xi	6
+  :                            544 	pop	p
+  :                            545 	z	WDATAC
+  :                            546 	la, xi	4
+  :                            547 	lcal	tcp_rbuffer
+  :                            548 	wsr	16
+  :                            549 	dl	6
+  :                            550 	dsa	16
+  :                            551 	ds	RECORD_MARK_FLAG
+  :                            552 	pop	p
+  :                            553 	pop	WDATAC
+  :                            554 	pop	WDATA
+  :                            555 	pop	a
+  :                            556 	j	tcp_rbuffer_marked
+  :                            557 
+  :                            558 tcp_read_record_alignment_error
+  :                            559 	la, xi	-99
+  :                            560 	lret	0
+  :                            561 
+  :                            562 
+  :                            563 
+  :                            564 tcp_read_opaque
+  :                            565 	push	fp
+  :                            566 	z	WDATAC
+  :                            567 			. ask for the number of bytes you actually want
+  :                            568 			. round up the descriptor:readpointer
+  :                            569 			. in the final buffer read
+  :                            570 			. push out the last delivered word to 24 bits
+  :                            571 
+  :                            572 	push	a	. how much you want
   :                            573 
-  :                            574 
-  :                            575 	z	WDATAC
+  :                            574 	lcal	tcp_rbuffer_marked
+  :                            575 	jnzb	tcp_incomplete_opaque_read
   :                            576 
-  :                            577 	la	0, sp	. # bytes requested
-  :                            578 	and, xi	3	. flag up not 4 multiple
-  :                            579 	jza	tcp_read_opaquex
-  :                            580 
-  :                            581 	tz	fp
-  :                            582 	j	tcp_round_opaque_read
+  :                            577 
+  :                            578 	z	WDATAC
+  :                            579 
+  :                            580 	la	0, sp	. # bytes requested
+  :                            581 	and, xi	3	. flag up not 4 multiple
+  :                            582 	jza	tcp_read_opaquex
   :                            583 
-  :                            584 			. we tested the marked record
-  :                            585 			. for all present, so if no
-  :                            586 			. segment buffer is at the
-  :                            587 			. queue head, we are scanning
-  :                            588 			. the wrong structure
-  :                            589 
-  :                            590 tcp_incomplete_opaque_read
-  :                            591 	n	0, sp	. flag something is miscalculated
-  :                            592 	j	tcp_read_opaquex
-  :                            593 
-  :                            594 tcp_round_opaque_read
-  :                            595 	xor, xi	3
-  :                            596 	push, i	1, a
-  :                            597 	popA	descriptor:readpoint
-  :                            598 
-  :                            599 tcp_read_opaquex
-  :                            600 	pop	a
-  :                            601 	pop	fp
-  :                            602 	fret	0
-  :                            603 
-  :                            604 tcp_floating_xdr64_read
-  :                            605 	push	fp
-  :                            606 	push	p
-  :                            607 	push,xi	8
-  :                            608 	pop	p
-  :                            609 	z	WDATAC
-  :                            610 	la, xi	8
-  :                            611 	lcal	tcp_rbuffer_marked
-  :                            612 	jzb	tcp_double_convert
-  :                            613 	la, xi	-12
-  :                            614 	j	tcp_floating_xdr64_readx
-  :                            615 tcp_double_convert
-  :                            616 	lx, xi	8
-  :                            617 	call	(ieee754_64_2float)
-  :                            618 	ly	0, sp
-  :                            619 	qs	0, y
-  :                            620 	ay, xi	4
-  :                            621 	sy	0, sp
-  :                            622 	la, xi	12
-  :                            623 tcp_floating_xdr64_readx
-  :                            624 	pop	p
-  :                            625 	pop	fp
-  :                            626 	fret	0
-  :                            627 
-  :                            628 tcp_integer_xdr32_read
-  :                            629 	push	fp
-  :                            630 	push	p
-  :                            631 	push,xi	8
-  :                            632 	pop	p
-  :                            633 	z	WDATAC
-  :                            634 	la, xi	4
-  :                            635 	lcal	tcp_rbuffer_marked
-  :                            636 	pop	y
-  :                            637 	jzb	tcp_align_integer
-  :                            638 	la, xi	-6
-  :                            639 	j	tcp_integer_xdr32_readx
-  :                            640 tcp_align_integer
-  :                            641 	dl	8
-  :                            642 	dsa	16
-  :                            643 	ds	0, y
-  :                            644 	ay, xi	2
-  :                            645 	la, xi	6
-  :                            646 tcp_integer_xdr32_readx
-  :                            647 	sy	p
-  :                            648 	pop	fp
-  :                            649 	fret	0
-  :                            650 
-  :                            651 	$endif
-  :                            652 
-  :                            653 tcp_add1byte
-00:000AD1 260010              +654 	sal	16
-00:000AD2 1D0008              +655 	wsr	8
-00:000AD3 60B000              +656 	la	0, y
-00:000AD4 C50001              +657 	aa, xi	1
-00:000AD5 680004              +658 	anu, xi	24
-00:000AD6 DD0018              +658 
-00:000AD7 20B000              +659 	sa	0, y
-00:000AD8 5E0AE7              +660 	jnc	tcp_addxbyte
-  :                            661 
-00:000AD9 30001B              +662 	z	SOCKET_CALL_FLAGS
-  :                            663 
-  :                            664 tcp_sendlastbytes
-00:000ADA 6C0000              +665 	lb, i, 	1, y
-00:000ADB 28000C              +666 	sb	p
-00:000ADC 28000D              +667 	sb	q
-00:000ADD 30B000              +668 	z	0, y
-00:000ADE 300014              +669 	z	RDATAC
-00:000ADF 300016              +670 	z	WDATAC
-00:000AE0 B609EC              +671 	j	tcp_add
-  :                            672 
-  :                            673 tcp_pushline
-00:000AE1 60B001              +674 	la	1, y
-00:000AE2 C60AE7              +675 	jza	tcp_addxbyte
-00:000AE3 FD0008              +676 	push,xi	TCP_PSH
-00:000AE4 38001B              +677 	pop	SOCKET_CALL_FLAGS
-00:000AE5 1D0010              +678 	wsr	16
-00:000AE6 B60ADA              +679 	j	tcp_sendlastbytes
-  :                            680 	
-  :                            681 tcp_addxbyte
-00:000AE7 3D0000              +682 	fret	0
-  :                            683 
-  :                            684 udp_read
-00:000AE8 680004              +685 	lb	a
-  :                            686 udp_read1
-00:000AE9 60D006              +687 	la	s:udp:socket_inq:head
-00:000AEA C60B09              +688 	jza	udp_readx
-  :                            689 udp_read_next
-00:000AEB 20000E              +690 	sa	fp
-00:000AEC F80005              +691 	push	b
-00:000AED 60E003              +692 	la	descriptor:bytes
-00:000AEE D80004              +693 	anb	a
-00:000AEF 7E0AF1              +694 	jc	udp_readbuffer
-00:000AF0 60F000              +695 	la	0, sp
-  :                            696 udp_readbuffer
-00:000AF1 28F000              +697 	sb	0, sp
-00:000AF2 40E007              +698 	lr	descriptor:readpoint
-00:000AF3 680000              +699 	lb	r
-00:000AF4 C80004              +700 	ab	a
-00:000AF5 28E007              +701 	sb	descriptor:readpoint
-00:000AF6 680000              +702 	lb	r
-00:000AF7 0E0001              +703 	sbr	1
-00:000AF8 580005              +704 	ly	b
-00:000AF9 88E006              +705 	ay	descriptor:apdata	
-  :                            706 
-00:000AFA 3E0A55              +707 	lcal	rbuffer
-  :                            708 
-00:000AFB 380005              +709 	pop	b
-00:000AFC EE0B09              +710 	jnb	udp_readx
-00:000AFD CE0B09              +711 	jzb	udp_readx
-  :                            712 
-00:000AFE 60E004              +713 	la	descriptor:dgram
-00:000AFF 60C003              +714 	la	dgram:flags_fragment, a
-00:000B00 A52000              +715 	and, xi	IP_MORE
-00:000B01 C60B09              +716 	jza	udp_readx
-00:000B02 3E0566              +717 	lcal	udp_read_rxq	. the readq call returns q:head in A
-00:000B03 F80005              +718 	push	b		. and next in B
-00:000B04 F80002              +719 	push	x		. keep the socket as well
-00:000B05 3E0242              +720 	lcal	net_free
-00:000B06 380002              +721 	pop	x		. the socket
-00:000B07 380004              +722 	pop	a		. the new first in readq if any
-00:000B08 D60AEB              +723 	jnza	udp_read_next
-  :                            724 udp_readx
-00:000B09 350000              +725 	lret	0
-  :                            726 
-  :                            727 .	that routine consumes the buffers in the user datagram
-  :                            728 .	unconditionally and uses the cursor :readpoint
-  :                            729 .	it is for XDR / RPC field extractions
-  :                            730 
-  :                            731 .	next is a similar routine for plain udgram_read
-  :                            732 .	the buffers are not dropped, in case it's flagged
-  :                            733 .	that this is a PEEK
-  :                            734 
-  :                            735 .	the :readpoint cursor is not maintained or consulted
-  :                            736 
-  :                            737 udgram_rbuffer
-00:000B0A 20000E              +738 	sa	fp
-00:000B0B 60E003              +739 	la	descriptor:bytes
-00:000B0C F80005              +740 	push	b
-00:000B0D D80004              +741 	anb	a	. subtract available from required
-00:000B0E 7E0B10              +742 	jc	udgram_rbloc
-00:000B0F 60F000              +743 	la	0, sp	. transfer block is total required
-  :                            744 udgram_rbloc		
-00:000B10 28F000              +745 	sb	0, sp	. push the new outstanding #
-00:000B11 3E0A55              +746 	lcal	rbuffer
-00:000B12 380005              +747 	pop	b
-00:000B13 EE0B17              +748 	jnb	udgram_rbuffer_x
-00:000B14 CE0B17              +749 	jzb	udgram_rbuffer_x
-00:000B15 60E000              +750 	la	descriptor:next
-00:000B16 D60B0A              +751 	jnza	udgram_rbuffer
-  :                            752 udgram_rbuffer_x
-00:000B17 350000              +753 	lret	0
-  :                            754 
-  :                            755 udgram_read
-00:000B18 F8000E              +756 	push	fp
-00:000B19 680004              +757 	lb	a
-00:000B1A 60D006              +758 	la	s:udp:socket_inq:head
-00:000B1B C60B26              +759 	jza	udgram_readx
-00:000B1C CE0B26              +760 	jzb	udgram_readx
-00:000B1D 3E0B0A              +761 	lcal	udgram_rbuffer
-00:000B1E 700016              +762 	tz	WDATAC
-00:000B1F 3E0AC9              +763 	lcal	udp_rbuffer_y
-00:000B20 9F0004              +764 	dpush	a
-00:000B21 78001B              +765 	tp	SOCKET_CALL_FLAGS
-00:000B22 FF0CC0              +766 	call	(release_udgram)
-00:000B23 380004              +767 	pop	a
-00:000B24 380005              +768 	pop	b
-00:000B25 D00005              +769 	ana	b
-  :                            770 udgram_readx
-00:000B26 38000E              +771 	pop	fp
-00:000B27 3D0000              +772 	fret	0
-  :                            773 
-  :                            774 udgram_transmit
-00:000B28 0D0020              +775 	off	b$stream16r
-00:000B29 300014              +776 	z	RDATAC
-00:000B2A 050040              +777 	on	b$streamZR
-  :                            778 udgram_transmit_asynb
-00:000B2B 3D0000              +779 	fret	0
-  :                            780 
+  :                            584 	tz	fp
+  :                            585 	j	tcp_round_opaque_read
+  :                            586 
+  :                            587 			. we tested the marked record
+  :                            588 			. for all present, so if no
+  :                            589 			. segment buffer is at the
+  :                            590 			. queue head, we are scanning
+  :                            591 			. the wrong structure
+  :                            592 
+  :                            593 tcp_incomplete_opaque_read
+  :                            594 	n	0, sp	. flag something is miscalculated
+  :                            595 	j	tcp_read_opaquex
+  :                            596 
+  :                            597 tcp_round_opaque_read
+  :                            598 	xor, xi	3
+  :                            599 	push, i	1, a
+  :                            600 	popA	descriptor:readpoint
+  :                            601 
+  :                            602 tcp_read_opaquex
+  :                            603 	pop	a
+  :                            604 	pop	fp
+  :                            605 	fret	0
+  :                            606 
+  :                            607 tcp_floating_xdr64_read
+  :                            608 	push	fp
+  :                            609 	push	p
+  :                            610 	push,xi	8
+  :                            611 	pop	p
+  :                            612 	z	WDATAC
+  :                            613 	la, xi	8
+  :                            614 	lcal	tcp_rbuffer_marked
+  :                            615 	jzb	tcp_double_convert
+  :                            616 	la, xi	-12
+  :                            617 	j	tcp_floating_xdr64_readx
+  :                            618 tcp_double_convert
+  :                            619 	lx, xi	8
+  :                            620 	call	(ieee754_64_2float)
+  :                            621 	ly	0, sp
+  :                            622 	qs	0, y
+  :                            623 	ay, xi	4
+  :                            624 	sy	0, sp
+  :                            625 	la, xi	12
+  :                            626 tcp_floating_xdr64_readx
+  :                            627 	pop	p
+  :                            628 	pop	fp
+  :                            629 	fret	0
+  :                            630 
+  :                            631 tcp_integer_xdr32_read
+  :                            632 	push	fp
+  :                            633 	push	p
+  :                            634 	push,xi	8
+  :                            635 	pop	p
+  :                            636 	z	WDATAC
+  :                            637 	la, xi	4
+  :                            638 	lcal	tcp_rbuffer_marked
+  :                            639 	pop	y
+  :                            640 	jzb	tcp_align_integer
+  :                            641 	la, xi	-6
+  :                            642 	j	tcp_integer_xdr32_readx
+  :                            643 tcp_align_integer
+  :                            644 	dl	8
+  :                            645 	dsa	16
+  :                            646 	ds	0, y
+  :                            647 	ay, xi	2
+  :                            648 	la, xi	6
+  :                            649 tcp_integer_xdr32_readx
+  :                            650 	sy	p
+  :                            651 	pop	fp
+  :                            652 	fret	0
+  :                            653 
+  :                            654 	$endif
+  :                            655 
+  :                            656 tcp_add1byte
+00:000AD3 260010              +657 	sal	16
+00:000AD4 1D0008              +658 	wsr	8
+00:000AD5 60B000              +659 	la	0, y
+00:000AD6 C50001              +660 	aa, xi	1
+00:000AD7 680004              +661 	anu, xi	24
+00:000AD8 DD0018              +661 
+00:000AD9 20B000              +662 	sa	0, y
+00:000ADA 5E0AE9              +663 	jnc	tcp_addxbyte
+  :                            664 
+00:000ADB 30001B              +665 	z	SOCKET_CALL_FLAGS
+  :                            666 
+  :                            667 tcp_sendlastbytes
+00:000ADC 6C0000              +668 	lb, i, 	1, y
+00:000ADD 28000C              +669 	sb	p
+00:000ADE 28000D              +670 	sb	q
+00:000ADF 30B000              +671 	z	0, y
+00:000AE0 300014              +672 	z	RDATAC
+00:000AE1 300016              +673 	z	WDATAC
+00:000AE2 B609EC              +674 	j	tcp_add
+  :                            675 
+  :                            676 tcp_pushline
+00:000AE3 60B001              +677 	la	1, y
+00:000AE4 C60AE9              +678 	jza	tcp_addxbyte
+00:000AE5 FD0008              +679 	push,xi	TCP_PSH
+00:000AE6 38001B              +680 	pop	SOCKET_CALL_FLAGS
+00:000AE7 1D0010              +681 	wsr	16
+00:000AE8 B60ADC              +682 	j	tcp_sendlastbytes
+  :                            683 	
+  :                            684 tcp_addxbyte
+00:000AE9 3D0000              +685 	fret	0
+  :                            686 
+  :                            687 udp_read
+00:000AEA 680004              +688 	lb	a
+  :                            689 udp_read1
+00:000AEB 60D006              +690 	la	s:udp:socket_inq:head
+00:000AEC C60B0B              +691 	jza	udp_readx
+  :                            692 udp_read_next
+00:000AED 20000E              +693 	sa	fp
+00:000AEE F80005              +694 	push	b
+00:000AEF 60E003              +695 	la	descriptor:bytes
+00:000AF0 D80004              +696 	anb	a
+00:000AF1 7E0AF3              +697 	jc	udp_readbuffer
+00:000AF2 60F000              +698 	la	0, sp
+  :                            699 udp_readbuffer
+00:000AF3 28F000              +700 	sb	0, sp
+00:000AF4 40E007              +701 	lr	descriptor:readpoint
+00:000AF5 680000              +702 	lb	r
+00:000AF6 C80004              +703 	ab	a
+00:000AF7 28E007              +704 	sb	descriptor:readpoint
+00:000AF8 680000              +705 	lb	r
+00:000AF9 0E0001              +706 	sbr	1
+00:000AFA 580005              +707 	ly	b
+00:000AFB 88E006              +708 	ay	descriptor:apdata	
+  :                            709 
+00:000AFC 3E0A55              +710 	lcal	rbuffer
+  :                            711 
+00:000AFD 380005              +712 	pop	b
+00:000AFE EE0B0B              +713 	jnb	udp_readx
+00:000AFF CE0B0B              +714 	jzb	udp_readx
+  :                            715 
+00:000B00 60E004              +716 	la	descriptor:dgram
+00:000B01 60C003              +717 	la	dgram:flags_fragment, a
+00:000B02 A52000              +718 	and, xi	IP_MORE
+00:000B03 C60B0B              +719 	jza	udp_readx
+00:000B04 3E0566              +720 	lcal	udp_read_rxq	. the readq call returns q:head in A
+00:000B05 F80005              +721 	push	b		. and next in B
+00:000B06 F80002              +722 	push	x		. keep the socket as well
+00:000B07 3E0242              +723 	lcal	net_free
+00:000B08 380002              +724 	pop	x		. the socket
+00:000B09 380004              +725 	pop	a		. the new first in readq if any
+00:000B0A D60AED              +726 	jnza	udp_read_next
+  :                            727 udp_readx
+00:000B0B 350000              +728 	lret	0
+  :                            729 
+  :                            730 .	that routine consumes the buffers in the user datagram
+  :                            731 .	unconditionally and uses the cursor :readpoint
+  :                            732 .	it is for XDR / RPC field extractions
+  :                            733 
+  :                            734 .	next is a similar routine for plain udgram_read
+  :                            735 .	the buffers are not dropped, in case it's flagged
+  :                            736 .	that this is a PEEK
+  :                            737 
+  :                            738 .	the :readpoint cursor is not maintained or consulted
+  :                            739 
+  :                            740 udgram_rbuffer
+00:000B0C 20000E              +741 	sa	fp
+00:000B0D 60E003              +742 	la	descriptor:bytes
+00:000B0E F80005              +743 	push	b
+00:000B0F D80004              +744 	anb	a	. subtract available from required
+00:000B10 7E0B12              +745 	jc	udgram_rbloc
+00:000B11 60F000              +746 	la	0, sp	. transfer block is total required
+  :                            747 udgram_rbloc		
+00:000B12 28F000              +748 	sb	0, sp	. push the new outstanding #
+00:000B13 3E0A55              +749 	lcal	rbuffer
+00:000B14 380005              +750 	pop	b
+00:000B15 EE0B19              +751 	jnb	udgram_rbuffer_x
+00:000B16 CE0B19              +752 	jzb	udgram_rbuffer_x
+00:000B17 60E000              +753 	la	descriptor:next
+00:000B18 D60B0C              +754 	jnza	udgram_rbuffer
+  :                            755 udgram_rbuffer_x
+00:000B19 350000              +756 	lret	0
+  :                            757 
+  :                            758 udgram_read
+00:000B1A F8000E              +759 	push	fp
+00:000B1B 680004              +760 	lb	a
+00:000B1C 60D006              +761 	la	s:udp:socket_inq:head
+00:000B1D C60B28              +762 	jza	udgram_readx
+00:000B1E CE0B28              +763 	jzb	udgram_readx
+00:000B1F 3E0B0C              +764 	lcal	udgram_rbuffer
+00:000B20 700016              +765 	tz	WDATAC
+00:000B21 3E0ACB              +766 	lcal	udp_rbuffer_y
+00:000B22 9F0004              +767 	dpush	a
+00:000B23 78001B              +768 	tp	SOCKET_CALL_FLAGS
+00:000B24 FF0CC0              +769 	call	(release_udgram)
+00:000B25 380004              +770 	pop	a
+00:000B26 380005              +771 	pop	b
+00:000B27 D00005              +772 	ana	b
+  :                            773 udgram_readx
+00:000B28 38000E              +774 	pop	fp
+00:000B29 3D0000              +775 	fret	0
+  :                            776 
+  :                            777 udgram_transmit
+00:000B2A 0D0020              +778 	off	b$stream16r
+00:000B2B 300014              +779 	z	RDATAC
+00:000B2C 050040              +780 	on	b$streamZR
+  :                            781 udgram_transmit_asynb
+00:000B2D 3D0000              +782 	fret	0
+  :                            783 
                                 socket_receive	$head_far	 params(sorx,	int	;
                                 					rxbuf,	int	;
                                 					rxbytes,int	;
-  :                            784 					rxflags,int)
-  :                            785 
-00:000B2C 60F003              +786 	la	sorx
-00:000B2D 750055              +787 	ii	READ_SOCKET$
-00:000B2E E60B56              +788 	jna	receive_socket_x
-00:000B2F 480CAD              +789 	lk	(255*/16:s)
-00:000B30 AF0C8F              +790 	mta	(IPPROTO_UDP*/16)
-00:000B31 B60B3F              +791 	j	socket_receive_tcp?
-00:000B32 A501FF              +792 	and, xi	511
-00:000B33 260003              +793 	sal	3
-00:000B34 500C92              +794 	lx	(BSOCKET*/12)
-00:000B35 800004              +795 	ax	a
-00:000B36 600005              +796 	la	b
-00:000B37 34002F              +797 	sabr	BSOCKET
-00:000B38 60F004              +798 	la	rxbuf
-00:000B39 20000C              +799 	sa	p
-00:000B3A 0D0010              +800 	off	b$stream16w
-00:000B3B 300016              +801 	z	WDATAC
-00:000B3C CFF005              +802 	dl	rxbytes
-00:000B3D 28001B              +803 	sb	SOCKET_CALL_FLAGS
-00:000B3E B60B18              +804 	j	udgram_read
-  :                            805 
-  :                            806 socket_receive_tcp?
-00:000B3F AF0CBF              +807 	mta	(TCP_TCB*/16)
-00:000B40 B60B55              +808 	j	receive_socket_protocol_wrong
-00:000B41 A50FF8              +809 	and, xi	0FF8
-00:000B42 500C92              +810 	lx	(BSOCKET*/12)
-00:000B43 800004              +811 	ax	a
-00:000B44 600005              +812 	la	b
-00:000B45 34002F              +813 	sabr	BSOCKET
-00:000B46 60F004              +814 	la	rxbuf
-00:000B47 20000C              +815 	sa	p
-00:000B48 0D0010              +816 	off	b$stream16w
-00:000B49 300016              +817 	z	WDATAC
-00:000B4A CFF005              +818 	dl	rxbytes
-00:000B4B AD0004              +819 	andB	MSG_NONBLOCK,,xi	. for TCP receive,
-00:000B4C 28001B              +820 	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
-  :                            821 
-00:000B4D 68A001              +822 	lb	transmission:state
-00:000B4E CDFFFB              +823 	ab, xi	-TCP_ESTABLISHED
-00:000B4F CE0AC2              +824 	jzb	tcp_read
-  :                            825 
-  :                            826 	.	something like a remote close has happened
-  :                            827 	.	or you tried to receive before it was established
+  :                            787 					rxflags,int)
+  :                            788 
+00:000B2E 60F003              +789 	la	sorx
+00:000B2F 750055              +790 	ii	READ_SOCKET$
+00:000B30 E60B56              +791 	jna	receive_socket_x
+00:000B31 480CAD              +792 	lk	(255*/16:s)
+00:000B32 AF0C8F              +793 	mta	(IPPROTO_UDP*/16)
+00:000B33 B60B41              +794 	j	socket_receive_tcp?
+00:000B34 A501FF              +795 	and, xi	511
+00:000B35 260003              +796 	sal	3
+00:000B36 500C92              +797 	lx	(BSOCKET*/12)
+00:000B37 800004              +798 	ax	a
+00:000B38 600005              +799 	la	b
+00:000B39 34002F              +800 	sabr	BSOCKET
+00:000B3A 60F004              +801 	la	rxbuf
+00:000B3B 20000C              +802 	sa	p
+00:000B3C 0D0010              +803 	off	b$stream16w
+00:000B3D 300016              +804 	z	WDATAC
+00:000B3E CFF005              +805 	dl	rxbytes
+00:000B3F 28001B              +806 	sb	SOCKET_CALL_FLAGS
+00:000B40 B60B1A              +807 	j	udgram_read
+  :                            808 
+  :                            809 socket_receive_tcp?
+00:000B41 AF0CBF              +810 	mta	(TCP_TCB*/16)
+00:000B42 B60B55              +811 	j	receive_socket_protocol_wrong
+00:000B43 A50FF8              +812 	and, xi	0FF8
+00:000B44 500C92              +813 	lx	(BSOCKET*/12)
+00:000B45 800004              +814 	ax	a
+00:000B46 600005              +815 	la	b
+00:000B47 34002F              +816 	sabr	BSOCKET
+00:000B48 60F004              +817 	la	rxbuf
+00:000B49 20000C              +818 	sa	p
+  :                            819 .	off	b$stream16w		. those are done in tcp_read
+  :                            820 .	z	WDATAC
+00:000B4A CFF005              +821 	dl	rxbytes
+00:000B4B AD0004              +822 	andB	MSG_NONBLOCK,,xi	. for TCP receive,
+00:000B4C 28001B              +823 	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
+  :                            824 
+00:000B4D 68A001              +825 	lb	transmission:state
+00:000B4E CDFFFB              +826 	ab, xi	-TCP_ESTABLISHED
+00:000B4F CE0AC2              +827 	jzb	tcp_read
   :                            828 
-00:000B50 60001B              +829 	la	SOCKET_CALL_FLAGS	. blocking
-00:000B51 C60B56              +830 	jza	receive_socket_x	. report no data
+  :                            829 	.	something like a remote close has happened
+  :                            830 	.	or you tried to receive before it was established
   :                            831 
-00:000B52 64D005              +832 	la, i	TCP_ESTABLISHED, b	. non_blocking
-00:000B53 B5FFFF              +833 	xor, xi	-1			. ^state
+00:000B50 60001B              +832 	la	SOCKET_CALL_FLAGS	. blocking
+00:000B51 C60B56              +833 	jza	receive_socket_x	. report no data
   :                            834 
-00:000B54 3D0000              +835 	fret	0
-  :                            836 
-  :                            837 receive_socket_protocol_wrong
-  :                            838 transmit_socket_protocol_wrong
-00:000B55 55FFEA              +839 	lx, xi	-22			. more minus than a negative state
-  :                            840 
-  :                            841 transmit_socket_x
-  :                            842 receive_socket_x
-00:000B56 3D0000              +843 	fret	0
-  :                            844 
+00:000B52 64D005              +835 	la, i	TCP_ESTABLISHED, b	. non_blocking
+00:000B53 B5FFFF              +836 	xor, xi	-1			. ^state
+  :                            837 
+00:000B54 3D0000              +838 	fret	0
+  :                            839 
+  :                            840 receive_socket_protocol_wrong
+  :                            841 transmit_socket_protocol_wrong
+00:000B55 55FFEA              +842 	lx, xi	-22			. more minus than a negative state
+  :                            843 
+  :                            844 transmit_socket_x
+  :                            845 receive_socket_x
+00:000B56 3D0000              +846 	fret	0
+  :                            847 
                                 socket_send	$head_far	 params(sotx,	int	;
                                 					txbuf,	int	;
                                 					txbytes,int	;
-  :                            848 					txflags,int)
-  :                            849 
-00:000B57 60F003              +850 	la	sotx
-00:000B58 750055              +851 	ii	READ_SOCKET$
-00:000B59 E60B56              +852 	jna	transmit_socket_x
-00:000B5A 480CAD              +853 	lk	(255*/16:s)
-00:000B5B AF0CC1              +854 	mta	(IPPROTO_UDP)
-00:000B5C B60B68              +855 	j	socket_transmit_tcp?
-00:000B5D A501FF              +856 	and, xi	511
-00:000B5E 260003              +857 	sal	3
-00:000B5F 500C92              +858 	lx	(BSOCKET*/12)
-00:000B60 800004              +859 	ax	a
-00:000B61 600005              +860 	la	b
-00:000B62 34002F              +861 	sabr	BSOCKET
-00:000B63 60F004              +862 	la	txbuf
-00:000B64 20000D              +863 	sa	q
-00:000B65 CFF005              +864 	dl	txbytes
-00:000B66 28001B              +865 	sb	SOCKET_CALL_FLAGS
-00:000B67 B60B28              +866 	j	udgram_transmit
-  :                            867 
-  :                            868 socket_transmit_tcp?
-00:000B68 AF0CBF              +869 	mta	(TCP_TCB*/16)
-00:000B69 B60B55              +870 	j	transmit_socket_protocol_wrong
-00:000B6A A50FF8              +871 	and, xi	0FF8
-00:000B6B 500C92              +872 	lx	(BSOCKET*/12)
-00:000B6C 800004              +873 	ax	a
-00:000B6D 600005              +874 	la	b
-00:000B6E 34002F              +875 	sabr	BSOCKET
-00:000B6F 60F004              +876 	la	txbuf
-00:000B70 20000D              +877 	sa	q
-00:000B71 CFF005              +878 	dl	txbytes
-00:000B72 9D5010              +879 	orB, xi	05000++TCP_ACK
-00:000B73 28001B              +880 	sb	SOCKET_CALL_FLAGS
-00:000B74 B609EC              +881 	j	tcp_add
+  :                            851 					txflags,int)
+  :                            852 
+00:000B57 60F003              +853 	la	sotx
+00:000B58 750055              +854 	ii	READ_SOCKET$
+00:000B59 E60B56              +855 	jna	transmit_socket_x
+00:000B5A 480CAD              +856 	lk	(255*/16:s)
+00:000B5B AF0CC1              +857 	mta	(IPPROTO_UDP)
+00:000B5C B60B68              +858 	j	socket_transmit_tcp?
+00:000B5D A501FF              +859 	and, xi	511
+00:000B5E 260003              +860 	sal	3
+00:000B5F 500C92              +861 	lx	(BSOCKET*/12)
+00:000B60 800004              +862 	ax	a
+00:000B61 600005              +863 	la	b
+00:000B62 34002F              +864 	sabr	BSOCKET
+00:000B63 60F004              +865 	la	txbuf
+00:000B64 20000D              +866 	sa	q
+00:000B65 CFF005              +867 	dl	txbytes
+00:000B66 28001B              +868 	sb	SOCKET_CALL_FLAGS
+00:000B67 B60B2A              +869 	j	udgram_transmit
+  :                            870 
+  :                            871 socket_transmit_tcp?
+00:000B68 AF0CBF              +872 	mta	(TCP_TCB*/16)
+00:000B69 B60B55              +873 	j	transmit_socket_protocol_wrong
+00:000B6A A50FF8              +874 	and, xi	0FF8
+00:000B6B 500C92              +875 	lx	(BSOCKET*/12)
+00:000B6C 800004              +876 	ax	a
+00:000B6D 600005              +877 	la	b
+00:000B6E 34002F              +878 	sabr	BSOCKET
+00:000B6F 60F004              +879 	la	txbuf
+00:000B70 20000D              +880 	sa	q
+00:000B71 CFF005              +881 	dl	txbytes
+00:000B72 9D5010              +882 	orB, xi	05000++TCP_ACK
+00:000B73 28001B              +883 	sb	SOCKET_CALL_FLAGS
+00:000B74 B609EC              +884 	j	tcp_add
   :                            78: 	$include	arp
   :                            1 .       
   :                            2 .    Copyright Tim Cox, 2012
@@ -20348,8 +20351,8 @@ snmp_tferq=$46:000000,00000E
 socket1=$01:0002EB
 socket2=$01:0002EF
 socket_out_of_range=$00:00043A
-socket_receive=$00:000B2C
-socket_receive_tcp?=$00:000B3F
+socket_receive=$00:000B2E
+socket_receive_tcp?=$00:000B41
 socket_send=$00:000B57
 socket_transmit_tcp?=$00:000B68
 softwareLoopback=000018
@@ -20697,7 +20700,7 @@ tcp_ack_fin=00008B
 tcp_ack_point=$00:000649
 tcp_ackq_started=$00:000843
 tcp_add=$00:0009EC
-tcp_add1byte=$00:000AD1
+tcp_add1byte=$00:000AD3
 tcp_add2=$00:0009FB
 tcp_add2segment=$00:0009F5
 tcp_add_anomaly=$00:00077D
@@ -20710,7 +20713,7 @@ tcp_add_segment=$00:000A3D
 tcp_add_words=$00:000A16
 tcp_add_x=$00:000A4E
 tcp_addbyte+=0000B7
-tcp_addxbyte=$00:000AE7
+tcp_addxbyte=$00:000AE9
 tcp_agent_add=000122
 tcp_agent_add_new=$00:0008F4
 tcp_agent_free=000123
@@ -20800,7 +20803,7 @@ tcp_options_complete=$00:00077E
 tcp_place_in_stream=$00:0005FF
 tcp_porthandle_wrong=$00:000990
 tcp_pushbytes+=0000B8
-tcp_pushline=$00:000AE1
+tcp_pushline=$00:000AE3
 tcp_q4a_slip?=$00:0005EB
 tcp_qthru=$00:0007E0
 tcp_rbuffer=$00:000A94
@@ -20808,8 +20811,8 @@ tcp_rbuffer_complete=$00:000ABE
 tcp_rbuffer_free=$00:000AB3
 tcp_rbuffer_next=$00:000A96
 tcp_rbuffer_x=$00:000AB8
-tcp_rbuffer_y=$00:000AC9
-tcp_rbuffer_z=$00:000AC7
+tcp_rbuffer_y=$00:000ACB
+tcp_rbuffer_z=$00:000AC9
 tcp_read=$00:000AC2
 tcp_read_rxq=$00:000928
 tcp_read_txq=$00:00093C
@@ -20854,7 +20857,7 @@ tcp_send_option!=$00:000906
 tcp_send_option?=$00:00090C
 tcp_send_options=$00:000902
 tcp_send_push+=00008A
-tcp_sendlastbytes=$00:000ADA
+tcp_sendlastbytes=$00:000ADC
 tcp_sendno_options=$00:0008E0
 tcp_sendq=$00:000891
 tcp_sendq2=$00:000892
@@ -21273,14 +21276,14 @@ txsumx=$00:000552
 txsumz=$00:000553
 udgram=:N129:P:0:000000
 udgram_acw_send_nocheck+=0000BB
-udgram_rbloc=$00:000B10
-udgram_rbuffer=$00:000B0A
-udgram_rbuffer_x=$00:000B17
-udgram_read=$00:000B18
-udgram_readx=$00:000B26
+udgram_rbloc=$00:000B12
+udgram_rbuffer=$00:000B0C
+udgram_rbuffer_x=$00:000B19
+udgram_read=$00:000B1A
+udgram_readx=$00:000B28
 udgram_rx+=0000B9
-udgram_transmit=$00:000B28
-udgram_transmit_asynb=$00:000B2B
+udgram_transmit=$00:000B2A
+udgram_transmit_asynb=$00:000B2D
 udgram_tx+=0000BA
 udp4=$00:00041E
 udp4_x=$00:000436
@@ -21360,13 +21363,13 @@ udp_next=$00:000420
 udp_noresponseb=$00:0004A5
 udp_nosocket=$00:000433
 udp_nosource=$00:000495
-udp_rbuffer_y=$00:000AC9
-udp_read=$00:000AE8
-udp_read1=$00:000AE9
-udp_read_next=$00:000AEB
+udp_rbuffer_y=$00:000ACB
+udp_read=$00:000AEA
+udp_read1=$00:000AEB
+udp_read_next=$00:000AED
 udp_read_rxq=$00:000566
-udp_readbuffer=$00:000AF1
-udp_readx=$00:000B09
+udp_readbuffer=$00:000AF3
+udp_readx=$00:000B0B
 udp_response_buffer=$00:000497
 udp_rtxbuffer+=0000BC
 udp_rx=$00:000437

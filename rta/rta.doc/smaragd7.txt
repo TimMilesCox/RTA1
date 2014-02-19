@@ -1708,21 +1708,37 @@ possible with services bound to <b>portmapper()</b>
 
 		$else
 
+
 		. 	for the sake of example this is something like
 		. 	an XDR marked record and a 4-byte message length
-		. 	needs to be read
+		. 	needs to be read before the message
 
-		c	(recv)	socket	application_data,,xi 4 0
-		dl	application_data
-		dsr	16
-		push	b
-		c	(recv)	socket	application_data,,xi b 0
+
+
+		lx	connection			
+		push	application_data,,xi		. input buffer address
+		pop	p
+		z	SOCKET_OPTIONS			. blocking
+		la, xi	4				. read a message length
+		call	(tcp_rx)
+		jnzb	incomplete			. if a = 4 then b = 0
+
+		push	application_data,,xi		. set the receive address
+		pop	p				. again
+		dl	application_data		. expected length in a
+		dsl	8
+		push	a
+		call	(tcp_rx)
 		pop	r
+		jnzb	incomplete			. if a = message length
+							. then b = 0
+
 		push	application_data,,xi
 		pop	q
-		off	b$stream16r	. the internal buffer uses
-					. 24 data bits per word
+		off	b$stream16r			. the internal buffer uses
+							. 24 data bits per word
 		lcal	scan_and_respond
+
 		lx	connection
 				
 		$endif
@@ -1746,6 +1762,66 @@ possible with services bound to <b>portmapper()</b>
 
 </pre>
 </div>
+
+If it is assured that incoming segments are IP_DNF and TCP_PSH, then they can
+be sampled zero-copy on the connection input queue and afterwards dropped
+with <b>tcp_release_rxline</b>
+
+<p>
+Otherwise TCP must be called as a socket stream protocol. The example shows
+<b>tcp_rx</b> being called twice, the first time in order to read a message
+length
+
+<p>
+<b>tcp_rx</b> can be called instead of <b>recv()</b> if the connection block
+is available, and <i>must</i> be called instead of <b>recv()</b> if there
+is no POSIX handle for the connection
+
+<p>
+<b>tcp_rx</b> is part of the Low-Overhead Network API and bypasses some
+processing resolving the handle. The two <b>tcp_rx</b> calls here are
+the equivalent of
+<pre>
+
+	c	(recv)	handle		application_data,,xi	4	0
+	jna	problem
+	dl	application_data
+	dsl	8
+	call	(recv)	handle		application_data,,xi	a	0
+	jna	problem
+
+</pre>
+<p>
+There is nothing like zero copy output message construction in a TCP segment buffer.
+The Low-Overhead Network API TCP send call is <b>tcp_tx</b>
+
+<p>
+<b>tcp_tx</b> can be called instead of <b>send()</b> if the connection block
+is available, and <i>must</i> be called instead of <b>send()</b> if there
+is no POSIX handle for the connection, as when one process has millions
+of connections
+
+<p>
+tcp_rx</b> is part of the Low-Overhead network API and bypasses some
+processing resolving the handle. The example shown is the equivalent of
+<pre>
+
+	c	(send)	handle	output_data,,xi	output_bytes	TCP_PSH
+
+</pre>
+
+<p>
+The TCP High-Volume Network API has some of the same call interfaces
+as the Low-Overhead Network API but is structurally different because
+the connection array banks are one per local port and the hash index
+within them is a function of the remote network address
+<pre>
+
+	call	(tcp_hash_remotesocket)
+
+
+</pre>
+ 
 
 <h3>3.5 The TCP High-Volume Network API</h3>
 
