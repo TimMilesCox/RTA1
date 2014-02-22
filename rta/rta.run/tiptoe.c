@@ -133,6 +133,16 @@ static void *async()
 #endif
 
 
+static void print_register_row(int index)
+{
+   printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
+           index,
+           _register[index],   _register[index+1],
+           _register[index+2], _register[index+3],
+           _register[index+4], _register[index+5],
+           _register[index+6], _register[index+7]);
+}
+
 static void statement()
 {
    int			 index = iselect;
@@ -144,13 +154,16 @@ static void statement()
 
    while (index < (iselect | 24))
    {
+      #if 1
+      print_register_row(index);
+      #else
       printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
               index,
               _register[index],   _register[index+1],
               _register[index+2], _register[index+3],
               _register[index+4], _register[index+5],
               _register[index+6], _register[index+7]);
-
+      #endif
       index += 8;
    }
 
@@ -418,6 +431,7 @@ int main(int argc, char *argv[])
 
 *************************************************/
 
+
 static void action(char request[])
 {
    word			 sample;
@@ -435,6 +449,31 @@ static void action(char request[])
    {
       case 's':
          flag['s'-'a'] = 1;
+         break;
+
+      case 'r':
+
+         index = iselect | 24;
+         sscanf(&request[1], "%d", &index);
+
+         while (index < 256)
+         {
+            #if 1
+            print_register_row(index);
+            #else
+            printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
+                    index,
+                    _register[index],   _register[index+1],
+                    _register[index+2], _register[index+3],
+                    _register[index+4], _register[index+5],
+                    _register[index+6], _register[index+7]);
+            #endif
+
+            index += 8;
+            fgets(request, 48, stdin);
+            if (request[0] == '.') break;
+         }
+
          break;
 
       case 'm':

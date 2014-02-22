@@ -361,6 +361,10 @@ static void outputq(int s)
    unsigned char	*ipayload;
    unsigned short	*wpayload;
 
+   char			 pbuffer[24];
+   int			 k, symbol;
+
+
    while (tag = q->preamble.flag & FRAME)
    {
       x = (q->frame[2] << 8) | q->frame[3];
@@ -380,12 +384,65 @@ static void outputq(int s)
             ipayload = q->frame + iphl;
             wpayload = (unsigned short *) ipayload;
 
-            if (flag['w'-'a'])
+            switch(q->frame[9])
             {
-               for (y = 0; y < x; y++) printf("%2.2x", q->frame[y]);
-               putchar('\n');
+               case IPPROTO_UDP:
+                  psum = wpayload[3];
+                  csum = udp_checksum(x - iphl, ipayload, q->frame + 12);
+
+		  #ifdef INTEL
+                  csum = (csum>>8)|(csum<<8);
+                  psum = (psum>>8)|(psum<<8);
+                  #endif
+
+                  printf("[%x:%x]\n", psum, csum);
+                  break;
+               case IPPROTO_TCP:
+                  psum = wpayload[8];
+                  csum = tcp_checksum(x - iphl, ipayload, q->frame + 12);
+
+                  #ifdef INTEL
+                  csum = (csum>>8)|(csum<<8);
+                  psum = (psum>>8)|(psum<<8);
+                  #endif
+
+                  printf("[%x:%x]\n", psum, csum);
+                  break;
             }
 
+            if (flag['w'-'a'])
+            {
+               y = 0;
+               k = 0;
+               pbuffer[20] = 0;
+
+               while  (y < x)
+               {
+                  if (k == 0) printf("%4.4x  ", y);
+                  symbol = (unsigned char) q->frame[y];
+                  printf("%2.2x", symbol);
+                  if (symbol < ' ') symbol = '.';
+                  if (symbol > 126) symbol = '.';
+                  pbuffer[k] = symbol;
+                  y++;
+                  k = y % 20;
+                  if (k == 0) printf("    %s\n", pbuffer); 
+               }
+
+               if (k)
+               {
+                  pbuffer[k] = 0;
+                  while (k++ < 20) printf("  ");
+                  printf("    %s\n", pbuffer); 
+               }
+                  
+               #if 0
+               for (y = 0; y < x; y++) printf("%2.2x", q->frame[y]);
+               putchar('\n');
+               #endif
+            }
+
+            #if 0
             switch(q->frame[9])
             {
                case IPPROTO_UDP:
@@ -399,6 +456,7 @@ static void outputq(int s)
                   printf("[%x:%x]\n", psum, csum);
                   break;
             }
+            #endif
 
             putchar('\n');
          }

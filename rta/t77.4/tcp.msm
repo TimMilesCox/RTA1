@@ -1315,7 +1315,13 @@ tcp_xmit
         lx      TP_HEADER
         ds      transfer:ack, x
         ab      a
+
+	$if	1
+	la, xi	8192
+	$else
         la      WINDOW
+	$endif
+
         sa      transfer:window, x
         aa      transfer:checksum, x
 
@@ -1326,9 +1332,9 @@ tcp_finalise_checksum_on_xmit
         dsr     16
         sbr     8
         jnza    tcp_finalise_checksum_on_xmit
-        la      (00FFFF)
-        xor     b
-        sa      transfer:checksum, x
+
+        xorB	(00FFFF)
+        sb      transfer:checksum, x
 
         lx      1, sp		. the descriptor
 
@@ -1855,6 +1861,11 @@ BITS	$equ	TPORTCHAIN(1, 1)
 	$return	31**((BITS/*15)--(BITS/*10)--(BITS/*5)--(BITS))
 	$end
 
+tcp_hashremote
+	dsr	8
+	sbr	8
+	xor	b
+
 tcp_hashlocal
 	dsr	10	.		 6 bits	15..10
 	sbr	14	.	--	10 bits	9..0
@@ -1864,25 +1875,6 @@ tcp_hashlocal
 	xor	b
 	fret	0
 
-THOSTCHAIN* $func
-BITS	$equ	THOSTCHAIN(1, 1)
-	$return	31**((BITS/*30)--(BITS/*25)--(BITS/*20)--;
-		(BITS/*15)--(BITS/*10)--(BITS/*5)--(BITS))
-	$end
-
-tcp_hashremote
-	dsr	15-8	.	17 bits up 15 down
-	sbr	9	.	
-	xor	b	.	31..15[17]--14..0[15]
-	dsr	15
-	sbr	9
-	xor	b
-	sbr	5
-	xor	b
-	sbr	5
-	xor	b
-	and, xi	31	. 31..30--(29..25--14..10)--(24..20--9..5)--(19..15--4..0)
-	fret	0
 	
 tcp_xdisco		. vector is xdisco
 			. low level connection close

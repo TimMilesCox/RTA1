@@ -275,25 +275,16 @@ tcp_add_words
 tcp_release
 
 	qpush	x
+					. segments accumulate on principle
+	la	TP_HEADER		. so read the segment format word
+	lb	SOCKET_CALL_FLAGS	. as it NOW IS
+	lk	(TCP_HL)		. force the longword count
+	mlb	transfer:hl_code, a	. as it FIRST WAS
+	sb	transfer:hl_code, a	. write header flags as they NOW ARE
+	andB,xi	TCP_FLAGS		. add header flags to the checksum
+	ab	transfer:checksum, a
 
-	lb	TP_HEADER
-	jza	tcp_nopushupdate		. TCP_PSH from SOCKET_CALL_FLAGS
-						. is still in a
-
-	lr	transfer:hl_code, b
-						. we need to know if it turned on
-	xor	r				. after the segment was started
-	and, xi	TCP_PSH
-	jza	tcp_nopushupdate		. it hasn't changed
-
-	or	r				. is PSH the reason why we are here?
-	sa	transfer:hl_code, b
-	and, xi	TCP_PSH				. if PSH was on and is, add 0 to checksum
-						. if PSH was not but is, add PSH to checksum
-						. if PSH is not, you did not get here
-tcp_nopushupdate
-	aa	transfer:checksum, b		. add nothing or PSH to checksum
-	lr	a				. which we want to read anyway
+	lr	b
 
 	lb	AP_DATA				. find the header length
 	anb	TP_HEADER			. again
@@ -307,6 +298,7 @@ tcp_nopushupdate
 
 	popA	r
 	sr	transfer:checksum, a
+
 	pop	b				. retrieve the payload length
 	la, xi	0
 	dsl	16
@@ -322,7 +314,8 @@ tcp_add_segment
 	push	b
 	lr	MSS
 	la	SOCKET_CALL_FLAGS
-	lcal	tcp_startbuffer
+	and	(TCP_HL)		. dont get the flags into the checksum
+	lcal	tcp_startbuffer		. yet
 	j	tcp_add_nosegment
 	lcal	tcp_write_txq
 	lr, xi	0
