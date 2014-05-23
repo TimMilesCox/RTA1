@@ -153,52 +153,90 @@ Floating point numbers do not autosize.
 They are four words.
 
 <p>
-Suffixes can can also be used to make floating point numbers
-another size, but the only usable size different from 96 bits
-for an RTA1 floating constant is 48 bits or two words
+The two-word suffix may be used to assemble a 48-bit
+compressed floating constant which RTA1 can
+expand to four words at the internal stack top with the
+<b>floating push and expand</b> instruction <b>fpx</b>
 
 <p>
-This produces a compressed floating constant which RTA1 can
-expand to four words at the internal stack top with the
-<b>floating push and expand</b> instruction. RTA1 computes
-96-bit floating-point but can store in a 48-bit floating
-format if that has enough range for the value
+RTA1 computes 96-bit floating-point but the <b>floating pop and pack</b>
+instruction <b>fpp</b> can store the number in a 48-bit
+floating format if that has enough range for its value
 <pre>
 
-:$(00):000040:000102 
-mx -ln
-MASMX 7r2
+	$ masmx -ln
+MASMX 7r3
 0/-INPUT>>
 
-        $list   0
-        $include        freeware/RTA1/rta/def/rta.def
-        $list
+	$list		0
+	$include	freeware/RTA1/rta/def/rta.def
+	$list
 
 $(0:64)
 
-        fpx             (4.096:d*+200)
+	fpx		(4.096:d*+200)
+	fa		0, sp			. use the expanded number
 
-	$do	        $<256,$(0:256)
+	qs		0, sp
+	fpp		compressed_storage	. compress the 4-word result
+	
+	$do		$<256,$(0:256)
+
+$(3:03000)
+compressed_storage $res	2
 	$end
   :                            1 
-  :                            428         $list
-  :                            429 
-  :                            430 $(0:64)
-  :                            431 
-00:000040 5F0100              +432         fpx             (4.096:d*+200)
-  :                            433 
-  :                            434  $do  $<256,$(0:256)
-  :                            435  $end
+  :                            429  $list
+  :                            430 
+  :                            431 $(0:64)
+  :                            432 
+00:000040 5F0100              +433  fpx  (4.096:d*+200)
+00:000041 67F000              +434  fa  0, sp   . use the expanded number
+  :                            435 
+00:000042 47F000              +436  qs  0, sp
+00:000043 573000              +437  fpp  compressed_storage . compress the 4-word result
+  :                            438  
+  :                            439  $do  $<256,$(0:256)
+  :                            440 
+  :                            441 $(3:03000)
+  :                            442 compressed_storage $res 2
+  :                            443  $end
 00:000100+69BAB3C2FDDF
-:$(00):000040:000102 
+:$(00):000040:000102 :$(03):003000:003002 
 
 
 </pre>
 
+48-bit compressed floating format has only 11 exponent bits, so its range difference
+from 96-bit compute-format is a much greater difference that a difference in mantissa
+precision
+<pre>
+
+	47 46        36 35                                      0
+	__________________________________________________________
+	|s|xxxxx xxxxxx|mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm|
+	|_|____________|_________________________________________|________________________________________________________
+	|s|xxxxx xxxxxx xxxxxx xxxxxx|mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm mmmmmm|
+	|_|__________________________|___________________________________________________________________________________|
+	95 94                      72 71                                                                                0
+
+</pre>
+
+<p>
+RTA1 two- and four-word burst reads and writes are at any word address
+
+<p>
+For generating number constants for external exchange
+in non-RTA sizes and formats see the discussion in
+<b>Appendix-C: Floating Numbers in External Formats</b>
+
+
+
+
 <h2>Literals</h2>
 
-That example also shows an automatic literal. The two-word
-floating operand of the <b>fpx</b> instruction is assembled
+The floating-point assembly example also shows an automatic literal.
+The two-word floating operand of the <b>fpx</b> instruction is assembled
 at address 256, beyond the addresses of the RTA1 registers
 
 <p>
@@ -494,15 +532,122 @@ binary in the Text-Encoded-Object format *.txo
 See <b>Appendix B: masmx Linking for RTA1</b>
 
 
-<h2>Appendix A: Giant Structures in Memory</b>
+<h2>Appendix A: Giant Structures in Memory</h2>
 
 <h2>Appendix B: masmx Linking for RTA1</h2>
 
+<h2>Appendix C: Floating Numbers in External Formats</h2>
+
+
+masmx can also generate floating numbers in single-word, triple-word, five-word,
+six-word and eight-word, but RTA1 hardware only uses quad-word for computing
+and double-word as a packed format
+
+<p>
+One reason for assembling floating constants in sizes which RTA1
+instruction processor does not use, but nevertheless in the
+RTA1 simple-fraction / midpoint / 1s-complement format, might be
+future developments of external graphic or array hardware
+
+<p>
+masmx progressive repeat <b>$do</b> assembly may make an important
+contribution to ROM floating-constant arrays for external hardware
+
+<p>
+Here for example is an assembly of a list of 24-bit floating constants,
+intended for some hardware which is not an RTA1 instruction processor
 <pre>
 
+$ masmx -ln
+MASMX 7r3
+0/-INPUT>>
+variation	$do	6,	+	1.5s*+19-variation
+		$end
+00:000000 7DA689              +1 variation $do 6, + 1.5s*+19-variation
+00:000001 7A853A              +1 
+00:000002 76D52A              +1 
+00:000003 73AA88              +1 
+00:000004 70886D              +1 
+00:000005 6CDA48              +1 
+  :                            2   $end
+:$(00):000000:000006 
 
 
 </pre>
+
+and here a list of 192-bit floating constants
+
+<pre>
+
+$ masmx -ln
+MASMX 7r3
+0/-INPUT>>
+explosion_force	$do	5,	+	1.75o*+200000*explosion_force
+		$end
+00:000000 4A2343AC02108077EA4B351D50490F9155467C8BB63FC339
+                              +1 explosion_force $do 5, + 1.75o*+200000*explosion_force
+00:000008 544685841574CA296129591B86AE598F504C3310DC4CE197
+                              +1 
+00:000010 5E69C6CADA3E0E8C111FCC4739971A503FAA6C18027D085A
+                              +1 
+00:000018 688D089BC4E08B14D8BACDD7FF439E89453D0E2D2EA5677B
+                              +1 
+00:000020 72B049EF3A5C718A5B04E5FFEF32865C1F3C8CE1D5CABDC1
+                              +1 
+  :                            2   $end
+:$(00):000000:000028 
+
+
+</pre>
+
+<p>
+Non-RTA sized numbers can be assembled especially for external hardware
+which is congruent the RTA1 simple-fraction floating layout
+
+<p>
+The default characteristic sizes (size of field containing the sign bit and
+the mid-point exponent) are
+<pre>
+
+	$characteristic,24	8	. 1-word float has 8-bit characteristic and 16-bit mantissa
+	$characteristic,72	24	. 3-word float has 24-bit characteristic and 48-bit mantissa
+	$characteristic,120	24	. 5-word float has 24-bit characteristic and 96-bit mantissa
+	$characteristic,144	24	. 6-word float has 24-bit characteristic and 120-bit mantissa
+	$characteristic,192	24	. 8-word float has 24-bit characteristic and 168-bit mantissa
+
+</pre>
+<p>
+RTA1 instruction processor uses 96-bit and 48-bit floating formats
+<p>
+48-bit floating constants may not have a characteristic field size
+different from the default 12 bits for RTA1 floating processing
+
+<p>
+96-bit floating constants may not have a characteristic field size
+different from the default 24 bits for RTA1 floating processing
+
+<p>
+Few non-RTA instruction processors have the RTA1
+simple fraction / midpoint / 1s-complement floating scheme
+
+<p>
+This manual is about masmx for RTA1 and not about constant assembly
+for machines with different architecture. masmx documentation
+discusses in full IEEE754 floating constant generation, but chiefly
+in context of assembly target architectures which use IEEE754
+
+<p>
+It's readily foreseen that native RTA1 96-bit and 48-bit numbers be
+translated dynamically to and from XDR formats
+
+<p>
+However XDR and non-RTA1 machines can only represent a microscopic
+part of RTA1 floating range. The exchange format for large numbers is
+ASCII edit string
+
+
+
+
 
 _____________________________________________________________________
 <pre>
