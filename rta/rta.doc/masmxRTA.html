@@ -80,6 +80,19 @@ beyond the address space. RTA1 executable space is larger
 than the address space
 
 <p>
+masmx syntax element defaults are also
+correct for RTA1
+<pre>
+
+	$lterm			'.'
+	$sterm			':'
+	$cont_char		';'			
+
+</pre>
+
+
+
+<p>
 To change the data code see the main documentation of masmx
 
 
@@ -87,7 +100,7 @@ To change the data code see the main documentation of masmx
 <h2>Numbers</h2>
 
 <p>
-Number constants have the default masmx syntax
+Number constants have the default masmx syntax. Leading 0 means hex
 <pre>
 
 $(3:03000)
@@ -149,6 +162,15 @@ The size suffixes are :s (one word) :d (two words) :t (three words)
 :q (four words) :p (five words) :h (six words) :o (eight words)
 
 <p>
+:d and :l are synonymous. The size suffix does not always need a colon
+but it is never wrong to type the colon. The size suffix can equally be
+upper or lower case, whether the assembly is case-sensitive or not
+
+<p>
+A decimal point or the exponent operators <b>*+ *-</b> make a number
+floating-point
+
+<p>
 Floating point numbers do not autosize.
 They are four words.
 
@@ -174,12 +196,12 @@ MASMX 7r3
 
 $(0:64)
 
-	fpx		(4.096:d*+200)
+	fpx		(4.096:d*+200)		. this instruction loads the internal stack from storage
 	fa		0, sp			. use the expanded number
 
 	qs		0, sp
 	fpp		compressed_storage	. compress the 4-word result
-	
+						. this instruction pops the internal stack to storage	
 	$do		$<256,$(0:256)
 
 $(3:03000)
@@ -208,7 +230,7 @@ compressed_storage $res	2
 </pre>
 
 48-bit compressed floating format has only 11 exponent bits, so its range difference
-from 96-bit compute-format is a much greater difference that a difference in mantissa
+from 96-bit compute-format is a larger difference that a difference in mantissa
 precision
 <pre>
 
@@ -226,9 +248,13 @@ precision
 RTA1 two- and four-word burst reads and writes are at any word address
 
 <p>
-For generating number constants for external exchange
-in non-RTA sizes and formats see the discussion in
-<b>Appendix-C: Floating Numbers in External Formats</b>
+It's foreseen that for network transfer native RTA1 96-bit and 48-bit numbers be
+translated dynamically to and from XDR formats
+
+<p>
+However XDR and non-RTA1 machines can only represent a microscopic
+part of RTA1 floating range. The exchange format for large numbers is
+ASCII edit string
 
 
 
@@ -336,7 +362,185 @@ Note: strings.msm Line 12: trailing zero bits in last data word of string
 String padding is zero with option <b>-c</b> or <b>-z</b> and space
 with neither or both <b>-cz</b>
 
-<h2>Constructing Banks and Address Windows</h2>
+<h2>$form Structures</h2>
+
+Directive <b>$form</b> types structures up to 192 bits in size
+
+
+<h2>Location Counters, Load Images, Banks and Address Windows</h2>
+
+smaragd7 kernel may be embedded in a ROM system image including
+applications, may be in a ROM which will load applications, or
+may itself be loaded by a boot ROM
+
+<h3>Location Counters</h3>
+
+Location counters correspond to program sections. There are 72 location counters.
+Their usage convention is
+
+<p>
+$(0) contains instruction code in bank B0 and a few constants which are locally visible only
+
+<p>
+Simplest assemblies have one B0 bank starting at program-visible address zero
+<pre>
+
+$(0)
+name1	$vector	entry1
+name2	$vector entry2
+	$do	8-$,	fret	0	. unused vectors
+
+entry1
+	.
+	.
+
+</pre>
+<p>
+In a ROM system image, B0 load address is preassigned at image construction
+<pre>
+
+$(0::B0_LOAD_ADDRESS)
+
+
+</pre>
+<p>
+If the application contains several instruction banks, $(0) declares all of them at
+different load addresses. Their program-visible addresses are all based at address zero
+<pre>
+
+
+$(0:0:MY_BANK1_LOAD_ADDRESS)
+	.
+	.
+	.
+$(0:0:MY_BANK2_LOAD_ADDRESS)
+	.
+	.
+	.
+
+
+</pre>
+Many B0-banks can't be coded interleaved, just one after the other, in one assembly or
+several linked assemblies. Each separate B0 has its own literal table
+
+<p>
+$(1) contains private data in bank B1 starting at program-visible address 4096
+<pre>
+
+$(1:01000)
+
+</pre>
+smaragd7 kernel assigns at least one 4096 B1 bank at thread start, but does not place
+any values in it. The application may assemble B1 at a read-only load-address in the
+ROM system image, and copy the initial values on startup. In this example, part of B0
+is a constant pool for initializing B1
+<pre>
+
+$ masmx aqt -ln
+MASMX 7r3
+3/aqt.msm
+*EOF*
+  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            2: 	$include	freeware/RTA1/rta/language/stack.def
+  :                            3 
+  :                            4 
+  :                            5 B0_LOAD_ADDRESS $equ	30*4096
+  :                            6 
+  :                            7 $(0::B0_LOAD_ADDRESS)
+  :                            8 
+  :                            9 $(1:01000:B0_LOAD_ADDRESS+3072)
+01:001000 000063              +10 one	+	99
+01:001001 000064              +11 two	+	100
+01:001002 616263              +12 three	"abc"
+  :                            13 
+  :                            14 $(0)
+00:000000 B60040              +15 entry1*	$vector	fireup
+  :                            18 	$list
+  :                            19 
+00:000040 551000              +20 fireup	lx, xi	one
+00:000041 5D0C00              +21 	ly, xi	3072
+00:000042 4500BF              +22 	lr, xi	768/4-1
+  :                            23 
+  :                            24 fireup_quad
+00:000043 8FB000              +25 	qpush	0, y
+00:000044 87A000              +26 	qpop	0, x
+00:000045 850004              +27 	ax, xi	4
+00:000046 8D0004              +28 	ay, xi	4
+00:000047 1E0043              +29 	jdr	fireup_quad
+  :                            30 
+  :                            31 	.
+  :                            32 	.
+  :                            33 
+*EOF*
+:$(00):000000:000048 :$(01):001000:001003 
+
+</pre>
+
+Assembling again with -d option lists the load addresses, which are not the
+program-visible addresses
+<pre>
+
+$ masmx aqt -lnd
+MASMX 7r3
+3/aqt.msm
+*EOF*
+  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            2: 	$include	freeware/RTA1/rta/language/stack.def
+  :                            3 
+  :                            4 
+  :                            5 B0_LOAD_ADDRESS $equ	30*4096
+  :                            6 
+  :                            7 $(0::B0_LOAD_ADDRESS)
+  :                            8 
+  :                            9 $(1:01000:B0_LOAD_ADDRESS+3072)
+01:01EC00 000063              +10 one	+	99
+01:01EC01 000064              +11 two	+	100
+01:01EC02 616263              +12 three	"abc"
+  :                            13 
+  :                            14 $(0)
+00:01E000 B60040              +15 entry1*	$vector	fireup
+  :                            18 	$list
+  :                            19 
+00:01E040 551000              +20 fireup	lx, xi	one
+00:01E041 5D0C00              +21 	ly, xi	3072
+00:01E042 4500BF              +22 	lr, xi	768/4-1
+  :                            23 
+  :                            24 fireup_quad
+00:01E043 8FB000              +25 	qpush	0, y
+00:01E044 87A000              +26 	qpop	0, x
+00:01E045 850004              +27 	ax, xi	4
+00:01E046 8D0004              +28 	ay, xi	4
+00:01E047 1E0043              +29 	jdr	fireup_quad
+  :                            30 
+  :                            31 	.
+  :                            32 	.
+  :                            33 
+*EOF*
+:$(00):000000:000048 :$(01):001000:001003 
+
+
+</pre>
+$(2) contains the vector bank. smaragd7 constructs the 4096-word vector-bank on
+process launch at program-visible address 8192 = 02000 hex, based as bank B2
+
+<p>
+$(2) is declared by including vector.def. It is common to the whole process and
+contains elements which are shared between all threads. These include all handle
+descriptors and pointers to all initial banks and entry points of this process.
+
+<p>
+Process RAM bank addresses are not known until the kernel stores their pointer
+in the vector bank. Dynamic load programs also know their own B0 addresses from the
+vector bank, which is necessary for multi-banked programs
+
+
+<h3>ROM Total System Image</h3>
+
+Total system images are simplest to construct, because all address
+resolution is complete in the image construction
+
+
+<h3>System with Independent Applications Load</h3>
 
 A load area is chosen at load time for the program or shared instruction
 bank
@@ -535,116 +739,6 @@ See <b>Appendix B: masmx Linking for RTA1</b>
 <h2>Appendix A: Giant Structures in Memory</h2>
 
 <h2>Appendix B: masmx Linking for RTA1</h2>
-
-<h2>Appendix C: Floating Numbers in External Formats</h2>
-
-
-masmx can also generate floating numbers in single-word, triple-word, five-word,
-six-word and eight-word, but RTA1 hardware only uses quad-word for computing
-and double-word as a packed format
-
-<p>
-One reason for assembling floating constants in sizes which RTA1
-instruction processor does not use, but nevertheless in the
-RTA1 simple-fraction / midpoint / 1s-complement format, might be
-future developments of external graphic or array hardware
-
-<p>
-masmx progressive repeat <b>$do</b> assembly may make an important
-contribution to ROM floating-constant arrays for external hardware
-
-<p>
-Here for example is an assembly of a list of 24-bit floating constants,
-intended for some hardware which is not an RTA1 instruction processor
-<pre>
-
-$ masmx -ln
-MASMX 7r3
-0/-INPUT>>
-variation	$do	6,	+	1.5s*+19-variation
-		$end
-00:000000 7DA689              +1 variation $do 6, + 1.5s*+19-variation
-00:000001 7A853A              +1 
-00:000002 76D52A              +1 
-00:000003 73AA88              +1 
-00:000004 70886D              +1 
-00:000005 6CDA48              +1 
-  :                            2   $end
-:$(00):000000:000006 
-
-
-</pre>
-
-and here a list of 192-bit floating constants
-
-<pre>
-
-$ masmx -ln
-MASMX 7r3
-0/-INPUT>>
-explosion_force	$do	5,	+	1.75o*+200000*explosion_force
-		$end
-00:000000 4A2343AC02108077EA4B351D50490F9155467C8BB63FC339
-                              +1 explosion_force $do 5, + 1.75o*+200000*explosion_force
-00:000008 544685841574CA296129591B86AE598F504C3310DC4CE197
-                              +1 
-00:000010 5E69C6CADA3E0E8C111FCC4739971A503FAA6C18027D085A
-                              +1 
-00:000018 688D089BC4E08B14D8BACDD7FF439E89453D0E2D2EA5677B
-                              +1 
-00:000020 72B049EF3A5C718A5B04E5FFEF32865C1F3C8CE1D5CABDC1
-                              +1 
-  :                            2   $end
-:$(00):000000:000028 
-
-
-</pre>
-
-<p>
-Non-RTA sized numbers can be assembled especially for external hardware
-which is congruent the RTA1 simple-fraction floating layout
-
-<p>
-The default characteristic sizes (size of field containing the sign bit and
-the mid-point exponent) are
-<pre>
-
-	$characteristic,24	8	. 1-word float has 8-bit characteristic and 16-bit mantissa
-	$characteristic,72	24	. 3-word float has 24-bit characteristic and 48-bit mantissa
-	$characteristic,120	24	. 5-word float has 24-bit characteristic and 96-bit mantissa
-	$characteristic,144	24	. 6-word float has 24-bit characteristic and 120-bit mantissa
-	$characteristic,192	24	. 8-word float has 24-bit characteristic and 168-bit mantissa
-
-</pre>
-<p>
-RTA1 instruction processor uses 96-bit and 48-bit floating formats
-<p>
-48-bit floating constants may not have a characteristic field size
-different from the default 12 bits for RTA1 floating processing
-
-<p>
-96-bit floating constants may not have a characteristic field size
-different from the default 24 bits for RTA1 floating processing
-
-<p>
-Few non-RTA instruction processors have the RTA1
-simple fraction / midpoint / 1s-complement floating scheme
-
-<p>
-This manual is about masmx for RTA1 and not about constant assembly
-for machines non-congruent with the 24-bit word and the simple-fraction
-floating architecture. masmx Meta-Assembler documentation
-discusses in full IEEE754 floating constant generation, but chiefly
-in context of assembly target architectures which use IEEE754
-
-<p>
-It's readily foreseen that native RTA1 96-bit and 48-bit numbers be
-translated dynamically to and from XDR formats
-
-<p>
-However XDR and non-RTA1 machines can only represent a microscopic
-part of RTA1 floating range. The exchange format for large numbers is
-ASCII edit string
 
 
 
