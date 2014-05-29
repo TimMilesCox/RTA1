@@ -53,6 +53,7 @@
 #include <string.h>
 #include <errno.h>
 #include "../engine.rta/emulate.h"
+#include "../include.rta/argue.h"
 
 #define MYGETS
 #define	LF	'\n'
@@ -63,7 +64,7 @@
 #define UPLINKS	83
 #define DATA 120
 
-#define	PAGE		262144
+#define	PAGE		4096
 #define	GRANULE		64
 #define	DIRECTORY_BLOCK	1024
 #define	LEEWAY		GRANULE
@@ -264,6 +265,59 @@ static int copy(char *to, char *from)
    return (distance + 2) / 3;
 }
 
+static int outputw(int f, unsigned char *data, int words)
+{
+   unsigned char image[8];
+
+   int		 bytes = 0,
+		 written;
+
+   int		 across = 8;
+
+   if (flag['x'-'a'])
+   {
+      while (words--)
+      {
+         sprintf(image, "%2.2X", *data++);
+         sprintf(image + 2, "%2.2X", *data++);
+         sprintf(image + 4, "%2.2X", *data++);
+         image[6] = ' ';
+	 across--;
+
+         if (across == 0)
+         {
+            image[6] = '\n';
+            across = 8;
+         }
+
+         if (words == 0) image[6] = '\n';
+
+         written = write(f, image, 7);
+
+         if (written < 0)
+         {
+            printf("write error %d\n", errno);
+            return written;
+         }
+
+         bytes += written;
+      }
+
+      return bytes;
+   }
+
+   return write(f, data, words * 3);
+}
+
+static void output_label(int f, unsigned char *name, long long position)
+{
+   unsigned char	 image[272];
+   int			 bytes = sprintf(image, "\n+%s:$20:%6.6X\n",name,position);
+   int			 written = write(f, image, bytes);
+
+   if (written < 0) printf("label write error %d\n", errno);
+}
+
 static int interpret(tree *actual, unsigned *displacement, long long dstart_granule, forward *up1)
 {
    static dmsw		 restart_offset = { 0, 0, 0, 0, 0, 16 } ;
@@ -339,7 +393,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       *displacement = slab + new->ex.rfw.t3 + 1;
 
       dstart_position = lseek(f, (off_t) 0, SEEK_CUR);
-      status = write(f, &label2, DIRECTORY_BLOCK * 3);
+      status = outputw(f, &label2, DIRECTORY_BLOCK);
 
       labelv = label2;
       labelv.label1.offset.t3 = slab;
@@ -403,7 +457,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       #endif
 
       lseek(f, (off_t) dstart_position, SEEK_SET);
-      write(f, &labelv, DIRECTORY_BLOCK * 3);
+      outputw(f, &labelv, DIRECTORY_BLOCK);
       lseek(f, (off_t) 0, SEEK_END);
    }
    else if (strcmp(command, "file")   == 0)
@@ -418,6 +472,8 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
          if (f2 < 0) printf("input file E %d\n", errno);
          else
          {
+            if (flag['x'-'a']) output_label(f, argument, dstart_granule * 64
+							+ *displacement);
             p64 = lseek(f2, (off_t) 0, SEEK_END);
             if ((long long) p64 < 0) printf("end E %d\n", errno);
             else
@@ -578,7 +634,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                          else break;
                       }
                          
-                      status = write(f, fbuffer, GRANULE * sizeof(msw));
+                      status = outputw(f, fbuffer, GRANULE);
                   }
 
                   close(f2);
@@ -607,15 +663,16 @@ int main(int argc, char *argv[])
    int			 status,
                          net_granules;
 
+   argue(argc, argv);
 
-   if (argc > 1)
+   if (arguments)
    {
-      f = open(argv[1], O_RDWR | O_CREAT | O_TRUNC, 0777);
+      f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC, 0777);
 
       if (f < 0) printf("file at argument 1 cannot be written %d\n", errno);
       else
       {
-         status = write(f, &label1, 1024 * 3);
+         status = outputw(f, &label1, 1024);
          if (status < 0) printf("write error %d\n", errno);
 
          for (;;)
@@ -650,7 +707,7 @@ int main(int argc, char *argv[])
       label1.label3.ex.granule.octet[0] = gpointer >> 40;
 
       lseek(f, (off_t) 0, SEEK_SET);
-      status = write(f, &label1, 1024 * 3);
+      status = outputw(f, &label1, 1024);
       if (status < 0) printf("write error %d\n", errno);      
 
       close (f);
