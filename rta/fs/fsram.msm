@@ -1,0 +1,178 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+fsram_direct		. set caller state pointing to the first extent descriptor
+			. plus an absolute word pointer to the start of first
+			. extent data
+
+		$head_far	 params(fsram_start_bank,	int	;
+					fsram_direct_name,	int	;
+					fspp,			int)
+
+			lx	fspp
+			la	fsram_start_bank
+			sa	fspax:bank, x
+
+			la	fsram_direct_name
+			dsr	12
+			sbr	12
+			orB	B_FS1,,xi
+			rbr	12
+			aa	fsram_start_bank
+			ds	fspax:extent, x
+
+			sabr	B_FS1
+			dl	fsys:e:granule, b
+			dsl	12
+			aa	fsram_start_bank
+			dsr	12
+			
+			ds	fspax:absolute_pointer, x
+
+			fret	0
+
+
+fsram_words		$head_far	 params(fsp,			int	;
+						buffer,			int	;
+						words_requested,	int)	;
+										;
+					scalars(absolute_pointer,	long)
+
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fsram_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsp
+			dl	fspax:absolute_pointer
+			ds	absolute_pointer
+			dl	fspax:extent
+			z	8
+
+fsram_rebase
+			sabr	B_FS1
+			la	fsys:e:granules, b
+			ly	b
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	12
+			aa	fspax:bank
+			dsr	6		. absolute limit pointer
+			dan	absolute_pointer
+			jna	fsram_anomaly1
+			jdz	fsram_next_extent?
+			la	words_requested
+			ana	b
+			jc	fsram_transferinb
+			lb	words_requested
+
+fsram_transferinb	la	words_requested
+			ana	b
+			sa	words_requested
+
+			sb	7
+			la, xi	0
+			
+			da	absolute_pointer
+			ds	fspax:absolute_pointer
+
+			dl	absolute_pointer
+
+			dsl	12
+			orB	B_FS1,,xi
+			rbr	12
+			sabr	B_FS1
+
+			ly	b
+			la	7
+
+			lb	8
+			ab	a
+			sb	8
+
+			lx	buffer
+			
+			lcal	fs_xfer
+
+fsram_next_extent?	tz	words_requested
+			j	fsram_next_extent!
+fsram_exit		la	8
+			fret	0
+
+fsram_next_extent!	lx	fsp
+			dl	fspax:extent
+			sabr	B_FS1
+			
+			ly	b
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fsram_exit
+
+			dsl	6		. extent offset to word offset
+			da	6
+
+			dsl	12
+			orB, xi	B_FS1
+			rbr	12
+
+			aa	fspax:bank
+			ds	fspax:extent
+
+			j	fsram_rebase
+
+fsram_anomaly1		la, xi	-1
+			fret	0
