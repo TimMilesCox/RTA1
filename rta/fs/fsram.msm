@@ -66,13 +66,12 @@ fsram_direct		. set caller state pointing to the first extent descriptor
 
 			sabr	B_FS1
 			dl	fsys:e:granule, b
-			dsl	12
-			aa	fsram_start_bank
-			dsr	12
-			
+
+			dsl	6		. word offset pointer
+						. within  micro file system
 			ds	fspax:absolute_pointer, x
 
-			fret	0
+			$ret	0
 
 
 fsram_words		$head_far	 params(fsp,			int	;
@@ -100,22 +99,22 @@ fsram_words		$head_far	 params(fsp,			int	;
 			dl	fspax:extent
 			z	8
 
-fsram_rebase
+
 			sabr	B_FS1
+
 			la	fsys:e:granules, b
 			ly	b
 			dsr	24
 			da	fsys:e:granule, y
-			dsl	12
-			aa	fspax:bank
-			dsr	6		. absolute limit pointer
-			dan	absolute_pointer
-			jna	fsram_anomaly1
+			dsl	6		. word pointer extent + 1
+						. = relative limit pointer
+			dan	absolute_pointer . remaining words in extent
+fsram_repoint		jna	fsram_anomaly1
 			jdz	fsram_next_extent?
 			la	words_requested
 			ana	b
-			jc	fsram_transferinb
-			lb	words_requested
+			jc	fsram_transferinb . transfer remaining words in extent 
+			lb	words_requested	. transfer remaining words in request
 
 fsram_transferinb	la	words_requested
 			ana	b
@@ -132,6 +131,7 @@ fsram_transferinb	la	words_requested
 			dsl	12
 			orB	B_FS1,,xi
 			rbr	12
+			ab	fspax:bank
 			sabr	B_FS1
 
 			ly	b
@@ -147,8 +147,8 @@ fsram_transferinb	la	words_requested
 
 fsram_next_extent?	tz	words_requested
 			j	fsram_next_extent!
-fsram_exit		la	8
-			fret	0
+			j	fsram_exit
+
 
 fsram_next_extent!	lx	fsp
 			dl	fspax:extent
@@ -172,7 +172,18 @@ fsram_next_extent!	lx	fsp
 			aa	fspax:bank
 			ds	fspax:extent
 
-			j	fsram_rebase
+			sabr	B_FS1		. now get the new data word pointer
+			ly	b
+			dl	fsys:e:granule, b . in the micro file_system
+			dsl	6
+			ds	absolute_pointer
+			la	fsys:e:granule, y
+			dsr	24
+			dsl	6		. and the remaing words in the
+						. new extent = all of them
+			j	fsram_repoint
 
 fsram_anomaly1		la, xi	-1
-			fret	0
+			j	fsram_exit1
+fsram_exit		la	8		. result = data words transferred
+fsram_exit1		$ret	0
