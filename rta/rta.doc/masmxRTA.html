@@ -519,6 +519,8 @@ BLUE240		$equ		240
   :                            11 	$end
 :$(00):000000:000005 
 
+
+</pre>
 <h2>Instructions and Operands</h2>
 
 All RTA1 instructions have an operand address. The operand may be in storage or a register. Some
@@ -580,7 +582,7 @@ and a 12-bit displacement field
 
 
 </pre>
-If xxx is one or two, the address is indirect. Its pointer is in the first 8192 words
+If xxx is zero or one, the address is indirect. Its pointer is in the first 8192 words
 in the address space. These are
 <blockquote>
 
@@ -592,19 +594,169 @@ in the address space. These are
 </blockquote>
 <pre>
 		$(1:01000)
-		redirection	$res	0
+		redirection	$res	1
 				
 		$(0)
-				la	*redirection
+				lr	*redirection
 				ql	*(ADDRESS_7_MEGAWORD)
 				
 				tp	*11
 
 </pre>
 
+If xxx is 2..7 then index register [x y a b fp sp] is added to to the unsigned
+12-bit displacement to form the effective address
+<pre>
+
+		  23                                          0			  23                                          0
+		_________________________________________________		_________________________________________________
+		|		effective address		|<----- + ------|		[ x y a b fp sp ]		|
+		|_______________________________________________|		|_______________________________________________|
+				 	^			^
+					|			|
+					|	    +		|
+					|			|
+		  23      18    15  14    11                  0
+		_________________________________________________
+		| fffff | jjj | 1 | xxx | 12-bit displacement->	|
+		|_______|_____|___|_____|_______________________|
+
+
+
+				la	64, b, i
+				ly	descriptor:dgram, fp
+
+
+
+
+</pre>
+
+<h3>Integer Instructions</h3>
 The 32 integer load / store / arithmetic / boolean instructions have as their operand a word,
 part of a storage word (half or third), the effective address as an immediate value, or a
 sign-extended immediate value in the range -32768..+32767
+
+<p>
+Integer instructions access a word and either third-words or halfwords.
+jjj = zero = operand is the storage word at ea
+
+
+				z	buffer+4
+				pop	buffer+5[,,w0]
+
+
+<p>
+PSR designator <b>half$w</b> is zero if the program accesses third-words
+and one if the program accesses halfwords. Bytes are sign-extended to 24
+bits on read and unused fields are unchanged on byte write 
+<pre>
+
+		half$w = 0							half$w = 1
+		__________							__________
+
+		  23                                          0
+		_________________________________________________
+   xxx = 001	|	t1	|////unused/////|////unused/////|
+		|_______________|____unchanged__|____unchanged__|
+
+
+				xorB, t1	indicators
+
+
+
+		  23                                          0			  23                                          0
+		_________________________________________________		_________________________________________________
+   xxx = 010	|////unused/////|	t2	|////unused/////|		|	    h1		|///unused//unchanged///|
+		|____unchanged__|_______________|____unchanged__|		|_______________________|_______________________|
+
+
+				ana		*margin,,t2					xor		crypto,b,h1
+
+
+
+
+		  23                                          0			  23                                          0
+		_________________________________________________		_________________________________________________
+   xxx = 011	|////unused/////|////unused/////|	t3	|		|///unused//unchanged///|	    h2		|
+		|____unchanged__|____unchanged__|_______________|		|_______________________|_______________________|
+
+				
+				mf		table, x, t3					ay, h2		interval
+
+
+
+</pre>
+xxx = 100 = the operand is the effective address used as an immediate
+<pre>
+
+				lb, i		4, a
+				lr		2,b,i			
+
+</pre>
+xxx = 101 = the immediate operand is the 16 bits of the address fields
+sign extended to 24 bits
+</pre>
+
+
+				ax, xi		-8
+
+
+</pre>
+The $equf directive can represent all the subfields of an operand with one name
+<pre>
+
+		header_byte	$equf		directory, y, t1
+		HARD_LINK	$equf		'H',,xi
+
+				la		header_byte
+				anu		HARD_LINK
+</pre>
+
+The store and the test integer instructions do not take immediate operands
+the ,,i and ,,xi options of instructions sr sk sx sy sa sb z pop tz tp
+are assigned to a I/O and control instructions which take only an immediate
+operand
+
+<p>
+Integer instructions are listed here. All instructions are explained in the
+RTA1 programmable architecture specification
+<pre>
+
+	_________________________________________________________________________________________________________
+	|	mnemonic|   fffff.jjj	|			|		jjj				|	
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sr	|   00000.0xx	|  store repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sk	|   00001.0xx	|  store mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sx	|   00010.0xx	|  store x		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sy	|   00011.0xx	|  store y		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sa	|   00100.0xx	|  store a		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	sb	|   00101.0xx	|  store b		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	z	|   00110.0xx	|  zero			| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	pop	|   00111.0xx	|  pop internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	lr	|   01000.xxx	|  load repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	lk	|   01001.xxx	|  load mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	lx	|   01010.xxx	|  load x		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	ly	|   01011.xxx	|  load y		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	la	|   01100.xxx	|  load a		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	lb	|   01101.xxx	|  load b		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	tz	|   01110.0xx	|  test zero= skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	tp	|   01111.0xx	|  test positive skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+
 
 
 </pre>
