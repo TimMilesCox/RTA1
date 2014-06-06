@@ -45,6 +45,10 @@ RTA Processor Programmable Architecture Specification</a>
 <p>
 Or online to your emulated machine <b>http://172.29.7.7:8080</b> and hit the architecture specification button <b>rta</b>
 
+<p>
+This manual discusses some topics beyond writing assembly language code for RTA1. Kernel calls to support
+data segment loading are described, plus linking and code formatting utilities
+
 <h2>Settings for RTA1</h2>
 
 masmx is a target-independent meta-assembler. masmx default
@@ -101,9 +105,6 @@ correct for RTA1
 	$cont_char		';'	. line continuation sentinel
 
 </pre>
-
-
-<h2>Instructions and Operands</h2>
 
 
 
@@ -517,6 +518,94 @@ BLUE240		$equ		240
 00:000004 F1ECD5              +10 	+	7, 4, 3, 6,  6, 3, 2, 5
   :                            11 	$end
 :$(00):000000:000005 
+
+<h2>Instructions and Operands</h2>
+
+All RTA1 instructions have an operand address. The operand may be in storage or a register. Some
+instructions take an immediate operand
+
+<p>
+The registers are in the memory address space
+ 
+<p>
+Instructions have an operand type indicator jjj, an instruction code ffff and a 16-bit address field.
+Six jjj values are different operand types for 32 integer instructions and two jjj values select
+two other sets of instructions
+
+<p>
+If the jjj field is 5, the operand is 16-bit sign extended immediate
+<pre>
+
+
+				  23      18    15                            0
+				_________________________________________________
+				| fffff | 101 | &plusmn;16-bit sign extended immediate	|
+				|_______|_jjj_|_________________________________|
+
+
+				ax, xi		-20000
+				push		600,,xi
+
+
+</pre>
+Otherwise, if bit 15 is zero, the operand address is a direct address 15 bits in size
+<pre>
+
+				  23      18    15  14                        0
+				_________________________________________________
+				| fffff | jjj | 0 | 15-bit direct address----->	|
+				|_______|_____|___|_____________________________|
+
+
+
+		$(3:03000)
+		instance	$do	20000,keyvalue(instance)	+	KEYVALUE*instance**07FFFFF
+
+		$(0)
+				dl	keyvalue(19999)
+				xor	keyvalue(19997)
+				xorB	keyvalue(19998)
+
+
+
+</pre>
+If instruction bit 15 is one, the instruction has a 3 bit indirection-bank/index-register selector
+and a 12-bit displacement field
+<pre>
+
+				  23      18    15  14    11                  0
+				_________________________________________________
+				| fffff | jjj | 1 | xxx | 12-bit displacement->	|
+				|_______|_____|___|_____|_______________________|
+
+
+</pre>
+If xxx is one or two, the address is indirect. Its pointer is in the first 8192 words
+in the address space. These are
+<blockquote>
+
+	the 256 registers<br>
+	words 256..4095 of the current instruction bank B0<br><br>
+
+	the 4096 words of the current private stack bank B1 (or the TCB if PSR flag see$1 is on)
+
+</blockquote>
+<pre>
+		$(1:01000)
+		redirection	$res	0
+				
+		$(0)
+				la	*redirection
+				ql	*(ADDRESS_7_MEGAWORD)
+				
+				tp	*11
+
+</pre>
+
+The 32 integer load / store / arithmetic / boolean instructions have as their operand a word,
+part of a storage word (half or third), the effective address as an immediate value, or a
+sign-extended immediate value in the range -32768..+32767
+
 
 </pre>
 <h2>Location Counters, Load Images, Banks and Address Windows</h2>
@@ -953,7 +1042,7 @@ A very large RTA address is 48 bits in size. This accommodates the
 
 <p>
 If a large array is part of a ROM, its giant addresses are physically absolute.
-Otherwise its giant addresses must are relative to a load address. See the
+Otherwise its giant addresses are relative to a load address. See the
 section on linking and utilities
 
 <p>
