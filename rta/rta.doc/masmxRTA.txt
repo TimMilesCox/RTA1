@@ -88,7 +88,7 @@ The masmx already has these default settings. They are correct for RTA1
 code and data in all the executable space using the giant address
 
 <p>
-masmx default byte size is 8 and data code is ASCII.
+masmx default byte size is 8 bits and data code is ASCII.
 <b>$byte</b> and the data code can be changed during
 an assembly
 
@@ -189,10 +189,10 @@ $ masmx -ln
 MASMX 7r3
 0/-INPUT>>
 	+	'abcd'
-	$data_code	97:65
-	+	'abcd'++128
-	$ascii
-	$byte	12
+	$data_code	97:65	. generate 'A' when the source has 'a'
+	+	'abcd'++128	. logical OR bit 7 on
+	$ascii			. switch back to plain ASCII
+	$byte	12		. make the byte size a halfword
 	+	'abcd'
 	$end
 00:000000 000061626364        +1  + 'abcd'
@@ -598,8 +598,8 @@ in the address space. These are
 				
 		$(0)
 				lr	*redirection
-				ql	*(ADDRESS_7_MEGAWORD)
-				
+				ql	*(ADDRESS_7_MEGAWORD)	. big indirect address
+								. in 24-bit literal constant
 				tp	*11
 
 </pre>
@@ -639,16 +639,21 @@ sign-extended immediate value in the range -32768..+32767
 <p>
 Integer instructions access a word and either third-words or halfwords.
 jjj = zero = operand is the storage word at ea
+<pre>
 
 
 				z	buffer+4
-				pop	buffer+5[,,w0]
+				pop	buffer+5[,,w0]	. w0 is the default
+							. and need not be typed
 
 
+</pre>
 <p>
 PSR designator <b>half$w</b> is zero if the program accesses third-words
 and one if the program accesses halfwords. Bytes are sign-extended to 24
-bits on read and unused fields are unchanged on byte write 
+bits on read and unused fields are unchanged on byte write. Bytes are not
+read from registers or written to registers. A register is a 24-bit integer,
+including the internal stack register array 
 <pre>
 
 		half$w = 0							half$w = 1
@@ -656,7 +661,7 @@ bits on read and unused fields are unchanged on byte write
 
 		  23                                          0
 		_________________________________________________
-   xxx = 001	|	t1	|////unused/////|////unused/////|
+   jjj = 001	|	t1	|////unused/////|////unused/////|
 		|_______________|____unchanged__|____unchanged__|
 
 
@@ -666,7 +671,7 @@ bits on read and unused fields are unchanged on byte write
 
 		  23                                          0			  23                                          0
 		_________________________________________________		_________________________________________________
-   xxx = 010	|////unused/////|	t2	|////unused/////|		|	    h1		|///unused//unchanged///|
+   jjj = 010	|////unused/////|	t2	|////unused/////|		|	    h1		|///unused//unchanged///|
 		|____unchanged__|_______________|____unchanged__|		|_______________________|_______________________|
 
 
@@ -677,7 +682,7 @@ bits on read and unused fields are unchanged on byte write
 
 		  23                                          0			  23                                          0
 		_________________________________________________		_________________________________________________
-   xxx = 011	|////unused/////|////unused/////|	t3	|		|///unused//unchanged///|	    h2		|
+   jjj = 011	|////unused/////|////unused/////|	t3	|		|///unused//unchanged///|	    h2		|
 		|____unchanged__|____unchanged__|_______________|		|_______________________|_______________________|
 
 				
@@ -686,88 +691,296 @@ bits on read and unused fields are unchanged on byte write
 
 
 </pre>
-xxx = 100 = the operand is the effective address used as an immediate
+jjj = 100 = the operand is the effective address used as an immediate
 <pre>
 
 				lb, i		4, a
 				lr		2,b,i			
 
 </pre>
-xxx = 101 = the immediate operand is the 16 bits of the address fields
+jjj = 101 = the immediate operand is the 16 bits of the address fields
 sign extended to 24 bits
-</pre>
+<pre>
 
 
 				ax, xi		-8
 
 
 </pre>
-The $equf directive can represent all the subfields of an operand with one name
+The $equf directive can represent all the subfield attributes of an operand with one name
 <pre>
 
 		header_byte	$equf		directory, y, t1
 		HARD_LINK	$equf		'H',,xi
 
 				la		header_byte
-				anu		HARD_LINK
+				aa, xi		-HARD_LINK	. compare
 </pre>
 
-The store and the test integer instructions do not take immediate operands
-the ,,i and ,,xi options of instructions sr sk sx sy sa sb z pop tz tp
-are assigned to a I/O and control instructions which take only an immediate
+<h3>Integer Store Instructions</h3>
+
+The store and the test integer instructions do not take immediate operands.
+The ,,i and ,,xi options of instructions sr sk sx sy sa sb z pop tz tp
+are assigned to I/O and control instructions which take only an immediate
 operand
 
-<p>
-Integer instructions are listed here. All instructions are explained in the
-RTA1 programmable architecture specification
+The integer store instructions do not update <b>carry$</b>
+
 <pre>
 
 	_________________________________________________________________________________________________________
 	|	mnemonic|   fffff.jjj	|			|		jjj				|	
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sr	|   00000.0xx	|  store repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sr	|   00000.0jj	|  store repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sk	|   00001.0xx	|  store mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sk	|   00001.0jj	|  store mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sx	|   00010.0xx	|  store x		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sx	|   00010.0jj	|  store x		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sy	|   00011.0xx	|  store y		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sy	|   00011.0jj	|  store y		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sa	|   00100.0xx	|  store a		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sa	|   00100.0jj	|  store a		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	sb	|   00101.0xx	|  store b		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	sb	|   00101.0jj	|  store b		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	z	|   00110.0xx	|  zero			| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	z	|   00110.0jj	|  zero			| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	pop	|   00111.0xx	|  pop internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	pop	|   00111.0jj	|  pop internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	lr	|   01000.xxx	|  load repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+
+
+</pre>
+
+<h3>Integer Load Instructions</h3>
+
+The integer store instructions do not update <b>carry$</b>
+
+<pre>
+
+
+
+        _________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               jjj                             |
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	lk	|   01001.xxx	|  load mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	lr	|   01000.jjj	|  load repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	lx	|   01010.xxx	|  load x		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	lk	|   01001.jjj	|  load mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	ly	|   01011.xxx	|  load y		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	lx	|   01010.jjj	|  load x		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	la	|   01100.xxx	|  load a		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	ly	|   01011.jjj	|  load y		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	lb	|   01101.xxx	|  load b		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	la	|   01100.jjj	|  load a		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	tz	|   01110.0xx	|  test zero= skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	lb	|   01101.jjj	|  load b		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	tp	|   01111.0xx	|  test positive skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+
+
+</pre>
+
+<h3>Integer Test Instructions</h3>
+
+The integer test instructions do not update <b>carry$</b>
+
+<p>
+The operand is tested for zero or for bit 23=0. If so, the next instruction is skipped
+
+<pre>
+
+        _________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               jjj                             |
+        |_______________|_______________|_______________________|_______________________________________________|
+	|	tz	|   01110.0jj	|  test zero skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
+	|	tp	|   01111.0jj	|  test positive skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|_______________|_______________|_______________________|_______________________________________________|
 
 
 
 </pre>
-<h2>Location Counters, Load Images, Banks and Address Windows</h2>
+
+<h3>Index Register Add  Instructions</h3>
+
+The index register add instructions do not update <b>carry$</b>
+
+<pre>
+
+
+        _________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               jjj                             |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       ax      |   10000.jjj   |  x += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       ay      |   10001.jjj   |  y += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+
+
+</pre>
+
+<h3>Boolean Algebra Instructions</h3>
+
+The boolean algebra instructions do not update <b>carry$</b>
+
+<pre>
+
+
+        _________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               jjj                             |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       or      |   10010.jjj   |  a OR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       orB     |   10011.jjj   |  b OR operand ->b     | [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       and     |   10100.jjj   |  a AND operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       andB    |   10101.jjj   |  a AND operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       xor     |   10110.jjj   |  a XOR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       xorB    |   10111.jjj   |  b XOR operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+
+
+</pre>
+
+<h3>Integer Add Instructions</h3>
+
+<p>
+The single integer add instructions add the operand or its 2s complement
+to arithmetic register a or b
+
+<p>
+carry from bit 23 of the addition is stored in <b>carry$</b>.
+Carry is not inverted after negative adds. They write carry as the positive add
+of the 2s complement would write carry
+
+<pre>
+
+        _________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               jjj                             |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       aa      |   11000.jjj   |  a += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       ab      |   11001.jjj   |  b += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       ana     |   11010.jjj   |  a += 2s complement   | [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       anb     |   11011.jjj   |  b += 2s complement   | [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |_______________|_______________|_______________________|_______________________________________________|
+
+
+</pre>
+
+<h3>Multiply</h3>
+
+The integer multiply instruction mutiplies arithmetic register b
+algebraically by the operand and stores and stores the 48-bit
+product in arithmetic registers a:b
+
+<p>
+<b>carry$</b> is not updated
+
+<pre>
+
+
+</pre>
+
+<h3>Multiply Fractional</h3>
+
+Multiply Fractional instruction mutiplies arithmetic register b by the
+operand and stores and stores the 48-bit product in arithmetic registers a:b
+
+<p>
+The multiplier is treated as signed and the multiplicand is treated
+as unsigned
+
+<p>
+Multiply Fractional is used to render binary fractions integrally
+for editing and conversion, and may also be used serially to multiply
+integer multiplicands more than one word in length
+
+<p>
+<b>carry$</b> is not updated
+
+
+
+<pre>
+
+
+</pre>
+
+<h3>Divide</h3>
+
+The integer divide instruction algebraically divides the 48-bit
+dividend in arithmetic reigisters a b by the divisor. The
+remainder is stored in b. The low order 24 bits of the quotient
+are stored in a. The high-order 24 bits of the quotient are
+stored in register 6 mantissa2
+
+<p>
+<b>carry$</b> is not updated
+
+<pre>
+
+
+</pre>
+
+<h3>Push</h3>
+
+The integer at the internal stack top is stored. The internal stack
+pointer sp is incremented
+
+<p>
+If application sp is outside the range 24..127 before the operation
+the guard interrupt intervenes
+
+<b>carry$</b> is not updated
+
+<pre>
+
+
+</pre>
+
+
+<h2>Application Memory, Location Counters and Dynamic Data Segment Load</h2>
 
 <h3>Location Counters</h3>
 
-Location counters correspond to program sections. There are 72 location counters.
-Their usage convention is
+Location counters correspond to program sections. masmx has 72 location counters.
+Their RTA1 usage convention with smaragd7 kernel is
+<pre>
 
-<p>
+
+	_________________________________________________________________________________________________________________
+        |       location counter|       address window			|		purpose / address range		|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(0)            |       instruction bank B0             |[ispace]000000..007FFF/[dspace]000100..000FFF	|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(1:01000)	|       private stack bank B1		|	     data memory space 001000..001FFF	|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(2)            |       vector bank B2			|	     data memory space 002000..002FFF	|	    
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(3:03000)	|       data windows  B3..B31		|	application data space 003000..01FFFF	|
+        |_______________________|_______________________________________|___________________________or 0C0000..7FFFFF___|
+        |			|       data windows B32..B47		|	application context kernel interface	|
+        |_______________________|_______________________________________|_______________________________________________|
+        |			|       data windows B48..B63           |		kernel				|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(66::,x)	|       pointer in index register x	|
+        |_______________________|_______________________________________|
+        |       $(67::,y)	|       pointer in index register y	|
+        |_______________________|_______________________________________|
+        |       $(68::,a)	|       pointer in arithmetic register a|
+        |_______________________|_______________________________________|
+        |       $(69::,b)	|       pointer in arithmetic register b|
+        |_______________________|_______________________________________|
+        |       $(70::,fp)	|       frame at external stack pointer |
+        |_______________________|_______________________________________|
+        |       $(71::,sp)      |       frame at internal stack pointer |
+        |_______________________|_______________________________________|
+
+
+</pre>
 $(0) contains instruction code in bank B0 and a few constants which are locally visible only
 
 <p>
