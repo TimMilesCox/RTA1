@@ -1,0 +1,188 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+fsrom_direct		. set caller state pointing to the first extent descriptor
+			. plus an absolute word pointer to the start of first
+			. extent data
+
+		$head_far	 params(fspp,			int	;
+					fsrom_start_bank,	int	;
+					fsrom_direct_name,	long)
+
+			lx	fspp
+			la	fsrom_start_bank
+			sa	fspax:bank, x
+
+			dl	fsrom_direct_name	. word offset 48 bit just in case
+			dsl	12			. turn it into a long pointer
+			orB	B_FS1,,xi
+			rbr	12
+			aa	fsrom_start_bank	. add on the start pointer
+			ds	fspax:extent, x
+
+			sabr	B_FS1
+			dl	fsys:e:granule, b
+
+			dsl	6			. word offset pointer 1st extent
+							. within  micro file system
+			ds	fspax:absolute_pointer, x
+
+			$ret	0
+
+
+fsrom_words		$head_far	 params(fsp,			int	;
+						buffer,			int	;
+						words_requested,	int)	;
+										;
+					scalars(absolute_pointer,	long)
+
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fsrom_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsp
+			dl	fspax:absolute_pointer
+			ds	absolute_pointer
+			dl	fspax:extent
+			z	8			. words delivered count
+
+
+			sabr	B_FS1
+							. calculate pointer 
+			la	fsys:e:granules, b	. beyond this extent
+			ly	b
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6			. word pointer extent + 1
+							. = relative limit pointer
+			dan	absolute_pointer 	. remaining words in extent
+fsrom_repoint		jna	fsrom_anomaly1
+			jdz	fsrom_next_extent?	. you've read this extent
+			la	words_requested
+			ana	b			. subtract it from outstanding
+			jc	fsrom_transferinb	. transfer remaining words in extent 
+			lb	words_requested		. transfer remaining words in request
+
+fsrom_transferinb	la	words_requested		. subtract transfer from outstanding
+			ana	b
+			sa	words_requested
+
+			sb	7
+			la, xi	0
+			
+			da	absolute_pointer
+			ds	fspax:absolute_pointer
+
+			dl	absolute_pointer
+							. turn device-relative pointer to
+			dsl	12			. long address then to based address
+			orB	B_FS1,,xi
+			rbr	12
+			ab	fspax:bank
+			sabr	B_FS1
+
+			ly	b
+			la	7
+
+			lb	8
+			ab	a
+			sb	8
+
+			lx	buffer
+			
+			lcal	fs_xfer
+
+fsrom_next_extent?	tz	words_requested
+			j	fsrom_next_extent!
+			j	fsrom_exit
+
+
+fsrom_next_extent!	lx	fsp
+			dl	fspax:extent
+			sabr	B_FS1
+			
+			ly	b
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fsrom_exit
+
+			dsl	6		. extent offset to word offset
+			da	6
+
+			dsl	12
+			orB, xi	B_FS1
+			rbr	12
+
+			aa	fspax:bank
+			ds	fspax:extent
+
+			sabr	B_FS1		. now get the new data word pointer
+			ly	b
+			dl	fsys:e:granule, b . in the micro file_system
+			dsl	6
+			ds	absolute_pointer
+			la	fsys:e:granules, y . granules in the extent
+			dsr	24
+			dsl	6		. and the remaining words in the
+						. new extent = all of them
+			j	fsrom_repoint
+
+fsrom_anomaly1		la, xi	-1
+			j	fsrom_exit1
+fsrom_exit		la	8		. result = data words transferred
+fsrom_exit1		$ret	0
