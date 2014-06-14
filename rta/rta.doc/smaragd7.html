@@ -2047,12 +2047,218 @@ Below the POSIX-like API there are driver interfaces for NFS client,
 removable Flash memory-stick / card, and RTA1 memory array file system
 
 <p>
-The first to be implemented is RTA1 memory array file system. It is
+The first to be implemented are the RTA1 Core Resident File System
+and the RTA1 memory array file system. Both are
 accessible at a low-level interface below the POSIX-like interface
 
+<h3>5.3 RTA1 Core Resident File System</h3>
 
-<h3>5.3 RTA1 Memory Array File System</h3>
+The Core Resident File System is largely intended to be ROM-resident
+and is present in case the system has no filestore devices outside
+executable space
 
+<p>
+Many Core Resident File Systems may be linked into a load image. They
+each occupy a range of 4K-Word banks. An initial purpose of them is the
+dynamic load of the initial RAM values of process instances at launch
+
+<p>
+Where it is preferred to execute from RAM instead of ROM, all the
+parts of programs can be unpacked from Core Resident File Systems,
+but currently acceptable execution-readout performance is obtained
+from read-only memories
+
+<p>
+Files in Core Resident File Systems can be read without any directory
+search. The application assembly effectively completes a file open
+
+<p>
+Two low-level calls used to read files in Core Resident File Systems are
+<pre>
+
+	c	(fsrom_da)	file_access_block,,i		;
+				FS5_START_BANK_INDEX,,XI	;
+				(my_filename:d),,long
+
+
+	c	(fsrom_read)	file_access_block,,i		;
+				buffer,,i			;
+				words_requested,,xi
+
+	jna	problem
+	jza	complete
+
+
+</pre>
+
+The filename used at the intialisation call is an assembly label exported
+at the construction of the file system image. The utility 4kformat is executed
+with -x option causing the file system to be written as a linkable masmx .txo
+file and the filename to be exported as a label for linking. This name must be
+unique in the load image because it is a link label as well as a filename.
+The link label is not compartmented by directory structure
+
+<pre>
+
+	$ 4kformat -x fsystem5.txo
+	volume	fsystem5
+	tree	seg$load
+	file	my_filename binary_input_filename
+	.
+	.
+
+</pre>
+The two periods are required. They are not a hint at further text. The first period
+returns from directory seg$load to volume root directory fsystem8. The second
+period exits 4kformat utility
+
+<p>
+The inclusion of fsystem5.txo in the final image has the pattern
+<pre>
+
+	$ masmx 	-kln
+
+		$include	freeware/RTA1/rta/def/map1.def
+		$include,$binary	everything_else
+
+FS5_START_BANK_INDEX $equ	NEXT_ADDRESS//4096	. a 4K bank index
+
+		$include,$binary	fsystem5
+		$store			totalimage
+
+</pre>
+
+
+Core Resident File Systems applied to software RAM segment load
+are described in the section on linking and load image formatting
+in the accompanying manual <b>masmx for RTA1</b>
+
+<h3>5.4 Access Block for File Systems in RTA1 smaragd7</h3>
+
+The access block for data files is common for file system types. At the POSIX
+interface this structure is assigned by open. Otherwise the calles supplies it
+
+<pre>
+
+		$include freeware/RTA1/rta/fs/fs.def
+		____________________________________
+
+
+	macro filep	block used in simple serial read, 6 words
+	macro fileq	block with rewind/seek state, 10 words
+
+
+	________________________________________________
+	|	serialp:fs_type	|	serialp:device	|
+	|_______________________|_______________________|
+	|		serialp:extent			|
+	|_______________________________________________|
+	|		serialp:absolute_pointer	|
+	|_______________________________________________|
+	|		rewind_extentp			|
+	|_______________________________________________|
+	|		quantum_pointer			|
+	|_______________________________________________|
+
+
+
+</pre>
+
+<b>fs_type</b> defines the driver functions for the device
+<p>
+<b>device</b> is also labelled <b>bank</b> and is for core-resident and device-array
+file systems the bank index where the file system starts
+
+<p>
+<b>extentp</b> is the long address bank:base:offset of the descriptor of the
+file extent currently being processed, initially the first extent which is
+also the file header
+
+<p>
+<b>absolute_pointer</b>  is the current word position relative
+to the start of the device
+
+<p>
+The two remaining 48-bit fields are required if rewind or seek
+is carried out
+
+<p>
+<b>rewind_extentp</b> is a saved copy of the initial file extent descriptor
+long address. It is recopied to extentp for rewind / backward seek
+
+<p>
+<b>quantum_pointer</b> is the current word position relative to the
+start of the file
+
+<p>
+There is also a set of octet-oriented functions for
+data file processing and for these, <b>quantum_pointer</b> is the
+current octet position relative to the start of the file
+
+
+This structure is the first parameter by address of these file system low-level calls
+<pre>
+
+	fsrom_da	start core file with using known offset of 1st extent descriptor
+	fsrom_read	read data words from core file
+
+	fs_dev_start	start file with using long address of 1st extent descriptor
+	fs_dev_read	read data words
+	fs_dev_write	write data words
+	fs_dev_rewind	restart file with saved long address of 1st extent descriptor
+			quantum_pointer = 0
+
+	fs_dev_seek	reposition
+	fs_dev_open
+	fs_dev_close
+
+	fs_dev_seek8	reposition. Anticipated use in NFS server
+	fs_dev_read8	read data octets. Anticipated use in NFS server
+	fs_dev_write8	write data octets. Anticipated use in NFS server
+
+</pre>
+<h3>5.5 RTA1 Memory Array File System</h3>
+
+File systems in external device memory arrays cannot be linked for
+assembly-time file location as Core Resident File Systems can
+
+<p>Files in device arrays are opened with a directory search because they
+are not bound to the system image
+
+<p>
+fsformat utility constructs Device Memory Array file systems offline.
+An example construction shows the period command returning upward
+from each directory and the loaded filenames followed by source paths
+<pre>
+
+	$ fsformat fsimage5
+volume remington
+tree boot$
+tree left_boot
+.
+tree right_boot
+.
+.
+tree free$tree$
+.
+tree etc
+file network.txt etc.rta/network.txt
+.
+tree web
+file index.html rta.doc/index.html
+file rta.html rta.doc/rta.txt
+file smaragd7.html rta.doc/smaragd7.txt
+file language.html rta.doc/language.txt
+file masmxRTA.html rta.doc/masmxRTA.txt
+file connect.html rta.doc/connect.txt
+file q_a.html rta.doc/q_a.txt
+file footnote.html rta.doc/footnote.txt
+file gnu_gpl.html rta.doc/gnu_gpl.html
+.
+.
+
+
+</pre>
 The memory array file system is an array of up to 17,179,869,184
 24-bit words outside executable space. Each memory array file system
 occupies one of the 63 devices configurable outside executable space
@@ -2186,8 +2392,9 @@ words. A single file extent is a maximum of 262144 words in size
 <p>
 space for directories is awarded in chained blocks of 1024 words
 
-<p>
-The directory entry structures start with a format word which identifies
+<h3>5.6 File Directory Layouts</h3>
+
+Directory entry structures start with a format word which identifies
 the entry type and size in words, excluding the format word itself
 
 <div    style="font-size:11pt">

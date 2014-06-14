@@ -183,7 +183,7 @@ RTA1 to read. That's how emulated RTA1 runs web server about itself
 	util.rta/fsformat fsimages/rand7 < fsload
 
 Here is fsload, a command list for fsformat. There is no indentation
-in the list, that's just for here
+in the command list, that's just for here
 
 
 	volume remington
@@ -208,8 +208,8 @@ in the list, that's just for here
 	.
 	.
 
-volume gives a volume label. That acts as owner of the
-top directory
+volume gives a volume label. The volume label is
+the top directory
 
 tree means a directory
 
@@ -499,7 +499,7 @@ LICENCE NOTE
 #
 #                RTA1
 #
-#    RTA1 is a free processor architecture design.
+#    RTA1 is a free programmable processor architecture specification.
 #
 #    The executable emulation of RTA1 is free software.
 #
