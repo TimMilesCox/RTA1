@@ -3,9 +3,9 @@
     Copyright Tim Cox, 2012
     TimMilesCox@gmx.ch
 
-    This file fsformat.c is free software.
+    This file 4kformat.c is free software.
 
-    fsformat.c is a utility program for constructing file system
+    4kformat.c is a utility program for constructing file system
     images for the freeware processor architecture
 
                 RTA1
@@ -68,8 +68,9 @@
 #define	GRANULE		64
 #define	DIRECTORY_BLOCK	1024
 #define	LEEWAY		GRANULE
+#define	PAGES_IN_DEVICE	1
 
-#define	GRANULES	BANKS_IN_DEVICE * (PAGE/GRANULE)
+#define	GRANULES	PAGES_IN_DEVICE * (PAGE/GRANULE)
 
 
 
@@ -107,14 +108,15 @@ typedef struct { msw		    rfw,
 	A Tree at the start of the 
 	Volume contains the first free extent block
 	in the volume and it's initialised to the
-	whole device or it's the first in a small
-	array of extent descriptors at the volume
-	head (the granules are quite small, 64w so
-	one extent descriptor only covers a gigaword
-	and a device is theoretically up to 16 gigawords)
+	whole device 
 
-	however the emulator limits of a device are
-	are 256 banks = 64 megawords, so it's a cinch
+	volume tree has one extra word of granule
+	free count in front of the name, because
+	the total may be more than 16M granules = 1GW
+
+	The extra count word allows 256 teragranules
+	although some file access structures only
+	reach 256 terawords
 
 	write_point and remainder are about where
 	more information can go in this directory
@@ -203,7 +205,7 @@ static tree label1  =  { { { 'L', 0, 4 } ,
                            { 255, 255, 255, 255, 255, 255 } ,
                          { { '.', '.' } } } ,
 
-			 { { { 'V', 0, EXTENT1_WORDS - 1 + 2 + 2 } ,
+			 { { { 'V', 0, EXTENT1_WORDS - 1 + 2 + 2 + 1 } ,
                              { } ,
                              { 0, 0, 0, 0, 0, 16 } } ,
                            { 0, 0, 0 } ,
@@ -373,8 +375,8 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    {
       label1.label3.ex.rfw.t3 = pointer1
                               = EXTENT1_WORDS - 1
-			      + 2
-			      + copy(&label1.label3.name[0].t1, argument);
+			      + 2 + 1
+			      + copy(&label1.label3.name[1].t1, argument);
 
       gpointer = 16;
       label1.label3.ex.granule = restart_offset;
@@ -661,7 +663,11 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 int main(int argc, char *argv[])
 {
    int			 status,
-                         net_granules;
+			 symbol;
+
+   long long		 net_granules = GRANULES;
+   unsigned char	*uptr;
+
 
    argue(argc, argv);
 
@@ -681,13 +687,37 @@ int main(int argc, char *argv[])
          }
       }
 
-      net_granules = GRANULES - gpointer;
+      if (arguments > 1)
+      {
+         uptr = argument[1];
+         symbol = *uptr;
 
-      printf("%lld granules written, %d free\n", gpointer, net_granules);
+         if ((symbol < '0') || (symbol > '9'))
+         {
+         }
+         else
+         {
+            if (symbol == '0') sscanf(uptr, "%llx", &net_granules);
+            else               sscanf(uptr, "%lld", &net_granules);
+ 
+            if      (uflag['T'-'A']) net_granules <<= 34;
+            else if (uflag['G'-'A']) net_granules <<= 24;
+            else if (uflag['M'-'A']) net_granules <<= 14;
+            else if (uflag['K'-'A']) net_granules <<=  4;
+         }
+      }
+
+      net_granules -= gpointer;
+
+      printf("%lld granules written, %lld free\n", gpointer, net_granules);
 
       label1.label3.ex.granules.t1 = net_granules >> 16;
       label1.label3.ex.granules.t2 = net_granules >>  8;
       label1.label3.ex.granules.t3 = net_granules;
+
+      label1.label3.name[0].t1 = net_granules >> 40;
+      label1.label3.name[0].t2 = net_granules >> 32;
+      label1.label3.name[0].t3 = net_granules >> 24;
 
       remainder1 = 1024 - pointer1;
 
