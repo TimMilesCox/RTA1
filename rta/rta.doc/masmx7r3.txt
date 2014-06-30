@@ -110,7 +110,74 @@ correct for RTA1
 
 </pre>
 
+<h2>Assembly Language</h2>
 
+The line of assembly language code has an arbitrary number of fields
+
+<pre>
+
+label	command		argument1[,argument1_subfield1,...]	[argumentN[,argumentN_subfield,...]]	[;
+                        continuation]		[. comment ]
+
+</pre>
+
+
+<h3>Labels</h3>
+A label starts in column 1 and ends in whitespace. A label may contain letters, digits, $_?!@: and
+starts with a letter or _?!@
+
+<p>
+A reference containing substring character : may reference a simple label or a structured locatio
+
+<p>
+A label may be in "" and then it starts with anything and contains anything
+
+<p>
+Without case-sensitive option -k all labels and references are translated to uppercase
+
+<p>
+$ in column one is a program section control called a location counter with syntax
+<b>$(number[:attributes])</b> See section <b>Application Memory, Location Counters</b>
+
+<p>
+A label starting with $ is declared in quotes but usually referenced without quotes
+
+<h3>Command Field</h3>
+
+The command field is the first field to follow any whitespace. It may contain 
+
+	<blockquote>
+	nothing. Then there are no arguments either<br><br>
+	a number constant or a character string constant<br><br>
+	a space-isolated unary sign governing a number constant<br><br>
+	an assembler directive<br><br>
+	a bitfield structure name of the <b>$form</b> type<br><br>
+	the name of a macro of the <b>$proc</b> type producing data or instruction code
+	</blockquote>
+
+Assembler coding is predominantly writing instructions. The essential line has in 
+the command field the <b>$proc</b> macro name of an instruction. The <b>$proc</b>
+mostly invokes a <b>$form</b> bitfield layout for the instruction. Here is a simplified
+view of an instruction defininition in <b>rta.def</b>
+<pre>
+
+isimple $form	5,3,16
+
+p	$proc
+lret*	$name	6
+fret*	$name	7
+	isimple	p(0, 0), 5, p(1, 1)
+	$end
+
+</pre>
+Here is a corresponding line of application code
+<pre>
+
+	lret	1	. return and skip 1 instruction
+
+</pre>
+
+see also sections <b>$form</b> and <b>$proc</b>
 
 <h2>Data Constants</h2>
 <h3>Expressions and Numbers</h3>
@@ -354,6 +421,24 @@ $(3:*1)			. relocatable program section
 
 buffer	$res	20	. buffer can be in &plusmn; expressions
 			. and shift right expressions
+
+</pre>
+Labels in expressions may also be masmx internal function names
+or the names of macros of the $func type. These examples show
+function expressions in as instruction operands rather than constants
+<pre>
+
+	jc	$+2	. current location counter + 2
+
+f	$func
+upto10*	$name
+	$do	f(1, 1)>10,	$return	10
+	$return	f(1, 1)
+	$end
+
+
+	lr	upto10(ACTUAL_PARAMETER)		
+	
 
 </pre>
 The optional tag of <b>$do</b> directive is a value incrementing
@@ -1814,8 +1899,8 @@ $(0) contains instruction code in bank B0 and a few constants which are locally 
 <h3>Loadable vs ROM Systems and Absolute Code vs Relocatable Code</h3>
 
 <p>
-Assembly of absolute code is initially examined here. Assembly
-of relocatable code is presently examined in comparison
+Absolute code assembly is examined here. Relocatable code is described in
+Appendix A: masmx Linking for RTA1
 
 <p>
 Absolute code has no oustanding linkage requests and above all has fixed
@@ -1882,7 +1967,7 @@ they may be different source files with conceptually different
 data sections.
 
 <p>
-Further a single instruction bank may be functionally
+A single instruction bank may be functionally
 several programs. When one bank contains data or instructions
 for a number of sources collected in one absolute assembly,
 one file must be a wrapper for the others, because the program
@@ -1935,34 +2020,7 @@ $(0)				. in wrapper.msm
 	$do	$zenith>4095,	$flag	placement of B0 constants must be rearranged
 
 </pre>
-<p>
-An alternative build method is to construct relocatable banks with each
-program separate assembled
-<pre>
 
-$(0:*4096)
-external_name*	$vector		start_point1
-external_callname* $vector	routine2
-
-</pre>
-Relocation alignment 4096 means the new bank is linked at a page edge.
-That is necessary if an instruction bank with entry points is intended.
-
-<p>
-It is possible to collect multiple relocatable instruction segments in one
-B0 bank, but more intricate than assembling them all together as absolute code
-
-<p>
-Program sections containing data may also be assembled either relocatable
-or absolute. They may be made relocatable to combine data segments from many
-assemblies into one bank at a later linking assembly. In this case one
-data word is a big enough alignment factor
-<pre>
-
-$(3:*1)
-my_first_variable	1.624
-
-</pre>
 
 <h3>Data Sections $(1) and $(3)</h3>
 
@@ -2121,6 +2179,8 @@ The steps for placing RAM assembly-time variable values in ROM or core resident
 file systems are described in the linking and utilities section of this manual. 
 
 
+<h3>Void Sections and Structure by Pointer</h3>
+
 
 
 <h3>Assembling Structures Larger than the Address Space</h3>
@@ -2247,7 +2307,7 @@ $(0)
 <p>
 It is also possible to put labels on each element of an assembled array,
 although this is not advised if there are millions of elements, because
-so many labels are unlikely to be referenced
+software handling tables and arrays references very few labels
 <pre>
 
 
@@ -2256,10 +2316,512 @@ so many labels are unlikely to be referenced
 
 </pre>
 
-<h3>Void Sections and Structure by Pointer</h3>
+<h2>9: $do Iteration</h2>
 
+<h2>10: $proc and $func Macros</h2>
 
 <h2>Appendix A: masmx Linking for RTA1</h2>
+
+<h3>A.1 masmx Output File Formats</h3>
+
+masmx outputs text encoded binary files. They have the default suffix
+<b>.txo</b> and they can be viewed in a text editor or a shell
+
+<pre>
+
+$ masmx absolute absolute -lnk
+MASMX 7r3
+3/absolute.msm
+*EOF*
+  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            2: 	$include	freeware/RTA1/rta/language/stack.def
+  :                            3 
+  :                            4 TARGET_ADDRESS* $equ	16384
+  :                            5 
+  :                            6 $(3:03000)
+03:003000 00000A              +7 tally	10
+  :                            8 $(0)
+00:000000 B60040              +9 tally_up* x$vector tallyu  TARGET_ADDRESS
+  :                            10 $(0:64)
+00:000040 C03000              +11 tallyu	aa	tally
+[+0000]0f
+00:000041 C00000              +12 	aa	extra
+00:000042 203000              +13 	sa	tally
+[+0001]0f
+00:000043 3E0000              +14 	lcal	extract
+00:000044 3D0000              +15 	fret	0
+*EOF*
+:$(00):000000:000045 :$(03):003000:003001 
+absolute.msm: object code 230 bytes: 0 errors: 2 undefined labels
+$
+$ cat absolute.txo
+
+$03:003000
+00000A
+$00:000000
+B60040
+$00:000040
+C03000 [0000]0F:C00000 203000 [0001]0F:3E0000 3D0000
++tally_up:$00:000100
+-extra:[0000]
+-extract:[0001]
+:$00*000000:000000:000045
+:$03*000000:003000:003001
+
+</pre>
+
+absolute.msm has an integer 10 at address 003000 in data, and an
+instruction bank at absolute 16384 with a jump to its location 64.
+There are found an add instruction, a store instruction and a
+far return instruction
+
+<p>
+The load addresses of the code are not the program-visible addresses
+of the code. There is a breakpointed load address TARGET_ADDRESS,
+which indicates part of a ROM system image. A dynamically loaded
+instruction section would get a load address from the kernel
+
+<p>
+A vector label <b>tally_up</b> with the value 16384/4096*64++0 is exported
+
+<p>
+But the code can't find two things called <b>extra</b> and <b>extract</b>.
+absolute.txo contains linker requests
+
+<p>
+If you want to combine multiple sources in the same program sections,
+this is simpler to do by assembling the sources together as absolute code
+than by linking in RTA1. Linking relocatables to make one instruction
+section is intricate
+
+<pre>
+
+$ masmx absolute absolute -lnk
+MASMX 7r3
+3/absolute.msm
+*EOF*
+  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            2: 	$include	freeware/RTA1/rta/language/stack.def
+  :                            3 
+  :                            4 TARGET_ADDRESS	$equ	16384
+  :                            5 
+  :                            6 $(3:03000)
+03:003000 00000A              +7 tally	10
+  :                            8 $(0)
+00:000000 B60040              +9 tally_up* x$vector tallyu  TARGET_ADDRESS
+  :                            10 $(0:64)
+00:000040 C03000              +11 tallyu	aa	tally
+00:000041 C03001              +12 	aa	extra
+00:000042 203000              +13 	sa	tally
+00:000043 3E0045              +14 	lcal	extract
+00:000044 3D0000              +15 	fret	0
+  :                            16 
+  :                            17 	$list	2
+  :                            18: 	$include	absolu2
+  :                            1 $(3)
+03:003001 FFFFF6              +2 extra	-10
+  :                            3 $(0)
+  :                            4 extract
+00:000045 460001              +5 	rar	1
+00:000046 B00100              +6 	xor	(0a5a5a5:s)
+00:000047 203001              +7 	sa	extra
+00:000048 350000              +8 	lret	0
+  :                            9 
+  :                            19 $(0)
+  :                            20 	$do	$<256,$(0:256)
+  :                            21 	$do	$zenith>4095,	$flag	B0 constant space must be reassigned
+  :                            22 
+*EOF*
+00:000100+A5A5A5
+:$(00):000000:000101 :$(03):003000:003002 
+absolute.msm: object code 269 bytes: 0 errors: 0 undefined labels
+$
+$ cat absolute.txo
+
+$03:003000
+00000A
+$00:000000
+B60040
+$00:000040
+C03000 C03001 203000 3E0045 3D0000
+$03:003001
+FFFFF6
+$00:000045
+460001 B00100 203001 350000
+$00:000100
+A5A5A5
+
++tally_up:$00:000100
+:$00*000000:000000:000101
+:$03*000000:003000:003002
+
+
+</pre>
+
+Multiple instruction banks can also be assembled at once,
+if they share each data section as a linear space. They
+can be one file or a number of files
+
+<pre>
+
+$(3:03000)
+$(1:01000)
+
+	$include	application_part1
+<div	style="color:0000FF">
+$(1)
+	private	data
+$(3)
+	program data
+$(0::08000)
+part1_routine1* $vector	p1r1
+part1_routine2* $vector p1r2
+	$do	64-$,	fret	0
+p1r1	
+	fret	0
+p1r2
+	fret	0
+	$do	$<256,$(0:256)
+</div>
+
+        $include        application_part2
+<div    style="color:0000FF">
+$(1)
+        private data
+$(3)
+        program data
+$(0::09000)
+part2_routine1* $vector p2r1
+part2_routine2* $vector p2r2
+        $do     64-$,   fret    0
+p2r1    
+        fret    0
+p2r2
+        fret    0
+        $do     $<256,$(0:256)
+</div>
+
+        $include        application_part3
+<div    style="color:0000FF">
+$(1)
+        private data
+$(3)
+        program data
+$(0::0A000)
+part3_routine1* $vector p3r1
+part3_routine2* $vector p3r2
+        $do     64-$,   fret    0
+p3r1    
+        fret    0
+p3r2
+        fret    0
+        $do     $<256,$(0:256)
+</div>
+
+</pre>
+
+These source files can alternatively be assembled singly and linked.
+If they are not intended to share either private data frame $(1) or
+application data space $(3) then separate assembly and linking is
+necessary
+
+<h3>A.2 masmx Linking</h3>
+
+masmx linking is an assembly which reads masmx output files
+in text encoded binary format. It is necessary to have a procedure
+macro <b>map1</b> in the assembly to manipulate the input binary
+code
+
+<p>
+Here the foregoing large assembly will be replaced with three assemblies
+of single source files followed by an assembly which links the parts
+
+<p>
+Each part has a separate $(1) private data section but program data section
+$(3) has been combined in the link after being assembled as relocatable
+
+<p>
+Option -b in a linking assembly collates the program sections. The sections
+otherwise need to be manipulated by filtering the file includes
+
+<pre>
+
+$ masmx -lnkZ application_part1 application_part1
+MASMX 7r3
+3/application_part1.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	language/stack.def
+  :                            4 	$path
+  :                            5 
+  :                            6 $(1:01000)
+01:001000 4000049B3333333333333334
+                              +7 ratio1	9.7
+  :                            8 $(3:*1)
+03:000000 000000              +9 buffer1	$res	4
+03:000001 000000              +9 
+03:000002 000000              +9 
+03:000003 000000              +9 
+  :                            10 $(0::08000)
+00:000000 B60040              +11 part1_routine1* $vector	p1r1
+00:000001 B60042              +12 part1_routine2* $vector p1r2
+  :                            15 	$list
+00:000040 771000              +16 p1r1	fm	ratio1
+00:000041 3D0000              +17 	fret	0
+(+03)0f
+00:000042 470000              +18 p1r2	qs	buffer1
+00:000043 3D0000              +19 	fret	0
+  :                            20 	$do	$<256,$(0:256)
+  :                            21 
+*EOF*
+:$(00):000000:000100 :$(01):001000:001004 :$(03):000000:000004 
+application_part1.msm: object code 713 bytes: 0 errors: 0 undefined labels
+$
+$ masmx -wkZ application_part2 application_part2
+$ masmx -wkZ application_part3 application_part3
+$
+$ masmx -lnkb
+MASMX 7r3
+0/-INPUT>>
+	$list	0
+		$include freeware/RTA1/rta/def/map1.def
+	$list
+$(3:03000)
+        $include,$binary	application_part1
+application_part1.txo:$(0) 256 words decimal from hexadecimal 000000 to 000100
+application_part1.txo:$(1) 4 words decimal from hexadecimal 001000 to 001004
+application_part1.txo:$(3) 4 words decimal from hexadecimal 003000 to 003004
+        $include,$binary	application_part2
+application_part2.txo:$(0) 256 words decimal from hexadecimal 000000 to 000100
+application_part2.txo:$(1) 4 words decimal from hexadecimal 001000 to 001004
+application_part2.txo:$(3) 4 words decimal from hexadecimal 003004 to 003008
+        $include,$binary        application_part3       
+application_part3.txo:$(0) 256 words decimal from hexadecimal 000000 to 000100
+application_part3.txo:$(1) 4 words decimal from hexadecimal 001000 to 001004
+application_part3.txo:$(3) 4 words decimal from hexadecimal 003008 to 00300C
+	$store			total_application
+	$end
+  :                            97  $list
+  :                            98 $(3:03000)
+  :                            99:         $include,$binary application_part1
+  :                            100:         $include,$binary application_part2
+  :                            101:         $include,$binary application_part3
+  :                            102  $store   total_application
+  :                            103  $end
+:$(00):000000:00A044 :$(01):001000:001004 :$(03):003000:00300C 
+-INPUT>>: object code 1926 bytes: 0 errors: 0 undefined labels
+Tim-Coxs-MacBook:~ timcox$ cat total_application.txo
+
+$01:001000
+4000049B3333333333333334
+$03:003000
+000000 000000 000000 000000
+$00:008000
+B60040 B60042 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+771000 3D0000 473000 3D0000
+$01:001000
+4000038CCCCCCCCCCCCCCCCD
+$03:003004
+000000 000000 000000 000000
+$00:009000
+B60040 B60042 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+7F1000 3D0000 473004 3D0000
+$01:001000
+400002ECCCCCCCCCCCCCCCCD
+$03:003008
+000000 000000 000000 000000
+$00:00A000
+B60040 B60042 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000 3D0000
+771000 3D0000 473008 3D0000
++part1_routine1:$00:000200
++part1_routine2:$00:000201
++part2_routine1:$00:000240
++part2_routine2:$00:000241
++part3_routine1:$00:000280
++part3_routine2:$00:000281
+:$00*000000:000000:00A044
+:$01*000000:001000:001004
+:$03*000000:003000:00300C
+
+
+</pre>
+
+The load addresses of the instruction sections are 008000 009000 and 00A000
+
+<p>
+The exported vector labels show entry points at the first two words of each bank.
+The bank start addresses are at 4K-word boundaries and the bank identity is the
+bank start address / 4096. The vector value is the bank identity * 64 plus offset
+[0..63]
+
+	<blockquote>
+	008000/*6++0	=	000200<br>
+	008000/*6++1	=	000201<br>
+	009000/*6++0	=	000240<br>
+	009000/*6++1	=	000241<br>
+	00A000/*6++0	=	000280<br>
+	00A000/*6++1	=	000281
+	</blockquote>
+
+A ROM system cannot write the data sections in ROM. They are separated with
+another link for inclusion in a read-only file system in ROM. Segments in
+this file system are unpacked to RAM at runtime
+
+<p>
+This is shown at its simplest with the earlier example of multiple source files
+assembled as absolute and sharing all data segments. No sections are relocatable,
+but masmx linking features are used to extract the data sections for different
+load treatment from the instruction sections
+<pre>
+
+$ masmx application application -lnk
+MASMX 7r3
+3/application.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	def/vector.def
+  :                            4: 	$include	language/stack.def
+  :                            5 	$path
+  :                            6 
+  :                            7 $(1:01000)
+  :                            8 $(3:03000)
+  :                            9 
+  :                            10: 	$include	application_part1
+  :                            11: 	$include	application_part2
+00:000100+[0000]30:000000000000
+00:000102+[0002]18:000000
+  :                            12: 	$include	application_part3
+  :                            13 
+*EOF*
+:$(00):000000:000100 :$(01):001000:00100C :$(02):002000:003000 :$(03):003000:00300C 
+application.msm: object code 2031 bytes: 0 errors: 3 undefined labels
+$
+$ masmx -lnkb
+MASMX 7r3
+0/-INPUT>>
+	$list	0
+	$include	freeware/RTA1/rta/def/map1.def
+	$list
+	$include,$binary	application	$(0)
+application.txo:$(0) 256 words decimal from hexadecimal 000000 to 000100
+	$store			app_code
+	$end
+  :                            97  $list
+  :                            98:  $include,$binary application $(0)
+  :                            99  $store   app_code
+  :                            100  $end
+:$(00):000000:00A044 
+-INPUT>>: object code 1844 bytes: 0 errors: 3 undefined labels
+$
+$ masmx -lnkb
+MASMX 7r3
+0/-INPUT>>
+	$list	0
+	$include	freeware/RTA1/rta/def/map1.def
+	$list
+	$include,$binary	application	$(1,3)
+application.txo:$(1) 12 words decimal from hexadecimal 001000 to 00100C
+application.txo:$(3) 12 words decimal from hexadecimal 003000 to 00300C
+	$store			app_data
+	$end
+  :                            97  $list
+  :                            98:  $include,$binary application $(1,3)
+  :                            99  $store   app_data
+  :                            100  $end
+:$(01):001000:00100C :$(03):003000:00300C 
+-INPUT>>: object code 160 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+A file system image containing data segments is constructed before
+the system image is linked. The sequence of steps corresponding to
+the example are now
+<pre>
+
+$ lstring -b	app_data.txo	app_data
+
+$ 4kformat -x	fs_image_99.txo
+volume		rom_99
+tree		segment_loads
+file		app_data	app_data
+file		next_file
+.
+.
+
+</pre>
+The periods exit the tree (directory) and finally the file system construxtion.
+Option -x on utility 4kformat produces the file system image as a text-encoded
+binary which is included in a final link of the ROM image. This includes the kernel and all the
+applications
+
+<pre>
+
+$ masmx -lnkb
+
+	$include		freeware/RTA1/rta/def/map1.def
+
+	$include,$binary	kernel
+	$include,$binary	application_A
+	$include,$binary	application_B
+
+	$include,$binary	app_code	. this application
+
+FS_97*	$equ			03C		. 4K page ID # 60, for example
+FS_99*	$equ			03F		. 4K page ID # 63
+
+$(32::FS_97*4096)
+	$include,$binary	fs_image_97
+
+$(32::FS_99*4096)
+	$include,$binary	fs_image_99
+
+	store			sysimage
+
+</pre>
+
+Utility lstring writes the generated image in a load tuples format. A ROM
+image is then turned into a plain array file by utility slab
+
+<p>
+At process start, macro <b>$base_d</b> bases storage assigned by the kernel.
+Then routine <b>seg$load</b> loads the segments in file <b>app_data</b>
+<pre>
+
+initial $base_d PROGRAM_DATA
+        c       (seg$load)      FS_99,,xi               ;
+                                (app_data:d),,long
+
+
+</pre>
+
+
+<h3>A.3 lstring Load String Utility</h3>
+
+<h3>A.4 slab ROM Image Utility</h3>
+
 
 <h3>A.4 Core Resident File Systems used in Software RAM Segment Load</h3>
 
