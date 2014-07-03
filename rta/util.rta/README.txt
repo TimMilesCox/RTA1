@@ -1,10 +1,10 @@
-	Utilities lstring slab fsformat fds24
-	_____________________________________
+	Utilities lstring slab fsformat 4kformat fds24
+	______________________________________________
 
 	Freeware Licensed with GNU General Public
 	Licence Version 3. Please see the Licence
 	Note at the end of this README
-	_____________________________________
+	______________________________________________
 
 
 This directory contains lstring and slab, utilities
@@ -22,12 +22,26 @@ a ROM image on file which the emulator reads at startup
 masmx, lstring and slab are shown working in series in the
 target image build script ../rta.gen/make
 
-fsformat loads a file system image which can be made
-available to the emulated machine at startup. This enables
-the emulated RTA1 to run a web server and send its
-documentation to browsers on other computers
+fsformat loads a file system image in RTA target format
+which is made available to the emulated machine at startup. 
+This enables the emulated RTA1 to run a web server and send
+its documentation to browsers on other computers
 
-All those files are RTA1-readable
+4kformat constructs a core-resident file system image in
+RTA target format which can be linked into a ROM image.
+Core-resident file systems allow RTA1 to have read-only
+files in the absence of filestore peripherals
+
+Files are located without directory seach in core-resident
+file systems. They are used to load process RAM segments
+in realtime
+
+File systems constructed by fsformat and 4kformat have
+uniform organisation
+
+
+fds24
+_____
 
 fds24 is a viewer on the PC which interprets files as
 arrays of 24-bit quanta. This may help you see what you're
@@ -63,19 +77,14 @@ ________________
 -b option selects the binary format which slab loads to
 ROM image. Otherwise you get S-Records for quantum-24
 
-The input file is named in full. masmx by default writes
-extension .txo for text-encoded-binary
+The input and output files are named in full. masmx output
+files have the default extension .txo 
 
-The output file is named in full. .bxl means something
-like binary load string, is meant to help remember what
-the file is, and doesn't clash with anything else
-
-Here is a part of the RTA1 system image output from
-lstring with -b option
+Here is a part of a system image output from lstring with
+-b option
 
 
-
-	$ ../util.rta/fds24 srom.bxl
+	$ ../util.rta/fds24 srom
 	00000000: 000001 49ffbe 000000 000000  "   I        "
 	00000004: b60040 00000b d9fa7c 000000  "  @     |   "
 	00000008: 000040 5500fc 10008f 10008e  "  @U        "
@@ -86,27 +95,19 @@ lstring with -b option
 
 	$ 
 
-There is a four word descriptor: word-count, checksum,
-48-bit address
+There is a four word descriptor before each load string:
+word-count, checksum, 48-bit address
 
 The address may be relative to the start of executable space
-or some other load address, depending how your loader is
+in the case of a ROM image, or to a dynamic load address
 
 A loader loading at a run-time-determined address would
 need to plug a vector bank with the program's own entry
-points and bank addresses. That's for loaders running on RTA1
+points and bank addresses
 
-See the OS web page for the structure and
-use of the task vector bank
+This fds24 readout is the start of the RTA1 smaragd7 system image
 
-	../rta.doc/smaragd7.html
-
-smaragd7.html is also available online from the emulated RTA1 web host
-
-The .bxl print above is the front of the 28K-word system image running
-on the emulated RTA1
-
-The first descriptor says it has one word of code at absolute zero.
+The first 4-word descriptor describes one word of code at absolute zero.
 It's a jump instruction to absolute address 64
 
 11 instructions at location 64 initialise the interrupt stack pointer
@@ -114,12 +115,8 @@ and read memory configuration from an I/O port. That assists decisions
 on loadable vs ROM system image, and where data RAM starts. Then a GO
 instruction jumps inter-bank. Its indirect operand is a constant at
 address 256 (operand addresses < 256 are registers). The constant has
-the value 64. That means go to the first location of a bank at absolute
+the value 64. That means go to the first location of the bank at absolute
 address 4096
-
-Banks are entered at a 64-word jump pad at their start. The GO target is
-
-	(bank_absolute_start_address/64) OR (offset AND 63)
 
 Very little happens in the 4K restart bank at address zero. It's
 reserved for an optional loader and transfers to the second bank
@@ -132,7 +129,7 @@ You can see this in the assembly listing
 
 Here's how the image start looks after the next step
 
-	../util.rta/slab srom.bxl srom.rom 28 -k
+	../util.rta/slab srom srom.rom 28 -k
 
 No descriptors, just a picture of memory. We read eight
 words from zero, then tell fds24 to scan from word 64, and
@@ -151,27 +148,26 @@ finally display the constant at word 256
 If any load strings point outside the area described at
 argument 3 of slab, slab won't finish the job
 
-The default ROM size is 1024 words. The number you place at
-argument 3 of slab is interpreted according these options. Options
-can go anywhere on the line, but these options are reader-helpful
-next to the size value at argument 3 of slab
+slab -h prints complete command line syntax
 
-	$ slab input output size -k	# kilowords
-				 -p	# pages of 4K words
-				 -b	# banks of 262144 words
-				 -m	# megawords
+$ slab -h
 
-					# none of the above: words
+slab [-options] input[.bxl] output[.rom] [target-rom-words]
 
-slab also has an -h option which tells you all this and exits,
-and a -v option which comments on its progress
+default ROM size is 1024 RTA1 words
+target-rom-words is leading-zero for hex else decimal
 
-slab is not the only way of writing a rom image. You
-may have a loader which writes from .bxl strings
-onto an erased ROM
+slab ifile ofile -p          #  4096 RTA1 words
+slab ifile ofile -b          #  262144 RTA1 words
+slab ifile ofile -m          #  1048576 RTA1 words
 
-Or a loader running on RTA1 itself and reading .bxl
-strings into executable space
+slab ifile ofile number      #  number of RTA1 words
+slab ifile ofile number -k   #  number * 1024 RTA1 words
+slab ifile ofile number -p   #  number * 4096 RTA1 words
+slab ifile ofile number -b   #  number * 262144 RTA1 words
+slab ifile ofile number -m   #  number * 1048576 RTA1 words
+options -v verbose -w very verbose
+
 
 
 fsformat
