@@ -1924,12 +1924,66 @@ Absolute program counter is updated with B0 + effective address
         |_______________|_______________|_______________________|_______________________________________________________|
         |       jdz	|   01111.100   |  jump double zero	|  jump if 48-bit integer in registers a and b = zero	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       lcal    |   00111.110   |  local call           |  push absolute PC - B0 on internal stack, jump to ea  |
+        |       lcal    |   00111.110   |  local call           |  push absolute PC - B0* on internal stack, jump to ea	|
         |_______________|_______________|_______________________|_______________________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
+
+
+</pre>
+
+
+<h3>Non-Addressable Registers</h3>
+
+There are two non-addressable registers, the 48-bit absolute program counter and the 24-bit processor state register
+
+<p>
+34 bits of the absolute program counter are used. Absolute PC is never stored in addressable space.
+Bank and offset components of PC are stored separately and updates to PC are constructed from bank and offset parts
+
+<p>
+PSR is stored and loaded at interrupt and interrupt return. Its flag assignments are
+<pre>
+
+		23             18   16     14           8   7   6   5   4           0
+		_______________________________________________________________________
+		| I | 0 0 0 0 | i i i | 0 | see$          | H | R | R | W | 0 0 0 | C |
+		|   |         |       |   | 1 2 3 4 5 6 7 |   | Z |16 |16 |       |   |
+		|___|_________|_______|___|_______________|___|___|___|___|_______|___|
+
+
+		I = 0 = current state is application: registers are 0..127
+		    1 =                    interrupt: registers are 128..255
+
+		iii	interrupt mask
+
+		see$1 = 0 = data window 01000..01FFF  = private stack window B1
+		 	1 =				Thread Control Block
+
+		see$2 = 0 = data window 02000..02FFF  = application vector list
+			1 =				kernel vector list
+
+		see$3
+		see$4
+		see$5
+		see$6
+		see$7	select kernel data windows instead of application windows B3..B7
+
+		half$w = 0 = read / write thirdwords
+			 1 = read / write halfwords
+
+		b$streamZR = 0 = do not clear a at start of rsr instruction
+			     1 = clear a at start of rsr instruction
+
+		b$stream16r = 0 = use 24 bits of data words in Bitstream Read Channel
+			      1 = use 16 bits
+
+		b$stream16w = 0 = use 24 bits of data words in Bitstream Write Channel
+			      1 = use 16 bits
+
+		carry$ = carry from high-order position of integer adds and integer negative adds
 
 
 </pre>
@@ -1944,9 +1998,9 @@ Absolute program counter is updated with B0 + effective address
         |_______________|_______________|_______________________|_______________________________________________________________|
         |       lret	|   00110.101   |  local return		|  word @ internal stack top + xi + B0* -> PC, sp++		|
         |_______________|_______________|_______________________|_______________________________________________________________|
-        |       go	|   11110.111   |  go to another bank	|  word @ ea bank pointer part->B0*->PC += vector part		|
+        |       go	|   11110.111   |  go to another bank	|  word @ ea bank pointer part -> B0* -> PC += vector part	|
         |_______________|_______________|_______________________|_______________________________________________________________|
-        |       call	|   11111.111   |  call another bank	|  push PC-B0*, push B0, word @ ea bank part-> B0* -> PC+=vector|
+        |       call	|   11111.111   |  call another bank	|  push PC-B0*, push B0, word @ ea bank part -> B0* ->PC+=vector|
         |_______________|_______________|_______________________|_______________________________________________________________|
         |       fret	|   00111.101   |  far bank return	|  pop B0* -> PC += pop offset from internal stack += xi	|
         |_______________|_______________|_______________________|_______________________________________________________________|
@@ -1977,16 +2031,22 @@ Absolute program counter is updated with B0 + effective address
 
 
 </pre>
-Return instructions <b>lret</b>  <b>fret</b>  <b>iret</b> have a sign extended immediate
-operand which is added to the return address on the stack. This value is zero to return to
-the instruction after call. A a negative value skips backwards from the return point. A
-positive nonzero value skips forward
+Return instructions <b>lret</b> <b>fret</b> <b>ir</b> have a sign extended immediate
+operand which is added to the return address on the stack. Nonzero operand causes return
+to a location before or after the return address on the stack
 
 	<blockquote>
 	<b>lret</b> returns from <b>lcal</b><br><br>
 	<b>fret</b> returns from <b>call</b><br><br>
-	<b>iret</b> returns form  an interrupt whether external or internal
+	<b>ir</b> returns form  an interrupt whether external or internal
 	</blockquote>
+
+<p>
+<b>lret</b> transfers the word at the stack top + operand xi + B0 * 4096 to the program counter. sp++
+
+<p>
+<b>fret></b> transfers to the word at the stack top to B0 then the next word + operand xi
++ B0 * 4096 to the program counter. sp += 2
 
 Internal interrupt instruction <b>ii</b> also has a sign extended immediate operand. The
 low-order six bits are a vector value. Bits 21..6 designate the 4K-word start address of
@@ -2015,6 +2075,67 @@ $(0:64)
   :                            563  $end
 00:000100+[0003]06:[0002]06*/06:[0001]06*/0C:[0000]06*/12:000000
 :$(00):000040:000101 
+
+</pre>
+
+Interrupts construct a four-word stack frame at the interrupt internal stack top
+
+<p>
+If the interrupted routine is an application (PSR bit 23 = 0) then interrupt <b>sp</b> is
+copied to interrupt <b>fp</b> to mark the interrupted application frame
+
+<pre>
+
+		_________________________________
+	0,sp	|	latent parameter	|
+		|_______________________________|
+	1,sp	|	interrupted PSR		|
+		|_______________________________|
+	2,sp	|	interrupted B0		|
+		|_______________________________|
+	3,sp	|	interrupted PC minus B0*|
+		|_______________________________|
+
+</pre>
+<b>ii</b> instruction places a latent parameter value zero in the frame
+
+<p>
+<b>ir</b> discards the latent parameter and copies saved PSR to PSR and saved B0 to B0.
+B0 * 4094 + interrupted offset is written to the program counter. The frame is removed
+from the stack
+
+<p>
+Inter-bank jumps <b>go</b> and <b>call</b> read a single word operand of format
+
+<pre>
+<div	style="color:0000FF">
+
+		    21		      6        0
+		________________________________
+		|00|bbbb bbbb bbbb bbbb| vector|
+		|__|___________________|_______|
+		    16-bit pointer	 6-bit
+		    to 4K bank edge	 vector
+
+<div    style="color:FF0000">
+		OR
+</div>
+
+		    21                    3   0
+		________________________________
+		|01|bbbb bbbb bbbb bbbb bbb|vvv|
+		|__|_______________________|___|
+		    19-bit pointer	    3-bit
+		    to 32K bank edge	    vector
+</div>
+</pre>
+
+<b>call</b> instruction pushes the program-counter minus B0 * 4096 on the internal stack
+then pushes B0. <b>go</b> and <b>call</b> update the program counter
+<pre>
+
+	B0 = (operand bit 22) ? operand[21..3] / 8 : operand[21..6] / 64
+	PC = B0 * 4096 ++ (operand bit 22) ? operand[2..0] : operand[5..0]
 
 </pre>
 <h3>Control and I/O Instructions</h3>
@@ -2048,7 +2169,35 @@ $(0:64)
 	Assembly Language Examples
 	__________________________
 
+	<div    style="color:FF0000">
+	on	b$streamZR
+	off	carry$
+
+	inA	PORT_240
+	outB	PORT_240
+	</div>
+
+	la	transmission:buffer_bank<div	style="color:FF0000">
+	sabr	BSOCKB</div>
+	<div	style="color:0000FF">
+	on	see$1
+	la, xi	ABT+2</div><div    style="color:FF0000">
+	?	$do	23,	reload	?*2</div>
+
 </pre>
+<b>sabr</b> instruction copies the symbolic identity of a storage bank to 
+Thread Control Block + 64 + ea and writes the absolute value to I/O port[ea]
+
+<p>
+bank identity is identical to absolute value when bit 23 of the symbolic
+identity is zero. Symbolic bank identities with bit 23 = one are not
+implemented
+
+<p>
+<b>reload</b> instruction reads two symbolic bank identifiers at the
+address in register a and writes their absolute values to I/O port[ea]
+and I/O port[ea + 1]. Register a is incremented by 2
+
 
 <h2>Application Memory, Location Counters and Dynamic Data Segment Load</h2>
 
