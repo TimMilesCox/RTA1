@@ -6005,6 +6005,96 @@ operate without lock in the register stack and with lock in storage.
 
 
 
+	_________________________________________________________________________________________
+	|				go and call Between Banks				|
+	|_______________________________________________________________________________________|
+	|											|
+	|	Inter-bank jumps <b>go</b> and <b>call</b> read a single word operand of format	|
+	|											|
+	|											|
+	|	<div    style="color:0000FF">							|
+	|											|
+        |        		    21                6       0					|
+	|	                ________________________________				|
+        |       		|00|bbbb bbbb bbbb bbbb| vector|				|
+	|	                |__|___________________|_______|				|
+        |       		    16-bit pointer       6-bit					|
+	|	                    to 4K bank edge      vector					|
+	|											|
+	|	<div    style="color:FF0000">							|
+        |       		OR								|
+	|	</div>										|
+	|											|
+        |       		    21                    3   0					|
+	|	                ________________________________				|
+        |       		|01|bbbb bbbb bbbb bbbb bbb|vvv|				|
+	|	                |__|_______________________|___|				|
+        |       		    19-bit pointer          3-bit				|
+	|	                    to 32K bank edge        vector				|
+	|	</div>										|
+	|											|
+	|											|
+	|	<b>call</b> instruction pushes the program-counter minus B0 * 4096 on the	|
+	|	internal stack then pushes B0							|
+	|											|
+	|	<b>go</b> and <b>call</b> update the program counter				|
+	|											|
+	|											|
+	|       B0 = (operand bit 22) ? operand[21..3] * 8 : operand[21..6] / 64		|
+        |	PC = B0 * 4096 ++ (operand bit 22) ? operand[2..0] : operand[5..0]		|
+	|											|
+	|											|
+	|       <div    style="color:0000FF">							|
+	|	                        _____________________					|
+        |		                go / call destination					|
+        |       		        _____________________					|
+        |               		        |						|
+	|                       	        |						|
+	|       	        operand b22 = 0 | operand b22 = 1				|
+        |	        	________________|________________				|
+	|       	        |                               |				|
+	|       	________|________               ________|________			|
+	|	        | B0 =          |               | B0 = operand  |			|
+        |		| operand /* 6  |               | AND 03FFFF8   |			|
+	|	        |_______________|               |_______________|			|
+        |		        |                               |				|
+	| 		________|________               ________|________			|
+	|	        | offset =      |               | offset =      |			|
+        |		| operand AND 63|               | operand AND 7 |			|
+	|       	|_______________|               |_______________|			|
+	|       	        |                               |				|
+        |	        	|_______________________________|				|
+        |       	        	        |						|
+        |               	        	|						|
+	|	                        ________|________					|
+        |		                | PC = B0 */ 12 |					|
+        |       		        | OR offset     |					|
+        |               		|_______________|					|
+	|											|
+	|											|
+	|											|
+        |	</div>										|
+	|$ masmx ibj -ln									|
+	|MASMX 7r3										|
+	|3/ibj.msm										|
+	|freeware/RTA1/rta/fs/fs.txo:$(0) 477 words decimal from hexadecimal 000000 to 0001DD	|
+	|*EOF*											|
+	|  :                            1							|
+	|  :                            2:       $include        freeware/RTA1/rta/def/rta.def	|
+	|  :                            3        $include,$void freeware/RTA1/rta/fs/fs.txo $(0)|
+	|  :                            4 $(0:64)						|
+	|00:000040 FF0100              +5        call            (seg$load)			|
+	|  :                            6							|
+	|  :                            7							|
+	|  :                            8        $do             $<256,$(0:256)			|
+	|  :                            9							|
+	|*EOF*											|
+	|00:000100+000187									|
+	|:$(00):000040:000101									|
+	|											|
+	|_______________________________________________________________________________________|
+
+
 
 
 

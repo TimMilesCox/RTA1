@@ -2005,7 +2005,7 @@ PSR is stored and loaded at interrupt and interrupt return. Its flag assignments
         |       fret	|   00111.101   |  far bank return	|  pop B0* -> PC += pop offset from internal stack += xi	|
         |_______________|_______________|_______________________|_______________________________________________________________|
 
-								________________________________________________________________
+								_________________________________________________________________
 								| ii and ir operate the interrupt stack. sp_x = register 143	|
 	________________________________________________________|_______________________________________________________________|
         |       ii	|   11110.101   |  internal interrupt	| push 0.PSR.B0.PC-B0*, xi 23:6 ->B0* -> PC += xi 5:0, PSR b23=1|
@@ -2099,13 +2099,14 @@ copied to interrupt <b>fp</b> to mark the interrupted application frame
 </pre>
 <b>ii</b> instruction places a latent parameter value zero in the frame
 
-<p>
+<p>G
 <b>ir</b> discards the latent parameter and copies saved PSR to PSR and saved B0 to B0.
 B0 * 4094 + interrupted offset is written to the program counter. The frame is removed
 from the stack
 
 <p>
-Inter-bank jumps <b>go</b> and <b>call</b> read a single word operand of format
+Inter-bank jumps <b>go</b> and <b>call</b> read a single word operand of format 
+
 
 <pre>
 <div	style="color:0000FF">
@@ -2134,8 +2135,58 @@ Inter-bank jumps <b>go</b> and <b>call</b> read a single word operand of format
 then pushes B0. <b>go</b> and <b>call</b> update the program counter
 <pre>
 
-	B0 = (operand bit 22) ? operand[21..3] / 8 : operand[21..6] / 64
+	B0 = (operand bit 22) ? operand[21..3] * 8 : operand[21..6] / 64
 	PC = B0 * 4096 ++ (operand bit 22) ? operand[2..0] : operand[5..0]
+
+
+	<div	style="color:0000FF">
+                        _____________________
+                        go / call destination
+                        _____________________
+                                |
+                                |
+                operand b22 = 0 | operand b22 = 1
+                ________________|________________
+                |                               |
+        ________|________               ________|________
+        | B0 =          |               | B0 = operand  |
+        | operand /* 6  |               | AND 03FFFF8   |
+        |_______________|               |_______________|
+                |                               |
+        ________|________               ________|________
+        | offset =      |               | offset =      |
+        | operand AND 63|               | operand AND 7 |
+        |_______________|               |_______________|
+                |                               |
+                |_______________________________|
+                                |
+                                |
+                        ________|________
+                        | PC = B0 */ 12 |
+                        | OR offset     |
+                        |_______________|
+
+
+
+	</div>
+$ masmx ibj -ln
+MASMX 7r3
+3/ibj.msm
+freeware/RTA1/rta/fs/fs.txo:$(0) 477 words decimal from hexadecimal 000000 to 0001DD
+*EOF*
+  :                            1 
+  :                            2: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            3 	$include,$void	freeware/RTA1/rta/fs/fs.txo	$(0)
+  :                            4 $(0:64)
+00:000040 FF0100              +5 	call		(seg$load)
+  :                            6 
+  :                            7 
+  :                            8 	$do		$<256,$(0:256)
+  :                            9 
+*EOF*
+00:000100+000187
+:$(00):000040:000101 
+
 
 </pre>
 <h3>Control and I/O Instructions</h3>
@@ -4053,6 +4104,7 @@ the label table. -k is case-sensitive, otherwise all names are uppercase
 
 
 <pre>
+<div	style="font-size:8pt">
 
 		$ masmx -x+yk
 MASMX 7r3
@@ -4167,6 +4219,7 @@ $zenith=:F:000FC8		function		$if	$zenith>LIMIT
 
 -INPUT>>: object code 0 bytes: 0 errors: 0 undefined labels
 
+</div>
 </pre>
 
 <h2>Appendix Z: masmx Command Line Options</h2>
