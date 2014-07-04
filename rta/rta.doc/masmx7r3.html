@@ -113,13 +113,13 @@ The line of assembly language code has an arbitrary number of fields
 
 <pre>
 
-label	command		argument1[,argument1_subfield2,...]]	[argumentN[,argumentN_subfiel2,...]]	[. comment ]
+[label]	[command]		[argument1[,argument1_subfield2,...]]	[argumentN[,argumentN_subfiel2,...]]	[. comment ]
 
 </pre>
 Lines may be continued
 <pre>
 
-label	command		 argument1[,argument1_subfield2,...]	;
+[label]	[command]	[argument1[,argument1_subfield2,...]]	;
 			[argument2[,argument1_subfield2,...]]	;
 			[argumentN[,argumentN_subfield2,...]] 
 
@@ -698,21 +698,58 @@ A literal is a constant declared as an operand and
 assembled at the end of a designated section
 
 <p>
-Literals look like immediate operands but are storage
-constants of any size. The instruction contains their
-address, not their value
-
-<p>
 An automatic literal is an operand starting and ending
 with parenthesis. Automatic literals are  enabled with
 assembly flag -a in <b>rta.def</b>
 <pre>
 
-	$set_option	"a"
-	
+        $set_option     "a"
+
 </pre>
-By default automatic literals are assembled at the end
-of program section $(0)
+Literals look like immediate operands but are storage
+constants of any size. The instruction contains their
+address, not their value
+<pre>
+
+$ masmx -lnz
+MASMX 7r3
+0/-INPUT>>
+	$list	0
+	$include	freeware/RTA1/rta/def/rta.def
+	$list
+$(31:01F000)
+	$list	0
+?	$do	1024,number(?)	1.75*+?-1
+	$list
+$(3:03000)
+$(0:64)
+	lx	(number(512))
+	lk	(127*/16)
+	dl      (1.65*+1200000)
+	$lit	3
+	ly, xi	("the result is %f":10)
+	$do	$<256,$(0:256)
+        $end
+  :                            428  $list
+  :                            429 $(31:01F000)
+  :                            432  $list
+  :                            433 $(3:03000)
+  :                            434 $(0:64)
+00:000040 500100              +435  lx (number(512))
+00:000041 480101              +436  lk (127*/16)
+00:000042 CF0102              +437  dl      (1.65*+1200000)
+  :                            438  $lit 3
+00:000043 5D3000              +439  ly, xi ("the result is %f":10)
+  :                            440  $do $<256,$(0:256)
+  :                            441         $end
+00:000100+01F7FC
+00:000101+7F0000
+00:000102+7CD38BAD344C64F0DD0432C5
+03:003000+74686520726573756C742069732025660A00
+:$(00):000040:000106 :$(03):003000:003006 :$(1F):01F000:020000 
+
+</pre>
+By default automatic literals are assembled at the end of program section $(0)
 
 <p>
 The <b>$lit</b> directive may place automatic literals 
@@ -720,6 +757,31 @@ at the end of another program section
 <pre>
 
 [tag]	$lit	55
+
+</pre>
+A literal may contain a macro generating data or code
+<pre>
+
+$ masmx lstruct -lnk
+MASMX 7r3
+3/lstruct.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	t77.4/ip.def
+  :                            4 	$path
+  :                            5 
+  :                            6 $(3:03000/$3)
+  :                            7 buffer	$res		2048
+  :                            8 $(0:64)
+00:000040 970100              +9 	ex		(dl		$3($net_socket	127.0.0.1:8080))
+  :                            10 	$do		$<256,$(0:256)
+  :                            11 
+*EOF*
+00:000100+CF3800
+03:003800+7F0000011F90
+:$(00):000040:000101 :$(03):003000:003802 
+
 
 </pre>
 A literal which is not automatic  has a literal pool
@@ -755,10 +817,10 @@ $(0:64)
 
 </pre>
 
-<h3>More about Strings</h3>
+<h3>Character Strings</h3>
 
-The last literal example was a string. Bytes are any size you
-say they are, default 8-bits, padded with either zero or space to integral words
+Strings generate the containing number of data words. The default byte size
+is 8 bits and the default data code is ASCII
 <pre>
 
 $ masmx strings -ln
@@ -787,9 +849,25 @@ Note: strings.msm Line 12: trailing zero bits in last data word of string
 :$(00):000000:000015 
 
 </pre>
-Padding to word fill is zero with option <b>-c</b> or <b>-z</b> and space
-with neither or both <b>-cz</b>
+Padding to word fill is zero with option <b>-z</b> otherwise space
 
+<p>
+Nondisplay byte values can be placed in strings
+<pre>
+
+$ masmx -ln
+MASMX 7r3
+0/-INPUT>>
+LF	$equ	10
+edit	"the result is %f":LF:0
+	$end
+  :                            1 LF $equ 10
+00:000000 74686520726573756C742069732025660A00
+                              +2 edit "the result is %f":LF:0
+  :                            3  $end
+:$(00):000000:000006 
+
+</pre>
 <p>
 In <b>masmx.7r3</b> the masmx-internal label <b>$bits</b> contains
 the number of bits containing the characters in the string after the
@@ -1892,12 +1970,51 @@ Absolute program counter is updated with B0 + effective address
   :                            434 $(0:64)
   :                            435 examine<div	style="color:red">
 00:000040 783000              +436 	tp	left 
-00:000041 350000              +437 	lret	0
+00:000041 350000              +437 	lret	0	. return to instruction after lcal
 00:000042 703001              +438 	tz	right
-00:000043 350000              +439 	lret	0
-00:000044 350001              +440 	lret	1</div>
+00:000043 350000              +439 	lret	0	. return to instruction after lcal
+00:000044 350001              +440 	lret	1	. return and skip one instruction</div>
 
 
+</pre>
+Return instructions <b>lret</b>  <b>fret</b>  <b>iret</b> have a sign extended immediate
+operand which is added to the return address on the stack. This value is zero to return to
+the instruction after call. A a negative value skips backwards from the return point. A
+positive nonzero value skips forward
+
+	<blockquote>
+	<b>lret</b> returns from <b>lcal</b><br><br>
+	<b>fret</b> returns from <b>call</b><br><br>
+	<b>iret</b> returns form  an interrupt whether external or internal
+	</blockquote>
+
+Internal interrupt instruction <b>ii</b> also has a sign extended immediate operand. The
+low-order six bits are a vector value. Bits 21..6 designate the 4K-word start address of
+the bank containing the ISR
+<pre>
+
+$ masmx -kln
+MASMX 7r3
+0/-INPUT>>
+	$path		freeware/RTA1/rta/def
+	$list		0
+	$include	rta.def
+	$include	ii.def
+	$list
+$(0:64)
+	ql		(routine, PRIORITY, PARAMETER, EXTERNAL_STACKFRAME)
+	ii		THREAD$
+	$do	$<256,$(0:256)
+	$end
+  :                            1  $path  freeware/RTA1/rta/def
+  :                            558  $list
+  :                            559 $(0:64)
+00:000040 4F0100              +560  ql  (routine, PRIORITY, PARAMETER, EXTERNAL_STACKFRAME)<div	style="color:FF0000">
+00:000041 750047              +561  ii  THREAD$</div>
+  :                            562  $do $<256,$(0:256)
+  :                            563  $end
+00:000100+[0003]06:[0002]06*/06:[0001]06*/0C:[0000]06*/12:000000
+:$(00):000040:000101 
 
 </pre>
 <h3>Control and I/O Instructions</h3>
@@ -2598,7 +2715,8 @@ MASMX 7r3
 
 </pre>
 
-An array up to six or seven megawords may all be in the address space at once
+An array up to six or seven megawords may all be in the address space at once.
+It would up to 28 address windows to be available in the range B4 to B31
 
 <p>
 Otherwise a pair of address windows provide a moving cursor in the array
@@ -2662,6 +2780,57 @@ software handling tables and arrays references very few labels
 
 <h2>9: $do Iteration</h2>
 
+<b>$do</b> directive repeats a line of code
+<pre>
+
+[tag]	$do	count,[label]	command	[command_arguments]
+
+</pre>
+
+For example
+<pre>
+
+	$do	$o('k')=0,	$exit	this assembly requires option -k
+</pre>
+
+A column 1 tag on <b>$do</b> has a value incrementing from 1. This value
+may be used in labels and values of iterated code
+
+<pre>
+
+$ masmx -klnx
+MASMX 7r3
+0/-INPUT>>
+$(30:01E000)
+TIMES	$set	5
+
+index	$do	TIMES,float(TIMES+1-index)	1*+index-1
+	$end
+  :                            1 $(30:01E000)
+  :                            2 TIMES $set 5
+  :                            3 
+1E:01E000 400001800000000000000000
+                              +4 index $do TIMES,float(TIMES+1-index) 1*+index-1
+1E:01E004 400004A00000000000000000
+                              +4 
+1E:01E008 400007C80000000000000000
+                              +4 
+1E:01E00C 40000AFA0000000000000000
+                              +4 
+1E:01E010 40000E9C4000000000000000
+                              +4 
+  :                            5  $end
+TIMES=000005
+index=000005
+float(5)=$1E:01E000
+float(4)=$1E:01E004
+float(3)=$1E:01E008
+float(2)=$1E:01E00C
+float(1)=$1E:01E010
+-INPUT>>=0<000000
+:$(1E):01E000:01E014 
+
+</pre>
 <h2>10: $proc and $func Macros</h2>
 
 <b>$proc</b> directive heads an inline macro. <b>$end</b> directives ends all macros
@@ -2872,15 +3041,15 @@ This operand expression obtains a functional value log2()
 
 </pre>
 <p>
-<b>$func</b> directive heads a function macro and  <b>$end</b>ends it. Function macros have
-a <b>$return</b> directive which returns a 192-bit value
+<b>$func</b> directive heads a function macro and  <b>$end</b> ends it. Function macros
+return a 192-bit value with  <b>$return</b> directive
 
 <p>
-Arguments for a function are in parentheses. There are an arbitrary number of field,
-subfield and substring arguments
+Arguments for a function are in parentheses. They are field, subfield and substring
+arguments of arbitrary number
 
 <p>
-This function returns log 2 of the containing power 2 of one parameter
+This function returns log 2 of the containing power 2 
 
 <pre>
 
@@ -2924,14 +3093,32 @@ log2.msm=0<000003
 
 </pre>
 
-A function macro can be flagged only to expand on the second assembler pass.
+Functions are not permitted to generate code in the current location counter
+<p>
+A function macro can be flagged to expand only on the second assembler pass.
 The flag is an asterisk on the title line
 <pre>
 
-later*	$func	*
-	$return	$literal_loc40(transmission_block	netaddress(later(1, 1))	;
-							netaddress(later(2, 1)))
-	$end
+$ masmx lquick -lnk
+MASMX 7r3
+3/lquick.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	t77.4/ip.def
+  :                            4 
+  :                            5 later*	$func	*
+  :                            6 	$return	$5($net_socket	later(1, 1))
+  :                            7 	$end
+  :                            8 
+  :                            9 $(5:05000/$5)
+  :                            10 $(0:64)
+  :                            11 
+00:000040 CF5000              +12 	dl	later(127.0.0.1:8080)
+  :                            13 
+*EOF*
+05:005000+7F0000011F90
+:$(00):000040:000041 :$(05):005000:005002 
 
 </pre>
 
