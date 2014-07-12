@@ -100,7 +100,6 @@ h2      $equ    t3
 
 i$      $form   5, 3, 1, 15
 i$x     $form   5, 3, 1, 3, 12
-i$i	$form	5, 3, 1, 2, 13 
 i$a	$form	5, 3, 16
 
 p       $proc
@@ -143,10 +142,9 @@ push*   $name   31
 operand	$set	p(1, 1)
 jdesignator $set p(0, 2)++p(1, 3)
 indirection $set	p(1, *1)
-index	$set	p(1, 2)
 
 	$if	jdesignator=xi
-	 $if	index
+	 $if	p(1, 2)
 	  $flag indexing not allowed with sign extended immediate
 	 $endif
 	 $if	indirection
@@ -155,15 +153,10 @@ index	$set	p(1, 2)
 	 $do	$net(operand)<-32768,	$flag sign extended immediate too low
 	 $do	$net(operand)>65535,	$flag sign extended immediate too high
 	 i$a	$n, xi, operand
-        $elseif index
-	$do	indirection,	*indirection,index not possible
-        i$x     p(0, 0), jdesignator, 1, $index(index), $address12(operand)
+        $elseif p(1, 2)
+        i$x     $n, jdesignator, 1, $index(p(1, 2)), $address12(operand)
         $else
-	 $if	indirection
-	  i$i	p(0, 0), jdesignator, 1, 0, $address13(operand)
-	 $else
-          i$      $n, jdesignator, 0, $address15(operand)
-         $endif
+        i$      $n, jdesignator, indirection, $address15(p(1, 1))
         $endif
         $end
 
@@ -179,18 +172,10 @@ emulator_cool* $name 5
 sabr*	$name	6
 jdz*	$name	15
 
-indirection $set p(1, *1)
-index	$set	p(1, 2)
-
-        $if     index
-	$do	indirection,	$flag	*indirection,index not possible
-        i$x     $n, i, 1, $index(index), $address12(p(1, 1))
+        $if     p(1, 2)
+        i$x     $n, i, 1, $index(p(1, 2)), $address12(p(1, 1))
         $else
-        $if	indirection
-	i$i	p(0, 0), i, 1, 0, $address13(p(1, 1))
-	$else
-        i$      p(0, 0), i, 0, $address15(p(1, 1))
-	$endif
+        i$      $n, i, p(1, *1), $address15(p(1, 1))
         $endif
         $end
 
@@ -233,17 +218,11 @@ fret*   $name   7
 ii*	$name	14
 ir*	$name   15
 
-operand	$set	p(1, 1)
-
         $if	p(1, 2)++p(1, *1)
         $flag	no indexing or indirection with this instruction
         $note	only sign extended immediate 16-bit operand possible
         $endif
-
-	$do	operand<-32768,	$flag	xi operand value too low
-	$do	operand>32767,	$flag	xi operand too high
-
-        i$a     $n, xi, operand
+        i$a     $n, xi, p(1, 1)
         $end
 
 p       $proc
@@ -291,18 +270,10 @@ jnb*    $name   29
 jxge*    $name   30
 jyge*    $name   31
 
-indirection $set p(1, *1)
-index	$set	p(1, 2)
-
-        $if     index
-	$do	indirection,	$flag	*indirection,index not possible
-        i$x     $n, 6, 1, $index(index), $address12(p(1, 1))
+        $if     p(1, 2)
+        i$x     $n, 6, 1, $index(p(1, 2)), $address12(p(1, 1))
         $else
-	$if	indirection
-	i$i	p(0, 0), 6, 1, 0, $address13(p(1, 1))
-	$else
-        i$      $n, 6, 0, $address15(p(1, 1))
-	$endif
+        i$      $n, 6, p(1, *1), $address15(p(1, 1))
         $endif
         $end
 
@@ -348,35 +319,33 @@ dlsc*    $name   28
 go*    $name   30
 call*    $name   31
 
-indirection $set p(1, *1)
-index	$set	p(1, 2)
+operand	$set	p(1, 1)
 
-        $if     index
-	$do	indirection,	$flag	*indirection,index not possible
-        i$x     $n, 7, 1, $index(index), $address12(p(1, 1))
+        $if     p(1, 2)
+        i$x     $n, 7, 1, $index(p(1, 2)), $address12(operand)
         $else
-	$if	indirection
-	i$i	p(0, 0), 7, 1, 0, $address13(p(1, 1))
-	$else
-        i$      $n, 7, 0, $address15(p(1, 1))
-	$endif
+        i$      $n, 7, p(1, *1), $address15(operand)
         $endif
         $end
 
 f	$func
-"$address13"* $name
+"$address15"* $name
+
 offset	$set	f(1, 1)
+.	$do	$t(f(1,1))=$equf,;
+. offset	$set	offset**((1*/31)-1)
+
+
+	$if	f(1, *1)
+
 	$do	$net(offset)>8191,	;
          $flag  indirection only on words 0 to 8191
-	$return	offset
-	$end
-
-f	$func
-"$address15"* $name
-offset	$set	f(1, 1)
+        $else
         $do	$net(offset)>32767,	;
          $flag  direct addressing only 0 to 32767
+        $endif
        	$return	offset
+
 	$end
         
 f	$func
