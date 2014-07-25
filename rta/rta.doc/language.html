@@ -58,9 +58,18 @@ handle_name*    <b>$vector</b>  bank_internal_name
 
 </pre>
 The handle value is placed in the single-word constant or
-variable operand of <b>go</b> and <b>call</b> instructions.
-It encodes the target bank identifier and a six-bit offset
-location of <b>$vector</b>
+variable operand of <b>go</b> and <b>call</b> instructions
+<pre>
+
+
+		call	handle
+
+
+handle		+	handle_name
+
+</pre>
+The handle value  encodes the target bank identifier and
+six-bit offset location where <b>$vector</b> macro is assembled
 <pre>
 
 
@@ -919,6 +928,70 @@ every <b>$head_near/far</b> in the assembly when opted
 
 <h2>3. Runtime Algorithmic Expressions</h2>
 
+<p>
+Assemblers mostly resolve expressions whose tokens are all known at assembly time
+
+<p>
+<b>$xqt_fp</b> and <b>$xqt_i</b> directives code an instruction plan in a
+compiler-like fashion however, to solve expressions involving run-time variables
+
+<p>
+These instruction steps are planned with the support of target-specific macros with
+fixed call-names known to masmx 
+
+<p>
+<b>$xqt_i</b> processes integers and can resolve all expression steps
+between constants at assembly time, planning the fewest possible instructions
+for run time calculation
+
+<p>
+In this example the subexpression right of the OR operator <b>++</b> has been
+resolved at assembly time, but left of <b>++</b> a multiply, two adds and a
+shift must take place at runtime
+
+
+<pre>
+
+$ masmx boolean -lnk
+MASMX 7r3
+3/boolean.msm
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	language/fpxpress.def
+  :                            4: 	$include	language/i_xpress.def
+  :                            5 	$path
+  :                            6 
+  :                            7 $(3:03000)
+03:003000 000001              +8 one	1
+03:003001 000000000002        +9 two	2d
+03:003003 000000000003        +10 three	3d
+  :                            11 $(0:64)
+00:000040 603000              +12 	$xqt_i	two+one,,w0*4+three*/16++12*/40
+00:000041 960018              +12 
+00:000042 E00100              +12 
+00:000043 D73001              +12 
+00:000044 D73003              +12 
+00:000045 360010              +12 
+00:000046 900101              +12 
+00:000047 980102              +12 
+  :                            13 	$do	$<256,$(0:256)
+  :                            14 	$end
+00:000100+000004
+00:000101+0C0000000000
+:$(00):000040:000103 :$(03):003000:003005 
+
+
+</pre>
+<p>
+<b>$xqt_fp</b> by contrast includes constants as well as variables in expressions,
+but does not attempt assembly-time calculation of expression steps between floating
+constants
+
+<p>
+<b>$xqt_fp</b> concerns four-function arithmetic only, and operands are four words
+in size
+
+<p>
 Here a simple algorithm with five inputs is executed in five instructions, including
 operand acquisition from storage
 <pre>
@@ -964,49 +1037,22 @@ r2xample.msm: object code 190 bytes: 0 errors: 0 undefined labels
 
 
 </pre>
-Simply explained, the masmx assembler has taken an expression with five operands and
-four operators, and turned it into a sequence of five instructions which deliver the
-four-word floating result of the operations in the result registers <b>a:b:6:7</b>
+masmx has taken an expression with five operands and four operators, and
+turned it into a sequence of five instructions which deliver the four-word
+floating result of the operations in the result registers <b>a:b:mantissa2:mantissa3</b>
 
 <p>
-Assemblers mostly solve expressions whose tokens are all known at assembly time
-
-<p>
-But three of these tokens are identifiers whose content is only known at runtime
+Three of these tokens are identifiers whose content is only known at runtime
 
 <p>
 <b>$xqt_fp</b> directive scans an expression and calls macro code to write an
-instruction plan. The tokens which could be solved at assembly time
-appear as literals at the foot of the program
+instruction plan. The tokens which are constants appear as literals at the foot
+of the program
 
 <p>
-Run-time expression-solving is required in compilers as distinct from
-assemblers. But RTA1 has no compilers at present, so the <b>$xqt_fp</b>
-directive supports future compilers and supports run-time expressions
-right now
+Other details of <b>$xqt_fp</b> and <b>$xqt_i</b> directives are in the manuals
+<b>masmx.7r3</b> and <b>masmx.7r3 for RTA1</b>
 
-<p>
-Exactly five instructions for five operands is as efficient as straight-line
-computing can get
-
-<p>
-Load-store triadic architectures need at least ten instructions to load
-and then compute. RTA1 reduces this to five instructions
-with its seamless operand hierarchy of registers and memory
-
-<p>
-masmx.7r3 has of course a <b>$xqt_i</b> directive which applies arithmetic, boolean,
-shift and comparison operations to integers, at assembly as far as possible
-and in an instruction plan thereafter
-
-<p>
-<b>$xqt_fp</b> and <b>$xqt_i</b> directives essentially and initially plan
-a load to the result registers. If masmx can solve the whole expression at
-assembly time, only a constant load instruction is generated
-
-<p>
-Macro code to realise each successive operation in the algorithm is target-specific
-and described in the manuals <b>masmx for RTA1</b> and <b>masmx.7r3</b>
 
 <i>
 <pre>
