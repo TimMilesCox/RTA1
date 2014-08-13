@@ -232,8 +232,8 @@ Their vector values are these ranges
         2*64++[0..63]
         00 0000 0000 0000 0010 yyyyyy
 
-        5*64++[0..63]
-        00 0000 0000 0000 0101 xxxxxx
+        6*64++[0..63]
+        00 0000 0000 0000 0110 xxxxxx
 
 
         [example]<i>
@@ -305,7 +305,7 @@ used as building blocks for services
 
 	YIELD$             65		= bank 1  vector  1
 
-					task switch
+					thread switch
 
 					on preemptive event
 					or event wait
@@ -314,14 +314,14 @@ used as building blocks for services
 
 	TWAIT$             91		= bank 1  vector  27
 
-					task switch and wait
+					thread switch and wait
 					microsecond count in
 					application register a
 
 
 	EXIT$              70		= bank 1  vector  6
 
-					end task
+					end thread and subsidiary threads
 
 
 	THREAD$		   71		= bank 1  vector  7
@@ -395,7 +395,7 @@ The kernel assigns a single storage area containing
 
 	<li>B1 banks</li>
 
-	<li>Task (or initial thread) Control Block</li>
+	<li>Initial Thread Control Block</li>
 
 	<li>a vector bank</li>
 
@@ -556,15 +556,15 @@ The instruction bank containing the <b>start_vector</b> must be loaded before
 
 <h4>2.1.2 YIELD$</h4>
 <p>
-<b>YIELD$</b> is a voluntary task switch.
+<b>YIELD$</b> is a voluntary thread switch
 
 <p>
 <b>YIELD$</b> may  be embedded in an event handler which is preemptive
 and not voluntary,<br>
-or in a service request which marks the task descriptor to block on events
+or in a service request which marks the thread descriptor to block on events
 
 <p>
-<b>YIELD$</b> benefits only tasks of equal or higher priority if it is called
+<b>YIELD$</b> benefits only threads of equal or higher priority if it is called
 independently of preemptive or blocking events
 
 <div    style="font-size:11pt">
@@ -580,14 +580,14 @@ independently of preemptive or blocking events
 
 <h4>2.1.3 TWAIT$</h4>
 <p>
-<b>TWAIT$</b> is a voluntary task yield for a time in microseconds
+<b>TWAIT$</b> is a voluntary thread yield for a time in microseconds
 
 <p>
 <b>TWAIT$</b> may  be embedded in an event handler which is preemptive
 and not voluntary
 
 <p>
-When the wait time is expired, the task becomes a candidate for switching
+When the wait time is expired, the thread becomes a candidate for switching
 
 <div    style="font-size:11pt">
 <pre>
@@ -603,8 +603,8 @@ When the wait time is expired, the task becomes a candidate for switching
 
 <h4>2.1.4 EXIT$</h4>
 <p>
-<b>EXIT$</b> deletes the thread. If that is the process main thread, all threads
-in the process exit, all handles close, and all resources are surrendered
+<b>EXIT$</b> deletes the thread. Subsidiary threads also exit. When the process
+initial thread exits, all handles close
 
 <div    style="font-size:11pt">
 <pre>
@@ -616,6 +616,9 @@ in the process exit, all handles close, and all resources are surrendered
 
 </pre>
 </div>
+
+Storage which the thread acquires with BANK$ and ARRAY$ returns to the kernel
+when the thread exits if the storage is not freed earlier
 
 <p>
 If the application internal stack is empty (sp = 128), hardware raises
@@ -692,7 +695,7 @@ Bank pointer or index is the 4K-word block where a bank starts = physical addres
 <h4>2.2.1 BANK$</h4>
 <p>
 <b>BANK$</b> obtains a bank from 1 to 16777215 words in size and
-records it in the task control block. The argument in application
+records it in the thread control block. The argument in application
 register a is words requested. value returned in a is the bank
 pointer. Zero = no memory granted
 
@@ -716,7 +719,7 @@ The bank is a single linear block
 <h4>2.2.2 ARRAY$</h4>
 <p>
 <b>ARRAY$</b> obtains a bank from 4096 words to 16 Gigawords in size
-and records it in the task control block. The argument in application
+and records it in the thread control block. The argument in application
 register a is 4096-word blocks requested. value returned in a is the bank
 pointer. Zero = no memory granted
 
@@ -738,7 +741,7 @@ in 262144-word blocks. The bank is a single linear block
 
 <h4>2.2.3 BANK$FREE</h4>
 <p>
-<b>BANK$FREE</b> returns a bank of any size to the kernel. If the task
+<b>BANK$FREE</b> returns a bank of any size to the kernel. If the thread
 does not possess the bank, no action is taken. The argument in
 application register a is the bank pointer
 
