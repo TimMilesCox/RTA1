@@ -159,15 +159,15 @@ tcp_no2ndsyn
 	dsl	8
 	ds	8
 
-	dan	6
+	dan	6			. remote ACK gone backwards?
 	jna	tcp_ripdown_reset
 
 	dl	8
-	ds	6
+	ds	6			. new remote ACK
 	dl	transmission:sequence_ackx
 	andB	(255*/16:s)
 
-	dan	8
+	dan	8			. remote ACK beyond local SEQ?
 	jna	tcp_ripdown_reset
 
 	la	HL_FLAGS
@@ -288,20 +288,19 @@ tcp_tx_segments_acked?
 
 	ab	descriptor:bytes, y	.	payload length
 
-	andB	07FFF,,xi
+	sbl	8
 	sb	9
-	z	8			.	000000 007FFF
+	z	8			.	000000 FFFF00
 
 	dl	transfer:seq, a
 	sbl	8			.	00FFFF FFFF00
-	dsr	8			.	0000FF FFFFFF
 	da	8
-	dsl	16			.	FFFFFF FF0000
+	dsl	8			.	FFFFFF FF0000
 
 	dan	6
 	jdz	tcp_q4a_slip?
-	jpa	tcp_rx_in_range?
-
+	jpa	tcp_rx_in_range?	.	segment trailing edge
+					.	> remote ACK
 tcp_q4a_slip?
 	la	0, y
 	sa	transmission:q4ack:head
