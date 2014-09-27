@@ -1,0 +1,548 @@
+.	a group of output edits for integers
+
+
+
+ie48lu	$head_far	 params(i48u,	long)
+	dl	i48u
+	ly, xi	7
+	lcal	ie48g
+	lr, xi	11
+	lcal	ieditl
+	fret	0
+
+ie48ls	$head_far	 params(i48s,	long)
+	dl	i48s
+	jpa	ie48lp
+	la	('-'*/$word-$byte:s)
+	wsr	$byte
+	dsr	48
+	dan	i48s
+ie48lp	ly, xi	7
+	lcal	ie48g
+	lr, xi	11
+	lcal	ieditl
+	fret	0
+
+ie48ru	$head_far	 params(mask48u,	int	;
+				i48ur,		long	)
+	dl	i48ur
+	ly, xi	7
+	lcal	ie48g
+	lb	mask48u
+	z	6
+	lr, xi	11
+	lcal	ieditr
+	fret	0
+
+ie48rs	$head_far	 params(mask48s,	int	;
+				i48sr,		long	)
+	la	('+'*/$word-$byte:s)
+	sa	6
+	dl	i48sr
+	lr, xi	11
+	jpa	ie48rp
+
+	la	('-'*/$word-$byte:s)
+	sa	6
+	dsr	48
+	dan	i48sr
+
+ie48rp	ly, xi	7
+	lcal	ie48g
+	lb	mask48s
+	lcal	ieditr
+	fret	0
+
+ie72lu	$head_far	 params(lu72,		3)	;
+			scalars(lstru72,	8)
+	lb	lu72+2
+	sb	7
+	dl	lu72
+	ly, i	lstru72	. point the display digit array
+	lcal	ie72g	. construct 24 decimal digits
+	lr, i	lstru72+7 . limit the display digit array
+	lcal	ieditl	. output left-justified string
+	$ret
+
+ie72ls	$head_far	 params(ls72,		3)	;
+			scalars(lstrs72,	8)
+
+	ly, i	ls72	. point the 72-bit integer
+	tp	ls72
+	lcal	ie72lnegate
+
+	lb	ls72+2
+	sb	7
+	dl	ls72
+	ly, i	lstrs72	. point the display digit array
+	lcal	ie72g	. construct the 24 decimal digits
+	lr, i	lstrs72+7 . limit the display digit array
+	lcal	ieditl	. output left-justified string
+	$ret
+
+ie72ru	$head_far	 params(mask72ru,	int	;
+				i72ru,		3)	;
+			scalars(string72ru,	8)
+
+	lb	i72ru+2
+	sb	7
+	dl	i72ru
+	ly, i	string72ru	. construct array of 24 digits
+	lcal	ie72g
+	z	6		. suppress sign float
+	lr, i	string72ru+7	. mark end of digit array
+	lb	mask72ru	. load the edit mask
+	lcal	ieditr?1	. just do it
+	$ret
+
+ie72rs	$head_far	 params(mask72rs,	int	;
+				i72rs,		3)	;
+			scalars(string72rs,	8)
+
+	la	('+'*/$word-$byte:s)	. default floating sign
+	sa	6
+
+	ly, i	i72rs
+	tp	i72rs
+	lcal	ie72rnegate	. switch the sign symbol
+				. convert to positive magnitude
+
+	lb	i72rs+2		. position the integer
+	sb	7
+	dl	i72rs
+	ly, i	string72rs	. point to the digit array
+	lcal	ie72g		. construct array of 24 digits
+	lr, i	string72rs+7	. mark end of digit array
+	lb	mask72rs	. load the edit mask
+	lcal	ieditr?1
+	$ret
+	
+
+ie72rnegate
+	la	('-'*/$word-$byte:s)
+	sa	6
+	j	ie72negate . reverse the default floating sign
+ie72lnegate
+	la	('-'*/$word-$byte:s)
+	wsr	$byte
+ie72negate
+	dsr	48	. change negative integer
+	dan	1, y	. to positive magnitude
+	ds	1, y	. in the internal stack frame
+	sc	b
+	ab, xi	-1
+	anb	0, y
+	sb	0, y
+	lret	0
+
+
+
+.	turn 24 bits into 9 ASCII or data code digits
+.       in 3 words pointed by index register y
+.	the first two output columns are always '00'
+
+ie24g	dsr	24
+	d	(1000000)
+	la	table, a
+	sa	0, y
+	la, xi	0
+	d, xi	1000
+	la	table, a
+	lb	table, b
+	ds	1, y
+	lret	0
+
+
+.	turn 48 bits into 15 ASCII or data code digits
+.	in 5 words pointed by index register y
+.	all output columns may be significant
+
+ie48g	d	(1000000)
+	push	b
+	sa	b
+	la	6
+	d	(1000000)
+	la	table, a
+	sa	0, y
+	la, xi	0
+	d, xi	1000
+	la	table, a
+	lb	table, b
+	ds	1, y
+	pop	a
+	dsr	24
+	d, xi	1000
+	la	table, a
+	lb	table, b
+	ds	3, y
+	lret	0
+
+
+.       turn 72 bits into 24 ASCII or data code digits
+.       in 8 words pointed by index register y
+.	the first two output columns are always '00'
+
+.	this isn't so bad as it looks
+.	the 72-bit value may represent 22 decimal digits
+.	and shall be reduced to four radix-million parts
+.	which are each divided into two radix-thousand parts
+.	input is in registers a:b,7
+
+ie72g	d	(1000000)
+	push	a		. quotient1 47..24
+	push	6		. quotient1 71..48
+	la	b		. remainder is MS half of long divide
+	lb	7		. dividend1 23..0
+	d	(1000000)
+	sa	7		. quotient1 23..0
+	la, xi	0		. translate remainder1
+	d, xi	1000		. to decimal digits 5..0
+	la	table, a
+	lb	table, b
+	ds	6, y
+	pop	a		. retrieve quotient1 71..24 
+	pop	b		.          quotient1 47..24
+	d	(1000000)
+	push	a		. quotient2 47..24
+
+.	[ drop	register 6 ]	. quotient2 71..48 has no significance
+
+	la	b		. remainder is MS half of long divide
+	lb	7		. retrieve quotient1 23..0
+	d	(1000000)
+	push	a		. quotient2 23..0
+	la, xi	0		. translate remainder2
+	d, xi	1000		. to decimal digits 11..6
+	la	table, a
+	lb	table, b
+	ds	4, y
+	pop	b		. retrieve quotient2 23..0
+	pop	a		.          quotient2 47..24
+	d	(1000000)
+	push	a		. quotient3
+	la, xi	0
+	d, xi	1000		. translate remainder3
+	la	table, a	. to decimal digits 17..12
+	lb	table, b
+	ds	2, y
+	pop	a		. quotient3
+	dsr	24
+	d, xi	1000		. translate quotient3
+	la	table, a	. to decimal digits 23..18
+	lb	table, b
+	ds	0, y
+	lret	0
+	
+	
+	
+
+.	format a 48-bit integer for output as up to 15
+.	decimal digits in the C-Language left-justifed
+.	default fashion. Leading zero is skipped. The
+.	target field sizes itself
+
+
+ieditl	la	0, y		. read three digits. On last word
+	jyge	ie48lz		. output at least 1 column
+	anu	('000')
+	jnzb	ielsos		. on nonzero start ouptut
+	ay, xi	1
+	j	ieditl		. loop for next word
+
+ie48lz	anu	('000')		. are all digits zero?
+	jnzb	ienz		. no, edit this last word
+	wsr	$byte		. yes, force a single '0' out
+	lret	0
+
+
+.	subroutine, edit the first nonzero word in the digit row
+.	mask register k is FF0000
+
+ieprnz	mta	('000')		. is the top byte '0' ?
+	lret	0		. no, print remaining bits
+	sal	$byte		. yes, squash a byte
+	lret	2		. skip the stream write/upper return
+
+
+.	subroutine call
+
+ieprn?*	$proc
+	lcal	ieprnz
+	wsr	$byte*($word/$byte-?+1)	. write all remaining bits
+	lret	0			. get out of here
+	$end
+
+ienz	lk	(+(1*/$byte)-1*/$word-$byte:s)
+?	$do	$word/$byte,	ieprn?
+	lret	0
+	
+ielsos	lcal	ienz		. write the significant part 1st word
+ielsos1	ay, xi	1		. that is never the last word
+	la	0, y		. read some more
+	wsr	24		. write all of it
+	jyge	ielx
+	j	ielsos1		. write any more
+ielx	lret	0
+
+
+
+
+.	simple right-justified edit in a fixed field
+.	____________________________________________
+
+.	register b contains an edit mask
+
+.	The first bits in the mask, whether they are zeros or ones,
+.       represent high order positions in front of the target field
+.	where a significand from the source value is not expected
+
+.       if one of these unexpected digits is significant then significance
+.       switches on early and the output is longer than expected and grows
+.       rightward with low-order digits further right than expected
+
+.	if the unexpected-position flags are ones, then subsequent zero
+.	bits represent positions in the expected target field which will
+.	always be written and where leading zero is replaced with space
+
+.       a string of ones then represents the digit positions which are
+.	not zero-suppressed
+
+.	the high-order mask bit indicates the polarity of the following
+.	flags if any which designate positions where a digit is not
+.	expected or intended
+
+.	the input array is processed in trios of digits
+
+
+.	for 24-bit input
+.	________________
+
+.	the edit mask is a 10-bit mask in register b
+.	the input array is 9 digits. Up to 7 of them are significant
+
+.	A simple 10-bit mask for 24-bit input is
+
+.	___________________________________________________
+.	| 1 1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+.	The first high order bit only means that the mask DOES begin
+.	with some ones bits. This means that the zero bits after are
+.	a zero-suppress zone
+
+.	The initial no-digit-expected flags may be zeros. This
+.	means there is no zero-suppress zone
+
+.	The high-order bit here is one, meaning following ones
+.	bits represent input digit positions where significance
+.	is not expected
+
+.	The next two ones bits mean significance is not expected
+.	for at least two digits
+
+.	If the digit array is generated from a 24-bit integer
+.	then digits 9..8 are always zero
+
+.	The six zero bits followed by a one mean the target field
+.	has seven positions and the first six are zero-suppress
+
+.	For a target field less than 7 positions the initial ones
+.	field is longer, but unexpected significant digits will
+.	cause extra columns to be written
+
+
+.	for 48-bit input
+.	________________
+
+.	the edit mask is a 16-bit mask in register b
+
+.       A simple 16-bit mask for 48-bit input is
+
+.       ___________________________________________________
+.       | 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 |
+.       |_________________________________________________|
+
+
+.       The first high order bit only means that the mask DOES begin
+.       with some ones bits. This means that the zero bits after are
+.       a zero-suppress zone
+
+.       The initial no-digit-expected flags may be zeros. This
+.       means there is no zero-suppress zone
+
+.	There is no significand corresponding to the high-order bit
+.	because a 48-bit value can only generate 15 decimal significands
+
+.       The 14 zero bits followed by a one mean the target field
+.       has 15 positions and the first 14 are zero-suppress
+
+.       For a target field less than 15 positions the initial ones
+.       field is longer, but unexpected significant digits will
+.       cause extra columns to be written
+
+.       this example of a mask in b for 48-bit input shows up to nine
+.       integral digits expected of which eight may be zero suppressed
+
+.       if the output is larger that 999,999,999 then the
+.       output field will get longer than nine positions
+
+.       ___________________________________________________
+.       | 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 |
+.       |_________________________________________________|
+
+
+
+.	for 72-bit input
+.	________________
+
+.       A simple 24-bit mask for the 24-column digit array is
+
+.       ___________________________________________________
+.       | 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 |
+.       |_________________________________________________|
+
+
+.	There is no separate flag polarity bit at the start
+.	although there is for the shorter mask layouts
+
+.	The high-order bit is the first no-significand-expected
+.	flag and gives the polarity of any more following it
+
+.	The fixed field maximum size is 23 columns, but 24
+.	significands in the digit array will output 24 columns
+
+.       The initial no-digit-expected flags may be zeros. This
+.       means there is no zero-suppress zone
+
+.       The two high-order bits here are one, meaning significance
+.       is not expected in the first two columns of the 24-digit
+.	array.  A 72-bit integer can generate 22 significant digits
+
+.       The 21 zero bits followed by a one mean the target field
+.       has 22 positions and the first 21 are zero-suppress
+
+.       For a target field less than 22 positions the initial flags
+.       field is longer, but unexpected significant digits will
+.       cause extra columns to be written
+
+.	Here is an example of a mask for a fixed 21 position field
+.	with leading zero suppression except for the final column
+
+.	___________________________________________________
+.	| 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 |
+.	|_________________________________________________|
+
+
+.	imputed fractional scale of integer input
+.	_________________________________________
+
+.	if any trailing positions out of 9 / 15 / 24 are represented with
+.	zero, a decimal point is output before the last positions are written
+
+
+.	edit field with no zero-suppress zone
+.	_____________________________________
+
+.	if there is no leading zero-suppress field, then the
+.	mask begins with zeros which represent positions
+.	where significands are not expected and the subsequent
+.	ones field represents non-suppress positions
+
+.	This example is for the 15-column digit array
+
+.	here exactly four digits will be output without
+.	zero-suppression. If the source value is > 9999
+.	then significance will switch on early and the
+.	output field will occupy more than four positions
+
+.	___________________________________________________
+.	| 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+
+.	This is the equivalent mask for use with the 9-column
+.	digit array
+
+.	___________________________________________________
+.	| 0 0 0 0 0 0 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+
+
+ieditr?1			. entry point for 24-column variant
+	lk	(+(1*/$byte)-1*/$word-$byte:s)
+        jpb     ieditrz1	. 
+        j	ieditrf1	. leading flag is not represented
+
+
+.	common part, used for editing 24 / 48 / 72 bits
+.	may be used for decimal hex octal
+
+ieditr	lk	(+(1*/$byte)-1*/$word-$byte:s)
+	la	0, y
+	jnb	ieditrf		. has zero-suppress zone
+
+.	fall through
+
+ieditrz	rbl	1
+ieditrz1			. entry point for 24-column string!
+	mta	('0'*/$word-$byte:s)
+	j	ieditrs
+	jnb	ieditrs		. have entered field
+
+	sal	$byte
+	jnza	ieditrz
+	jyge	ieditzx
+	ay, xi	1
+	la	0, y
+	j	ieditrz
+
+ieditrs
+	tp	6
+	lcal	ifloat
+ieditrsym
+	wsr	$byte
+	jnza	ieditrsym
+	jyge	ieditzx		.  significance on
+	ay, xi	1
+	la	0, y
+	j	ieditrsym
+
+ieditrf	rbl	1
+ieditrf1			. entry point for 24-column string!
+	mta	('0'*/$word-$byte:s)
+	j	ieditrs
+	sal	$byte
+	jpb	ieditrx		. started zero-suppress field
+	jnza	ieditrf		. not yet in field, output no column
+	jyge	ieditzx
+	ay, xi	1
+	la	0, y
+	j	ieditrf
+
+ieditrx	or, xi	' '		. in field but not significant
+	rar	$byte
+	wsr	$byte
+	jnza	ieditrq
+	jyge	ieditzx
+	ay, xi	1
+	la	0, y
+
+ieditrq	rbl	1
+	mta     ('0'*/$word-$byte:s)
+	j	ieditrs
+	jnb	ieditrs		. significance flagged on
+	sal	$byte		. suppress another zero
+	j	ieditrx
+
+ieditzx	lret	0
+
+ifloat	push	a
+	la	6
+	wsr	$byte
+	pop	a
+	lret	0
+
