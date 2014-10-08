@@ -139,7 +139,7 @@ ie72negate
 
 .	turn 24 bits into 9 ASCII or data code digits
 .       in 3 words pointed by index register y
-.	the first two output columns are always '00'
+.	the first output columns is always '0'
 
 ie24g	dsr	24
 	d	(1000000)
@@ -244,12 +244,12 @@ ie72g	d	(1000000)
 
 ieditl	la	0, y		. read three digits. On last word
 	jyge	ie48lz		. output at least 1 column
-	anu	('000')
+	anu	table		. i.e 3 * '0'**255
 	jnzb	ielsos		. on nonzero start ouptut
 	ay, xi	1
 	j	ieditl		. loop for next word
 
-ie48lz	anu	('000')		. are all digits zero?
+ie48lz	anu	table		. are all digits zero?
 	jnzb	ienz		. no, edit this last word
 	WRITE_UBYTE		. yes, force a single '0' out
 	lret	0
@@ -258,7 +258,7 @@ ie48lz	anu	('000')		. are all digits zero?
 .	subroutine, edit the first nonzero word in the digit row
 .	mask register k is FF0000
 
-ieprnz	mta	('000')		. is the top byte '0' ?
+ieprnz	mta	table		. is the top byte '0' ?
 	lret	0		. no, print remaining bits
 	sal	$byte		. yes, squash a byte
 	lret	2		. skip the stream write/upper return
@@ -268,13 +268,13 @@ ieprnz	mta	('000')		. is the top byte '0' ?
 
 ieprn?*	$proc
 	lcal	ieprnz
-	WRITE_BYTES	$word/$byte-?+1	. write all remaining bits
-	lret	0			. get out of here
+	WRITE_BYTES	3-?+1	. write remaining columns in input word
+	lret	0		. get out of here
 	$end
 
-ienz	lk	(255*/16:s)	. the input table can only be 8-bit bytes
-?	$do	$word/$byte,	ieprn?
-	lret	0
+ienz	lk	(255*/16:s)	. the input table is 3 columns per word
+?	$do	3,	ieprn?	. with truncation if data codes '1'..'9'
+	lret	0		. are > 8 bits wide
 	
 ielsos	lcal	ienz		. write the significant part 1st word
 ielsos1	ay, xi	1		. that is never the last word
