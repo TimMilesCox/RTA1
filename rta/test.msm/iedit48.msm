@@ -14,7 +14,7 @@ ie48ls	$head_far	 params(i48s,	long)
 	dl	i48s
 	jpa	ie48lp
 	la	('-'*/$word-$byte:s)
-	WRITE_UBYTE
+	WRITE_OBYTE
 	dsr	48
 	dan	i48s
 ie48lp	ly, xi	7
@@ -124,7 +124,7 @@ ie72rnegate
 	j	ie72negate . reverse the default floating sign
 ie72lnegate
 	la	('-'*/$word-$byte:s)
-	WRITE_UBYTE
+	WRITE_OBYTE
 ie72negate
 	dsr	48	. change negative integer
 	dan	1, y	. to positive magnitude
@@ -251,7 +251,8 @@ ieditl	la	0, y		. read three digits. On last word
 
 ie48lz	anu	table		. are all digits zero?
 	jnzb	ienz		. no, edit this last word
-	WRITE_UBYTE		. yes, force a single '0' out
+	la	('0'*/24-$byte:s)
+	WRITE_OBYTE		. yes, force a single '0' out
 	lret	0
 
 
@@ -473,7 +474,7 @@ ielx	lret	0
 
 
 ieditr?1			. entry point for 24-column variant
-	lk	(+(1*/$byte)-1*/$word-$byte:s)
+	lk	(-1*/16)	. test is always high-order 8 bits
         jpb     ieditrz1	. 
         j	ieditrf1	. leading flag is not represented
 
@@ -481,7 +482,7 @@ ieditr?1			. entry point for 24-column variant
 .	common part, used for editing 24 / 48 / 72 bits
 .	may be used for decimal hex octal
 
-ieditr	lk	(+(1*/$byte)-1*/$word-$byte:s)
+ieditr	lk	(-1*/16)	. test is always high-order 8 bits
 	la	0, y
 	jnb	ieditrf		. has zero-suppress zone
 
@@ -489,7 +490,7 @@ ieditr	lk	(+(1*/$byte)-1*/$word-$byte:s)
 
 ieditrz	rbl	1
 ieditrz1			. entry point for 24-column string!
-	mta	('0'*/$word-$byte:s)
+	mta	table		. are the high-order 8 bits '0' ?
 	j	ieditrs
 	jnb	ieditrs		. have entered field
 
@@ -513,7 +514,7 @@ ieditrsym
 
 ieditrf	rbl	1
 ieditrf1			. entry point for 24-column string!
-	mta	('0'*/$word-$byte:s)
+	mta	table		. are the high-order 8 bit '0' ?
 	j	ieditrs
 	sal	$byte
 	jpb	ieditrx		. started zero-suppress field
@@ -523,16 +524,17 @@ ieditrf1			. entry point for 24-column string!
 	la	0, y
 	j	ieditrf
 
-ieditrx	or, xi	' '		. in field but not significant
-	rar	$byte
-	WRITE_UBYTE
+ieditrx	push	a		. in field but not significant
+	la	(' '*/24-$byte:s)
+	WRITE_OBYTE
+	pop	a
 	jnza	ieditrq
 	jyge	ieditzx
 	ay, xi	1
 	la	0, y
 
 ieditrq	rbl	1
-	mta     ('0'*/$word-$byte:s)
+	mta     table		. are the high-order 8 bit '0' ?
 	j	ieditrs
 	jnb	ieditrs		. significance flagged on
 	sal	$byte		. suppress another zero
@@ -542,7 +544,7 @@ ieditzx	lret	0
 
 ifloat	push	a
 	la	6
-	WRITE_UBYTE
+	WRITE_OBYTE
 	pop	a
 	lret	0
 
