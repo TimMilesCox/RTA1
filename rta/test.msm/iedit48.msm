@@ -269,12 +269,26 @@ ie72g	d	(1000000)
 	lret	0
 	
 	
+.	left-justified self-sizing edit
 	
+.	input is 9 columns of digits stored in 3 words
+.	or	15 columns of digits stored in 5 words
+.	or	24 columns of digits stored in 8 words
 
-.	format a 48-bit integer for output as up to 15
-.	decimal digits in the C-Language left-justifed
-.	default fashion. Leading zero is skipped. The
-.	target field sizes itself
+.	register r points to the last word in the string
+
+.	the input string is 8 bits per column, but the output bytes
+.	are the current byte size
+
+.	wrapper assemblies generate the library separately for each
+.	required byte size and data code, and separately again for
+.	16-bit network output
+
+.	The wrapper assembly equates AQUIFORM_NET16 0 or 1
+.	and COUNTED_STREAM 0 or 1 for byte counted output 
+
+.	output is C-Language left-justifed default fashion
+.	Leading zero is skipped. The target field sizes itself
 
 
 ieditl	la	0, y		. read three digits. On last word
@@ -326,6 +340,22 @@ ielx	lret	0
 .	simple right-justified edit in a fixed field
 .	____________________________________________
 
+.	input is 9 decimal digits stored in 3 words
+.	or	15 decimal digits stored in 5 words
+.	or	24 decimal digits stored in 8 words
+
+.	register r points to the last word in the string
+
+.	the input string is 8 bits per column, but the output bytes
+.	are the current byte size
+
+.       wrapper assemblies generate the library separately for each
+.       required byte size and data code, and separately again for
+.       16-bit network output
+
+.	The wrapper assembly equates AQUIFORM_NET16 0 or 1
+.	and COUNTED_STREAM 0 or 1 for byte counted output 
+
 .	register b contains an edit mask
 
 .	The first bits in the mask, whether they are zeros or ones,
@@ -354,7 +384,7 @@ ielx	lret	0
 .	________________
 
 .	the edit mask is a 10-bit mask in register b
-.	the input array is 9 digits. Up to 7 of them are significant
+.	the input array is 9 digits. Up to 8 of them are significant
 
 .	A simple 10-bit mask for 24-bit input is
 
@@ -363,8 +393,14 @@ ielx	lret	0
 .	|_________________________________________________|
 
 
-.	The first high order bit only means that the mask DOES begin
-.	with some ones bits. This means that the zero bits after are
+.	bit 23 does not correspond to a digit position
+.	but the following 9 bits do
+
+.	sign bits immediately following bit 23 are positions
+.	where a significand is not expected
+
+.	bit 23 = one means that the mask DOES begin with some
+.	ones bits. This means that the zero bits after are
 .	a zero-suppress zone
 
 .	The initial no-digit-expected flags may be zeros. This
@@ -391,6 +427,8 @@ ielx	lret	0
 .	for 48-bit input
 .	________________
 
+.	all 15 columns in a 5-word input may be significant
+
 .	the edit mask is a 16-bit mask in register b
 
 .       A simple 16-bit mask for 48-bit input is
@@ -399,10 +437,15 @@ ielx	lret	0
 .       | 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 |
 .       |_________________________________________________|
 
+.	Bit 23 does not correspond to a digit position but the
+.	following 15 bits do
 
-.       The first high order bit only means that the mask DOES begin
+.       bit 23 valued one means that the mask DOES begin with
 .       with some ones bits. This means that the zero bits after are
 .       a zero-suppress zone
+
+.       sign bits immediately following bit 23 are positions
+.       where a significand is not expected
 
 .       The initial no-digit-expected flags may be zeros. This
 .       means there is no zero-suppress zone
@@ -453,7 +496,7 @@ ielx	lret	0
 
 .       The two high-order bits here are one, meaning significance
 .       is not expected in the first two columns of the 24-digit
-.	array.  A 72-bit integer can generate 22 significant digits
+.	array.  A 72-bit integer can generate 22 significant columns
 
 .       The 21 zero bits followed by a one mean the target field
 .       has 22 positions and the first 21 are zero-suppress
@@ -510,6 +553,7 @@ ielx	lret	0
 
 ieditr?1			. entry point for 24-column variant
 	lk	(-1*/16)	. test is always high-order 8 bits
+	la	0, y		. preload the first three columns
         jpb     ieditrz1	. 
         j	ieditrf1	. leading flag is not represented
 
