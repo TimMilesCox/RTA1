@@ -1,5 +1,15 @@
 .	a group of output edits for integers
 
+
+FORCE_ZONE $set	0
+	$do	'0'**240=0,;
+FORCE_ZONE $set 128
+
+.	FORCE_ZONE supplies an all-used flag in shift register a if
+.	the data code numeral values are zero in bit positions 7..4
+.	otherwise all 3 columns in a are used when a */ 8 = 0
+.	data code and byte size are from the wrapper assembly
+
 ie24l	$head_far	 params(i24,	int)
 	la	i24
 	ly, xi	9
@@ -310,7 +320,7 @@ ie48lz	anu	table		. are all digits zero?
 
 ieprnz	mta	table		. is the top byte '0' ?
 	lret	0		. no, print remaining bits
-	sal	$byte		. yes, squash a byte
+	sal	8		. yes, squash an input column
 	lret	2		. skip the stream write/upper return
 
 
@@ -573,8 +583,15 @@ ieditrz1			. entry point for 24-column string!
 	j	ieditrs
 	jnb	ieditrs		. have entered field
 
-	sal	$byte
+	sal	8		. drop an input column
+
+	$if	FORCE_ZONE
+	or	FORCE_ZONE
+	jpa	ieditrz
+	$else
 	jnza	ieditrz
+	$endif
+
 	jyge	ieditzx
 	ay, xi	1
 	la	0, y
@@ -585,7 +602,14 @@ ieditrs
 	lcal	ifloat
 ieditrsym
 	WRITE_UBYTE
+
+	$if	FORCE_ZONE
+	or	FORCE_ZONE
+	jpa	ieditrsym
+	$else
 	jnza	ieditrsym
+	$endif
+
 	jyge	ieditzx		.  significance on
 	ay, xi	1
 	la	0, y
@@ -595,9 +619,18 @@ ieditrf	rbl	1
 ieditrf1			. entry point for 24-column string!
 	mta	table		. are the high-order 8 bit '0' ?
 	j	ieditrs
-	sal	$byte
+	sal	8		. drop the input column
+	$do	FORCE_ZONE^=0,	;
+	or	FORCE_ZONE
+
 	jpb	ieditrx		. started zero-suppress field
+
+	$if	FORCE_ZONE
+	jpa	ieditrf
+	$else
 	jnza	ieditrf		. not yet in field, output no column
+	$endif
+
 	jyge	ieditzx
 	ay, xi	1
 	la	0, y
@@ -607,7 +640,13 @@ ieditrx	push	a		. in field but not significant
 	la	(' '*/24-$byte:s)
 	WRITE_OBYTE
 	pop	a
+
+	$if	FORCE_ZONE
+	jpa	ieditrq
+	$else
 	jnza	ieditrq
+	$endif
+
 	jyge	ieditzx
 	ay, xi	1
 	la	0, y
@@ -616,7 +655,11 @@ ieditrq	rbl	1
 	mta     table		. are the high-order 8 bit '0' ?
 	j	ieditrs
 	jnb	ieditrs		. significance flagged on
-	sal	$byte		. suppress another zero
+	sal	8		. suppress another input column
+
+	$do	FORCE_ZONE^=0,	;
+	or	FORCE_ZONE
+
 	j	ieditrx
 
 ieditzx	lret	0
