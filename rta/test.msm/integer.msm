@@ -1,26 +1,60 @@
+.	to process an input field of fixed size
+.	place the byte count in location BYTES
+.	then a non-digit is returned on READ_BYTE
+.	if you assemble for COUNTED_STREAM
+
+.	if you want something less than 72 bits
+.	it is returned quickly when input columns run out
+
+.	acquiring a single or double integer causes few
+.	instructions to be executed unless there are
+.	excessive numerals in the input field
+
+.	then the principle must be followed that the
+.	customer is always right and integer truncation
+.	is at the high order end. So the integer 
+.	however large is scanned, however little of
+.	it the caller wants
+
+.	too many input significands can be retrieved as a
+.	size overflow in the high order result words
+
+.	bits 47..0 of the result are in registers a:b
+.	72-bit result is int TRIPLE:TRIPLE+1:TRIPLE+2
+
+.	size error high order field is in QUAD
+
+acquire48
+	lcal	magnitude72
+	tp	SIGNS
+	lcal	double2scomp
+	lret	0
+
 acquire72
+	lcal	magnitude72
+	tp	SIGNS
+	lcal	triple2scomp
+	lret	0
+
+magnitude72
 	z	SIGNS
+	z	QUAD		. for detecting extreme size overflow
 	z	TRIPLE
 	z	TRIPLE+1
-	z	TRIPLE+2
 
-a72sense
-	READ_BYTE
-	ana, xi	' '
-	jza	a72sense
+	lcal	isense
 
 	z	6
-	lr, xi	6
 
 	lcal	i_read6F	. this re-uses LAST_BYTE_READ
-	jxge	a72x		. no columns read at all
-
 	sb	TRIPLE+2
+	jxge	magnitude72x	. no columns read at all
+
 	tz	x
-	j	a72x		. < 6 columns read
+	j	magnitude72x	. < 6 columns read
 
 	lcal	i_read6
-	jxge	a72x		. no more columns read
+	jxge	magnitude72x	. no more columns read
 
 	sb	7
 	lb	TRIPLE+2
@@ -29,10 +63,10 @@ a72sense
 	ds	TRIPLE+1
 
 	tz	x		. < 6 columns read
-	j	a72x
+	j	magnitude72x
 
 	lcal	i_read6
-	jxge	a72x		. no digits
+	jxge	magnitude72x	. no digits
 
 	sb	7
 	lb	TRIPLE+1
@@ -48,31 +82,86 @@ a72sense
 	ds	TRIPLE
 
 	tz	x
-	j	a72x		. < 6 columns read, stop
+	j	magnitude72x	. < 6 columns read, stop
 
 	lcal	i_read6
-	jxge	a72x		. no columns read, stop
+	jxge	magnitude72x	. no columns 23..18 read
 
 	sb	7
 
-	lb	TRIPLE
-	mf	multiplier, x
-	sb	TRIPLE
-	lb	TRIPLE+1
-	mf	multiplier, x
-	aa	TRIPLE
-	ds	TRIPLE
 	lb	TRIPLE+2
 	mf	multiplier, x
 	da	6
 	sb	TRIPLE+2
-	sa	b
-	sc	a
-	da	TRIPLE
-	ds	TRIPLE
+	sa	7
+	sc	6
+	lb	TRIPLE+1
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE+1
+	sa	7
+	sc	6
+	lb	TRIPLE
+	mf	multiplier, x
+	da	6
+	ds	QUAD
 
-a72x	tp	SIGNS
-	lcal	triple2scomp
+	tz	x
+	j	magnitude72x	. < 6 columns read, stop
+
+overload72
+	lcal	i_read6
+	jxge	magnitude72x	. no columns read, stop
+
+	sb	7
+	z	6
+
+	lb	TRIPLE+2
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE+2
+	sa	7
+	sc	6
+	lb	TRIPLE+1
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE+1
+	sa	7
+	sc	6
+	lb	TRIPLE
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE
+	sa	7		. nonzero in QUAD means 22 or more decimal
+	lb	QUAD		. significands have been encountered with
+	mf	multiplier, x	. magnitude too large for 72 bits unsigned
+	ab	7
+	sb	QUAD		. nonzero in TRIPLE means 15 or more decimal
+				. significands have been encountered with
+				. magnitude too large for 48 bits unsigned
+
+				. nonzero in TRIPLE + 1 means 8 or more
+				. decimal significands have been encountered
+				. with magnitude too large for 24 bits unsigned
+
+
+	tz	x
+	j	magnitude72x	. < 6 columns read, stop
+	j	overload72	. applications are allowed to do this
+				. integer truncation is at the 
+				. high order end
+magnitude72x
+	dl	TRIPLE+1
+	lret	0
+
+isense	READ_BYTE
+	ana, xi	' '
+	jza	isense
+	lret	0
+
+double2scomp
+	dsr	48
+	dan	TRIPLE+1
 	lret	0
 
 triple2scomp
@@ -90,6 +179,7 @@ i_read6F
 	lb, xi	0
 	lx, xi	6
 	la	LAST_BYTE_READ
+	lr, xi	6
 	j	loup
 
 i_read6	lb, xi	0
