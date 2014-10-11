@@ -1,0 +1,159 @@
+acquire72
+	z	SIGNS
+	z	TRIPLE
+	z	TRIPLE+1
+	z	TRIPLE+2
+
+a72sense
+	READ_BYTE
+	ana, xi	' '
+	jza	a72sense
+
+	z	6
+	lr, xi	6
+
+	lcal	i_read6F	. this re-uses LAST_BYTE_READ
+	jxge	a72x		. no columns read at all
+
+	sb	TRIPLE+2
+	tz	x
+	j	a72x		. < 6 columns read
+
+	lcal	i_read6
+	jxge	a72x		. no more columns read
+
+	sb	7
+	lb	TRIPLE+2
+	mf	multiplier, x
+	da	6
+	ds	TRIPLE+1
+
+	tz	x		. < 6 columns read
+	j	a72x
+
+	lcal	i_read6
+	jxge	a72x		. no digits
+
+	sb	7
+	lb	TRIPLE+1
+	mf	multiplier, x
+	ds	TRIPLE
+	lb	TRIPLE+2
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE+2
+	sa	b
+	sc	a
+	da	TRIPLE
+	ds	TRIPLE
+
+	tz	x
+	j	a72x		. < 6 columns read, stop
+
+	lcal	i_read6
+	jxge	a72x		. no columns read, stop
+
+	sb	7
+
+	lb	TRIPLE
+	mf	multiplier, x
+	sb	TRIPLE
+	lb	TRIPLE+1
+	mf	multiplier, x
+	aa	TRIPLE
+	ds	TRIPLE
+	lb	TRIPLE+2
+	mf	multiplier, x
+	da	6
+	sb	TRIPLE+2
+	sa	b
+	sc	a
+	da	TRIPLE
+	ds	TRIPLE
+
+a72x	tp	SIGNS
+	lcal	triple2scomp
+	lret	0
+
+triple2scomp
+	dsr	48
+	dan	TRIPLE+1
+	ds	TRIPLE+1
+	sc	a
+	aa, xi	-1
+	ana	TRIPLE
+	sa	TRIPLE
+	lret	0
+
+
+i_read6F
+	lb, xi	0
+	lx, xi	6
+	la	LAST_BYTE_READ
+	j	loup
+
+i_read6	lb, xi	0
+	lx, xi	6
+
+loop	READ_BYTE
+loup	aa, xi	-'+'
+	jza	loop
+	aa, xi	'+'-'-'
+	jnza	plus
+	n	SIGNS
+	j	loop
+
+plus	aa, xi	'-'-'0'-10
+	jc	nomor
+	aa, xi	'0'
+	jnc	nomor
+	dec	x
+
+	$if	ISCAN_STRATEGY2
+
+	sbl	1
+	aa	b
+	sbl	2
+	ab	a
+
+	tz	x
+	j	loop
+nomor	lret	0
+
+	$else
+
+	ex	table_add, x
+
+	tz	x
+	j	loop
+	lret	0
+
+nomor	jxge	none
+
+	la, xi	0		. the table driven translate
+	d	diminuend, x	. has got the scale too high
+	sa	b		. because we didn't get 6 digits
+
+none	lret	0
+	$endif
+	
+
+	$do	$<256,$(0:256)
+
+	$if	ISCAN_STRATEGY2=0
+diminuend
+	1	. all 6 columns read, this divisor is not used !
+	10	.	5 columns read
+	100	.	4 columns read
+	1000	.	3 columns read
+	10000	.	2 columns read
+	100000	.	1 column read out of 6 possible
+	$endif
+
+multiplier
+	1000000	. 6 new columns read, raise the sum by this
+	100000	. 5
+	10000	. 4
+	1000	. 3
+	100	. 2
+	10	. 1 new column read
