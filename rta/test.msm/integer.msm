@@ -1,7 +1,57 @@
-.	to process an input field of fixed size
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+.	by default this is about free-form input in a stream
+
+.	to process an input field of fixed size instead,
 .	place the byte count in location BYTES
 .	then a non-digit is returned on READ_BYTE
 .	if you assemble for COUNTED_STREAM
+
+.	BYTES is otherwise used to mark where the end
+.	of network receive data is
 
 .	if you want something less than 72 bits
 .	it is returned quickly when input columns run out
@@ -162,6 +212,7 @@ isense	READ_BYTE
 double2scomp
 	dsr	48
 	dan	TRIPLE+1
+	ds	TRIPLE+1
 	lret	0
 
 triple2scomp
@@ -174,6 +225,8 @@ triple2scomp
 	sa	TRIPLE
 	lret	0
 
+
+	$if	ISCAN_STRATEGY=2
 
 i_read6F
 	lb, xi	0
@@ -199,7 +252,6 @@ plus	aa, xi	'-'-'0'-10
 	jnc	nomor
 	dec	x
 
-	$if	ISCAN_STRATEGY2
 
 	sbl	1
 	aa	b
@@ -210,7 +262,31 @@ plus	aa, xi	'-'-'0'-10
 	j	loop
 nomor	lret	0
 
-	$else
+	$elseif	ISCAN_STRATEGY=1
+
+i_read6F
+	lb, xi	0
+	lx, xi	6
+	la	LAST_BYTE_READ
+	lr, xi	6
+	j	loup
+
+i_read6	lb, xi	0
+	lx, xi	6
+
+loop	READ_BYTE
+loup	aa, xi	-'+'
+	jza	loop
+	aa, xi	'+'-'-'
+	jnza	plus
+	n	SIGNS
+	j	loop
+
+plus	aa, xi	'-'-'0'-10
+	jc	nomor
+	aa, xi	'0'
+	jnc	nomor
+	dec	x
 
 	ex	table_add, x
 
@@ -225,12 +301,15 @@ nomor	jxge	none
 	sa	b		. because we didn't get 6 digits
 
 none	lret	0
+
+	$else
+	$flag	ISCAN_STRATEGY must equal 1 or 2
 	$endif
 	
 
 	$do	$<256,$(0:256)
 
-	$if	ISCAN_STRATEGY2=0
+	$if	ISCAN_STRATEGY=1
 diminuend
 	1	. all 6 columns read, this divisor is not used !
 	10	.	5 columns read
