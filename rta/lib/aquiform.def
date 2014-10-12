@@ -42,6 +42,9 @@
 .
 .
 
+"$$EOS_FLAG"	$set	0	. deliver zero iteravely after delivering counted field
+				. nonzero = deliver BYTES + 1 bytes, then -1 iteravely
+
 
 . this equate goes in the assembly wrapper
 . COUNTED_STREAM $equ 1	. a field or message size limit
@@ -71,13 +74,19 @@ READ_START* $proc	. once per input specification
 READ_BYTE* $proc *
 	$if	COUNTED_STREAM
 	la	BYTES
-	jza	already
-	dec	BYTES
+
+	$if	$$EOS_FLAG	. for counted data including zero value bytes
+	jna	already	. deliver BYTES + 1 bytes and then deliver -1 iteravely
+	$else			. for data terminated by zero or by count
+	jza	already	. deliver BYTES bytes and then deliver zero iteravely
 	$endif
+
+	dec	BYTES
+	$endif		. otherwise data is zero-terminated and not counted
+
 	rsr	$byte
 
-already
-	sa	LAST_BYTE_READ
+already	sa	LAST_BYTE_READ
 	$end
 
 WRITE_START* $proc

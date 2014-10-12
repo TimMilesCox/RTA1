@@ -111,790 +111,777 @@ MASMX 7r3
   :                            54 
   :                            55 		. LAST_BYTE_READ is pushed back into RDATA
   :                            56 		. so that the next scan primitive routine
-  :                            57 		. does not have to look for it
+  :                            57 		. retrieves it on READ_BYTE
   :                            58 
-  :                            59 		. and a saved stream complex of registers
-  :                            60 		. RDATAC+RDATA+Q does not need another
-  :                            61 		. variable in addition
+  :                            59 		. COUNTED_STREAM is the text scan inside
+  :                            60 		. a field which has a known size instead
+  :                            61 		. of an expected null terminator
   :                            62 
-  :                            63 		. in a counted stream it does no harm
-  :                            64 		. to increase BYTES from 0 to 1 after the
-  :                            65 		. last real symbol has been consumed
-  :                            66 
-  :                            67 		. the next read will produce the dummy
-  :                            68 		. value of zero again, the next scan will
-  :                            69 		. terminate because of that, and BYTES
-  :                            70 		. will go back to zero
-  :                            71 
-  :                            72 		. COUNTED_STREAM is the text scan inside
-  :                            73 		. a field which has a known size instead
-  :                            74 		. of an expected null terminator
-  :                            75 
-  :                            76 		. for example a user datagram or XDR field
-  :                            77 		. or any fixed field conversion from text
-  :                            78 
-00:000000 600001              +79 	la	LAST_BYTE_READ
-00:000001 680015              +80 	lb	RDATA
-00:000002 160008              +81 	dsr	$byte
-00:000003 600014              +82 	la	RDATAC
-00:000004 C50008              +83 	aa, xi	$byte
-00:000005 C70014              +84 	ds	RDATAC
+  :                            63 		. for example a user datagram or XDR field
+  :                            64 		. or any fixed field conversion from text
+  :                            65 
+00:000000 600001              +66 	la	LAST_BYTE_READ
+00:000001 680015              +67 	lb	RDATA
+00:000002 160008              +68 	dsr	$byte
+00:000003 600014              +69 	la	RDATAC
+00:000004 C50008              +70 	aa, xi	$byte
+00:000005 C70014              +71 	ds	RDATAC
+  :                            72 
+  :                            73 	$if	24///$byte		. for example UTF16 or any byte
+  :                            74 	aa, xi	-24			. size that straddles words
+  :                            75 	jnc	repousse_in_range	. < 24 is OK
+  :                            76 	jza	repousse_in_range	. = 24 is OK
+  :                            77 	sa	RDATAC
+  :                            78 	dec	q
+  :                            79 repousse_in_range
+  :                            80 	$endif
+  :                            81 
+  :                            82 	$if	COUNTED_STREAM
+00:000006 170010              +83 	inc	BYTES
+  :                            84 	$endif
   :                            85 
-  :                            86 	$if	24///$byte		. for example UTF16 or any byte
-  :                            87 	aa, xi	-24			. size that straddles words
-  :                            88 	jnc	repousse_in_range	. < 24 is OK
-  :                            89 	jz	repousse_in_range	. = 24 is OK
-  :                            90 	sa	RDATAC
-  :                            91 	dec	q
-  :                            92 repousse_in_range
-  :                            93 	$endif
-  :                            94 
-  :                            95 	$if	COUNTED_STREAM
-00:000006 170010              +96 	inc	BYTES
-  :                            97 	$endif
+00:000007 350000              +86 	lret	0
+  :                            87 
+00:000008 050060              +88 fscan	READ_START
+00:000009 600010              +89 fscans	READ_BYTE
+(+00)0f
+00:00000A C6000D              +89 
+00:00000B 1F0010              +89 
+00:00000C 150008              +89 
+00:00000D 200001              +89 
+00:00000E 680004              +90 	anu, xi	' '
+00:00000F DD0020              +90 
+(+00)0f
+00:000010 CE0009              +91 	jzb	fscans
+00:000011 300011              +92 	z	SIGNS
+00:000012 300013              +93 	z	SCALE
+00:000013 300012              +94 	z	SCALE_TRIPPED
+00:000014 300009              +95 	z	TRIPLE
+00:000015 30000A              +96 	z	TRIPLE+1
+00:000016 30000B              +97 	z	TRIPLE+2
   :                            98 
-00:000007 350000              +99 	lret	0
-  :                            100 
-00:000008 050060              +101 fscan	READ_START
-00:000009 600010              +102 fscans	READ_BYTE
+00:000017 680004              +99 	anu, xi	'-'
+00:000018 DD002D              +99 
 (+00)0f
-00:00000A C6000D              +102 
-00:00000B 1F0010              +102 
-00:00000C 150008              +102 
-00:00000D 200001              +102 
-00:00000E 680004              +103 	anu, xi	' '
-00:00000F DD0020              +103 
+00:000019 DE001C              +100 	jnzb	plus?
+00:00001A 0F0011              +101 	n	SIGNS
 (+00)0f
-00:000010 CE0009              +104 	jzb	fscans
-00:000011 300011              +105 	z	SIGNS
-00:000012 300013              +106 	z	SCALE
-00:000013 300012              +107 	z	SCALE_TRIPPED
-00:000014 300009              +108 	z	TRIPLE
-00:000015 30000A              +109 	z	TRIPLE+1
-00:000016 30000B              +110 	z	TRIPLE+2
-  :                            111 
-00:000017 680004              +112 	anu, xi	'-'
-00:000018 DD002D              +112 
+00:00001B B6001F              +102 	j	read_number_string
+00:00001C 680004              +103 plus?	anu, xi	'+'
+00:00001D DD002B              +103 
 (+00)0f
-00:000019 DE001C              +113 	jnzb	plus?
-00:00001A 0F0011              +114 	n	SIGNS
+00:00001E DE0024              +104 	jnzb	first_digit
+  :                            105 read_number_string
+00:00001F 600010              +106 	READ_BYTE
 (+00)0f
-00:00001B B6001F              +115 	j	read_number_string
-00:00001C 680004              +116 plus?	anu, xi	'+'
-00:00001D DD002B              +116 
+00:000020 C60023              +106 
+00:000021 1F0010              +106 
+00:000022 150008              +106 
+00:000023 200001              +106 
+  :                            107 first_digit
+00:000024 6D0000              +108 	lb, xi	0
+00:000025 550006              +109 	lx, xi	6
 (+00)0f
-00:00001E DE0024              +117 	jnzb	first_digit
-  :                            118 read_number_string
-00:00001F 600010              +119 	READ_BYTE
+00:000026 3E007E              +110 	lcal	read5
+00:000027 28000B              +111 	sb	11
+00:000028 450006              +112 	lr, xi	6
 (+00)0f
-00:000020 C60023              +119 
-00:000021 1F0010              +119 
-00:000022 150008              +119 
-00:000023 200001              +119 
-  :                            120 first_digit
-00:000024 6D0000              +121 	lb, xi	0
-00:000025 550006              +122 	lx, xi	6
+00:000029 F60065              +113 	jxge	adjust_scale_no6
+00:00002A 700002              +114 	tz	x
 (+00)0f
-00:000026 3E007E              +123 	lcal	read5
-00:000027 28000B              +124 	sb	11
-00:000028 450006              +125 	lr, xi	6
+00:00002B B60062              +115 	j	adjust_scale
 (+00)0f
-00:000029 F60065              +126 	jxge	adjust_scale_no6
-00:00002A 700002              +127 	tz	x
+00:00002C 3E0077              +116 	lcal	read6
 (+00)0f
-00:00002B B60062              +128 	j	adjust_scale
+00:00002D F60065              +117 	jxge	adjust_scale_no6
+00:00002E 280007              +118 	sb	7
+00:00002F 300006              +119 	z	6
+00:000030 68000B              +120 	lb	11
 (+00)0f
-00:00002C 3E0077              +129 	lcal	read6
+00:000031 E801CF              +121 	mf	(1000000)
+00:000032 D70006              +122 	da	6
+00:000033 C7000A              +123 	ds	10
+  :                            124 
+00:000034 700002              +125 	tz	x
 (+00)0f
-00:00002D F60065              +130 	jxge	adjust_scale_no6
-00:00002E 280007              +131 	sb	7
-00:00002F 300006              +132 	z	6
-00:000030 68000B              +133 	lb	11
+00:000035 B60062              +126 	j	adjust_scale
 (+00)0f
-00:000031 E801CF              +134 	mf	(1000000)
-00:000032 D70006              +135 	da	6
-00:000033 C7000A              +136 	ds	10
-  :                            137 
-00:000034 700002              +138 	tz	x
+00:000036 3E0077              +127 	lcal	read6
 (+00)0f
-00:000035 B60062              +139 	j	adjust_scale
+00:000037 F60065              +128 	jxge	adjust_scale_no6
+00:000038 280007              +129 	sb	7
+00:000039 68000B              +130 	lb	11
 (+00)0f
-00:000036 3E0077              +140 	lcal	read6
+00:00003A E801CF              +131 	mf	(1000000)
+00:00003B D70006              +132 	da	6
+00:00003C 28000B              +133 	sb	11
+00:00003D 200007              +134 	sa	7
+00:00003E B70006              +135 	sc	6
+00:00003F 68000A              +136 	lb	10
 (+00)0f
-00:000037 F60065              +141 	jxge	adjust_scale_no6
-00:000038 280007              +142 	sb	7
-00:000039 68000B              +143 	lb	11
+00:000040 E801CF              +137 	mf	(1000000)
+00:000041 D70006              +138 	da	6
+00:000042 C70009              +139 	ds	9
+  :                            140 
+00:000043 700002              +141 	tz	x
 (+00)0f
-00:00003A E801CF              +144 	mf	(1000000)
-00:00003B D70006              +145 	da	6
-00:00003C 28000B              +146 	sb	11
-00:00003D 200007              +147 	sa	7
-00:00003E B70006              +148 	sc	6
-00:00003F 68000A              +149 	lb	10
+00:000044 B60062              +142 	j	adjust_scale		. last frame < 6 digits
+  :                            143 
+00:000045 550003              +144 	lx, xi	3
 (+00)0f
-00:000040 E801CF              +150 	mf	(1000000)
-00:000041 D70006              +151 	da	6
-00:000042 C70009              +152 	ds	9
-  :                            153 
-00:000043 700002              +154 	tz	x
+00:000046 3E0078              +145 	lcal	read3
+00:000047 450003              +146 	lr, xi	3
 (+00)0f
-00:000044 B60062              +155 	j	adjust_scale		. last frame < 6 digits
-  :                            156 
-00:000045 550003              +157 	lx, xi	3
+00:000048 F60065              +147 	jxge	adjust_scale_no3	. got no more digits
+  :                            148 
+00:000049 280007              +149 	sb	7			. got 1 2 or 3 digits
+00:00004A 300006              +150 	z	6
+  :                            151 
+00:00004B 68000B              +152 	lb	11
+00:00004C ED03E8              +153 	mf, xi	1000
+00:00004D D70006              +154 	da	6
+00:00004E 28000B              +155 	sb	11
+00:00004F 200007              +156 	sa	7
+00:000050 B70006              +157 	sc	6
+00:000051 68000A              +158 	lb	10
+00:000052 ED03E8              +159 	mf, xi	1000
+00:000053 D70006              +160 	da	6
+00:000054 28000A              +161 	sb	10
+00:000055 200007              +162 	sa	7
+00:000056 680009              +163 	lb	9
+00:000057 ED03E8              +164 	mf, xi	1000
+00:000058 C80007              +165 	ab	7
+00:000059 280009              +166 	sb	9
+  :                            167 
+00:00005A 600001              +168 	la	LAST_BYTE_READ
+  :                            169 	$if	'e'^='E'
+00:00005B 680004              +170 	anu, xi	'e'
+00:00005C DD0065              +170 
 (+00)0f
-00:000046 3E0078              +158 	lcal	read3
-00:000047 450003              +159 	lr, xi	3
+00:00005D CE0062              +171 	jzb	adjust_scale		. it was not 3 digits
+  :                            172 	$endif
+00:00005E 680004              +173 	anu, xi	'E'
+00:00005F DD0045              +173 
 (+00)0f
-00:000048 F60065              +160 	jxge	adjust_scale_no3	. got no more digits
-  :                            161 
-00:000049 280007              +162 	sb	7			. got 1 2 or 3 digits
-00:00004A 300006              +163 	z	6
-  :                            164 
-00:00004B 68000B              +165 	lb	11
-00:00004C ED03E8              +166 	mf, xi	1000
-00:00004D D70006              +167 	da	6
-00:00004E 28000B              +168 	sb	11
-00:00004F 200007              +169 	sa	7
-00:000050 B70006              +170 	sc	6
-00:000051 68000A              +171 	lb	10
-00:000052 ED03E8              +172 	mf, xi	1000
-00:000053 D70006              +173 	da	6
-00:000054 28000A              +174 	sb	10
-00:000055 200007              +175 	sa	7
-00:000056 680009              +176 	lb	9
-00:000057 ED03E8              +177 	mf, xi	1000
-00:000058 C80007              +178 	ab	7
-00:000059 280009              +179 	sb	9
-  :                            180 
-00:00005A 600001              +181 	la	LAST_BYTE_READ
-  :                            182 	$if	'e'^='E'
-00:00005B 680004              +183 	anu, xi	'e'
-00:00005C DD0065              +183 
+00:000060 CE0062              +174 	jzb	adjust_scale
+  :                            175 
+  :                            176 
 (+00)0f
-00:00005D CE0062              +184 	jzb	adjust_scale		. it was not 3 digits
-  :                            185 	$endif
-00:00005E 680004              +186 	anu, xi	'E'
-00:00005F DD0045              +186 
-(+00)0f
-00:000060 CE0062              +187 	jzb	adjust_scale
-  :                            188 
-  :                            189 
-(+00)0f
-00:000061 3E008E              +190 	lcal	skate		. 21 digit columns is enough
-  :                            191 				. just weigh the rest of them
-  :                            192 
-  :                            193 adjust_scale
-00:000062 680013              +194 	lb	SCALE
-00:000063 D80002              +195 	anb	x
-00:000064 280013              +196 	sb	SCALE
-  :                            197 adjust_scale_no3
-  :                            198 adjust_scale_no6
-  :                            199 	
+00:000061 3E008E              +177 	lcal	skate		. 21 digit columns is enough
+  :                            178 				. just weigh the rest of them
+  :                            179 
+  :                            180 adjust_scale
+00:000062 680013              +181 	lb	SCALE
+00:000063 D80002              +182 	anb	x
+00:000064 280013              +183 	sb	SCALE
+  :                            184 adjust_scale_no3
+  :                            185 adjust_scale_no6
+  :                            186 	
 [+0000]0f
-00:000065 3E0000              +200 	lcal	u72tofloat
-00:000066 600001              +201 	la	LAST_BYTE_READ
-  :                            202 
-  :                            203 	$if	'e'^='E'
-00:000067 680004              +204 	anu, xi	'e'
-00:000068 DD0065              +204 
+00:000065 3E0000              +187 	lcal	u72tofloat
+00:000066 600001              +188 	la	LAST_BYTE_READ
+  :                            189 
+  :                            190 	$if	'e'^='E'
+00:000067 680004              +191 	anu, xi	'e'
+00:000068 DD0065              +191 
 (+00)0f
-00:000069 CE006F              +205 	jzb	e_string_scan
-  :                            206 	$endif
-  :                            207 
-00:00006A 680004              +208 	anu, xi	'E'
-00:00006B DD0045              +208 
+00:000069 CE006F              +192 	jzb	e_string_scan
+  :                            193 	$endif
+  :                            194 
+00:00006A 680004              +195 	anu, xi	'E'
+00:00006B DD0045              +195 
 (+00)0f
-00:00006C CE006F              +209 	jzb	e_string_scan
-  :                            210 
-00:00006D 6D0000              +211 	lb, xi	0
+00:00006C CE006F              +196 	jzb	e_string_scan
+  :                            197 
+00:00006D 6D0000              +198 	lb, xi	0
 (+00)0f
-00:00006E B60070              +212 	j	e_string_noscan
-  :                            213 
-  :                            214 e_string_scan
+00:00006E B60070              +199 	j	e_string_noscan
+  :                            200 
+  :                            201 e_string_scan
 (+00)0f
-00:00006F 3E00A3              +215 	lcal	e_string
-  :                            216 e_string_noscan
-00:000070 C80013              +217 	ab	SCALE
+00:00006F 3E00A3              +202 	lcal	e_string
+  :                            203 e_string_noscan
+00:000070 C80013              +204 	ab	SCALE
 (+00)0f
-00:000071 CE0074              +218 	jzb	noscale
+00:000071 CE0074              +205 	jzb	noscale
 [+0001]0f
-00:000072 3E0000              +219 	lcal	apply_scale
-00:000073 470008              +220 	qs	8
-  :                            221 noscale
-  :                            222 
+00:000072 3E0000              +206 	lcal	apply_scale
+00:000073 470008              +207 	qs	8
+  :                            208 noscale
+  :                            209 
 (+00)0f
-00:000074 3E0000              +223 	lcal	repoussez	. unconsume the byte
-  :                            224 				. which ended the scan
-  :                            225 
-00:000075 4F0008              +226 	ql	8
-00:000076 3D0000              +227 	fret	0
-  :                            228 
-  :                            229 
-00:000077 550006              +230 read6	lx, xi	6		. start the order of number *100000
-00:000078 6D0000              +231 read3	lb, xi	0		. and the sum at zero
-00:000079 600010              +232 read1	READ_BYTE
+00:000074 3E0000              +210 	lcal	repoussez	. unconsume the byte
+  :                            211 				. which ended the scan
+  :                            212 
+00:000075 4F0008              +213 	ql	8
+00:000076 3D0000              +214 	fret	0
+  :                            215 
+  :                            216 
+00:000077 550006              +217 read6	lx, xi	6		. start the order of number *100000
+00:000078 6D0000              +218 read3	lb, xi	0		. and the sum at zero
+00:000079 600010              +219 read1	READ_BYTE
 (+00)0f
-00:00007A C6007D              +232 
-00:00007B 1F0010              +232 
-00:00007C 150008              +232 
-00:00007D 200001              +232 
-00:00007E C5FFC6              +233 read5	aa, xi	-'0'-10		. > symbol '9' in the data code
-  :                            234 				. of this assembly?
+00:00007A C6007D              +219 
+00:00007B 1F0010              +219 
+00:00007C 150008              +219 
+00:00007D 200001              +219 
+00:00007E C5FFC6              +220 read5	aa, xi	-'0'-10		. > symbol '9' in the data code
+  :                            221 				. of this assembly?
 (+00)0f
-00:00007F 7E008D              +235 	jc	over		. if so, it is not a digit
-00:000080 C5000A              +236 	aa, xi	10		. if not, is it under '0'?
+00:00007F 7E008D              +222 	jc	over		. if so, it is not a digit
+00:000080 C5000A              +223 	aa, xi	10		. if not, is it under '0'?
 (+00)0f
-00:000081 5E0089              +237 	jnc	under		. then it is not a digit either
-00:000082 85FFFF              +238 	ax, xi	-1		. count down and address the value list
+00:000081 5E0089              +224 	jnc	under		. then it is not a digit either
+00:000082 85FFFF              +225 	ax, xi	-1		. count down and address the value list
 [+0002]0c
-00:000083 97A000              +239 	ex	table_add, x	. add
-00:000084 780012              +240 	tp	SCALE_TRIPPED	. if in fraction, reduce scale
-00:000085 1F0013              +241 	dec	SCALE		. as order of mantissa increases
-00:000086 700002              +242 	tz	x		. last column in six?
+00:000083 97A000              +226 	ex	table_add, x	. add
+00:000084 780012              +227 	tp	SCALE_TRIPPED	. if in fraction, reduce scale
+00:000085 1F0013              +228 	dec	SCALE		. as order of mantissa increases
+00:000086 700002              +229 	tz	x		. last column in six?
 (+00)0f
-00:000087 B60079              +243 	j	read1
-00:000088 350000              +244 	lret	0
-  :                            245 
-  :                            246 	$if	'.'>'9'		. is point > digits in the data code
-  :                            247 				. of this assembly?
-  :                            248 over
-  :                            249 	aa, xi	'0'+10-'.'	. if so we might have a point
-  :                            250 	jnza	out		. otherwise the number string is concluded
-  :                            251 	n	SCALE_TRIPPED	. switch on fraction
-  :                            252 	j	read1		. carry on
-  :                            253 under
-  :                            254 out	lret	0
-  :                            255 	$endif
-  :                            256 
-  :                            257 	$if	'.'<'0'		. is point < digits in the data code
-  :                            258 under				. of this assembly?
-00:000089 C50002              +259 	aa, xi	'0'-'.'		. if so we might have a point
+00:000087 B60079              +230 	j	read1
+00:000088 350000              +231 	lret	0
+  :                            232 
+  :                            233 	$if	'.'>'9'		. is point > digits in the data code
+  :                            234 				. of this assembly?
+  :                            235 over
+  :                            236 	aa, xi	'0'+10-'.'	. if so we might have a point
+  :                            237 	jnza	out		. otherwise the number string is concluded
+  :                            238 	n	SCALE_TRIPPED	. switch on fraction
+  :                            239 	j	read1		. carry on
+  :                            240 under
+  :                            241 out	lret	0
+  :                            242 	$endif
+  :                            243 
+  :                            244 	$if	'.'<'0'		. is point < digits in the data code
+  :                            245 under				. of this assembly?
+00:000089 C50002              +246 	aa, xi	'0'-'.'		. if so we might have a point
 (+00)0f
-00:00008A D6008D              +260 	jnza	out		. otherwise conclude the number string
-00:00008B 0F0012              +261 	n	SCALE_TRIPPED	. switch on fraction
+00:00008A D6008D              +247 	jnza	out		. otherwise conclude the number string
+00:00008B 0F0012              +248 	n	SCALE_TRIPPED	. switch on fraction
 (+00)0f
-00:00008C B60079              +262 	j	read1		. carry on
-  :                            263 over
-00:00008D 350000              +264 out	lret	0
-  :                            265 	$endif
-  :                            266 
-  :                            267 				. this routine slides over any
-  :                            268 				. digits in the number string after
-  :                            269 				. the first 21. Integer digits cause
-  :                            270 				. the exponent to go up
-  :                            271 
-00:00008E 600010              +272 skate	READ_BYTE		. read extra digits, increment scale
+00:00008C B60079              +249 	j	read1		. carry on
+  :                            250 over
+00:00008D 350000              +251 out	lret	0
+  :                            252 	$endif
+  :                            253 
+  :                            254 				. this routine slides over any
+  :                            255 				. digits in the number string after
+  :                            256 				. the first 21. Integer digits cause
+  :                            257 				. the exponent to go up
+  :                            258 
+00:00008E 600010              +259 skate	READ_BYTE		. read extra digits, increment scale
 (+00)0f
-00:00008F C60092              +272 
-00:000090 1F0010              +272 
-00:000091 150008              +272 
-00:000092 200001              +272 
-  :                            273 				. if this is still the integer part
-  :                            274 
-00:000093 680004              +275 	anu, xi	'0'+10		. is this byte > '9'
-00:000094 DD003A              +275 
+00:00008F C60092              +259 
+00:000090 1F0010              +259 
+00:000091 150008              +259 
+00:000092 200001              +259 
+  :                            260 				. if this is still the integer part
+  :                            261 
+00:000093 680004              +262 	anu, xi	'0'+10		. is this byte > '9'
+00:000094 DD003A              +262 
 (+00)0f
-00:000095 7E00A2              +276 	jc	skate_over	. it's not a digit in this case
-00:000096 680004              +277 	anu, xi	'0'		. is it < '0'
-00:000097 DD0030              +277 
+00:000095 7E00A2              +263 	jc	skate_over	. it's not a digit in this case
+00:000096 680004              +264 	anu, xi	'0'		. is it < '0'
+00:000097 DD0030              +264 
 (+00)0f
-00:000098 5E009D              +278 	jnc	skate_under	. then it's not a digit either
-00:000099 780012              +279 	tp	SCALE_TRIPPED	. it's a digit. Are we integer or fraction?
+00:000098 5E009D              +265 	jnc	skate_under	. then it's not a digit either
+00:000099 780012              +266 	tp	SCALE_TRIPPED	. it's a digit. Are we integer or fraction?
 (+00)0f
-00:00009A B6008E              +280 	j	skate		. we're in the fraction drop the extra digit
-00:00009B 170013              +281 	inc	SCALE		. we're in the integer, up the decimal scale
+00:00009A B6008E              +267 	j	skate		. we're in the fraction drop the extra digit
+00:00009B 170013              +268 	inc	SCALE		. we're in the integer, up the decimal scale
 (+00)0f
-00:00009C B6008E              +282 	j	skate		. and then drop the digit
-  :                            283 
-  :                            284 	$if	'.'>'9'		. is point > than the digits
-  :                            285 				. in the data code of this assembly?
-  :                            286 skate_over
-  :                            287 	anu, xi	'.'		. then it might be a decimal point
-  :                            288 	jnzb	skate_away	. but if not the string is concluded
-  :                            289 	n	SCALE_TRIPPED	. turn on the fraction
-  :                            290 	j	skate		. and carry on
-  :                            291 skate_under
-  :                            292 skate_away
-  :                            293 	lret	0
+00:00009C B6008E              +269 	j	skate		. and then drop the digit
+  :                            270 
+  :                            271 	$if	'.'>'9'		. is point > than the digits
+  :                            272 				. in the data code of this assembly?
+  :                            273 skate_over
+  :                            274 	anu, xi	'.'		. then it might be a decimal point
+  :                            275 	jnzb	skate_away	. but if not the string is concluded
+  :                            276 	n	SCALE_TRIPPED	. turn on the fraction
+  :                            277 	j	skate		. and carry on
+  :                            278 skate_under
+  :                            279 skate_away
+  :                            280 	lret	0
+  :                            281 	$endif
+  :                            282 
+  :                            283 	$if	'.'<'0'		. is point < than the digits in the
+  :                            284 				. data code of this assembly?
+  :                            285 skate_under			
+00:00009D 680004              +286 	anu, xi	'.'		. if so this might be a point
+00:00009E DD002E              +286 
+(+00)0f
+00:00009F DE00A2              +287 	jnzb	skate_away	. if not conclude the string
+00:0000A0 0F0012              +288 	n	SCALE_TRIPPED	. switch on fraction
+(+00)0f
+00:0000A1 B6008E              +289 	j	skate		. and carry on
+  :                            290 skate_over
+  :                            291 skate_away
+  :                            292 .	sa	LAST_BYTE_READ
+00:0000A2 350000              +293 	lret	0
   :                            294 	$endif
   :                            295 
-  :                            296 	$if	'.'<'0'		. is point < than the digits in the
-  :                            297 				. data code of this assembly?
-  :                            298 skate_under			
-00:00009D 680004              +299 	anu, xi	'.'		. if so this might be a point
-00:00009E DD002E              +299 
+  :                            296 e_string
+00:0000A3 600010              +297 	READ_BYTE
 (+00)0f
-00:00009F DE00A2              +300 	jnzb	skate_away	. if not conclude the string
-00:0000A0 0F0012              +301 	n	SCALE_TRIPPED	. switch on fraction
+00:0000A4 C600A7              +297 
+00:0000A5 1F0010              +297 
+00:0000A6 150008              +297 
+00:0000A7 200001              +297 
+00:0000A8 6D0000              +298 	lb, xi	0
+00:0000A9 C5FFD5              +299 	aa, xi	-'+'
 (+00)0f
-00:0000A1 B6008E              +302 	j	skate		. and carry on
-  :                            303 skate_over
-  :                            304 skate_away
-  :                            305 .	sa	LAST_BYTE_READ
-00:0000A2 350000              +306 	lret	0
-  :                            307 	$endif
-  :                            308 
-  :                            309 e_string
-00:0000A3 600010              +310 	READ_BYTE
+00:0000AA C600B3              +300 	jza	free_ip
+00:0000AB C5FFFE              +301 	aa, xi	'+'-'-'
 (+00)0f
-00:0000A4 C600A7              +310 
-00:0000A5 1F0010              +310 
-00:0000A6 150008              +310 
-00:0000A7 200001              +310 
-00:0000A8 6D0000              +311 	lb, xi	0
-00:0000A9 C5FFD5              +312 	aa, xi	-'+'
+00:0000AC C600AF              +302 	jza	free_in
+00:0000AD C5FFF3              +303 	aa, xi	'-'-'0'-10
 (+00)0f
-00:0000AA C600B3              +313 	jza	free_ip
-00:0000AB C5FFFE              +314 	aa, xi	'+'-'-'
+00:0000AE B600B9              +304 	j	free_iq
+  :                            305 
+  :                            306 free_in
 (+00)0f
-00:0000AC C600AF              +315 	jza	free_in
-00:0000AD C5FFF3              +316 	aa, xi	'-'-'0'-10
+00:0000AF 3E00B3              +307 	lcal	free_ip
+00:0000B0 0F0005              +308 	n	b
+00:0000B1 170005              +309 	inc	b
+00:0000B2 350000              +310 	lret	0
+  :                            311 
+00:0000B3 600010              +312 free_ip	READ_BYTE
 (+00)0f
-00:0000AE B600B9              +317 	j	free_iq
-  :                            318 
-  :                            319 free_in
+00:0000B4 C600B7              +312 
+00:0000B5 1F0010              +312 
+00:0000B6 150008              +312 
+00:0000B7 200001              +312 
+  :                            313 
+00:0000B8 C5FFC6              +314 	aa, xi	-'0'-10
 (+00)0f
-00:0000AF 3E00B3              +320 	lcal	free_ip
-00:0000B0 0F0005              +321 	n	b
-00:0000B1 170005              +322 	inc	b
-00:0000B2 350000              +323 	lret	0
+00:0000B9 7E00C1              +315 free_iq	jc	free_ix
+00:0000BA C5000A              +316 	aa, xi	10
+(+00)0f
+00:0000BB 5E00C1              +317 free_ia	jnc	free_ix
+00:0000BC 2E0001              +318 	sbl	1
+00:0000BD C00005              +319 	aa	b
+00:0000BE 2E0002              +320 	sbl	2
+00:0000BF C80004              +321 	ab	a
+(+00)0f
+00:0000C0 B600B3              +322 	j	free_ip
+00:0000C1 350000              +323 free_ix	lret	0
   :                            324 
-00:0000B3 600010              +325 free_ip	READ_BYTE
+00:0000C2 050060              +325 symbol	READ_START
+  :                            326 next_symbol
+00:0000C3 600010              +327 	READ_BYTE
 (+00)0f
-00:0000B4 C600B7              +325 
-00:0000B5 1F0010              +325 
-00:0000B6 150008              +325 
-00:0000B7 200001              +325 
-  :                            326 
-00:0000B8 C5FFC6              +327 	aa, xi	-'0'-10
+00:0000C4 C600C7              +327 
+00:0000C5 1F0010              +327 
+00:0000C6 150008              +327 
+00:0000C7 200001              +327 
+00:0000C8 680004              +328 	anu, xi	' '
+00:0000C9 DD0020              +328 
 (+00)0f
-00:0000B9 7E00C1              +328 free_iq	jc	free_ix
-00:0000BA C5000A              +329 	aa, xi	10
+00:0000CA CE00C3              +329 	jzb	next_symbol
+00:0000CB 680004              +330 	anu, xi	HORIZONTAL_TAB
+00:0000CC DD0009              +330 
 (+00)0f
-00:0000BB 5E00C1              +330 free_ia	jnc	free_ix
-00:0000BC 2E0001              +331 	sbl	1
-00:0000BD C00005              +332 	aa	b
-00:0000BE 2E0002              +333 	sbl	2
-00:0000BF C80004              +334 	ab	a
+00:0000CD CE00C3              +331 	jzb	next_symbol
+00:0000CE 3D0000              +332 	fret	0
+  :                            333 
+00:0000CF 050010              +334 fedit	WRITE_START
+00:0000D0 470008              +335 	qs	8
+00:0000D1 65002B              +336 	la, xi	'+'
+00:0000D2 780008              +337 	tn	8
 (+00)0f
-00:0000C0 B600B3              +335 	j	free_ip
-00:0000C1 350000              +336 free_ix	lret	0
-  :                            337 
-00:0000C2 050060              +338 symbol	READ_START
-  :                            339 next_symbol
-00:0000C3 600010              +340 	READ_BYTE
+00:0000D3 B600D5              +337 
 (+00)0f
-00:0000C4 C600C7              +340 
-00:0000C5 1F0010              +340 
-00:0000C6 150008              +340 
-00:0000C7 200001              +340 
-00:0000C8 680004              +341 	anu, xi	' '
-00:0000C9 DD0020              +341 
-(+00)0f
-00:0000CA CE00C3              +342 	jzb	next_symbol
-00:0000CB 680004              +343 	anu, xi	HORIZONTAL_TAB
-00:0000CC DD0009              +343 
-(+00)0f
-00:0000CD CE00C3              +344 	jzb	next_symbol
-00:0000CE 3D0000              +345 	fret	0
-  :                            346 
-00:0000CF 050010              +347 fedit	WRITE_START
-00:0000D0 470008              +348 	qs	8
-00:0000D1 65002B              +349 	la, xi	'+'
-00:0000D2 780008              +350 	tn	8
-(+00)0f
-00:0000D3 B600D5              +350 
-(+00)0f
-00:0000D4 B600DA              +351 	j	write_sign
-00:0000D5 0F0008              +352 	n	8
-00:0000D6 0F0009              +353 	n	9
-00:0000D7 0F000A              +354 	n	10
-00:0000D8 0F000B              +355 	n	11
-00:0000D9 65002D              +356 	la, xi	'-'
-  :                            357 write_sign
-00:0000DA 260010              +358 	WRITE_BYTE
-00:0000DB 1D0008              +358 
-00:0000DC 170010              +358 
-00:0000DD 4F0008              +359 	ql	8
+00:0000D4 B600DA              +338 	j	write_sign
+00:0000D5 0F0008              +339 	n	8
+00:0000D6 0F0009              +340 	n	9
+00:0000D7 0F000A              +341 	n	10
+00:0000D8 0F000B              +342 	n	11
+00:0000D9 65002D              +343 	la, xi	'-'
+  :                            344 write_sign
+00:0000DA 260010              +345 	WRITE_BYTE
+00:0000DB 1D0008              +345 
+00:0000DC 170010              +345 
+00:0000DD 4F0008              +346 	ql	8
 [+0003]0f
-00:0000DE 3E0000              +360 	lcal	scale_out
-00:0000DF 600008              +361 	la	8
-00:0000E0 A5000F              +362 	and, xi	15
-00:0000E1 500004              +363 	lx	a
-00:0000E2 650000              +364 	la, xi	0
-00:0000E3 680009              +365 	lb	9
-00:0000E4 36A000              +366 	dsl	0, x
-  :                            367 
-00:0000E5 F80004              +368 	push	a
-  :                            369 
-00:0000E6 60000A              +370 	la	10
-00:0000E7 0EA000              +371 	sbr	0, x
-00:0000E8 76A000              +372 	drl	0, x
-00:0000E9 280009              +373 	sb	9
-  :                            374 
-00:0000EA 68000B              +375 	lb	11
-00:0000EB 06A000              +376 	sar	0, x
-00:0000EC 36A000              +377 	dsl	0, x
-00:0000ED C7000A              +378 	ds	10
-  :                            379 
-00:0000EE 380004              +380 	pop	a
-  :                            381 
-00:0000EF 950030              +382 	or, xi	'0'
-00:0000F0 260010              +383 	WRITE_BYTE
-00:0000F1 1D0008              +383 
-00:0000F2 170010              +383 
-00:0000F3 65002E              +384 	la, xi	'.'
-00:0000F4 260010              +385 	WRITE_BYTE
-00:0000F5 1D0008              +385 
-00:0000F6 170010              +385 
-  :                            386 
-00:0000F7 ED03E8              +387 	mf, xi	1000
-00:0000F8 28000B              +388 	sb	11
-00:0000F9 200007              +389 	sa	7
-00:0000FA 300006              +390 	z	6
-00:0000FB 68000A              +391 	lb	10
-00:0000FC ED03E8              +392 	mf, xi	1000
-00:0000FD D70006              +393 	da	6
-00:0000FE 28000A              +394 	sb	10
-00:0000FF 200007              +395 	sa	7
-00:000100 B70006              +396 	sc	6
-00:000101 680009              +397 	lb	9
-00:000102 ED03E8              +398 	mf, xi	1000
-00:000103 D70006              +399 	da	6
-00:000104 280009              +400 	sb	9
-  :                            401 	
+00:0000DE 3E0000              +347 	lcal	scale_out
+00:0000DF 600008              +348 	la	8
+00:0000E0 A5000F              +349 	and, xi	15
+00:0000E1 500004              +350 	lx	a
+00:0000E2 650000              +351 	la, xi	0
+00:0000E3 680009              +352 	lb	9
+00:0000E4 36A000              +353 	dsl	0, x
+  :                            354 
+00:0000E5 F80004              +355 	push	a
+  :                            356 
+00:0000E6 60000A              +357 	la	10
+00:0000E7 0EA000              +358 	sbr	0, x
+00:0000E8 76A000              +359 	drl	0, x
+00:0000E9 280009              +360 	sb	9
+  :                            361 
+00:0000EA 68000B              +362 	lb	11
+00:0000EB 06A000              +363 	sar	0, x
+00:0000EC 36A000              +364 	dsl	0, x
+00:0000ED C7000A              +365 	ds	10
+  :                            366 
+00:0000EE 380004              +367 	pop	a
+  :                            368 
+00:0000EF 950030              +369 	or, xi	'0'
+00:0000F0 260010              +370 	WRITE_BYTE
+00:0000F1 1D0008              +370 
+00:0000F2 170010              +370 
+00:0000F3 65002E              +371 	la, xi	'.'
+00:0000F4 260010              +372 	WRITE_BYTE
+00:0000F5 1D0008              +372 
+00:0000F6 170010              +372 
+  :                            373 
+00:0000F7 ED03E8              +374 	mf, xi	1000
+00:0000F8 28000B              +375 	sb	11
+00:0000F9 200007              +376 	sa	7
+00:0000FA 300006              +377 	z	6
+00:0000FB 68000A              +378 	lb	10
+00:0000FC ED03E8              +379 	mf, xi	1000
+00:0000FD D70006              +380 	da	6
+00:0000FE 28000A              +381 	sb	10
+00:0000FF 200007              +382 	sa	7
+00:000100 B70006              +383 	sc	6
+00:000101 680009              +384 	lb	9
+00:000102 ED03E8              +385 	mf, xi	1000
+00:000103 D70006              +386 	da	6
+00:000104 280009              +387 	sb	9
+  :                            388 	
 [+0004]0c
-00:000105 60C000              +402 	la	table, a
-00:000106 1D0010              +403 	WRITE3_BYTES
-00:000107 1D0008              +403 
-00:000108 FD0003              +403 
-00:000109 2F0010              +403 
-  :                            404 
+00:000105 60C000              +389 	la	table, a
+00:000106 1D0010              +390 	WRITE3_BYTES
+00:000107 1D0008              +390 
+00:000108 FD0003              +390 
+00:000109 2F0010              +390 
+  :                            391 
 [+0005]0f
-00:00010A 3E0000              +405 	lcal	fraction6
-  :                            406 
-00:00010B 700009              +407 	tz	9
+00:00010A 3E0000              +392 	lcal	fraction6
+  :                            393 
+00:00010B 700009              +394 	tz	9
 (+00)0f
-00:00010C B60112              +408 	j	edit18
-00:00010D 70000A              +409 	tz	10
+00:00010C B60112              +395 	j	edit18
+00:00010D 70000A              +396 	tz	10
 (+00)0f
-00:00010E B60119              +410 	j	edit12
-00:00010F 70000B              +411 	tz	11
+00:00010E B60119              +397 	j	edit12
+00:00010F 70000B              +398 	tz	11
 (+00)0f
-00:000110 B6011E              +412 	j	edit6
+00:000110 B6011E              +399 	j	edit6
 (+00)0f
-00:000111 B60120              +413 	j	edit_scale
-  :                            414 
-00:000112 60000B              +415 edit18	la	11
+00:000111 B60120              +400 	j	edit_scale
+  :                            401 
+00:000112 60000B              +402 edit18	la	11
 (+00)0f
-00:000113 3E0128              +416 	lcal	allsix
-00:000114 60000A              +417 	la	10
+00:000113 3E0128              +403 	lcal	allsix
+00:000114 60000A              +404 	la	10
 (+00)0f
-00:000115 3E0128              +418 	lcal	allsix
-00:000116 600009              +419 	la	9
+00:000115 3E0128              +405 	lcal	allsix
+00:000116 600009              +406 	la	9
 (+00)0f
-00:000117 3E0135              +420 	lcal	up2six
+00:000117 3E0135              +407 	lcal	up2six
 (+00)0f
-00:000118 B60120              +421 	j	edit_scale
-  :                            422 
-00:000119 60000B              +423 edit12	la	11
+00:000118 B60120              +408 	j	edit_scale
+  :                            409 
+00:000119 60000B              +410 edit12	la	11
 (+00)0f
-00:00011A 3E0128              +424 	lcal	allsix
-00:00011B 60000A              +425 	la	10
+00:00011A 3E0128              +411 	lcal	allsix
+00:00011B 60000A              +412 	la	10
 (+00)0f
-00:00011C 3E0135              +426 	lcal	up2six
+00:00011C 3E0135              +413 	lcal	up2six
 (+00)0f
-00:00011D B60120              +427 	j	edit_scale
+00:00011D B60120              +414 	j	edit_scale
+  :                            415 
+00:00011E 60000B              +416 edit6	la	11
+(+00)0f
+00:00011F 3E0135              +417 	lcal	up2six
+  :                            418 
+  :                            419 edit_scale
+00:000120 680013              +420 	lb	SCALE
+(+00)0f
+00:000121 CE0127              +421 	jzb	no_e_edit
+00:000122 650065              +422 	la, xi	'e'
+00:000123 260010              +423 	WRITE_BYTE
+00:000124 1D0008              +423 
+00:000125 170010              +423 
+(+00)0f
+00:000126 3E0143              +424 	lcal	ffi
+  :                            425 no_e_edit
+  :                            426 
+00:000127 3D0000              +427 	fret	0
   :                            428 
-00:00011E 60000B              +429 edit6	la	11
-(+00)0f
-00:00011F 3E0135              +430 	lcal	up2six
-  :                            431 
-  :                            432 edit_scale
-00:000120 680013              +433 	lb	SCALE
-(+00)0f
-00:000121 CE0127              +434 	jzb	no_e_edit
-00:000122 650065              +435 	la, xi	'e'
-00:000123 260010              +436 	WRITE_BYTE
-00:000124 1D0008              +436 
-00:000125 170010              +436 
-(+00)0f
-00:000126 3E0143              +437 	lcal	ffi
-  :                            438 no_e_edit
-  :                            439 
-00:000127 3D0000              +440 	fret	0
-  :                            441 
-00:000128 160018              +442 allsix	dsr	24
-00:000129 F503E8              +443 	d, xi	1000
+00:000128 160018              +429 allsix	dsr	24
+00:000129 F503E8              +430 	d, xi	1000
 [+0004]0c
-00:00012A 60C000              +444 	la	table, a
-00:00012B 1D0010              +445 	WRITE3_BYTES
-00:00012C 1D0008              +445 
-00:00012D FD0003              +445 
-00:00012E 2F0010              +445 
+00:00012A 60C000              +431 	la	table, a
+00:00012B 1D0010              +432 	WRITE3_BYTES
+00:00012C 1D0008              +432 
+00:00012D FD0003              +432 
+00:00012E 2F0010              +432 
 [+0004]0c
-00:00012F 60D000              +446 	la	table, b
-00:000130 1D0010              +447 	WRITE3_BYTES
-00:000131 1D0008              +447 
-00:000132 FD0003              +447 
-00:000133 2F0010              +447 
-00:000134 350000              +448 	lret	0
-  :                            449 
-00:000135 160018              +450 up2six	dsr	24
-00:000136 F503E8              +451 	d, xi	1000
+00:00012F 60D000              +433 	la	table, b
+00:000130 1D0010              +434 	WRITE3_BYTES
+00:000131 1D0008              +434 
+00:000132 FD0003              +434 
+00:000133 2F0010              +434 
+00:000134 350000              +435 	lret	0
+  :                            436 
+00:000135 160018              +437 up2six	dsr	24
+00:000136 F503E8              +438 	d, xi	1000
 [+0004]0c
-00:000137 60C000              +452 	la	table, a
-00:000138 1D0010              +453 	WRITE3_BYTES
-00:000139 1D0008              +453 
-00:00013A FD0003              +453 
-00:00013B 2F0010              +453 
+00:000137 60C000              +439 	la	table, a
+00:000138 1D0010              +440 	WRITE3_BYTES
+00:000139 1D0008              +440 
+00:00013A FD0003              +440 
+00:00013B 2F0010              +440 
 (+00)0f
-00:00013C CE0142              +454 	jzb	only3
+00:00013C CE0142              +441 	jzb	only3
 [+0004]0c
-00:00013D 60D000              +455 	la	table, b
-00:00013E 1D0010              +456 	WRITE3_BYTES
-00:00013F 1D0008              +456 
-00:000140 FD0003              +456 
-00:000141 2F0010              +456 
-00:000142 350000              +457 only3	lret	0
-  :                            458 
-  :                            459 
-  :                            460 .	this is a fast translate which prints triplets
-  :                            461 .	of digits and is only used for floating exponents
-  :                            462 .	and so has sign handling as well
-  :                            463 
-00:000143 65002B              +464 ffi	la, xi	'+'
+00:00013D 60D000              +442 	la	table, b
+00:00013E 1D0010              +443 	WRITE3_BYTES
+00:00013F 1D0008              +443 
+00:000140 FD0003              +443 
+00:000141 2F0010              +443 
+00:000142 350000              +444 only3	lret	0
+  :                            445 
+  :                            446 
+  :                            447 .	this is a fast translate which prints triplets
+  :                            448 .	of digits and is only used for floating exponents
+  :                            449 .	and so has sign handling as well
+  :                            450 
+00:000143 65002B              +451 ffi	la, xi	'+'
 (+00)0f
-00:000144 AE0148              +465 	jpb	ffi1
-00:000145 65002D              +466 	la, xi	'-'
-00:000146 0F0005              +467 	n	b
-00:000147 CD0001              +468 	ab, xi	1
-00:000148 260010              +469 ffi1	WRITE_BYTE
-00:000149 1D0008              +469 
-00:00014A 170010              +469 
+00:000144 AE0148              +452 	jpb	ffi1
+00:000145 65002D              +453 	la, xi	'-'
+00:000146 0F0005              +454 	n	b
+00:000147 CD0001              +455 	ab, xi	1
+00:000148 260010              +456 ffi1	WRITE_BYTE
+00:000149 1D0008              +456 
+00:00014A 170010              +456 
 (+00)0f
-00:00014B F001CF              +470 	d	(1000000)
+00:00014B F001CF              +457 	d	(1000000)
 (+00)0f
-00:00014C C6015D              +471 	jza	ffi6
-00:00014D 950030              +472 	or, xi	'0'
-00:00014E 260010              +473 	WRITE_BYTE
-00:00014F 1D0008              +473 
-00:000150 170010              +473 
-00:000151 F503E8              +474 	d, xi	1000
+00:00014C C6015D              +458 	jza	ffi6
+00:00014D 950030              +459 	or, xi	'0'
+00:00014E 260010              +460 	WRITE_BYTE
+00:00014F 1D0008              +460 
+00:000150 170010              +460 
+00:000151 F503E8              +461 	d, xi	1000
 [+0004]0c
-00:000152 60C000              +475 ffi6a	la	table, a
-00:000153 1D0010              +476 	WRITE3_BYTES
-00:000154 1D0008              +476 
-00:000155 FD0003              +476 
-00:000156 2F0010              +476 
+00:000152 60C000              +462 ffi6a	la	table, a
+00:000153 1D0010              +463 	WRITE3_BYTES
+00:000154 1D0008              +463 
+00:000155 FD0003              +463 
+00:000156 2F0010              +463 
 [+0004]0c
-00:000157 60D000              +477 ffi3	la	table, b
-00:000158 1D0010              +478 	WRITE3_BYTES
-00:000159 1D0008              +478 
-00:00015A FD0003              +478 
-00:00015B 2F0010              +478 
-00:00015C 350000              +479 	lret	0
-00:00015D F503E8              +480 ffi6	d, xi	1000
+00:000157 60D000              +464 ffi3	la	table, b
+00:000158 1D0010              +465 	WRITE3_BYTES
+00:000159 1D0008              +465 
+00:00015A FD0003              +465 
+00:00015B 2F0010              +465 
+00:00015C 350000              +466 	lret	0
+00:00015D F503E8              +467 ffi6	d, xi	1000
 (+00)0f
-00:00015E D60152              +481 	jnza	ffi6a
+00:00015E D60152              +468 	jnza	ffi6a
 (+00)0f
-00:00015F B60157              +482 	j	ffi3
-  :                            483 
-  :                            484 .	these are genteel column-oriented translates
-  :                            485 .	so far they have only been needed unsigned
-  :                            486 .	not much trouble however to push sign-handling
-  :                            487 .	onto the start of them
-  :                            488 
-  :                            489 ieditu	
-00:000160 050010              +490 	WRITE_START
-  :                            491 
-00:000161 160018              +492 	dsr	24
+00:00015F B60157              +469 	j	ffi3
+  :                            470 
+  :                            471 .	these are genteel column-oriented translates
+  :                            472 .	so far they have only been needed unsigned
+  :                            473 .	not much trouble however to push sign-handling
+  :                            474 .	onto the start of them
+  :                            475 
+  :                            476 ieditu	
+00:000160 050010              +477 	WRITE_START
+  :                            478 
+00:000161 160018              +479 	dsr	24
 (+00)0f
-00:000162 F001CF              +493 	d	(1000000)
+00:000162 F001CF              +480 	d	(1000000)
+  :                            481 
+(+00)0f
+00:000163 C60167              +482 	jza	iedit6
+(+00)0f
+00:000164 3E018F              +483 	lcal	izedit3
+(+00)0f
+00:000165 3E01A6              +484 	lcal	iprint6
+00:000166 3D0000              +485 	fret	0
+  :                            486 
+(+00)0f
+00:000167 CE016A              +487 iedit6	jzb	ieditz
+(+00)0f
+00:000168 3E0184              +488 	lcal	izedit6
+00:000169 3D0000              +489 	fret	0
+  :                            490 
+00:00016A 650030              +491 ieditz	la, xi	'0'
+00:00016B 260010              +492 	WRITE_BYTE
+00:00016C 1D0008              +492 
+00:00016D 170010              +492 
+00:00016E 3D0000              +493 	fret	0
   :                            494 
+  :                            495 
+  :                            496 iedit48u
+00:00016F 050010              +497 	WRITE_START
 (+00)0f
-00:000163 C60167              +495 	jza	iedit6
+00:000170 F001CF              +498 	d	(1000000)
+00:000171 280007              +499 	sb	7
+00:000172 200005              +500 	sa	b
+00:000173 600006              +501 	la	6
 (+00)0f
-00:000164 3E018F              +496 	lcal	izedit3
-(+00)0f
-00:000165 3E01A6              +497 	lcal	iprint6
-00:000166 3D0000              +498 	fret	0
-  :                            499 
-(+00)0f
-00:000167 CE016A              +500 iedit6	jzb	ieditz
-(+00)0f
-00:000168 3E0184              +501 	lcal	izedit6
-00:000169 3D0000              +502 	fret	0
+00:000174 F001CF              +502 	d	(1000000)
   :                            503 
-00:00016A 650030              +504 ieditz	la, xi	'0'
-00:00016B 260010              +505 	WRITE_BYTE
-00:00016C 1D0008              +505 
-00:00016D 170010              +505 
-00:00016E 3D0000              +506 	fret	0
-  :                            507 
-  :                            508 
-  :                            509 iedit48u
-00:00016F 050010              +510 	WRITE_START
 (+00)0f
-00:000170 F001CF              +511 	d	(1000000)
-00:000171 280007              +512 	sb	7
-00:000172 200005              +513 	sa	b
-00:000173 600006              +514 	la	6
+00:000175 C6017B              +504 	jza	i48_12
 (+00)0f
-00:000174 F001CF              +515 	d	(1000000)
+00:000176 3E018F              +505 	lcal	izedit3
+(+00)0f
+00:000177 3E01A6              +506 	lcal	iprint6
+00:000178 680007              +507 	lb	7
+(+00)0f
+00:000179 3E01A6              +508 	lcal	iprint6
+00:00017A 3D0000              +509 	fret	0
+  :                            510 
+(+00)0f
+00:00017B CE0180              +511 i48_12	jzb	i48_6
+(+00)0f
+00:00017C 3E0184              +512 	lcal	izedit6
+00:00017D 680007              +513 	lb	7
+(+00)0f
+00:00017E 3E01A6              +514 	lcal	iprint6
+00:00017F 3D0000              +515 	fret	0
   :                            516 
+00:000180 680007              +517 i48_6	lb	7
 (+00)0f
-00:000175 C6017B              +517 	jza	i48_12
+00:000181 CE016A              +518 	jzb	ieditz
 (+00)0f
-00:000176 3E018F              +518 	lcal	izedit3
+00:000182 3E0184              +519 	lcal	izedit6
+00:000183 3D0000              +520 	fret	0
+  :                            521 
+  :                            522 
+00:000184 650000              +523 izedit6	la, xi	0
+00:000185 F503E8              +524 	d, xi	1000
 (+00)0f
-00:000177 3E01A6              +519 	lcal	iprint6
-00:000178 680007              +520 	lb	7
+00:000186 C6018E              +525 	jza	izeditu
 (+00)0f
-00:000179 3E01A6              +521 	lcal	iprint6
-00:00017A 3D0000              +522 	fret	0
-  :                            523 
-(+00)0f
-00:00017B CE0180              +524 i48_12	jzb	i48_6
-(+00)0f
-00:00017C 3E0184              +525 	lcal	izedit6
-00:00017D 680007              +526 	lb	7
-(+00)0f
-00:00017E 3E01A6              +527 	lcal	iprint6
-00:00017F 3D0000              +528 	fret	0
-  :                            529 
-00:000180 680007              +530 i48_6	lb	7
-(+00)0f
-00:000181 CE016A              +531 	jzb	ieditz
-(+00)0f
-00:000182 3E0184              +532 	lcal	izedit6
-00:000183 3D0000              +533 	fret	0
-  :                            534 
-  :                            535 
-00:000184 650000              +536 izedit6	la, xi	0
-00:000185 F503E8              +537 	d, xi	1000
-(+00)0f
-00:000186 C6018E              +538 	jza	izeditu
-(+00)0f
-00:000187 3E018F              +539 	lcal	izedit3
+00:000187 3E018F              +526 	lcal	izedit3
 [+0004]0c
-00:000188 60D000              +540 	la	table, b
-00:000189 1D0010              +541 	WRITE3_BYTES
-00:00018A 1D0008              +541 
-00:00018B FD0003              +541 
-00:00018C 2F0010              +541 
-00:00018D 350000              +542 	lret	0
-  :                            543 
-  :                            544 izeditq* $proc
-  :                            545 	sal	$byte
-  :                            546 	mta	('0'*/$word-$byte)
-  :                            547 	j	iz3out($word/$byte-?)
-  :                            548 	$end
+00:000188 60D000              +527 	la	table, b
+00:000189 1D0010              +528 	WRITE3_BYTES
+00:00018A 1D0008              +528 
+00:00018B FD0003              +528 
+00:00018C 2F0010              +528 
+00:00018D 350000              +529 	lret	0
+  :                            530 
+  :                            531 izeditq* $proc
+  :                            532 	sal	$byte
+  :                            533 	mta	('0'*/$word-$byte)
+  :                            534 	j	iz3out($word/$byte-?)
+  :                            535 	$end
+  :                            536 
+  :                            537 izeditp* $proc
+  :                            538 	WRITE_BYTES	?
+  :                            539 	lret
+  :                            540 	$end
+  :                            541 
+00:00018E 600005              +542 izeditu	la	b
+[+0004]0c
+00:00018F 60C000              +543 izedit3	la	table, a
+(+00)0f
+00:000190 4801D0              +544 	lk	(-1*/16)
+(+00)0f
+00:000191 AF01D1              +545 	mta	('0'*/16:s)
+(+00)0f
+00:000192 B601A1              +546 	j	iz3out($word/$byte)
+  :                            547 
+00:000193 260008              +548 ?	$do	$word/$byte-1,	izeditq
+(+00)0f
+00:000194 AF01D1              +548 
+(+00)0f
+00:000195 B6019D              +548 
+00:000196 260008              +548 
+(+00)0f
+00:000197 AF01D1              +548 
+(+00)0f
+00:000198 B60199              +548 
   :                            549 
-  :                            550 izeditp* $proc
-  :                            551 	WRITE_BYTES	?
-  :                            552 	lret
-  :                            553 	$end
+00:000199 1D0008              +550 ?	$do	$word/$byte,iz3out(?)	izeditp
+00:00019A FD0001              +550 
+00:00019B 2F0010              +550 
+00:00019C 350000              +550 
+00:00019D 1D0010              +550 
+00:00019E FD0002              +550 
+00:00019F 2F0010              +550 
+00:0001A0 350000              +550 
+00:0001A1 1D0010              +550 
+00:0001A2 1D0008              +550 
+00:0001A3 FD0003              +550 
+00:0001A4 2F0010              +550 
+00:0001A5 350000              +550 
+  :                            551 	
+  :                            552 	.	fear not, there is an lret instruction
+  :                            553 	.	in izeditp macro
   :                            554 
-00:00018E 600005              +555 izeditu	la	b
+00:0001A6 650000              +555 iprint6	la, xi	0
+00:0001A7 F503E8              +556 	d, xi	1000
 [+0004]0c
-00:00018F 60C000              +556 izedit3	la	table, a
-(+00)0f
-00:000190 4801D0              +557 	lk	(-1*/16)
-(+00)0f
-00:000191 AF01D1              +558 	mta	('0'*/16:s)
-(+00)0f
-00:000192 B601A1              +559 	j	iz3out($word/$byte)
-  :                            560 
-00:000193 260008              +561 ?	$do	$word/$byte-1,	izeditq
-(+00)0f
-00:000194 AF01D1              +561 
-(+00)0f
-00:000195 B6019D              +561 
-00:000196 260008              +561 
-(+00)0f
-00:000197 AF01D1              +561 
-(+00)0f
-00:000198 B60199              +561 
+00:0001A8 60C000              +557 	la	table, a
+00:0001A9 1D0010              +558 	WRITE3_BYTES
+00:0001AA 1D0008              +558 
+00:0001AB FD0003              +558 
+00:0001AC 2F0010              +558 
+[+0004]0c
+00:0001AD 60D000              +559 	la	table, b
+00:0001AE 1D0010              +560 	WRITE3_BYTES
+00:0001AF 1D0008              +560 
+00:0001B0 FD0003              +560 
+00:0001B1 2F0010              +560 
+00:0001B2 350000              +561 	lret	0
   :                            562 
-00:000199 1D0008              +563 ?	$do	$word/$byte,iz3out(?)	izeditp
-00:00019A FD0001              +563 
-00:00019B 2F0010              +563 
-00:00019C 350000              +563 
-00:00019D 1D0010              +563 
-00:00019E FD0002              +563 
-00:00019F 2F0010              +563 
-00:0001A0 350000              +563 
-00:0001A1 1D0010              +563 
-00:0001A2 1D0008              +563 
-00:0001A3 FD0003              +563 
-00:0001A4 2F0010              +563 
-00:0001A5 350000              +563 
-  :                            564 	
-  :                            565 	.	fear not, there is an lret instruction
-  :                            566 	.	in izeditp macro
-  :                            567 
-00:0001A6 650000              +568 iprint6	la, xi	0
-00:0001A7 F503E8              +569 	d, xi	1000
-[+0004]0c
-00:0001A8 60C000              +570 	la	table, a
-00:0001A9 1D0010              +571 	WRITE3_BYTES
-00:0001AA 1D0008              +571 
-00:0001AB FD0003              +571 
-00:0001AC 2F0010              +571 
-[+0004]0c
-00:0001AD 60D000              +572 	la	table, b
-00:0001AE 1D0010              +573 	WRITE3_BYTES
-00:0001AF 1D0008              +573 
-00:0001B0 FD0003              +573 
-00:0001B1 2F0010              +573 
-00:0001B2 350000              +574 	lret	0
-  :                            575 
-00:0001B3 050060              +576 iscan	READ_START
-00:0001B4 600010              +577 iscanf	READ_BYTE
+00:0001B3 050060              +563 iscan	READ_START
+00:0001B4 600010              +564 iscanf	READ_BYTE
 (+00)0f
-00:0001B5 C601B8              +577 
-00:0001B6 1F0010              +577 
-00:0001B7 150008              +577 
-00:0001B8 200001              +577 
-  :                            578 
-00:0001B9 C5FFE0              +579 	aa, xi	-' '
+00:0001B5 C601B8              +564 
+00:0001B6 1F0010              +564 
+00:0001B7 150008              +564 
+00:0001B8 200001              +564 
+  :                            565 
+00:0001B9 C5FFE0              +566 	aa, xi	-' '
 (+00)0f
-00:0001BA C601B4              +580 	jza	iscanf
-00:0001BB C50017              +581 	aa, xi	' '-HORIZONTAL_TAB
+00:0001BA C601B4              +567 	jza	iscanf
+00:0001BB C50017              +568 	aa, xi	' '-HORIZONTAL_TAB
 (+00)0f
-00:0001BC C601B4              +582 	jza	iscanf
+00:0001BC C601B4              +569 	jza	iscanf
+  :                            570 
+00:0001BD C5FFDE              +571 	aa, xi	HORIZONTAL_TAB-'+'
+(+00)0f
+00:0001BE C601C8              +572 	jza	iscanlsp
+00:0001BF C5FFFE              +573 	aa, xi	'+'-'-'
+(+00)0f
+00:0001C0 C601CB              +574 	jza	iscanlsm
+00:0001C1 C5FFF3              +575 	aa, xi	'-'-'0'-10
+(+00)0f
+00:0001C2 7E01CE              +576 	jc	iscanx1
+00:0001C3 C5000A              +577 	aa, xi	10
+(+00)0f
+00:0001C4 5E01CE              +578 	jnc	iscanx1
+  :                            579 
+00:0001C5 6D0000              +580 	lb, xi	0
+(+00)0f
+00:0001C6 3E00BB              +581 	lcal	free_ia
+00:0001C7 3D0001              +582 	fret	1
   :                            583 
-00:0001BD C5FFDE              +584 	aa, xi	HORIZONTAL_TAB-'+'
+  :                            584 iscanlsp
+00:0001C8 6D0000              +585 	lb, xi	0
 (+00)0f
-00:0001BE C601C8              +585 	jza	iscanlsp
-00:0001BF C5FFFE              +586 	aa, xi	'+'-'-'
+00:0001C9 3E00B3              +586 	lcal	free_ip
+00:0001CA 3D0001              +587 	fret	1
+  :                            588 iscanlsm
+00:0001CB 6D0000              +589 	lb, xi	0
 (+00)0f
-00:0001C0 C601CB              +587 	jza	iscanlsm
-00:0001C1 C5FFF3              +588 	aa, xi	'-'-'0'-10
-(+00)0f
-00:0001C2 7E01CE              +589 	jc	iscanx1
-00:0001C3 C5000A              +590 	aa, xi	10
-(+00)0f
-00:0001C4 5E01CE              +591 	jnc	iscanx1
+00:0001CC 3E00AF              +590 	lcal	free_in
+00:0001CD 3D0001              +591 	fret	1
   :                            592 
-00:0001C5 6D0000              +593 	lb, xi	0
-(+00)0f
-00:0001C6 3E00BB              +594 	lcal	free_ia
-00:0001C7 3D0001              +595 	fret	1
-  :                            596 
-  :                            597 iscanlsp
-00:0001C8 6D0000              +598 	lb, xi	0
-(+00)0f
-00:0001C9 3E00B3              +599 	lcal	free_ip
-00:0001CA 3D0001              +600 	fret	1
-  :                            601 iscanlsm
-00:0001CB 6D0000              +602 	lb, xi	0
-(+00)0f
-00:0001CC 3E00AF              +603 	lcal	free_in
-00:0001CD 3D0001              +604 	fret	1
-  :                            605 
-00:0001CE 3D0000              +606 iscanx1	fret	0
+00:0001CE 3D0000              +593 iscanx1	fret	0
   :                            55 
   :                            56 fscan_net16*	$equ	fscan
   :                            57 fedit_net16*	$equ	fedit
@@ -1104,6 +1091,7 @@ TRIPLE=000009
 SIGNS=000011
 SCALE_TRIPPED=000012
 SCALE=000013
+$$EOS_FLAG=000000
 READ_STREAM_START=:P1:0:000015
 READ_START=:P1:0:000016
 READ_BYTE=:P3:0:000017
