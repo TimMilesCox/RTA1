@@ -113,7 +113,7 @@ magnitude72
 
 	sb	7
 	lb	TRIPLE+2
-	mf	multiplier, x
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
 	da	6
 	ds	TRIPLE+1
 
@@ -123,18 +123,8 @@ magnitude72
 	lcal	i_read6
 	jxge	magnitude72x	. no digits
 
-	sb	7
-	lb	TRIPLE+1
-	mf	multiplier, x
-	ds	TRIPLE
-	lb	TRIPLE+2
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE+2
-	sa	b
-	sc	a
-	da	TRIPLE
-	ds	TRIPLE
+	lk	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	lcal	raise48
 
 	tz	x
 	j	magnitude72x	. < 6 columns read, stop
@@ -142,24 +132,8 @@ magnitude72
 	lcal	i_read6
 	jxge	magnitude72x	. no columns 23..18 read
 
-	sb	7
-
-	lb	TRIPLE+2
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE+2
-	sa	7
-	sc	6
-	lb	TRIPLE+1
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE+1
-	sa	7
-	sc	6
-	lb	TRIPLE
-	mf	multiplier, x
-	da	6
-	ds	QUAD
+	lk	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	lcal	raise72
 
 	tz	x
 	j	magnitude72x	. < 6 columns read, stop
@@ -168,37 +142,8 @@ overload72
 	lcal	i_read6
 	jxge	magnitude72x	. no columns read, stop
 
-	sb	7
-	z	6
-
-	lb	TRIPLE+2
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE+2
-	sa	7
-	sc	6
-	lb	TRIPLE+1
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE+1
-	sa	7
-	sc	6
-	lb	TRIPLE
-	mf	multiplier, x
-	da	6
-	sb	TRIPLE
-	sa	7		. nonzero in QUAD means 22 or more decimal
-	lb	QUAD		. significands have been encountered with
-	mf	multiplier, x	. magnitude too large for 72 bits unsigned
-	ab	7
-	sb	QUAD		. nonzero in TRIPLE means 15 or more decimal
-				. significands have been encountered with
-				. magnitude too large for 48 bits unsigned
-
-				. nonzero in TRIPLE + 1 means 8 or more
-				. decimal significands have been encountered
-				. with magnitude too large for 24 bits unsigned
-
+	lk	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	lcal	raise96
 
 	tz	x
 	j	magnitude72x	. < 6 columns read, stop
@@ -210,8 +155,19 @@ magnitude72x
 	lret	0
 
 isense	READ_BYTE
-	ana, xi	' '
+	aa, xi	-' '
 	jza	isense
+
+	$if	SIGN_LEADING
+	aa, xi	' '-'-'
+	jnza	isensep?
+	n	SIGNS
+	j	isense
+isensep?
+	aa, xi	'-'-'+'
+	jza	isense
+	$endif
+
 	lret	0
 
 double2scomp
@@ -244,14 +200,7 @@ i_read6	lb, xi	0
 	lx, xi	6
 
 loop	READ_BYTE
-loup	aa, xi	-'+'
-	jza	loop
-	aa, xi	'+'-'-'
-	jnza	plus
-	n	SIGNS
-	j	loop
-
-plus	aa, xi	'-'-'0'-10
+loup	aa, xi	-'0'-10
 	jc	nomor
 	aa, xi	10
 	jnc	nomor
@@ -280,14 +229,7 @@ i_read6	lb, xi	0
 	lx, xi	6
 
 loop	READ_BYTE
-loup	aa, xi	-'+'
-	jza	loop
-	aa, xi	'+'-'-'
-	jnza	plus
-	n	SIGNS
-	j	loop
-
-plus	aa, xi	'-'-'0'-10
+loup	aa, xi	-'0'-10
 	jc	nomor
 	aa, xi	10
 	jnc	nomor
@@ -302,7 +244,8 @@ plus	aa, xi	'-'-'0'-10
 nomor	jxge	none
 
 	la, xi	0		. the table driven translate
-	d	diminuend, x	. has got the scale too high
+	d	(1, 10, 100, 1000, 10000, 100000:h), x	
+				. has got the scale too high
 	sa	b		. because we didn't get 6 digits
 
 none	lret	0
@@ -312,22 +255,3 @@ none	lret	0
 	$endif
 	
 
-	$do	$<256,$(0:256)
-
-	$if	ISCAN_STRATEGY=1
-diminuend
-	1	. all 6 columns read, this divisor is not used !
-	10	.	5 columns read
-	100	.	4 columns read
-	1000	.	3 columns read
-	10000	.	2 columns read
-	100000	.	1 column read out of 6 possible
-	$endif
-
-multiplier
-	1000000	. 6 new columns read, raise the sum by this
-	100000	. 5
-	10000	. 4
-	1000	. 3
-	100	. 2
-	10	. 1 new column read
