@@ -67,6 +67,30 @@ The script sets up firewall divert rules which catch traffic addressed to
 the RTA1 from outside, then runs a program netifx
 
 <p>
+172.29.7.7 is by default the divert address of RTA1 on the emulator
+host software loopback. The default divert address attached to
+The emulator host attaches 172.29.7.8 to wired Ethernet for diverting
+traffic to RTA1, and 172.29.7.9 to WiFi
+<p>
+ifconfig command on the emulator host adds an address for RTA1 to each
+interface. ipfw adds a firewall rule to divert traffic to the netifx
+process connecting emulated RTA1 to the physical interface
+<pre>
+
+        sudu ifconfig lo0 inet 172.29.7.7/32 alias
+        sudo ifconfig en0 inet 172.29.7.8/32 alias
+        sudo ifconfig en1 inet 172.29.7.9/32 alias
+
+
+        sudo ipfw add divert 4608 ip from any to 172.29.7.7 in
+        sudo ipfw add divert 4608 ip from any to 172.29.7.8 in
+        sudo ipfw add divert 4608 ip from any to 172.29.7.9 in
+</pre>
+These commands are slightly different for each Linux / Unix variant
+and different for MS Windows. Samples shown here are from the the
+scripts netifx/runL which starts the netifx process.
+
+<p>
 netifx owns the firewall divert socket which catches traffic meant for
 RTA1 and places it in a large ring of shared memory buffers which looks
 to the emulated RTA1 like one of its architectural device arrays
@@ -91,12 +115,6 @@ There is a script
 </pre>
 which runs netifx without repeating the firewall rules. It does no harm
 however to duplicate the firewall rules
-
-<p>
-Note the firewall divert rules which give the RTA1
-emulated machine a network interface are not configured
-in quite the same way on Linux and on Windows as they
-are on OSX
 
 <p>
 If you are running on OSX and talking to emulated RTA1 from the
@@ -194,28 +212,23 @@ To talk to the emulated RTA1, first set up routes to it
 from wherever you are
 
 <p>
-Its address is always 172.29.7.7 at the moment. It's
-not possible to use a ZeroConf network address because the
-emulated machine is behind the firewall divert service of
-the emulator host, and therefore cannot run ARP
+The emulated machine cannot use a ZeroConf network address
+because it  is behind the firewall divert service of the
+emulator host, and therefore cannot run ARP
 
 <p>
-If you don't like 172.29.7.7 it can be changed by
-reassembling the RTA1 target image with rta/rta.gen/make
+Directory rta/client contains a script rta/client/prun to
+help shell and browser users on the emulator host network
+with the emulated RTA1
 
 <p>
-The easiest way to set up routes is a script in <b>rta/client</b>
-where there are also a couple of programs for talking to
-the RTA1
-<pre>
-
-	./prun
-
-</pre>
-<b>./prun</b>  equips local users with an address in the
+<b>./prun</b> equips local users with an address in the
 same network as 172.29.7.7 and pings 172.29.7.7 a few times
 
-
+<p>
+RTA1 default network addresses can be changed but then need
+also to be changed in configuration scripts rta/netifx/runL
+and rta/client/prun
 
 <h3>Special Considerations Networking from
 the Emulator Host to the Emulated Machine</h3>
@@ -357,27 +370,26 @@ If you are talking from another computer you need to
 set a route with a final hop to the emulator host
 
 <p>
-The ifconfig command is privileged and so is
-the Windows route command
-
-<p>
-In Unix and Linux environments, for example
+In Unix and Linux environments, a route is set at the remote system
+for example,
 <pre>
 
-	sudo route -nv delete -host 172.29.7.7
-	sudo route -nv add -host 172.29.7.7 192.168.1.3
+	sudo route -nv delete -host 172.29.7.9
+	sudo route -nv add -host 172.29.7.9 192.168.1.3
+
+	# 192.168.1.3 is the primary address of an  I/F
+	# on the emulator host, and 172.29.7.9 is an
+	# alias serving the emulated host via a firewall
+	# divert
 
 </pre>
-Windows help route is easy to read, but if you are not
-running administrator privileges, Windows will decide
-that you are not suitably elevated. Really, try it
+
+Windows route command needs  administrator privileges
 
 <p>
-You right click on some small icon in the shell frame
-corner (or maybe you right click on the icon for the
-shell frame), and if you have it right you may choose
-to be elevated, and then you may configure a route
-
+You right click on a small icon in the shell frame
+corner or on the icon for the shell frame. The correct
+dropdown choice causes your route command to be <i>elevated</i>
 
 
 

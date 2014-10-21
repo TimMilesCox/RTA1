@@ -1,0 +1,185 @@
+.	after we've decided it's for us
+
+rasm77	la	dgram:flags_fragment
+	and, xi	IP_MORE++IP_OFFSET_MASK
+	jza	q2protocol
+
+.	fp->actual
+
+	z	RASM77_START
+	ly, xi	rasm77_fragment_list
+
+rasm77_chain_traverse
+	sy	RASM77_B4
+
+	ly	descriptor:next, y
+	tz	y
+	j	rasm77_network_address?
+
+rasm77_chain_insert
+	push	fp
+	pop	*RASM77_B4	. forward of last
+	sy	0, fp		. next of actual
+
+	tz	RASM77_START	. is part of this datagram
+	j	rasm77_walk	. here already? Yes...
+	j	along		. No
+
+rasm77_network_address?
+	lx	descriptor:dgram, y
+	dl	dgram:ipsource
+	dan	dgram:ipsource, x
+
+	jdz	rasm77_dgram_id?
+	jnc	rasm77_chain_insert	. this is the first fragment
+					. received from that address
+
+rasm77_dgram_id?
+	la	dgram:id
+	ana	dgram:id, x
+
+	jnc	rasm77_chain_insert	. 1st fragment this datagram
+	jnza	rasm77_chain_traverse
+
+	push	RASM77_B4
+	pop	RASM77_START	. prior pointer to the datagram
+				. a fragment of this datagram
+				. is already in the chain
+
+	la	dgram:flags_fragment
+	lb	dgram:flags_fragment, x
+	and, xi	IP_OFFSET_MASK
+	andB,xi	IP_OFFSET_MASK 
+	
+	ana	b
+	jc	rasm77_chain_traverse	. >= insert somewhere after
+	j	rasm77_chain_insert	.  < insert before
+
+rasm77_walk
+	ly	RASM77_START	. last fragment previous datagram
+	ly	0, y		. first fragment this datagram
+
+	lx	descriptor:dgram, y
+	la	dgram:flags_fragment, x
+	and, xi	IP_OFFSET_MASK
+	jnza	along		. does not have the start part
+
+	lb	descriptor:bytes, y
+	sb	descriptor:total_bytes, y
+
+rasm77_walk_next
+	jnb	rasm77_void	. reassembly cursor may not
+	jzb	rasm77_void	. go backwards
+
+	sal	3
+	ab	a
+	sb	6		. maximum next fragment edge
+				. in bytes
+
+rasm77_void
+	la	0, y		. there is a next in chain?
+	jza	along
+				. next in chain from the same host?
+	ly	a
+	lx	descriptor:dgram, y
+	dl	dgram:ipsource
+	dan	dgram:ipsource, x
+
+	jnza	along
+	jnzb	along
+
+	la	dgram:id	. and the same datagram?
+	ana	dgram:id, x
+	jnza	along
+
+	lb	dgram:flags_fragment, x
+	sb	7
+	andB,xi	IP_OFFSET_MASK
+	sbl	3
+
+	anb	6
+	jza	rasm77_nogap	. no alterations
+	jc	along		. offset is too high and makes a gap
+				. ie reassembly is not yet complete
+rasm77_nogap
+	la	7
+	and,xi	IP_MORE		. is the reassembly complete?
+
+	ab	descriptor:bytes, y
+	sb	descriptor:total_bytes, y	. net fragment bytes may be < 0
+	jza	rasm77_deliver
+
+	la	7
+	and, xi	IP_OFFSET_MASK
+	j	rasm77_walk_next
+
+
+	.	the datagram is buffered in reassembly order
+
+	.	no more fragments will get in the chain
+	.	or time out of the chain before the
+	.	the reassembled datagram is split out
+	.	of the chain and queued to UDP or TCP
+
+	.	the IP payload lengths and and upper
+	.	protocol pointers can be finalised
+
+rasm77_deliver			. at this point we can drop any complete
+				. duplicates
+
+				. that cannot be done earlier because
+				. some of the duplication might time out
+
+	la	descriptor:next, y
+	sa	*RASM77_START		. take it all out of the chain
+
+	z	descriptor:next, y
+	ly	RASM77_START
+	sy	RASM77_B4
+
+	ly	descriptor:next, y
+	sy	fp
+	z	6
+
+rasm77_net
+	la	descriptor:total_bytes, y
+	jna	rasm77_netzero
+	jza	rasm77_netzero	. all this fragment is duplicated
+
+	lb	a
+	ana	descriptor:bytes, y
+	sb	descriptor:bytes, y
+
+	ab	6
+	sb	6
+	jza	rasm77_next	. this should be most cases
+
+	sar	1		. bytes to words decrement
+	lb	descriptor:uproto, y
+	anb	a		. - negative = pointer +
+
+	sb	descriptor:uproto, y
+rasm77_next
+	sy	RASM77_B4
+rasm77_next1
+	ly	descriptor:next, y
+	tz	y
+	j	rasm77_net
+	push	6
+	pop	descriptor:total_bytes
+	j	q2protocol
+
+rasm77_netzero			. all this fragment is duplicated	
+	la	y
+	ly	descriptor:next, a
+	sy	*RASM77_B4	
+	lcal	net_free
+	ly	RASM77_B4
+	
+	j	rasm77_next1
+	
+
+
+
+time_fragments
+	lret	0
