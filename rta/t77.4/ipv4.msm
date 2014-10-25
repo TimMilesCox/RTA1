@@ -97,6 +97,16 @@ net_address(2)	netv4	172.29.7.7 255.255.240.0 127.29.15.255   2 0 0
 ?	$do	NET_ADDRESSES-2,;
 net_address(?+2) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
 
+ipv4_fragments_pending	+	0	. this is incremented by fragment store
+					. and set to the number remaining on fragment timer
+
+	$if	IPV4_MAXFRAGMENTS
+rasm77_fragment_q	dq		. holds fragments immediately and quickly
+					. allowing interface buffer immediate free
+
+rasm77_fragment_list	dq		. process chain for reassembly
+	$endif
+
 $(0)
 
 ipv4
@@ -376,6 +386,9 @@ ipv4_rxsum
 	xorB	dgram:checksum
 	jnzb	ipv4_rxz
 
+	z	8	. prevent local storage of a
+			. fraction destined for forwarding
+
 			. at this point we should decide
 			.	is it for us?
 			.	if not do we drop or forward?
@@ -384,6 +397,21 @@ ipv4_rxsum
 			. not an issue for the emulated machine
 			. with feed from the firewall
 
+			. if we are forwarding and it's for
+			. another host, jump to ipv4_nofragment
+			. because we don't care how many
+			. fragments we forward
+
+	la	dgram:flags_fragment
+	and, xi	IP_MORE++IP_OFFSET_MASK
+	sa	8
+	jza	ipv4_nofragment
+
+	lx	ipv4_fragments_pending
+	lr, xi	IPV4_MAXFRAGMENTS
+	jxge	ipv4_rxz	. enough fragments buffered already
+
+ipv4_nofragment
 	la	dgram:bytes
 	aa, xi	1
 	sar	1
@@ -392,9 +420,10 @@ ipv4_rxsum
 
 	lcal	buy1
 
-	jza	ipv4_rxz
+	jza	ipv4_rxz	. whatever it is, we're not keeping it
+				. if we cannot assign a buffer for it
 
-	sa	fp	. we haven't used that one yet
+	sa	fp		. we haven't used that one yet
 
 	lb	dgram:bytes
 	la	HEADER_LONGWORDS
@@ -403,8 +432,8 @@ ipv4_rxsum
 	sb	6	. byte count for upper protocol
 			. checksum
 
-	sb	descriptor:bytes
-
+.	sb	descriptor:bytes	. isn't that in the
+					. next + 1 instruction?
 	la	I_F_IDX
 	ds	descriptor:i_f	. interface index
 				. and tp byte count
@@ -422,15 +451,12 @@ ipv4_rxsum
 
 			. but we do not copy the MAC header
 			. although we could 
-	
+
+
 	la	dgram:ttl_protocol
 	and, xi	255
 	sa	7	. 6:7 contain the pair protocol:msize
 			. as used in all protocols for checksum
-
-	la	dgram:flags_fragment
-	and, xi	IP_MORE++IP_OFFSET_MASK
-	sa	8
 
 	dl	dgram:ipsource
 	da	dgram:ipdest
@@ -462,9 +488,10 @@ option_word?
 			.	is this for forwarding?
 			.	if so queue it outwards
 
-			. then we should decide
+			. we decided further back
 
 			.	is this a fragment?
+			.	for this host?
 
 			. neither forwarding nor fraction is
 			. is an issue for the
@@ -472,16 +499,12 @@ option_word?
 			. firewall divert has done all that
 
 			. in case UDP-without-checksum, and
+			. in case fragment, and
 			. in case forwarding, the preliminary 
 			. checksumming for upper protocol
 			. is thrown away, but it only cost
 			. about 5 instructions
 
-			. in case fragment, the preliminary
-			. checksumming of the first fraction
-			. could be cached. The payload length
-			. component of each subsequent fraction
-			. then needs adding
 
 	tz	8
 	j	ipv4_fragment
@@ -508,8 +531,17 @@ ipv4_fragment
 	la	8
 	and, xi	IP_OFFSET_MASK
 	jza	icmp_noproto
-	j	ipv4_drop	. this jump does something as soon
-ipv4_link_fragment		. as link_fragment does something
+	j	ipv4_drop
+ipv4_link_fragment
+
+	$if	IPV4_MAXFRAGMENTS
+	inc	ipv4_fragments_pending	. a fragment is now certain to be stored
+				.
+
+	lcal	rasm77_preq	. do an absolute minimum
+	j	ipv4_rxz	. and let the interface buffer go
+	$endif
+
 ipv4_drop
 	la	fp
 	lx	(NET_BASE*/18:s)
