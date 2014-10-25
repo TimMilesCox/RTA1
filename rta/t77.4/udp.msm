@@ -83,10 +83,6 @@ udp_next
 
         lx	b
 
-	$if	RX_FRAGMENTS=0
-	lcal	readq
-	$endif
-
 	lcal	udp_write_rxq
 
 	j	udp_next
@@ -206,8 +202,25 @@ udp_rx_check
 .	and user datagram length, then inverted and if finally
 .	zero inverted again. Then compared.
 
+	$if	RX_FRAGMENTS
 udp_rx_rasm
-	lret	0
+	lx	descriptor:uproto
+	la	uugram:checksum, x
+	jza	udp_rx_rasm_nocheck
+	push	a
+	z	uugram:checksum, x
+	lcal	rasm77_gcheck
+	tnz	b		. because zero isn't
+	xorB,xi	-1		. a UDP checksum
+	xorB	0, sp
+	pop	uugram:checksum, x
+	la	fp
+	jnzb	net_free_chain
+udp_rx_rasm_nocheck
+	la	fp
+	lx, xi	udpq	
+	j	net_add_chain
+	$endif
 
 
 .	call call vector udp_send gets to here
@@ -661,7 +674,6 @@ udp_check_payload_tx
 .	the socket structure is in x
 
 udp_write_rxq
-	$if	RX_FRAGMENTS
 
 	LOCK	s:udp:tsq, x
 	la, i	s:udp:socket_inq, x
@@ -669,20 +681,6 @@ udp_write_rxq
 	FREE	s:udp:tsq, x
 	lret	0
 
-	$else
-
-	push,xi	NETMASK_ABSOLUTE
-	sim	0, sp
-	ts	s:udp:tsq, x
-	j	$-1
-	ly, i	s:udp:socket_inq, x
-	lcal	q2
-	z	s:udp:tsq, x
-	sim	0, sp
-	inc	sp
-	lret	0
-
-	$endif
 
 .	udp_read_rxq is called by the socket user which may be a server protocol
 .	in the IP task or it may be another task

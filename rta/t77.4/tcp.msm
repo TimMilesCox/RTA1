@@ -1776,29 +1776,12 @@ tcp_nobuffer
 
 tcp_write_rxq
 
-	$if	RX_FRAGMENTS
-
 	LOCK	transmission:tsq
 	la, i	transmission:receiveq
 	ly, xi	tcpq
 	lcal	net_transfer
 	FREE	transmission:tsq
 	lret	0
-
-	$else
-
-	push,xi	MAX_INT_MASK
-	sim	0, sp
-	ts	transmission:tsq
-	j	$-1
-	ly, i	transmission:receiveq
-	lcal	q2
-	z	transmission:tsq
-	sim	0, sp
-	inc	sp
-	lret	0
-
-	$endif
 
 
 .	tcp_read_rxq is called from the socket user
@@ -1898,3 +1881,15 @@ tcp_xclosewait
 	pop	transmission:state
 	fret	0
 
+	$if	RX_FRAGMENTS
+tcp_rx_rasm
+	lx	descriptor:uproto
+	push	transfer:checksum, x
+	lcal	rasm77_gcheck
+	xorB	0, sp
+	pop	transfer:checksum, x
+	la	fp
+	jnzb	net_free_chain
+	lx, xi	tcpq
+	j	net_add_chain
+	$endif

@@ -1,7 +1,6 @@
 .	after we've decided it's for us
 
 .	the call to load the payload is rx_nocheck
-.	TP_HEADER points to payload in the interface buffer
 
 .	the payload can't be checksummed
 .	until fragment overlaps are resolved
@@ -9,32 +8,46 @@
 .	then the call is check_payload with a count in a
 .	and a pointer in y
 
+
+.	for the call to rasm77_preq
+.	TP_HEADER points to ip payload
 .	the new descriptor is	fp->
 .	it has the attributes	*frame = *dgram also
 .				bytes = IP payload, also in b
-.				i_f
+.				i_f, also in a
 .				*uproto, also in x
 
-.	register HEADER_WORDS is # option byte pairs
-.	register HEADER_LONGWORDS is # all byte quads in the header
 
-
+RASM77_START	$equ	8
+RASM77_B4	$equ	9
 
 rasm77_preq
 	ly	TP_HEADER
 	la	b
-	lcal	rx_nocheck
+	lcal	rx_nocheck	. copy payload from i/f buffer
+	la	ipReasmTimeOut:i
+	sal	10		. seconds * 1024
+	aa	DAYCLOCK$	. program the chuckaway time
+	sa	descriptor:apdata
 	la	fp
 	lx, xi	rasm77_fragment_q
 	lcal	q2
 	lret	0
 
 
-rasm77	la	dgram:flags_fragment
-	and, xi	IP_MORE++IP_OFFSET_MASK
-	jza	q2protocol
+rasm77	$head_near	scalars(rasm77_netaddress,	long	;
+				rasm77_dgram_id,	int	)
 
-.	fp->actual
+	lx, xi	rasm77_fragment_q
+	lcal	dq
+	jza	rasm77_x
+
+	sa	fp
+	lx	descriptor:dgram
+	dl	dgram:ipsource, x
+	ds	rasm77_netaddress
+	la	dgram:id, x
+	sa	rasm77_dgram_id
 
 	z	RASM77_START
 	ly, xi	rasm77_fragment_list
@@ -53,11 +66,11 @@ rasm77_chain_insert
 
 	tz	RASM77_START	. is part of this datagram
 	j	rasm77_walk	. here already? Yes...
-	j	along		. No
+	j	rasm77		. No
 
 rasm77_network_address?
 	lx	descriptor:dgram, y
-	dl	dgram:ipsource
+	dl	rasm77_netaddress
 	dan	dgram:ipsource, x
 
 	jdz	rasm77_dgram_id?
@@ -65,7 +78,7 @@ rasm77_network_address?
 					. received from that address
 
 rasm77_dgram_id?
-	la	dgram:id
+	la	rasm77_dgram_id
 	ana	dgram:id, x
 
 	jnc	rasm77_chain_insert	. 1st fragment this datagram
@@ -92,7 +105,7 @@ rasm77_walk
 	lx	descriptor:dgram, y
 	la	dgram:flags_fragment, x
 	and, xi	IP_OFFSET_MASK
-	jnza	along		. does not have the start part
+	jnza	rasm77		. does not have the start part
 
 	lb	descriptor:bytes, y
 	sb	descriptor:total_bytes, y
@@ -108,19 +121,19 @@ rasm77_walk_next
 
 rasm77_void
 	la	0, y		. there is a next in chain?
-	jza	along
+	jza	rasm77
 				. next in chain from the same host?
 	ly	a
 	lx	descriptor:dgram, y
-	dl	dgram:ipsource
+	dl	rasm77_netaddress
 	dan	dgram:ipsource, x
 
-	jnza	along
-	jnzb	along
+	jnza	rasm77
+	jnzb	rasm77
 
-	la	dgram:id	. and the same datagram?
+	la	rasm77_dgram_id	. and the same datagram?
 	ana	dgram:id, x
-	jnza	along
+	jnza	rasm77
 
 	lb	dgram:flags_fragment, x
 	sb	7
@@ -129,7 +142,7 @@ rasm77_void
 
 	anb	6
 	jza	rasm77_nogap	. no alterations
-	jc	along		. offset is too high and makes a gap
+	jc	rasm77		. offset is too high and makes a gap
 				. ie reassembly is not yet complete
 rasm77_nogap
 	la	7
@@ -197,7 +210,8 @@ rasm77_next1
 	j	rasm77_net
 	push	6
 	pop	descriptor:total_bytes
-	j	q2protocol
+	lcal	rasm77_q2protocol
+	j	rasm77
 
 rasm77_netzero			. all this fragment is duplicated	
 	la	y
@@ -207,9 +221,113 @@ rasm77_netzero			. all this fragment is duplicated
 	ly	RASM77_B4
 	
 	j	rasm77_next1
-	
 
+rasm77_x
+	$ret
 
+rasm77_q2protocol
+	.	fp -> 1st descriptor in datagram
+	.	y  -> last descriptor in datagram
 
-time_fragments
+	lx	descriptor:dgram
+	la	dgram:ttl_protocol, x
+	and, xi	255
+	sa	7	.
+	aa, xi	-IPPROTO_UDP
+	jza	udp_rx_rasm
+	aa, xi	IPPROTO_UDP-IPPROTO_TCP
+	jza	tcp_rx_rasm
+	aa, xi	IPPROTO_TCP-IPPROTO_ICMP
+	jza	icmp_rx_rasm
+
+	la	fp
+net_free_chain
+	push	descriptor:next, a
+	lcal	net_free
+	pop	a
+	jnza	net_free_chain
+	lret	0
+
+net_add_chain
+	.	queue pointer is x
+	.	1st descriptor is a
+	.	last descriptor is y
+
+	lb	queue:head, x
+	z	descriptor:next, y	. to make the routine general
+	jzb	net_add_chain_head
+	lb	queue:tail, x
+	sa	descriptor:next, b
+	sy	queue:tail, x
+	lret	0
+net_add_chain_head
+	sa	queue:head, x
+	sy	queue:tail, x
+	lret	0
+
+rasm77_gcheck
+.	called back from udp_rasm tcp_rasm icmp_rasm
+
+.	the upper protocol must leave the payload length in 6
+.	and the protocol number in 7
+.	and must zero the received checksum field because
+.	we do not know where it is
+.	we in turn must leave
+.	fp pointing at 1st fragment descriptor
+.	y pointing at last fragment descriptor
+
+	dl	dgram:ipsource, x
+	da	dgram:ipdest, x
+	da	6
+	ds	6
+
+	push	x	. keep datagram header pointer for caller
+	push	y	. keep last descriptor pointer for caller
+	ly	fp
+
+rasm77_check_fragment
+	la	descriptor:bytes, y
+	lx	descriptor:uproto, y
+	lcal	check_payload
+
+	aa	7
+	sa	7
+
+	ly	descriptor:next, y
+	tz	y
+	j	rasm77_check_fragment
+
+	pop	y
+	pop	x
+	dl	6
+rasm77_addaro
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	rasm77_addaro
+	xorB	(00FFFF)
+	lret	0
+
+rasm77_time_fragments
+	la, xi	rasm77_fragment_list
+	lr, xi	0
+	j	rasm77_time_first
+
+rasm77_time_next
+	inc	r
+rasm77_time_first
+	sa	RASM77_B4
+	la	descriptor:next, a
+	jza	rasm77_time_x
+	lb	DAYCLOCK$
+	anb	descriptor:apdata, a
+	jnb	rasm77_time_next
+	lb	descriptor:next, a
+	sb	*RASM77_B4
+	push	a
+	lcal	net_free
+	pop	a
+	j	rasm77_time_next
+rasm77_time_x
+	sr	ipv4_fragments_pending
 	lret	0
