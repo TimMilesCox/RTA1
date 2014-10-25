@@ -5102,7 +5102,7 @@ Note: image.msm Line 417: this tests a_x not a
 00:0002D6 DE031F              +387 	jnzb	ipv4_rxz
   :                            388 
 00:0002D7 300008              +389 	z	8	. prevent local storage of a
-  :                            390 			. fraction destined for forwarding
+  :                            390 			. fragment destined for forwarding
   :                            391 
   :                            392 			. at this point we should decide
   :                            393 			.	is it for us?
@@ -5117,224 +5117,230 @@ Note: image.msm Line 417: this tests a_x not a
   :                            402 			. because we don't care how many
   :                            403 			. fragments we forward
   :                            404 
-00:0002D8 60F003              +405 	la	dgram:flags_fragment
-00:0002D9 A53FFF              +406 	and, xi	IP_MORE++IP_OFFSET_MASK
-00:0002DA 200008              +407 	sa	8
-00:0002DB C602DF              +408 	jza	ipv4_nofragment
-  :                            409 
+  :                            405 	$if	HVRXBANK
+  :                            406 	lcal	ip_alternate_rxbank?
+  :                            407 	tz	x
+  :                            408 	j	ipv4_rxbuffer_rq	. skip asking about fragments
+  :                            409 	$endif				. and skip the default buffer pool
+  :                            410 
+00:0002D8 60F003              +411 	la	dgram:flags_fragment
+00:0002D9 A53FFF              +412 	and, xi	IP_MORE++IP_OFFSET_MASK
+00:0002DA 200008              +413 	sa	8
+00:0002DB C602DF              +414 	jza	ipv4_nofragment
+  :                            415 
 (+01)0f
-00:0002DC 5002E5              +410 	lx	ipv4_fragments_pending
-00:0002DD 450000              +411 	lr, xi	IPV4_MAXFRAGMENTS
-00:0002DE F6031F              +412 	jxge	ipv4_rxz	. enough fragments buffered already
-  :                            413 
-  :                            414 ipv4_nofragment
-00:0002DF 60F001              +415 	la	dgram:bytes
-00:0002E0 C50001              +416 	aa, xi	1
-00:0002E1 060001              +417 	sar	1
-  :                            418 
-00:0002E2 500C97              +419 	lx	(NET_BASE*/18:s)
-  :                            420 
-00:0002E3 3E0BBA              +421 	lcal	buy1
-  :                            422 
-00:0002E4 C6031F              +423 	jza	ipv4_rxz	. whatever it is, we're not keeping it
-  :                            424 				. if we cannot assign a buffer for it
-  :                            425 
-00:0002E5 20000E              +426 	sa	fp		. we haven't used that one yet
-  :                            427 
-00:0002E6 68F001              +428 	lb	dgram:bytes
-00:0002E7 600011              +429 	la	HEADER_LONGWORDS
-00:0002E8 260002              +430 	sal	2
-00:0002E9 D80004              +431 	anb	a
-00:0002EA 280006              +432 	sb	6	. byte count for upper protocol
-  :                            433 			. checksum
-  :                            434 
-  :                            435 .	sb	descriptor:bytes	. isn't that in the
-  :                            436 					. next + 1 instruction?
-00:0002EB 600013              +437 	la	I_F_IDX
-00:0002EC C7E002              +438 	ds	descriptor:i_f	. interface index
-  :                            439 				. and tp byte count
+00:0002DC 5002E5              +416 	lx	ipv4_fragments_pending
+00:0002DD 450000              +417 	lr, xi	IPV4_MAXFRAGMENTS
+00:0002DE F6031F              +418 	jxge	ipv4_rxz	. enough fragments buffered already
+  :                            419 
+  :                            420 ipv4_nofragment
+00:0002DF 500C97              +421 	lx	(NET_BASE*/18:s)	. the default buffer pool
+  :                            422 ipv4_rxbuffer_rq
+00:0002E0 60F001              +423 	la	dgram:bytes
+00:0002E1 C50001              +424 	aa, xi	1
+00:0002E2 060001              +425 	sar	1
+  :                            426 
+00:0002E3 3E0BBA              +427 	lcal	buy1
+  :                            428 
+00:0002E4 C6031F              +429 	jza	ipv4_rxz	. whatever it is, we're not keeping it
+  :                            430 				. if we cannot assign a buffer for it
+  :                            431 
+00:0002E5 20000E              +432 	sa	fp		. we haven't used that one yet
+  :                            433 
+00:0002E6 68F001              +434 	lb	dgram:bytes
+00:0002E7 600011              +435 	la	HEADER_LONGWORDS
+00:0002E8 260002              +436 	sal	2
+00:0002E9 D80004              +437 	anb	a
+00:0002EA 280006              +438 	sb	6	. byte count for upper protocol
+  :                            439 			. checksum
   :                            440 
-00:0002ED 50E001              +441 	lx	descriptor:frame	. this will be different with any DMA
-00:0002EE 10E004              +442 	sx	descriptor:dgram	. because then a MAC header is
-  :                            443 					. in the buffer
-  :                            444 					. and there is zero-copy
-  :                            445 
-  :                            446 			. therefore acw has frame and datagram pointers
-  :                            447 
-  :                            448 			. here we have a dual-ported interface
-  :                            449 			. and we copy the datagram out of it
-  :                            450 			. while checksumming if desired
+  :                            441 .	sb	descriptor:bytes	. isn't that in the
+  :                            442 					. next + 1 instruction?
+00:0002EB 600013              +443 	la	I_F_IDX
+00:0002EC C7E002              +444 	ds	descriptor:i_f	. interface index
+  :                            445 				. and tp byte count
+  :                            446 
+00:0002ED 50E001              +447 	lx	descriptor:frame	. this will be different with any DMA
+00:0002EE 10E004              +448 	sx	descriptor:dgram	. because then a MAC header is
+  :                            449 					. in the buffer
+  :                            450 					. and there is zero-copy
   :                            451 
-  :                            452 			. but we do not copy the MAC header
-  :                            453 			. although we could 
-  :                            454 
-  :                            455 
-00:0002EF 60F004              +456 	la	dgram:ttl_protocol
-00:0002F0 A500FF              +457 	and, xi	255
-00:0002F1 200007              +458 	sa	7	. 6:7 contain the pair protocol:msize
-  :                            459 			. as used in all protocols for checksum
+  :                            452 			. therefore acw has frame and datagram pointers
+  :                            453 
+  :                            454 			. here we have a dual-ported interface
+  :                            455 			. and we copy the datagram out of it
+  :                            456 			. while checksumming if desired
+  :                            457 
+  :                            458 			. but we do not copy the MAC header
+  :                            459 			. although we could 
   :                            460 
-00:0002F2 CFF006              +461 	dl	dgram:ipsource
-00:0002F3 D7F008              +462 	da	dgram:ipdest
-00:0002F4 D70006              +463 	da	6
-00:0002F5 200006              +464 	sa	6
-00:0002F6 600007              +465 	la	7
-00:0002F7 280007              +466 	sb	7	. upper protocol checksum is now begun
-  :                            467 			. in 6:7
-  :                            468 
-00:0002F8 38A000              +469 	pop	dgram:vers_ihl_tos, x
-00:0002F9 38A001              +470 	pop	dgram:bytes, x
-00:0002FA 87A002              +471 	qpop	dgram:id, x
-00:0002FB 87A006              +472 	qpop	dgram:ipsource, x
-  :                            473 
-00:0002FC 400010              +474 	lr	HEADER_WORDS
-00:0002FD B60300              +475 	j	option_word?
-  :                            476 option_word!
-00:0002FE 38A00A              +477 	pop	10, x
-00:0002FF 54A001              +478 	lx, i	1, x
-  :                            479 option_word?
-00:000300 1E02FE              +480 	jdr	option_word!
-  :                            481 
-00:000301 54A00A              +482 	lx, i	10, x
-00:000302 10E005              +483 	sx	descriptor:uproto
-  :                            484 
-  :                            485 			. at this point we need to re-use
-  :                            486 			. the earlier decision
+  :                            461 
+00:0002EF 60F004              +462 	la	dgram:ttl_protocol
+00:0002F0 A500FF              +463 	and, xi	255
+00:0002F1 200007              +464 	sa	7	. 6:7 contain the pair protocol:msize
+  :                            465 			. as used in all protocols for checksum
+  :                            466 
+00:0002F2 CFF006              +467 	dl	dgram:ipsource
+00:0002F3 D7F008              +468 	da	dgram:ipdest
+00:0002F4 D70006              +469 	da	6
+00:0002F5 200006              +470 	sa	6
+00:0002F6 600007              +471 	la	7
+00:0002F7 280007              +472 	sb	7	. upper protocol checksum is now begun
+  :                            473 			. in 6:7
+  :                            474 
+00:0002F8 38A000              +475 	pop	dgram:vers_ihl_tos, x
+00:0002F9 38A001              +476 	pop	dgram:bytes, x
+00:0002FA 87A002              +477 	qpop	dgram:id, x
+00:0002FB 87A006              +478 	qpop	dgram:ipsource, x
+  :                            479 
+00:0002FC 400010              +480 	lr	HEADER_WORDS
+00:0002FD B60300              +481 	j	option_word?
+  :                            482 option_word!
+00:0002FE 38A00A              +483 	pop	10, x
+00:0002FF 54A001              +484 	lx, i	1, x
+  :                            485 option_word?
+00:000300 1E02FE              +486 	jdr	option_word!
   :                            487 
-  :                            488 			.	is this for forwarding?
-  :                            489 			.	if so queue it outwards
+00:000301 54A00A              +488 	lx, i	10, x
+00:000302 10E005              +489 	sx	descriptor:uproto
   :                            490 
-  :                            491 			. we decided further back
-  :                            492 
-  :                            493 			.	is this a fragment?
-  :                            494 			.	for this host?
-  :                            495 
-  :                            496 			. neither forwarding nor fraction is
-  :                            497 			. is an issue for the
-  :                            498 			. emulated machine because the
-  :                            499 			. firewall divert has done all that
-  :                            500 
-  :                            501 			. in case UDP-without-checksum, and
-  :                            502 			. in case fragment, and
-  :                            503 			. in case forwarding, the preliminary 
-  :                            504 			. checksumming for upper protocol
-  :                            505 			. is thrown away, but it only cost
-  :                            506 			. about 5 instructions
-  :                            507 
-  :                            508 
-00:000303 700008              +509 	tz	8
-00:000304 B6030F              +510 	j	ipv4_fragment
-  :                            511 
-00:000305 680004              +512 	anu, xi	IPPROTO_UDP
-00:000306 DD0011              +512 
-00:000307 CE043B              +513 	jzb	udp_rx
+  :                            491 			. at this point we need to re-use
+  :                            492 			. the earlier decision
+  :                            493 
+  :                            494 			.	is this for forwarding?
+  :                            495 			.	if so queue it outwards
+  :                            496 
+  :                            497 			. we decided further back
+  :                            498 
+  :                            499 			.	is this a fragment?
+  :                            500 			.	for this host?
+  :                            501 
+  :                            502 			. neither forwarding nor fraction is
+  :                            503 			. is an issue for the
+  :                            504 			. emulated machine because the
+  :                            505 			. firewall divert has done all that
+  :                            506 
+  :                            507 			. in case UDP-without-checksum, and
+  :                            508 			. in case fragment, and
+  :                            509 			. in case forwarding, the preliminary 
+  :                            510 			. checksumming for upper protocol
+  :                            511 			. is thrown away, but it only cost
+  :                            512 			. about 5 instructions
+  :                            513 
   :                            514 
-00:000308 680004              +515 	anu, xi	IPPROTO_TCP
-00:000309 DD0006              +515 
-00:00030A CE07B7              +516 	jzb	tcp4_rx
+00:000303 700008              +515 	tz	8
+00:000304 B6030F              +516 	j	ipv4_fragment
   :                            517 
-00:00030B 680004              +518 	anu, xi	IPPROTO_ICMP
-00:00030C DD0001              +518 
-00:00030D CE03F5              +519 	jzb	icmp_rx
+00:000305 680004              +518 	anu, xi	IPPROTO_UDP
+00:000306 DD0011              +518 
+00:000307 CE043B              +519 	jzb	udp_rx
   :                            520 
-  :                            521 
-00:00030E B60420              +522 	j	icmp_noproto
+00:000308 680004              +521 	anu, xi	IPPROTO_TCP
+00:000309 DD0006              +521 
+00:00030A CE07B7              +522 	jzb	tcp4_rx
   :                            523 
-  :                            524 ipv4_fragment
-00:00030F 680004              +525 	anu, xi	IPPROTO_UDP
-00:000310 DD0011              +525 
-00:000311 CE031C              +526 	jzb	ipv4_link_fragment
-00:000312 680004              +527 	anu, xi	IPPROTO_TCP
-00:000313 DD0006              +527 
-00:000314 CE031C              +528 	jzb	ipv4_link_fragment
-00:000315 680004              +529 	anu, xi	IPPROTO_ICMP
-00:000316 DD0001              +529 
-00:000317 CE031C              +530 	jzb	ipv4_link_fragment
-00:000318 600008              +531 	la	8
-00:000319 A51FFF              +532 	and, xi	IP_OFFSET_MASK
-00:00031A C60420              +533 	jza	icmp_noproto
-00:00031B B6031C              +534 	j	ipv4_drop
-  :                            535 ipv4_link_fragment
-  :                            536 
-  :                            537 	$if	IPV4_MAXFRAGMENTS
-  :                            538 	inc	ipv4_fragments_pending	. a fragment is now certain to be stored
-  :                            539 				.
-  :                            540 
-  :                            541 	lcal	rasm77_preq	. do an absolute minimum
-  :                            542 	j	ipv4_rxz	. and let the interface buffer go
-  :                            543 	$endif
-  :                            544 
-  :                            545 ipv4_drop
-00:00031C 60000E              +546 	la	fp
-00:00031D 500C97              +547 	lx	(NET_BASE*/18:s)
-00:00031E 3E0BE5              +548 	lcal	sell1
-  :                            549 
-  :                            550 			. this was acquired to simplify the
-  :                            551 			. task for the upper protocol
-  :                            552 			. but we can give it back now:
-  :                            553 			. the protocol requested is not
-  :                            554 			. on offer
+00:00030B 680004              +524 	anu, xi	IPPROTO_ICMP
+00:00030C DD0001              +524 
+00:00030D CE03F5              +525 	jzb	icmp_rx
+  :                            526 
+  :                            527 
+00:00030E B60420              +528 	j	icmp_noproto
+  :                            529 
+  :                            530 ipv4_fragment
+00:00030F 680004              +531 	anu, xi	IPPROTO_UDP
+00:000310 DD0011              +531 
+00:000311 CE031C              +532 	jzb	ipv4_link_fragment
+00:000312 680004              +533 	anu, xi	IPPROTO_TCP
+00:000313 DD0006              +533 
+00:000314 CE031C              +534 	jzb	ipv4_link_fragment
+00:000315 680004              +535 	anu, xi	IPPROTO_ICMP
+00:000316 DD0001              +535 
+00:000317 CE031C              +536 	jzb	ipv4_link_fragment
+00:000318 600008              +537 	la	8
+00:000319 A51FFF              +538 	and, xi	IP_OFFSET_MASK
+00:00031A C60420              +539 	jza	icmp_noproto
+00:00031B B6031C              +540 	j	ipv4_drop
+  :                            541 ipv4_link_fragment
+  :                            542 
+  :                            543 	$if	IPV4_MAXFRAGMENTS
+  :                            544 	inc	ipv4_fragments_pending	. a fragment is now certain to be stored
+  :                            545 				.
+  :                            546 
+  :                            547 	lcal	rasm77_preq	. do an absolute minimum
+  :                            548 	j	ipv4_rxz	. and let the interface buffer go
+  :                            549 	$endif
+  :                            550 
+  :                            551 ipv4_drop
+00:00031C 60000E              +552 	la	fp
+00:00031D 500C97              +553 	lx	(NET_BASE*/18:s)
+00:00031E 3E0BE5              +554 	lcal	sell1
   :                            555 
-  :                            556 . the upper protocol receive routines can jump here to finish
-  :                            557 . but they need not.
-  :                            558 
-  :                            559 . they do need to restore K and SP in the same way as this
-  :                            560 
-  :                            561 ipv4_rxz
-00:00031F 500018              +562 	lx	ONE_TIME_SAVE1
-00:000320 10000F              +563 	sx	sp
-00:000321 350000              +564 	lret	0
-  :                            565 
-  :                            566 ip_buy_datagram
-00:000322 F80005              +567 	push	b
-00:000323 0E0007              +568 	sbr	7	. version / header L / TOS word
-00:000324 AD001E              +569 	andB,xi	30	. number of words in header
-00:000325 400005              +570 	lr	b	. length of IP header in words
-00:000326 C5001D              +571 	aa, xi	ROUTING_HEADER*2+1	. routing buffer + rounding
-00:000327 060001              +572 	sar	1	. number of words in IP payload
-  :                            573 			. + routing header
-00:000328 C00005              +574 	aa	b	. number of words in buffer
-  :                            575 
-00:000329 500C99              +576 	lx	(NET_BASE+RX_BANKS*/18:s)
-  :                            577 
-00:00032A 3E0BBA              +578 	lcal	buy1
-00:00032B 380005              +579 	pop	b
-00:00032C C60340              +580 	jza	ip_no_txbuffer
+  :                            556 			. this was acquired to simplify the
+  :                            557 			. task for the upper protocol
+  :                            558 			. but we can give it back now:
+  :                            559 			. the protocol requested is not
+  :                            560 			. on offer
+  :                            561 
+  :                            562 . the upper protocol receive routines can jump here to finish
+  :                            563 . but they need not.
+  :                            564 
+  :                            565 . they do need to restore K and SP in the same way as this
+  :                            566 
+  :                            567 ipv4_rxz
+00:00031F 500018              +568 	lx	ONE_TIME_SAVE1
+00:000320 10000F              +569 	sx	sp
+00:000321 350000              +570 	lret	0
+  :                            571 
+  :                            572 ip_buy_datagram
+00:000322 F80005              +573 	push	b
+00:000323 0E0007              +574 	sbr	7	. version / header L / TOS word
+00:000324 AD001E              +575 	andB,xi	30	. number of words in header
+00:000325 400005              +576 	lr	b	. length of IP header in words
+00:000326 C5001D              +577 	aa, xi	ROUTING_HEADER*2+1	. routing buffer + rounding
+00:000327 060001              +578 	sar	1	. number of words in IP payload
+  :                            579 			. + routing header
+00:000328 C00005              +580 	aa	b	. number of words in buffer
   :                            581 
-00:00032D 50C001              +582 	lx	descriptor:frame, a
-00:00032E 30A000              +583 	z	0, x	. routing buffer
-00:00032F 30A001              +584 	z	1, x
-  :                            585 
-00:000330 FD0800              +586 	push,xi 0800
-00:000331 38A006              +587 	pop	nframe:llh:protocol_family
-  :                            588 
-00:000332 30A00D              +589 	z	nframe:stack_index
-  :                            590 
-00:000333 85000E              +591 	ax, xi	ROUTING_HEADER
-00:000334 10C004              +592 	sx	descriptor:dgram, a
-00:000335 100013              +593 	sx	TX_DATAGRAM
-00:000336 28A000              +594 	sb	dgram:vers_ihl_tos, x
-00:000337 30A003              +595 	z	dgram:flags_fragment, x
-00:000338 30A006              +596 	z	dgram:ipsource, x
-00:000339 30A007              +597 	z	dgram:ipsource+1, x
-00:00033A 30A008              +598 	z	dgram:ipdest, x
-00:00033B 30A009              +599 	z	dgram:ipdest+1, x
-  :                            600 
-00:00033C 30C002              +601 	z	descriptor:i_f, a
-  :                            602 
-00:00033D 800000              +603 	ax	r	. length of IP header in words
-00:00033E 10C005              +604 	sx	descriptor:uproto, a
-00:00033F 100012              +605 	sx	TP_HEADER
-  :                            606 ip_no_txbuffer
-00:000340 350000              +607 	lret	0
+00:000329 500C99              +582 	lx	(NET_BASE+RX_BANKS*/18:s)
+  :                            583 
+00:00032A 3E0BBA              +584 	lcal	buy1
+00:00032B 380005              +585 	pop	b
+00:00032C C60340              +586 	jza	ip_no_txbuffer
+  :                            587 
+00:00032D 50C001              +588 	lx	descriptor:frame, a
+00:00032E 30A000              +589 	z	0, x	. routing buffer
+00:00032F 30A001              +590 	z	1, x
+  :                            591 
+00:000330 FD0800              +592 	push,xi 0800
+00:000331 38A006              +593 	pop	nframe:llh:protocol_family
+  :                            594 
+00:000332 30A00D              +595 	z	nframe:stack_index
+  :                            596 
+00:000333 85000E              +597 	ax, xi	ROUTING_HEADER
+00:000334 10C004              +598 	sx	descriptor:dgram, a
+00:000335 100013              +599 	sx	TX_DATAGRAM
+00:000336 28A000              +600 	sb	dgram:vers_ihl_tos, x
+00:000337 30A003              +601 	z	dgram:flags_fragment, x
+00:000338 30A006              +602 	z	dgram:ipsource, x
+00:000339 30A007              +603 	z	dgram:ipsource+1, x
+00:00033A 30A008              +604 	z	dgram:ipdest, x
+00:00033B 30A009              +605 	z	dgram:ipdest+1, x
+  :                            606 
+00:00033C 30C002              +607 	z	descriptor:i_f, a
   :                            608 
-  :                            609 
-  :                            610 net_free_txbx
-00:000341 480C8C              +611 	lk	(63*/18:s)
-00:000342 500C9E              +612 	lx	(A$BUFFB)
-00:000343 AF0002              +613 	mta	x
-00:000344 B60244              +614 	j	net_free_txb
-00:000345 B60BE5              +615 	j	sell1	
+00:00033D 800000              +609 	ax	r	. length of IP header in words
+00:00033E 10C005              +610 	sx	descriptor:uproto, a
+00:00033F 100012              +611 	sx	TP_HEADER
+  :                            612 ip_no_txbuffer
+00:000340 350000              +613 	lret	0
+  :                            614 
+  :                            615 
+  :                            616 net_free_txbx
+00:000341 480C8C              +617 	lk	(63*/18:s)
+00:000342 500C9E              +618 	lx	(A$BUFFB)
+00:000343 AF0002              +619 	mta	x
+00:000344 B60244              +620 	j	net_free_txb
+00:000345 B60BE5              +621 	j	sell1	
   :                            72: 	$include	ip_q2
   :                            1 
   :                            2 ipq_write
@@ -16734,7 +16740,7 @@ Note: ../mib/mib-II.msm Line 50: void section: discarding relocation tuple
 00:000e81+002F00
 00:000e82+FFFFFFFFFFFFFFFFFFFFFFFF
 00:000e86+00017F
-00:000e87+[0001]18:000000
+00:000e87+[0002]18:000000
 00:000e88+989680
 00:000e89+000143
 00:000e8a+060000
@@ -16755,11 +16761,11 @@ Note: ../mib/mib-II.msm Line 50: void section: discarding relocation tuple
 00:000e9c+0D0000
 00:000e9d+000000
 00:000e9e+001F90
-00:000e9f+[0002]18:000000
+00:000e9f+[0003]18:000000
 00:000ea0+02F013
-00:000ea1+[0003]18:000000
-00:000ea2+[0004]18:000000
-00:000ea3+[0005]18:000000
+00:000ea1+[0004]18:000000
+00:000ea2+[0005]18:000000
+00:000ea3+[0006]18:000000
 00:000ea4+474554
 00:000ea5+00002F
 00:000ea6+000020
@@ -16849,6 +16855,8 @@ HEADER_WORDS=000010
 HL_FLAGS=00001B
 HTTP_PORT=001F90
 HVBANK=000001
+HVBANKRX=000000
+HVRXBANK
 ICMP_DESTINATION_UNREACHABLE=000003
 ICMP_DU_DF=000004
 ICMP_DU_HOST=000001
@@ -19197,6 +19205,7 @@ ipv4_high=$00:000C7B
 ipv4_link_fragment=$00:00031C
 ipv4_nofragment=$00:0002DF
 ipv4_rx=$00:0002A9
+ipv4_rxbuffer_rq=$00:0002E0
 ipv4_rxsum=$00:0002D0
 ipv4_rxz=$00:00031F
 iscan_xdr
@@ -21551,7 +21560,7 @@ measure.msm=1<000005
 ../def/rta.def=1<000005
 image.msm=0<000003
 :$(00):000000:000EB4 :$(01):000000:0004EA :$(02):002000:003000 :$(03):000000:002233 :$(40):006000:00606A :$(41):180070:180072 :$(42):000000:000007 :$(43):000000:000006 :$(47):000000:000004 
-image.msm: object code 74650 bytes: 0 errors: 6 undefined labels
+image.msm: object code 74667 bytes: 0 errors: 7 undefined labels
 MASMX 7r3
 3/bank.msm
 system.txo:$(0) 3764 words decimal from hexadecimal 000000 to 000EB4
@@ -21693,6 +21702,7 @@ udp_send+=0000BD
 udp_txbuffer+=0000BE
 xaccept+=0000B0
 xdisco+=0000B1
+HVRXBANK
 async2+=0001C0
 fs_dsearch+=000183
 fs_find+=000182
