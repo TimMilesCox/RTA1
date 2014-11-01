@@ -731,48 +731,67 @@ udp_readx
 .	the :readpoint cursor is not maintained or consulted
 
 udgram_rbuffer
-	sa	fp
 	la	descriptor:bytes
-	push	b
+	lb	2, sp
 	anb	a	. subtract available from required
 	jc	udgram_rbloc
-	la	0, sp	. transfer block is total required
-udgram_rbloc		
-	sb	0, sp	. push the new outstanding #
+	la	2, sp	. transfer block is total required
+udgram_rbloc
+	push	a
+	popA	2, sp	. increment rx count		
+	sb	2, sp	. push the new outstanding #
 	lcal	rbuffer
-	pop	b
+
+	$if	RX_FRAGMENTS
 	jnb	udgram_rbuffer_x
+	jzb	udgram_rbuffer_x
+	lb	descriptor:dgram
+	lb	dgram:flags_fragment, b
+	andB,xi	IP_MORE
 	jzb	udgram_rbuffer_x
 	la	descriptor:next
 	jnza	udgram_rbuffer
+	$endif
+
 udgram_rbuffer_x
 	lret	0
 
+udp_auto_connect
+	ly	descriptor:dgram
+	dl	dgram:ipsource, y
+	sbl	8
+	dsl	8
+	ly	descriptor:uproto
+	lk	(00FFFF)
+	mlb	uugram:sourcep, y
+	ds	s:remote_address, x
+	lret
+
+
 udgram_read
 	push	fp
-	lb	a
-	la	s:udp:socket_inq:head
+	push	a		. max bytes
+	la	s:udp:socket_inq:head, x
 	jza	udgram_readx
-	jzb	udgram_readx
+	sa	fp
+	
+	la	SOCKET_CALL_FLAGS
+	and	(UDP_AUTO_CONNECT:s)
+	jza	$+2
+	lcal	udp_auto_connect
+
+	push,xi	0		. received bytes
 	lcal	udgram_rbuffer
 	tz	WDATAC
 	lcal	udp_rbuffer_y
-	dpush	a
-	tp	SOCKET_CALL_FLAGS
+.	tp	SOCKET_CALL_FLAGS
 	call	(release_udgram)
-	pop	a
-	pop	b
-	ana	b
+	pop	a		. received
 udgram_readx
+	pop	b		. final-count
 	pop	fp
 	fret	0
 
-udgram_transmit
-	off	b$stream16r
-	z	RDATAC
-	on	b$streamZR
-udgram_transmit_asynb
-	fret	0
 
 socket_receive	$head_far	 params(sorx,	int	;
 					rxbuf,	int	;
@@ -838,6 +857,52 @@ transmit_socket_x
 receive_socket_x
 	fret	0
 
+
+wpair_nocheck* $proc
+	rsr	16
+	sa	?-1, y
+	$end
+
+udgram_write
+	z	RDATAC
+	on	b$streamZR
+	off	b$stream16r
+w2buffer_nocheck
+	dsr	5
+	push	b
+	lr	a
+	j	w2nocheck32?
+
+w2nocheck32!
+?	$do	16,	wpair_nocheck
+	ay, xi	16
+w2nocheck32?
+	jdr	w2nocheck32!
+
+	pop	a
+	dsr	20
+	lr	a
+	push	b
+	j	w2nocheckpair?
+
+w2nocheckpair!
+	rsr	16
+	sa	0, y
+	ay, xi	1
+w2nocheckpair?
+	jdr	 w2nocheckpair!
+
+	pop	a	
+	jpa	w2nocheckbyte
+
+	rsr	8
+	sal	8
+	sa	0, y
+w2nocheckbyte
+
+	lret	0
+
+
 socket_send	$head_far	 params(sotx,	int	;
 					txbuf,	int	;
 					txbytes,int	;
@@ -847,7 +912,7 @@ socket_send	$head_far	 params(sotx,	int	;
 	ii	READ_SOCKET$
 	jna	transmit_socket_x
 	lk	(255*/16:s)
-	mta	(IPPROTO_UDP)
+	mta	(IPPROTO_UDP*/16:s)
 	j	socket_transmit_tcp?
 	and, xi	511
 	sal	3
@@ -859,10 +924,42 @@ socket_send	$head_far	 params(sotx,	int	;
 	sa	q
 	dl	txbytes
 	sb	SOCKET_CALL_FLAGS
-	j	udgram_transmit
+	push	x
+	call	(udp_txbuffer)
+	pop	y
+	jza	socket_udp_fail5
+	lx	a
+	ql	0, y		. addresses from connected socket
+	push	b
+	ly	descriptor:dgram, x
+	dsr	8
+	sbr	8
+	ds	dgram:ipsource, y
+	dl	6
+	dsr	8
+	sbr	8
+	ds	dgram:ipdest, y
+	ly	descriptor:uproto, x
+	pop	a
+	lb	7
+	dsl	8
+	sar	8
+	sbr	8
+	ds	uugram:sourcep, y
+	la	txbytes
+	sa	descriptor:bytes, x
+	ly	descriptor:apdata, x
+	lcal	udgram_write
+	la	SOCKET_CALL_FLAGS
+	and	(UDP_NO_CHECKSUM:s)
+	jza	udp_txaw
+	j	udp_txaw_nocheck
+socket_udp_fail5
+	la, xi	-5
+	fret	0
 
 socket_transmit_tcp?
-	mta	(TCP_TCB*/16)
+	mta	(TCP_TCB*/16:s)
 	j	transmit_socket_protocol_wrong
 	and, xi	0FF8
 	lx	(BSOCKET*/12)
