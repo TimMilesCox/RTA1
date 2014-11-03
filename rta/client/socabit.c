@@ -7,7 +7,6 @@
 
 #include "../include.rta/argue.h"
 
-#undef	NETWORK_BYTE_ORDER
 
 #ifdef	NETWORK_BYTE_ORDER
 
@@ -28,8 +27,15 @@
 #define	RETRIES	50
 #define	TIME	80000
 
+#ifdef	OSX
 struct sockaddr_in	 here = { 16, AF_INET, 0, { HERE } } ;
 struct sockaddr_in	there = { 16, AF_INET, PORT(LISTENER), { THERE } } ;	
+#endif
+
+#ifdef	LINUX
+struct sockaddr_in       here = {     AF_INET, 0, { HERE } } ;
+struct sockaddr_in      there = {     AF_INET, PORT(LISTENER), { THERE } } ;
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -112,19 +118,23 @@ int main(int argc, char *argv[])
                }
 
 	       retries = RETRIES;
+
                while (retries--)
                {
                   x = recv(s, data, DATA, 0);
+
                   if (x < 0)
                   {
-                     if (errno == EWOULDBLOCK) continue;
-                     if (errno == EAGAIN)      continue;
-                     break;
+                     if ((errno == EWOULDBLOCK)
+                     ||  (errno == EAGAIN))
+                     {
+                        usleep(TIME);
+                        continue;
+                     }
                   }
-                  else break;
-               }
 
-               usleep(TIME);
+                  break;
+               }
 
                if (x < 0)
                {
