@@ -54,26 +54,6 @@ i$aside(8)	$equ	30
 "$$significands" $set	0
 "$ASIDE"	$set	1
 
-"$push"*        $proc
-                $if     $ASIDE>8
-                $flag   aside buffer overflow
-		$trace	$ASIDE
-		$endif
-                ds      i$aside($ASIDE)
-"$ASIDE"************************	$set    $ASIDE+1
-                $end
-
-"$pop"*         $func	*
-inward		$set	$ASIDE
-"$ASIDE"************************	$set    inward-1
-                $if     $ASIDE<1
-		$trace	$ASIDE
-                $flag   aside buffer underrun
-"$ASIDE"************************	$set    1
-                $endif
-                $return i$aside($ASIDE)
-                $end
-
 
 f		$func
 "$indirect_or_indexed"* $name
@@ -284,14 +264,25 @@ p		$proc
 		$endif
 		$return
 
-"$i_reserve"*	$name			. setaside is always double
-		$push
+"$i_reserve"*	$name			. lookaside is always double
+		$ipush
 "$$significands"******** $set	48
 		$return
 
+"$ipush"*	$name
+	$do	$ASIDE>8,	$flag	lookaside overrun
+		ds	i$aside($ASIDE)
+"$ASIDE"*********************** $set	$ASIDE+1
+		$return
+
+"$ipop"*	$name
+"$ASIDE"***********************	$set	$ASIDE-1
+	$do	$ASIDE<1,	$flag	lookaside underrun
+		$return
 
 "$i_retrieve_testequal"* $name
-                dan	$pop
+		$ipop
+                dan	i$aside($ASIDE)
 		jdz	$+3
 		dsr	48
 		j	$+2
@@ -299,14 +290,16 @@ p		$proc
                 $return
 
 "$i_retrieve_testunequal"* $name
-                dan     $pop
+		$ipop
+                dan     i$aside($ASIDE)
                 jdz     $+3
                 la, xi  0
 		lb, xi	1
                 $return
 
 "$i_retrieve_testgreater"* $name
-                dan     $pop
+		$ipop
+                dan     i$aside($ASIDE)
                 jdz     $+6
 		jna	$+4
 		la, xi	0
@@ -316,7 +309,8 @@ p		$proc
                 $return
 
 "$i_retrieve_testless"* $name
-                dan     $pop
+		$ipop
+                dan     i$aside($ASIDE)
 		jdz	$+6
                 jpa	$+4
                 la, xi	0
@@ -326,58 +320,59 @@ p		$proc
                 $return
 
 "$i_retrieve_shift"* $name		. setaside shift count is LS word
-"$aaa"           $equ    $pop		. and is indirect
-		dsl	*$aaa+1
+		$ipop			. and is indirect
+		dsl	*i$aside($ASIDE)+1
 		$return
 
 "$i_retrieve_shift_right"* $name
-"$aaa"           $equ    $pop
-		dsa	*$aaa+1
+		$ipop
+		dsa	*i$aside($ASIDE)+1
 		$return
 
 "$i_retrieve_or"* $name
-"$aaa"		$equ	$pop	
-		or	$aaa
-		orB	$aaa+1
+		$ipop	
+		or	i$aside($ASIDE)
+		orB	i$aside($ASIDE)+1
 		$return
 
 "$i_retrieve_xor"* $name
-"$aaa"           $equ    $pop
-                xor     $aaa
-                xorB    $aaa+1
+		$ipop
+                xor     i$aside($ASIDE)
+                xorB    i$aside($ASIDE)+1
                 $return
 
 "$i_retrieve_and"* $name
-"$aaa"           $equ    $pop
-                and     $aaa
-                andB    $aaa+1
+		$ipop
+                and     i$aside($ASIDE)
+                andB    i$aside($ASIDE)+1
                 $return
 
 "$i_retrieve_add"*	$name
-		da	$pop
+		$ipop
+		da	i$aside($ASIDE)
 		$return
 
 "$i_retrieve_subtract"*	$name
-"$aaa"		$equ	$pop
-		dan	$aaa
+		$ipop
+		dan	i$aside($ASIDE)
 		$return
 
 "$i_retrieve_multiply"*	$name
-"$aaa"           $equ    $pop
+		$ipop
 
 		sb	7
 		lb	a
-		m	$aaa+1
+		m	i$aside($ASIDE)+1
 		sb	6
 		lb	7
-		mf	$aaa+1
+		mf	i$aside($ASIDE)+1
 		aa	6
 
 		$return
 
 "$i_retrieve_divide"*	$name
-"$aaa"           $equ    $pop
-		d	$aaa+1
+		$ipop
+		d	i$aside($ASIDE)+1
 		sb	7	. save the remainder
 		sa	b
 		la	6
@@ -388,11 +383,11 @@ p		$proc
 		$return
 
 "$i_retrieve_remainder"*	$name
-"$aaa"           $equ    $pop
-                d       $aaa+1
+		$ipop
+                d       i$aside($ASIDE)+1
 		sa	7	. save the quotient. MSW is already in 6
 		la	b
 		dsa	24
 
 		$end
-	
+
