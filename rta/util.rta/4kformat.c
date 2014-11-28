@@ -314,7 +314,7 @@ static int outputw(int f, unsigned char *data, int words)
 static void output_label(int f, unsigned char *name, long long position)
 {
    unsigned char	 image[272];
-   int			 bytes = sprintf(image, "\n+%s:$20:%6.6X\n",name,position);
+   int			 bytes = sprintf(image, "\n+%s:$20:%6.6llX\n",name,position);
    int			 written = write(f, image, bytes);
 
    if (written < 0) printf("label write error %d\n", errno);
