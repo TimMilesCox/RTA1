@@ -106,11 +106,10 @@ http_bound?
 	la	s:tcp:tbase
 	sabr	BSOCKET
 
-	la	(HTTP_PORT)
 .	call	(tcp_hash_localsocket)
 	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(HTTP_PORT))
 
-	lk	(00FFFF)
+	sx	http_transmission
 
 
 http_walk
@@ -119,22 +118,27 @@ http_walk
 	j	$+2
 	j	http_xserve
 
+	la	(HTTP_PORT)
+	lk	(00FFFF)
 	mta	transmission:socket_address+1
 	j	http_walk
 
 	sx	http_transmission
 
 	la	transmission:state
-	anu, xi	TCP_ESTABLISHED
-	jzb	http_next_request
-	anu, xi	TCP_SYNRECEIVED
-	jnzb	http_walk
+	aa, xi	-TCP_SYNRECEIVED
+	jnza	http_established?
 	call	(xaccept)
+	j	http_walk
+
+http_established?
+	aa, xi	TCP_SYNRECEIVED-TCP_ESTABLISHED
+	jnza	http_walk
+
 
 http_next_request
 	la	transmission:receiveq:head
 	jza	http_walk
-
 
 	lcal	http_get_what?
 	dl	fs24_sla
@@ -220,7 +224,8 @@ http_pushover
 	pop		SOCKET_CALL_FLAGS
 	call	(tcp_tx)
 	call	(tcp_release_rxline)
-	j	http_next_request
+	lx	http_transmission
+	j	http_walk
 
 
 
@@ -245,7 +250,8 @@ http_drop_request
 
 
 	call	(tcp_release_rxline)
-	j	http_next_request
+	lx	http_transmission
+	j	http_walk
 
 http_xserve
 	fret	0
