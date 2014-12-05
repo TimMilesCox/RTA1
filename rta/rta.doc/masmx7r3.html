@@ -43,7 +43,7 @@ See also the licensing notice at the foot of this document
 		<li>Character Strings</li>
 		<li>Number Constants with Equal-Size Bit Fields</li>
 		</ol>
-	<li>$form Bit-Field Structures</li>
+	<li><b>$form</b> Bit-Field Templates</li>
 	<li>Instructions and Operands</li>
 		<ol>
 		<li>Register / Memory Operand Continuum</li>
@@ -74,23 +74,33 @@ See also the licensing notice at the foot of this document
 		<ol>
 		<li>Location Counters</li>
 		<li>Loadable vs ROM Systems and Absolute Code vs Relocatable Code</li>
-		<li>Data Sections $(1) and $(3)</li>
-		<li>seg$load Realtime RAM Initialisation</li>
+		<li>Data Sections <b>$(1)</b> and <b>$(3)</b></li>
+		<li><b>seg$load</b> Realtime RAM Initialisation</li>
 		<li>Base + Displacement Sections, Void Sections and Structure by Pointer</li>
 			<ol>
 			<li>Void Sections and Structures by Pointer</li>
 			<li>Data-generating Sections with Base + Displacement View</li>
 			</ol>
-		<li>Structured Data</li>
+		<li>Applying Name Structures to Code and Data: <b>$tree / $branch / $root</b></li>
+			<ol>
+			<li>Structuring Data Names</li>
+			<li>Compartmenting Code and Dynamic Names</li>
+			</ol>
+		<li>Bit-Aligned Memory Structures: <b>$record / $root</b></li>
+			<ol>
+			<li>What's it For?</li>
+			<li>Structure Description</li>
+			<li>Structure Access</li>
+			</ol>
 		<li>Assembling Structures Larger than the Address Space</li>
 		</ol>
-	<li>$do Iteration</li>
-	<li>$proc and $func Macros</li>
+	<li><b>$do</b> Iteration</li>
+	<li><b>$proc</b> and <b>$func</b> Macros</li>
 		<ol>
-		<li>$proc: Command and Instruction Macros</li>
-		<li>$func: Macros to generate Assembly-Time Values</li>
+		<li><b>$proc</b>: Command and Instruction Macros</li>
+		<li><b>$func</b>: Macros to generate Assembly-Time Values</li>
 		</ol>
-	<li>10: Runtime Algorithmic Expressions: $xqt_i and $xqt_fp</li>
+	<li>Runtime Algorithmic Expressions: <b>$xqt_i</b> and <b>$xqt_fp</b></li>
 	</ol>
 
 	<blockquote>
@@ -1111,10 +1121,13 @@ BLUE240		$equ		240
 
 </pre>
 
-<h2>5: $form Bit-Field Structures</h3>
+<h2>5: $form Bit-Field Templates</h3>
 
-Directive <b>$form</b> types bit-field structures up to eight words long.
-The structures are an integral number of words in size
+
+Directive <b>$form</b> types an instruction or descriptor bit-field layout
+
+The layout size is from one to eight words
+
 <pre>
 
 long_virtual_address    $form                   1, 1, 16, 6, 6, 18
@@ -3003,7 +3016,9 @@ $00:000100
 
 
 
-<h3>7.6: Structured Data</h3>
+<h3>7.6: Applying Name Structures to Code and Data: <b>$tree / $branch / $root</b></h3>
+
+<h3>7.6.1: Structuring Data Names</h3>
 
 Structured data combines <b>$tree</b> and <b>$root</b> directives with <b>$proc</b>
 macros to construct hierarchical names for structured data, for example
@@ -3114,11 +3129,404 @@ spiko.msm=0<000003
 
 </pre>
 
-<h3>7.7: Assembling Structures Larger than the Address Space</h3>
+<h3>7.6.2: Compartmenting Code and Dynamic Names</h3>
+
+<b>$tree / $root</b> name structures may be used to compartment
+name spaces functionally. In this assembly, the names <b>left</b>
+<b>right</b> <b>centre</b> and <b>factor</b> are repeated in
+different contexts
+<pre>
+
+$ masmx bloc_fun -lnk
+MASMX 7r3
+3/bloc_fun.msm
+*EOF*
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	language/stack.def
+  :                            4 	$path
+  :                            5 $(3:03000)
+  :                            6 
+  :                            7 $(0:64)
+  :                            8 function1 $tree
+                                	$head_near	 params(left,	int	;
+                                				right,	int	;
+  :                            11 				centre,	int)
+  :                            12 $(3)
+[+0000]18
+03:003000 000000              +13 factor	+	FACTOR
+  :                            14 $(0)
+00:000040 68F003              +15 	lb	right
+00:000041 2E0003              +16 	sbl	3
+00:000042 C8F002              +17 	ab	left
+00:000043 D8F004              +18 	anb	centre
+00:000044 E03000              +19 	m	factor
+00:000045 350000              +20 	$ret
+  :                            21 	$root
+  :                            22 
+  :                            23 function2 $tree
+                                	$head_near	 params(left,	int	;
+                                				right,	int	;
+  :                            26 				centre,	int)
+  :                            27 $(3)
+[+0001]18
+03:003001 000000              +28 factor	+	DIVISOR
+  :                            29 $(0)
+00:000046 60F002              +30 	la	left
+00:000047 060001              +31 	sar	1
+00:000048 C8F003              +32 	ab	right
+00:000049 D0F004              +33 	ana	centre
+00:00004A 960018              +34 	dsa	24
+00:00004B F03001              +35 	d	factor
+00:00004C 350000              +36 	$ret
+  :                            37 	$root
+  :                            38 
+*EOF*
+:$(00):000040:00004D :$(03):003000:003002 
+
+</pre>
+
+<b>$tree</b>..<b>$root</b> structures make the names unique, as this
+label table extract shows. The switch to locator <b>$(3)</b> makes the
+two instances of <b>factor</b> into static items declared within functions
+<pre>
+
+function1=$00:000040
+function1:left=000002,00000F
+function1:right=000003,00000F
+function1:centre=000004,00000F
+function1:factor=$03:003000
+$$zero_stack=000000
+$$call_space=000002
+$$params=000003
+part(1)=000005
+$$frame=000000
+$$xframe=$46:000000
+$$list=000005
+function2=$00:000046
+function2:left=000002,00000F
+function2:right=000003,00000F
+function2:centre=000004,00000F
+function2:factor=$03:003001
+FACTOR
+DIVISOR
+
+</pre>
+
+
+
+
+<h3>7.7: Bit-Aligned Memory Structures: $record / $root</h3>
+
+                        <h3>7.7.1: What's it For?</h3>
+
+<b>$record / $root</b> maps unsynchronised fields of very unaligned structures
+to labels which represent a tuple of
+<pre>
+
+{ WORD_ADDRESS, [INDEX_REGISTER], BIT_OFFSET, BIT_SIZE }
+
+</pre>
+A single line of macro code can subsequently present each data field or group
+of data fields to the application. Difficult and error-prone efforts are
+avoided for the developer
+
+<p>
+<b>$record</b> has application to
+
+        <ul>
+        <li>data acquired from systems of different architecture to the target</li>
+        <li>data which is compressed for storage</li>
+        <li>data from offset fields of memory-mapped I/O registers</li>
+        <li>data exchanged over unusual communication protocols</li>
+        </ul>
+
+
+                        <h3>7.7.2: Structure Description</h3>
+
+<b>$record</b>s may be more or less complex. Fields which are not accessed
+do not need a label. All fields need a length. <b>$record</b> requires a label
+<pre>
+
+$ masmx record -lnkx
+MASMX 7r3
+3/record.msm
+*EOF*
+  :                            1 $(3:03000)
+  :                            2
+  :                            3 outermost $record
+  :                            4 first_field    9
+  :                            5 ?      $do     3,field(?)      9
+  :                            6 inner  $record
+  :                            7 ?      $do     4,field(?)      3
+  :                            8        $root
+  :                            9 trailing 12
+  :                            10       $root
+  :                            11
+  :                            12
+*EOF*
+outermost=$03:003000,,,,00003C
+outermost:first_field=$03:003000,,,,000009
+outermost:field(1)=$03:003000,,,000009,000009
+outermost:field(2)=$03:003000,,,000012,000009
+outermost:field(3)=$03:003001,,,000003,000009
+outermost:inner=$03:003001,,,00000C,00000C
+outermost:inner:field(1)=$03:003001,,,00000C,000003
+outermost:inner:field(2)=$03:003001,,,00000F,000003
+outermost:inner:field(3)=$03:003001,,,000012,000003
+outermost:inner:field(4)=$03:003001,,,000015,000003
+outermost:trailing=$03:003002,,,,00000C
+?=$03:000004
+record.msm=0<000003
+:$(03):003000:003003
+
+
+</pre>
+
+<p>
+<b>$record</b> shares the structured name plan with <b>$tree</b> and <b>$branch</b>,
+and likewise ends with <b>$root</b>
+
+<p>
+Outermost <b>$record</b> starts at a word boundary and nested <b>$record</b>s start
+at the bit location which has been reached
+
+<p>
+Redefinitions or unions can be achieved by placing each variant of the entire
+containing <b>$record</b> / <b>$root</b> in a <b>$branch</b> / <b>$root</b>
+
+<p>
+Each <b>$branch</b> is at a word boundary and so is the most inclusive <b>$record</b>
+<pre>
+
+$ masmx shuttle -lnkx
+MASMX 7r3
+3/shuttle.msm
+*EOF*
+  :                            1
+  :                            2 $(3:03000)
+  :                            3
+  :                            4 define1 $branch
+  :                            5 first   $record 12 "tramway"
+  :                            6 flag    12
+  :                            7 goods   60
+03:003000 00C7472616D7761790  +8         $root
+  :                            9         $root
+  :                            10 define2 $branch
+  :                            11 first   $record 11 "shuttle"
+  :                            12 flag    12
+  :                            13 goods   56
+03:003000 00B73687574746C650  +14         $root
+  :                            15         $root
+  :                            16
+*EOF*
+define1=$03:003000
+define1:first=$03:003000,,,,000048
+define1:first:flag=$03:003000,,,,00000C
+define1:first:goods=$03:003000,,,00000C,00003C
+define2=$03:003000
+define2:first=$03:003000,,,,000044
+define2:first:flag=$03:003000,,,,00000C
+define2:first:goods=$03:003000,,,00000C,000038
+shuttle.msm=0<000003
+:$(03):003000:003003
+
+</pre>
+
+<p>
+Any initial values are spaced arguments of the <b>$record</b> lines
+
+<p>
+An argument on a <b>$record</b> line is not a bit length but a data value for a contained field
+
+<p>
+<b>$record</b> labels acquire a group length attribute as seen above
+
+<p>
+Nested <b>$record</b>s have their own arguments. Containing <b>$record</b>s place initial values
+in their own fields and not in the fields of nested <b>$record</b>s
+
+<pre>
+
+$ masmx record -lnk
+MASMX 7r3
+3/record.msm
+*EOF*
+  :                            1 $(3:03000)
+  :                            2
+  :                            3 outermost $record                      <b>'o' 1 1 1 10</b>
+  :                            4 first_field    9
+  :                            5 ?      $do     3,field(?)      9
+  :                            6 inner  $record                         <b>6 4 6 4</b>
+  :                            7 ?      $do     4,field(?)      3
+  :                            8        $root
+  :                            9 trailing 12
+03:003000 378040201D3400A000  +10       $root
+  :                            11
+  :                            12
+*EOF*
+:$(03):003000:003003
+
+</pre>
+
+<b>$record</b> does not have separate template and instance steps. Describing a
+<b>$record</b> layout is also describing an instance. For this reason <b>$record</b>
+may be found within a <b>$proc</b> macro
+
+<p>
+<b>$proc</b> macros can assign actual arguments to any nested <b>$record</b> in their scope
+
+<p>
+Repeating field groups to any nesting depth are constructed with records inside <b>$proc</b> macros
+<pre>
+
+$ ~/masmx betaille -lnkx
+MASMX 7r3
+3/betaille.msm
+*EOF*
+  :                            1 p      $proc
+  :                            2 hameau*        $name
+  :                            3 *      $record p(1, 2), p(1, 3) p(1, 4)
+  :                            4 oies   20
+  :                            5 anes   12
+  :                            6 moutons        16
+  :                            7        $root
+  :                            8        $end
+  :                            9
+  :                            10 p     $proc
+  :                            11 commune* $name
+  :                            12 *     $record
+  :                            13 ?     $do     p(),"p(?, 1)"   hameau  p(?)
+  :                            14       $root
+  :                            15       $end
+  :                            16
+  :                            17
+  :                            18 communes $record
+                                Vaux_les_Pres   commune les_Cotards, 80, 5, 248 ;
+                                                        le_Charmelot, 660, 24, 79 ;
+  :                            21                       village, 28, 2, 5
+  :                            22
+                                Villers_Buzon   commune centre, 10, 1, 30       ;
+00:000000 0005000500F800294018004F0001C00200050000A001001E
+                              +24                       Combe_au_Loup, 15,,315
+00:000008 0000F000013B        +25       $root
+  :                            26
+*EOF*
+hameau=:N129:P:0:000000
+commune=:N129:P:0:000000
+communes=$00:000000,,,,0000F0
+communes:Vaux_les_Pres=$00:000000,,,,000090
+communes:Vaux_les_Pres:les_Cotards=$00:000000,,,,000030
+communes:Vaux_les_Pres:les_Cotards:oies=$00:000000,,,,000014
+communes:Vaux_les_Pres:les_Cotards:anes=$00:000000,,,000014,00000C
+communes:Vaux_les_Pres:les_Cotards:moutons=$00:000001,,,000008,000010
+communes:Vaux_les_Pres:le_Charmelot=$00:000002,,,,000030
+communes:Vaux_les_Pres:le_Charmelot:oies=$00:000002,,,,000014
+communes:Vaux_les_Pres:le_Charmelot:anes=$00:000002,,,000014,00000C
+communes:Vaux_les_Pres:le_Charmelot:moutons=$00:000003,,,000008,000010
+communes:Vaux_les_Pres:village=$00:000004,,,,000030
+communes:Vaux_les_Pres:village:oies=$00:000004,,,,000014
+communes:Vaux_les_Pres:village:anes=$00:000004,,,000014,00000C
+communes:Vaux_les_Pres:village:moutons=$00:000005,,,000008,000010
+communes:Villers_Buzon=$00:000006,,,,000060
+communes:Villers_Buzon:centre=$00:000006,,,,000030
+communes:Villers_Buzon:centre:oies=$00:000006,,,,000014
+communes:Villers_Buzon:centre:anes=$00:000006,,,000014,00000C
+communes:Villers_Buzon:centre:moutons=$00:000007,,,000008,000010
+communes:Villers_Buzon:Combe_au_Loup=$00:000008,,,,000030
+communes:Villers_Buzon:Combe_au_Loup:oies=$00:000008,,,,000014
+communes:Villers_Buzon:Combe_au_Loup:anes=$00:000008,,,000014,00000C
+communes:Villers_Buzon:Combe_au_Loup:moutons=$00:000009,,,000008,000010
+betaille.msm=0<000003
+:$(00):000000:00000A
+
+</pre>
+
+
+                <h3>7.7.3: Structure Access</h3>
+
+The following assembly accesses fields of a <b>$record</b> with macro language.
+
+<p>
+The more complex the structure, the larger the advantage of <b>$record</b> data description
+
+<p>
+This assembly also shows a <b>$record</b> in a base + displacement section
+<pre>
+
+$ masmx base_d -lnkx
+MASMX 7r3
+3/base_d.msm
+*EOF*
+  :                            1                $path           ../
+  :                            2:               $include        def/rta.def
+  :                            3                $path
+  :                            4
+  :                            5 p              $proc
+  :                            6 retrieve*      $name           .       load an unsigned field up to 24 bits
+  :                            7        $if     p(1, 4)+p(1, 5)>$word
+  :                            8                dl      p(1, 1), p(1, 2)
+  :                            9                dsl     p(1, 4)
+  :                            10       $else
+  :                            11               la      p(1, 1), p(1, 2)
+  :                            12       $do     p(1, 4)^=0,     sal     p(1, 4)
+  :                            13       $endif
+  :                            14       $do     p(1, 5)<$word,  sar     $word-p(1, 5)
+  :                            15               $end
+  :                            16
+  :                            17 $(71::,sp)
+  :                            18 channel_status        $record
+  :                            19 active                1
+  :                            20 sense         3
+  :                            21 input_status  3
+  :                            22 output_status 3
+  :                            23 input_access_chain_head  16
+  :                            24 output_access_chain_head 16
+  :                            25               $root
+  :                            26
+  :                            27 $(0:64)
+  :                            28
+00:000040 60F000              +29       retrieve        channel_status:input_status
+00:000041 260004              +29
+00:000042 060015              +29
+00:000043 C60047              +30       jza             no_input_traffic
+00:000044 CFF000              +31       retrieve        channel_status:input_access_chain_head
+00:000045 36000A              +31
+00:000046 060008              +31
+  :                            32       .
+  :                            33       .
+  :                            34 no_input_traffic
+  :                            35
+*EOF*
+
+
+channel_status=$47:000000,00000F,,,00002A
+channel_status:active=$47:000000,00000F,,,000001
+channel_status:sense=$47:000000,00000F,,000001,000003
+channel_status:input_status=$47:000000,00000F,,000004,000003
+channel_status:output_status=$47:000000,00000F,,000007,000003
+channel_status:input_access_chain_head=$47:000000,00000F,,00000A,000010
+channel_status:output_access_chain_head=$47:000001,00000F,,000002,000010
+no_input_traffic=$00:000047
+..//def/rta.def=1<000005
+base_d.msm=0<000003
+:$(00):000040:000047 :$(47):000000:000002
+
+</pre>
+
+
+<h3>7.8: Assembling Structures Larger than the Address Space</h3>
 <p>
 
 Arrays too large for the static data space and  many times larger than the 16-Megaword
 address space may be assembled, up the the limit of available memory
+
+<p>
+In smaragd7 prototype RTOS, up 29 memory windows B3..B31 are application
+static space $(3). An array of seven and one quarter megawords fits in this space
+
+<p>
+A frame of adjacent address windows provides a moving cursor over larger arrays
 
 <p>
 Any array may be assembled instead of constructed at run time. There are cases where
@@ -3130,13 +3538,12 @@ An array which extends beyond the address space into a larger executable space i
 in masmx terms giant addressing
 
 <p>
-Giant address space has a width greater than effective address space, notionally
-256 terawords expressed in 48 bits, but physically constrained to the executable
-space of RTA1 architecture, 16 gigawords expressed in 34 bits.
+Giant address space has a width greater than effective address space, for RTA1
+notionally 256 terawords but physically constrained to 16 gigawords
 
 <p>
 A giant address offset is introduced to the location counter as a breakpoint address
-with leading *asterisk
+with leading *asterisk. This is a word address offset
 
 <pre>
 
@@ -3146,33 +3553,29 @@ $(54::*00000A000000)
 
 The address breakpoint is incremented as repeat structures assemble. In the
 example case following, the array root location of zero does not look giant
-by most standards. The application will obtain storage from the kernel and
-pass the load address to the segment load routine <b>array$seg$load</b>. See
-Appendix A: masmx Linking for RTA1 
+by most standards
 
 <p>
-The structure may be assembled with the application or independently. In any
-case it uses separate location counters from the rest of the assembly, for
-separate load-formatting. This follows the need of ROM based systems to
-submit data segments to a run-time segment loader
+If the array is read-only in nonvolatile memory, the root address ARRAY_INDEX
+contains a start address, although that may be supplied at link
 
 <pre>
 
-$ masmx array2 -ln
+$ masmx array2 -lnk
 MASMX 7r3
 3/array2.msm
 *EOF*
-  :                            1: 	$include	freeware/RTA1/rta/def/rta.def
+  :                            1: 	$include	..//def/rta.def
   :                            2 
   :                            3 ARRAY_INDEX     $set    0
-  :                            4 SIZE            $equ    6
-  :                            5 BASE		$equ	48
+  :                            4 SIZE            $equ    262144//7
+  :                            5 BASE		$equ	30
   :                            6 
   :                            7 p               $proc
   :                            8 my_structure*   $name
   :                            9 *               $tree
   :                            10 next_pointer    +       p(1, 1):d
-  :                            11                 $res    4
+  :                            11                 $res    SIZE-2
   :                            12                 $root
   :                            13                 $end
   :                            14 
@@ -3191,49 +3594,11 @@ MASMX 7r3
   :                            27                 $end
   :                            28 
   :                            29 array_part(1)
-36:000000000000:400000C00006  +30 repeat          $do     6000000000,	array1_element
-36:000000000006:400000C0000C  +30 
-36:00000000000C:400000C00012  +30 
+36:000000000000:40000078924A  +30 repeat          $do     12,     array1_element
+36:00000000924A:400000792494  +30 
+36:000000012494:40000079B6DE  +30 
   :                            31                 $list
   :                            32 
-
-
-
-</pre>
-
-An array up to six or seven megawords may all be in the address space at once.
-It would up to 28 address windows to be available in the range B4 to B31
-
-<p>
-Otherwise a pair of address windows provide a moving cursor in the array
-
-<p>
-
-Pointers in a structure of many large system memory banks take two words
-and have a format
-<pre>
-
-	  46  bank identifier 30      24     18       word offset      0
-	_________________________________________________________________
-	|0 1|bbbb bbbb bbbb bbbb|000 000|window| www www www www www www|
-	|___|___________________|_______|______|________________________|
-	 47  45			 29	 23	 17
-
-</pre>
-Pointers like this may be assembled in the data structure as cross-reference
-and chain links. The field <b>window</b> must agree with with the address
-space window where sabr instruction will base the leading edge of the target
-element. See function macro <b>long_pointer()</b> above
-
-<p>
-In the giant structure example above, this pointer is not quite complete
-at assembly time, because the start location of the array is not known. So
-the start bank identity is added to bits 45:30 of the pointer before the
-containing bank is based
-<pre>
-
-
-
   :                            33 $(68::,b)
   :                            34 structure       my_structure
   :                            35 
@@ -3241,28 +3606,21 @@ containing bank is based
 00:000000 CFD000              +37                 dl              structure:next_pointer
 [+0000]0f
 00:000001 C00000              +38                 aa              array_start_bank_index
-00:000002 340030              +39                 sabr            BASE
+00:000002 34001E              +39                 sabr            BASE
   :                            40 
 00:000003 64C040              +41                 la, i           64, a           . base two adjacent banks
-00:000004 340031              +42                 sabr            BASE+1          . if the structure is not power 2 size
+00:000004 34001F              +42                 sabr            BASE+1          . if the structure is not power 2 size
   :                            43 
   :                            44 
 *EOF*
-:$(00):000000:000005 :$(36):000000:000006 :$(44):000000:000006 
+:$(00):000000:000005 :$(36):000000:00924A :$(44):000000:00924A 
+
  
-
 </pre>
-<p>
-It is also possible to put labels on each element of an assembled array,
-although this is not advised if there are millions of elements, because
-software handling tables and arrays references very few labels
-<pre>
 
-
-?	$do	12000,float(?)	structure	float(?+1)	. next pointer, last instance = zero
-
-
-</pre>
+Kernel routine <b>array$segment$load</b> unpacks giant arrays to RAM if required from
+ROM-resident file-systems at application start. See Appendix A, Section A.5: Core Resident
+File Systems used in Software RAM Segment Load
 
 <h2>8: $do Iteration</h2>
 
@@ -3317,6 +3675,9 @@ float(1)=$1E:01E010
 :$(1E):01E000:01E014 
 
 </pre>
+
+The line of repeated code may be a macro name subassembling complex data or instructions
+
 <h2>9: $proc and $func Macros</h2>
 
 <h3>9.1: $proc: Command and Instruction Macros</h3>
@@ -4740,6 +5101,7 @@ $quote		directive	|	$quote		<i>value</i>		. set the string delimiter, default "
 $r		function	|	+		$r		. program section program section $r or $r(label) 
 $range_check	directive	|	$info,$range_check	<i>text</i>	. final check value range at relocation stack top
 $range_check1	directive	|	$info,$range_check1	<i>text</i>	. always check value range at relocation stack top
+$record		directive	|label	$record	[<i>values</i>]		. bit-aligned data structure, see also $root
 $rel		function	|	+		$rel		. section relocation alignment $rel or $rel(locator)
 $res		directive	|[label] $res		<i>quanta</i>		. declare a buffer. option -Z initial zero
 $return		directive	|	$return		<i>expression</i>	. leave a macro. return value from $func macro
@@ -4763,6 +5125,10 @@ $xqt_fp		directive	|	$xqt_fp	<i>floating_tokens+operators</i> . generate runtime
 $xqt_i		directive	|	$xqt_i	<i>integer_tokens+operators</i> . generate runtime algorithm instruction stream
 $zenith		function	|	$if	$zenith&gt<i>LIMIT</i>
 				|	$if	$zenith(<i>section</i>)&gt;<i>LIMIT</i>	. section high address including literal pool
+$zero_code_point directive	|	$zero_code_point	ESCAPED_ZERO_DATA_CODE_VALUE
+								. sets the value returned to represent embedded zero in a
+								. quoted string to distinguish from end of string or line
+								. default 2700 hex
 
 </div>
 </div>
