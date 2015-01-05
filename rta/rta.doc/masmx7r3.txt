@@ -84,12 +84,14 @@ See also the licensing notice at the foot of this document
 		<li>Applying Name Structures to Code and Data: <b>$tree / $branch / $root</b></li>
 			<ol>
 			<li>Structuring Data Names</li>
+			<li>Structures Overlaid in Memory</li>
 			<li>Compartmenting Code and Dynamic Names</li>
 			</ol>
 		<li>Bit-Aligned Memory Structures: <b>$record / $root</b></li>
 			<ol>
 			<li>What's it For?</li>
 			<li>Structure Description</li>
+			<li>Bit-Aligned Structure Overlay and Overload</li>
 			<li>Structure Access</li>
 			</ol>
 		<li>Assembling Structures Larger than the Address Space</li>
@@ -124,8 +126,9 @@ See also the licensing notice at the foot of this document
 This is a summary for programming RTA1
 
 <p>
-This manual discusses some topics beyond writing assembly language code for RTA1. Kernel calls to support
-data segment loading are described, plus linking and code formatting utilities
+This manual discusses some topics beyond writing assembly language code for RTA1.
+smaragd7 Kernel calls to support data segment loading are described, plus linking
+and code formatting utilities
 
 <p>
 RTA1 instructions are listed by functional group in this manual,
@@ -150,8 +153,9 @@ masmx documentation and download</a>
 <h3>1.4: Coding Examples for RTA1 Architecture and smaragd7 Kernel</h3>
 
 For RTA1 assembly examples,        
-Complete source code and assembly listing of the smaragd7 kernel and of some application protocols are in the repository RTA1
-
+complete source code and assembly listing of the smaragd7 kernel and of some
+network application protocols are in the repository path
+http://www.github.com/TimMilesCox/RTA1
 
 
 <h2>2: masmx Settings for RTA1</h2>
@@ -193,9 +197,14 @@ masmx already has these default settings. They are correct for RTA1
 code and data in all the executable space using the giant address
 
 <p>
-masmx default byte size is 8 bits and data code is ASCII.
-<b>$byte</b> and the data code can be changed during
-an assembly
+masmx default byte size is 8 bits and default data code is ASCII.
+<b>$byte</b> and <b>$data_code</b> can be changed during
+an assembly. These settings concern quoted strings. See <b>Section
+4.1: Expressions and Numbers</b> and <b>Section 4.3: Character Strings</b>.
+ASCII text may be variously Latin-1 or UTF-8 according to input
+text editor. Language elements which are not in quotes are strictly
+from ASCII code points 0..127.
+
 
 <p>
 masmx syntax element defaults are also
@@ -622,6 +631,9 @@ MASMX 7r3
 </pre>
 
 <p>
+ASCII text may be Latin-1 or UTF8, according mainly to input text editor
+
+<p>
 Tokens in an expression may be labels
 
 <p>
@@ -1011,6 +1023,9 @@ Note: strings.msm Line 12: trailing zero bits in last data word of string
 
 </pre>
 Padding to word fill is zero with option <b>-z</b> otherwise space
+
+<p>
+ASCII text may be Latin-1 or UTF8, according mainly to input text editor
 
 <p>
 Nondisplay byte values can be placed in strings
@@ -2517,7 +2532,7 @@ freeware/RTA1/rta/fs/fs.txo:$(0) 477 words decimal from hexadecimal 000000 to 00
         |_______________|_______________|_______________________|_______________________________________________________|
         |       outA	|   00010.100   |  out a to I/O port ea	|  							|
         |_______________|_______________|_______________________|_______________________________________________________|
-	|	outB	|   00011.100	|  out a to I/O port ea |  							|
+	|	outB	|   00011.100	|  out b to I/O port ea |  							|
         |_______________|_______________|_______________________|_______________________________________________________|
         |       reload	|   00100.100   |  reload base registers|  2 * bank index @ *a,*(a+1)->io ports[ea, ea+1]. a+=2	|
         |_______________|_______________|_______________________|_______________________________________________________|
@@ -2636,8 +2651,9 @@ kernel assigns load space and determines hardware physical locations
 <p>
 Load address absolute zero is not available for applications in a ROM image.
 
-To remain assembling absolutely, B0 load address can preassigned at image
-construction with a breakpoint address in the location counter line
+For application code in a ROM load image, B0 absolute load address may be
+preassigned at assembly or link with a breakpoint address in the location
+counter line
 
 <p>
 The program visible addresses still start at zero
@@ -3088,8 +3104,11 @@ spoka.msm=0<000003
 
 </pre>
 
+<h3>7.6.2: Structures Overlaid in Memory</h3>
+
 <b>$branch</b> directive is used in place of <b>$tree</b> to overlay
-name structures at the same storage address
+name structures at the same storage address. Each branch may have
+data values without restriction
 
 <pre>
 
@@ -3129,7 +3148,7 @@ spiko.msm=0<000003
 
 </pre>
 
-<h3>7.6.2: Compartmenting Code and Dynamic Names</h3>
+<h3>7.6.3: Compartmenting Code and Dynamic Names</h3>
 
 <b>$tree / $root</b> name structures may be used to compartment
 name spaces functionally. In this assembly, the names <b>left</b>
@@ -3292,48 +3311,6 @@ Outermost <b>$record</b> starts at a word boundary and nested <b>$record</b>s st
 at the bit location which has been reached
 
 <p>
-Redefinitions or unions can be achieved by placing each variant of the entire
-containing <b>$record</b> / <b>$root</b> in a <b>$branch</b> / <b>$root</b>
-
-<p>
-Each <b>$branch</b> is at a word boundary and so is the most inclusive <b>$record</b>
-<pre>
-
-$ masmx shuttle -lnkx
-MASMX 7r3
-3/shuttle.msm
-*EOF*
-  :                            1
-  :                            2 $(3:03000)
-  :                            3
-  :                            4 define1 $branch
-  :                            5 first   $record 12 "tramway"
-  :                            6 flag    12
-  :                            7 goods   60
-03:003000 00C7472616D7761790  +8         $root
-  :                            9         $root
-  :                            10 define2 $branch
-  :                            11 first   $record 11 "shuttle"
-  :                            12 flag    12
-  :                            13 goods   56
-03:003000 00B73687574746C650  +14         $root
-  :                            15         $root
-  :                            16
-*EOF*
-define1=$03:003000
-define1:first=$03:003000,,,,000048
-define1:first:flag=$03:003000,,,,00000C
-define1:first:goods=$03:003000,,,00000C,00003C
-define2=$03:003000
-define2:first=$03:003000,,,,000044
-define2:first:flag=$03:003000,,,,00000C
-define2:first:goods=$03:003000,,,00000C,000038
-shuttle.msm=0<000003
-:$(03):003000:003003
-
-</pre>
-
-<p>
 Any initial values are spaced arguments of the <b>$record</b> lines
 
 <p>
@@ -3442,8 +3419,109 @@ betaille.msm=0<000003
 
 </pre>
 
+<h3>7.7.3: Bit-Aligned Structure Overlay and Overload</h3>
 
-                <h3>7.7.3: Structure Access</h3>
+<b>$record</b> structures can may be overlaid or redifined with the addition of
+<b>,$branch</b> subfunction. The resulting unions are at bit-position precision.
+
+<p>
+Initial values may be overloaded. However masmx load code is in words. Overloads
+on a storage word are not merged
+
+<pre>
+
+$ masmx overlay -lnkx
+MASMX 7r3
+3/overlay.msm
+*EOF*
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3 	$path
+  :                            4: 	$include	record_x.def
+  :                            5 
+  :                            6 $(3:03000)
+  :                            7 first	$record,$branch	1 2 3
+  :                            8 one	4
+  :                            9 two	4
+  :                            10 three	4
+  :                            11 "O'Leary" 20
+03:003000 123000000000        +12 	$root
+  :                            13 second	$record,$branch
+  :                            14 fill	4
+  :                            15 second1	$record,$branch	4 5 6
+  :                            16 one	4s
+  :                            17 two	4
+  :                            18 three	4
+03:003000 045600              +19 	$root
+  :                            20 second2	$record,$branch	7 8
+  :                            21 one	4
+  :                            22 two	4
+03:003000 078000              +23 	$root
+  :                            24 	$root
+  :                            25 third	$record,$branch	63
+  :                            26 longways 18
+03:003000 000FC0              +27 	$root
+  :                            28 
+  :                            29 new	$record	10 6
+  :                            30 discriminator 4
+  :                            31 first	$record,$branch	"carpets"
+  :                            32 text	48
+03:003002 A63617270657400000  +33 	$root
+  :                            34 second	$record,$branch	10 11 12 13 14 15
+  :                            35 ?	$do	9,quartet(?)	4
+03:003002 0ABCDEF00000        +36 	$root
+  :                            37 marker	4
+03:003004 060000              +38 	$root
+  :                            39 
+03:003005 400001E00000000000000000
+                              +40 sum	1.75
+
+
+
+
+first=$03:003000,,,,000020
+first:one=$03:003000,,,,000004
+first:two=$03:003000,,,000004,000004
+first:three=$03:003000,,,000008,000004
+first:O'Leary=$03:003000,,,00000C,000014
+second=$03:003000,,,,000010
+second:fill=$03:003000,,,,000004
+second:second1=$03:003000,,,000004,00000C
+second:second1:one=$03:003000,,,000004,*000004
+second:second1:two=$03:003000,,,000008,000004
+second:second1:three=$03:003000,,,00000C,000004
+second:second2=$03:003000,,,000004,000008
+second:second2:one=$03:003000,,,000004,000004
+second:second2:two=$03:003000,,,000008,000004
+third=$03:003000,,,,000012
+third:longways=$03:003000,,,,000012
+new=$03:003002,,,,000038
+new:discriminator=$03:003002,,,,000004
+new:first=$03:003002,,,000004,000030
+new:first:text=$03:003002,,,000004,000030
+new:second=$03:003002,,,000004,000024
+new:second:quartet(1)=$03:003002,,,000004,000004
+new:second:quartet(2)=$03:003002,,,000008,000004
+new:second:quartet(3)=$03:003002,,,00000C,000004
+new:second:quartet(4)=$03:003002,,,000010,000004
+new:second:quartet(5)=$03:003002,,,000014,000004
+new:second:quartet(6)=$03:003003,,,,000004
+new:second:quartet(7)=$03:003003,,,000004,000004
+new:second:quartet(8)=$03:003003,,,000008,000004
+new:second:quartet(9)=$03:003003,,,00000C,000004
+new:marker=$03:003004,,,000004,000004
+?=$03:000009
+sum=$03:003005
+record_x.def=1<000005
+..//def/rta.def=1<000005
+overlay.msm=0<000003
+:$(00):000040:000051 :$(03):003000:003009 
+
+
+</pre>
+
+
+                <h3>7.7.4: Structure Access</h3>
 
 The following assembly accesses fields of a <b>$record</b> with macro language.
 
@@ -3731,10 +3809,15 @@ position. Parameters are referenced by the label on the <b>$proc</b> line which 
 example above <b>p</b>
 
 <p>
-Reference paraforms have the syntax
+Actual parameters have, for example,  the syntax
 <pre>
 
-		<b>callname	haddock	  5   44    chips, peas, salt:vinegar</b>
+		<b><i>callname</i>	haddock	  5   44    chips, peas, salt:vinegar</b>
+
+</pre>
+Reference paraforms have the syntax <b><i>macroname</i>([field[, subfield[:substring]]])</b>
+<pre>
+
 
 macroname	$proc
 
