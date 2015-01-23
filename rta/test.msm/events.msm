@@ -1,0 +1,93 @@
+
+event_free_ii
+	la	a
+	and	(3FFFFF)
+	on	see$all**(see$7*/MANAGER_BANKS)-1
+	z	2, a
+	ir	0
+
+event_wait_ii
+	on	see$1++(see$7*/MANAGER_BANKS)-see$7
+	la	TDESCRIPTOR
+	lb	2, a
+	orB, xi	1
+	sb	2, a
+	ir	0
+
+twait_ii	. these parts must go to timer.msm
+	on	see$1++(see$7*/MANAGER_BANKS)-see$7
+	la, xi	0
+	lb	a
+	da	DAYCLOCK$U
+	ds	TIME_TARGET
+	la	TDESCRIPTOR
+	lb	2, a
+	orB	(1*/23s)
+	sb	2, a
+	j	1	. vector to yield_ii
+
+.	this external interrupt may only happen on one
+.	instruction processor
+
+.	it must transfer updated DAYCLOCK$U:DAYCLOCK
+.	to the other instruction processors
+
+i_xint	la	OVERFLOWER
+	aa, xi	1
+	sa	OVERFLOWER
+	jc	i_xint_u
+	ir	0
+
+.	the overflower should overflow at intervals of
+.	1 microsecond / 1.024
+
+.	this will allow millisecond time to be obtained
+.	by shifting the dayclock right ten bit positions
+
+.	to wait an exact number of microseconds
+.	requested quanta = microsends * 1.024
+
+usleep	lb, xi	0
+	dsr	24-10
+	d, xi	1000
+	ii	TWAIT$
+	fret	0
+	
+
+.	protocol timers use the LS 24 bits of millisecond time
+
+.	TCP SEQ and ACK use the LS 32 bits of millisecond time	
+.	It's a convention to use dayclock time for TCP sequences
+
+i_xint_u
+	la, xi	-INCREMENTER_INTERVAL
+	sa	OVERFLOWER
+	dl	DAYCLOCK$U
+	da	(1d)
+	ds	DAYCLOCK$U
+
+	lx	stem(PRIORITIES)
+i_xint_r
+	la	0, x
+	lx	a
+	ana, xi	stem(PRIORITIES)
+	jza	i_xint_x
+
+	tp	1, x		. a descriptor or just an stem(?)
+	j	i_xint_r
+
+	la	2, x
+	jpa	i_xint_r	. not time-waited
+
+	dl	4, x		. either lengthen the descriptor to
+				. 6 words like this, or save the
+				. interrupted TCB and base all the
+				. examined TCBs one after another
+	dan	DAYCLOCK$U
+	jna	i_xint_r
+	z	2, x
+	j	i_xint_r
+
+i_xint_x
+	ir	0
+	
