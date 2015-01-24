@@ -19,11 +19,11 @@ twait_ii	. these parts must go to timer.msm
 	la, xi	0
 	lb	a
 	da	DAYCLOCK$U
-	ds	TIME_TARGET
-	la	TDESCRIPTOR
-	lb	2, a
+	lx	TDESCRIPTOR
+	ds	4, x
+	lb	2, x
 	orB	(1*/23s)
-	sb	2, a
+	sb	2, x
 	j	1	. vector to yield_ii
 
 .	this external interrupt may only happen on one
@@ -40,7 +40,7 @@ twait_ii	. these parts must go to timer.msm
 .	(because just over 1 million timer interrupts / second)
 .	the overflower should overflow at intervals of
 .	1 microsecond / 1.024
-.	and DAYCLOCK$U:DAYCLOCK is in 1024 fractions of a MS
+.	and DAYCLOCK$U:DAYCLOCK is in 1/1024 steps of a millisec
 
 .	this would allow millisecond time to be obtained
 .	by shifting the dayclock right ten bit positions
@@ -48,28 +48,33 @@ twait_ii	. these parts must go to timer.msm
 .	to wait an exact number of microseconds
 .	requested quanta would = microsends * 1.024
 
+.	however the dayclock can be scaled finer than 1ms
+.	but not so drastically as 1/1024 of 1ms
+
+.	for example a half, an eighth, a sixteenth of an ms
+
 
 usleep
 	$do	MILLISECOND_LOG^=0,	;
 	dsl	MILLISECOND_LOG		. multiply by ?
 	d, xi	1000			. divide by 1000
 	ii	TWAIT$
-	fret	0
+	lret	0			. locally included library
 	
 
 .	if DAYCLOCK$U:DAYCLOCK is scaled finer than 1 ms
 .	then a TWAIT$ of zero quanta can regain control
 .	in less than 1 MS, making a very short deferred yield
-.	in a high-priority thread (it becomes a switching
+.	in a high-priority thread (it becomes a load-go
 .	candidate again at the next timer interrupt)
 
 .	if DAYCLOCK$U:DAYCLOCK is NOT scaled finer than 1 ms
-.	then protocol timers need not shift it on reference
+.	then protocol timers need not scale references to it
 
 .	protocol timers use the LS 24 bits of millisecond time
 
-.	TCP SEQ and ACK use the LS 32 bits of millisecond time	
-.	It's a convention to use dayclock time for TCP sequences
+.	TCP SEQ and ACK have always been conventionally
+.	initialised to the LS 32 bits of millisecond time	
 
 .	therefore if there is ever going to be a nonzero
 .	MILLISECOND_LOG, references to it in IP must also
@@ -78,8 +83,27 @@ usleep
 .	optimally by shifting the readout of DAYCLOCK$U:DAYCLOCK)
 
 
+.	the incrementer port overflow interrupt
+.	is wired to just one instruction processor
+.	optimally via a switch block. It shares
+.	the updated DAYCLOCK$U:DAYCLOCK$ with other
+.	instruction processors by writing ports
 
-i_xint
+.		DAYCLOCK$UPDATE$U
+.		DAYCLOCK$UPDATE$
+
+.	DAYCLOCK$UPDATE$ is written second of the two
+.	and broadcasts the interprocessor interrupt
+
+.		TIME$BROADCAST
+
+.	ISR i_getit reads ports DAYCLOCK$UPDATE$:DAYCLOCK$UPDATE$
+.	and writes registers DAYCLOCK$U and DAYCLOCK$
+
+
+i_xint	ts	switch_lock_cell . this ISR doesn't update pointers
+	j	$-1		. but another one might
+
 	$if	INCREMENTER_INTERVAL>32768
 	la	(-INCREMENTER_INTERVAL)
 	$else
@@ -89,6 +113,10 @@ i_xint
 	outA	OVERFLOWER
 	dl	DAYCLOCK$U
 	da	(1d)
+
+	outA	DAYCLOCK$UPDATE$U	. share with other CPUs
+	outB	DAYCLOCK$UPDATE$	. interrupt them to say so
+
 	ds	DAYCLOCK$U
 
 	lx	stem(PRIORITIES)
@@ -104,15 +132,26 @@ i_xint_r
 	la	2, x
 	jpa	i_xint_r	. not time-waited
 
-	dl	4, x		. either lengthen the descriptor to
-				. 6 words like this, or save the
-				. interrupted TCB and base all the
-				. examined TCBs one after another
-	dan	DAYCLOCK$U
-	jna	i_xint_r
-	z	2, x
-	j	i_xint_r
+	dl	DAYCLOCK$U
+
+	dan	4, x		. new time - target time >= zero
+	jna	i_xint_r	. next if not
+	z	2, x		. into action if so
+	j	i_xint_r	. then next
 
 i_xint_x
+	z	switch_lock_cell
 	ir	0
-	
+
+
+.	if "this" instruction processor is the one
+.	wired for i_xint ISR, it could save a few
+.	cycles by not being wired for its own broadcast
+.	interrupt of the new dayclock value
+
+
+i_getit	inA	DAYCLOCK$UPDATE$U
+	inB	DAYCLOCK$UPDATE$
+	ds	DAYCLOCK$U
+	ir	0
+
