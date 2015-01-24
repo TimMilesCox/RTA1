@@ -32,36 +32,61 @@ twait_ii	. these parts must go to timer.msm
 .	it must transfer updated DAYCLOCK$U:DAYCLOCK
 .	to the other instruction processors
 
-i_xint	la	OVERFLOWER
-	aa, xi	1
-	sa	OVERFLOWER
-	jc	i_xint_u
-	ir	0
 
+.	at simplest the overflow should overflow at
+.	1 millisecond and DAYCLOCK$U:DAYCLOCK is in MS
+
+.	at impossible
+.	(because just over 1 million timer interrupts / second)
 .	the overflower should overflow at intervals of
 .	1 microsecond / 1.024
+.	and DAYCLOCK$U:DAYCLOCK is in 1024 fractions of a MS
 
-.	this will allow millisecond time to be obtained
+.	this would allow millisecond time to be obtained
 .	by shifting the dayclock right ten bit positions
 
 .	to wait an exact number of microseconds
-.	requested quanta = microsends * 1.024
+.	requested quanta would = microsends * 1.024
 
-usleep	lb, xi	0
-	dsr	24-10
-	d, xi	1000
+
+usleep
+	$do	MILLISECOND_LOG^=0,	;
+	dsl	MILLISECOND_LOG		. multiply by ?
+	d, xi	1000			. divide by 1000
 	ii	TWAIT$
 	fret	0
 	
+
+.	if DAYCLOCK$U:DAYCLOCK is scaled finer than 1 ms
+.	then a TWAIT$ of zero quanta can regain control
+.	in less than 1 MS, making a very short deferred yield
+.	in a high-priority thread (it becomes a switching
+.	candidate again at the next timer interrupt)
+
+.	if DAYCLOCK$U:DAYCLOCK is NOT scaled finer than 1 ms
+.	then protocol timers need not shift it on reference
 
 .	protocol timers use the LS 24 bits of millisecond time
 
 .	TCP SEQ and ACK use the LS 32 bits of millisecond time	
 .	It's a convention to use dayclock time for TCP sequences
 
-i_xint_u
+.	therefore if there is ever going to be a nonzero
+.	MILLISECOND_LOG, references to it in IP must also
+.	reference MILLISECOND_LOG (optimally by biasing the
+.	values they compare with DAYCLOCK$U:DAYCLOCK, much less
+.	optimally by shifting the readout of DAYCLOCK$U:DAYCLOCK)
+
+
+
+i_xint
+	$if	INCREMENTER_INTERVAL>32768
+	la	(-INCREMENTER_INTERVAL)
+	$else
 	la, xi	-INCREMENTER_INTERVAL
-	sa	OVERFLOWER
+	$endif
+
+	outA	OVERFLOWER
 	dl	DAYCLOCK$U
 	da	(1d)
 	ds	DAYCLOCK$U
