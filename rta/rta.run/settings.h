@@ -56,7 +56,6 @@
 #define	DAYCLOCK	147
 
 #undef	TIMER		127
-#undef	DAYCLOCK_U_PORT	120
 #undef	SIGALERT
 #define	NET_ATTENTION_COUNT 121
 #define	TIMER_IMASK	4

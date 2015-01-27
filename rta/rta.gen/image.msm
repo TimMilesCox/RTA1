@@ -63,6 +63,7 @@
 	$include	base.def
 	$include	banks.def
 	$path
+	$include	../timer/timer.def
 	$include	../fs/fs24.def
 
 "$SP_LOWER_LIMIT"	$equ	32
@@ -157,15 +158,20 @@ $(0:0:TRANSFER_PAGE)
 	j		kernel_b1_ii_1
 	j		dayclock_w_ii
 	j		twait_ii
+	j		event_wait_ii
+	j		event_free_ii
 
-	$do		30-$,	ir	0
+	$do		31-$,	ir	0
 
-	j		timer		. this must stay at this address
-	j		xbase_u		. this must stay at this address
+	j		xbase_u		. this must stay at this address 1:31
 
 ?	$do		12,		j	xbase(?+32-1)
 
-	$do		64-$,	ir	0
+	$do		61-$,	ir	0
+					. these must stay at adresses 1:61..1:63
+	j		i_alert		. broadcasted preemptive event notify
+	j		i_time		. broadcasted new dayclock value
+	j		i_timer		. incrementer overflow
 	
 bank_ii	la		4
 	lcal		bank
@@ -266,7 +272,16 @@ xbase_u	j		guard
 
 	$include	xiobase
 
-	$include	timer
+	$include	events
+
+	$include	timer	. this has dummy routines
+				. include ../timer/timer instead
+				. when the hardware has an incrementor
+				. and real interrupts
+
+				. or if some interrupts are emulated
+
+.	$include	../timer/timer
 
 
 .	each handle integer corresponds to a 48-bit encoding
@@ -449,6 +464,7 @@ dayclock_w_ii
 TRANSFER_PAGE_HIGH
 
 	$trace		TRANSFER_PAGE_HIGH
+	$do	$zenith>4096,	$flag	kernel page oversize
 
 	$path		../t77.4
 	$include	t77

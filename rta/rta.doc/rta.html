@@ -30,7 +30,9 @@ storage, and it can run as a major system maintaining some millions of TCP conne
 RTA1 is designed for symmetric multiprocessing, an important plane of scalability
 
 <p>
-RTA specification has I/O space as well as memory space, making a further plane of scalability
+RTA specification has I/O space as well as memory space, a further plane of scalability.
+I/O ports also broadcast interrupts between SMP instruction processors for true
+synchronisation and exact realtime response. I/O ports are used to organise memory space
 
 <p>
 Excellent code density is claimed for RTA1. The emulated prototype runs IP, UDP and TCP in
@@ -550,8 +552,14 @@ Typically &frac34; of relocation registers are part of task context, OS dependin
 
 
 <p>
-<h3>1.10 I/O Ports other than Relocation Registers</h3>
+<h3>1.10 I/O Ports for Inter-Process Communication and for Memory Configuration</h3>
 
+<p>
+I/O ports are written to broadcast interrupts and parameters between Instruction Processors
+in order to obtain true synchronisation and exact realtime response
+
+<p>
+I/O ports function as relocation registers and also read out memory configuration values
 <p>
 The emulated machine detects from Port 124 <b>ram$threshold</b> on system start how large its ROM is,
 whether the ROM contains a system or just a boot page, and where RAM starts.
@@ -565,7 +573,6 @@ The emulated machine goes on to detect the size of system memory from Port 128 <
 Devices like network interfaces and local file systems are detected by reading I/O ports 129 onwards.
 These values are primed by the emulator to help the emulated machine to run.
 Hardware implementations must wire the real memory and device information to I/O Ports 124, 128+ upwards
-
 
 
 <h2>2. Registers and Instruction Set</h2>
@@ -772,21 +779,32 @@ is reloaded and all flags are restored
 		stack is completely empty. At sp = 24 the internal stack is completely full
 		Stack range violation raises the guard interrupt at vector 1:31
 
-		DAYCLOCK$U:DAYCLOCK$ are a feature not of RTA1 architecture but of the
-		smaragd7 kernel developed to run the emulated prototype.
+		DAYCLOCK$U:DAYCLOCK$ are a millisecond counter in the interrupt register list
+		All tasks read the dayclock register pair atomically with 48-bit-operand instructions
 
-		The 48-bit millisecond counter is intended to be incremented by a timer
-		interrupt sprung for example from a nanosecond decrementer providing
-		additionally much finer-granule timer services. The emulated
-		machine retrieves time periodically from the emulator host instead
+		Interrupt TIMER$ is sprung for example from a nanosecond incrementer
+		and updates the 48-bit millisecond dayclock in one designated processor.
+		Writes to two I/O ports broadcast the updated time to other SMP instruction
+		processors and notify them by interrupt
 
-		DAYCLOCK$U:DAYCLOCK$ are maintained in two scratch registers of the
-		interrupt stack. All tasks can read them atomically as a pair with
-		48-bit-operand instructions
+		The incrementer can be programmed for doubled, octupled or other power-2
+		higher frequency than a millisecond, making the dayclock quantum a fraction
+		of a millisecond and timer interrupt more frequent
 
-		PRIORITY$ is a feature not of RTA1 architecture, but of the smaragd7 kernel
-		developed to run the emulated prototype. It is a copy of the running thread's
-		priority stored here for quick retrieval at task switch
+		A negative number of beats is output to a high-frequency incrementer via
+		I/O port 96 OVERFLOWER$. TIMER$ interrupts when when the incrementer carries
+
+		The processor executing ISR TIMER$ programs OVERFLOWER$ and writes
+		I/O port 98 DAYCLOCK$UPDATE$U and then I/O port 99 DAYCLOCK$UPDATE$
+
+		Writing DAYCLOCK$UPDATE$ broadcasts interrupt TIME$POINT. Instruction processors 
+		interrupted with TIME$POINT input DAYCLOCK$UPDATE$U:DAYCLOCK$UPDATE$ to DAYCLOCK$U:DAYCLOCK$
+
+		The emulated machine retrieves millisecond time periodically from the emulator host
+
+		PRIORITY$ is a copy of the running thread's priority stored by software for
+		rapid retrieval at task switch, and for instant evaluation of SMP inter-processor
+		preemptive interrupt broadcasts
 
 		REALTIME$_CLOCK is a decrementing timer count which switches the running
 		thread on expiry. If the initial REALTIME$_CLOCK value assigned to the thread

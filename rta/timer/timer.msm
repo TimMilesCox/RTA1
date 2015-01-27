@@ -1,20 +1,50 @@
 
-event_free_ii
-	la	a
-	and	(3FFFFF)
-	on	see$all**(see$7*/MANAGER_BANKS)-1
-	z	2, a
-	ir	0
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    The masmx target-independent meta-asembler delivered here
+.    is free software whether it is used for constructing RTA1 code
+.    or any other code. masmx is a separate free program by the
+.    same author and included with this software to save searching for it
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
 
-event_wait_ii
-	on	see$1++(see$7*/MANAGER_BANKS)-see$7
-	la	TDESCRIPTOR
-	lb	2, a
-	orB, xi	1
-	sb	2, a
-	ir	0
 
-twait_ii	. these parts must go to timer.msm
+
+twait_ii
 	on	see$1++(see$7*/MANAGER_BANKS)-see$7
 	la, xi	0
 	lb	a
@@ -26,8 +56,10 @@ twait_ii	. these parts must go to timer.msm
 	sb	2, x
 	j	1	. vector to yield_ii
 
-.	this external interrupt may only happen on one
-.	instruction processor
+
+.	external interrupt i_timer may only happen on one
+.	instruction processor. It broadcasts interrupt
+.	i_time to the other processors in the SMP
 
 .	it must transfer updated DAYCLOCK$U:DAYCLOCK
 .	to the other instruction processors
@@ -54,12 +86,12 @@ twait_ii	. these parts must go to timer.msm
 .	for example a half, an eighth, a sixteenth of an ms
 
 
-usleep
-	$do	MILLISECOND_LOG^=0,	;
-	dsl	MILLISECOND_LOG		. multiply by ?
-	d, xi	1000			. divide by 1000
-	ii	TWAIT$
-	lret	0			. locally included library
+. usleep
+.	$do	MILLISECOND_LOG^=0,	;
+.	dsl	MILLISECOND_LOG		. multiply by ?
+.	d, xi	1000			. divide by 1000
+.	ii	TWAIT$
+.	lret	0			. locally included library
 	
 
 .	if DAYCLOCK$U:DAYCLOCK is scaled finer than 1 ms
@@ -101,7 +133,7 @@ usleep
 .	and writes registers DAYCLOCK$U and DAYCLOCK$
 
 
-i_xint	ts	switch_lock_cell . this ISR doesn't update pointers
+i_timer	ts	switch_lock_cell . this ISR doesn't update pointers
 	j	$-1		. but another one might
 
 	$if	INCREMENTER_INTERVAL>32768
@@ -120,37 +152,37 @@ i_xint	ts	switch_lock_cell . this ISR doesn't update pointers
 	ds	DAYCLOCK$U
 
 	lx, xi	stem(PRIORITIES)
-i_xint_r
+i_timer_r
 	la	0, x
 	lx	a
 	ana, xi	stem(PRIORITIES)
-	jza	i_xint_x
+	jza	i_timer_x
 
 	tp	1, x		. a descriptor or just an stem(?)
-	j	i_xint_r
+	j	i_timer_r
 
 	la	2, x
-	jpa	i_xint_r	. not time-waited
+	jpa	i_timer_r	. not time-waited
 
 	dl	DAYCLOCK$U
 
 	dan	4, x		. new time - target time >= zero
-	jna	i_xint_r	. next if not
+	jna	i_timer_r	. next if not
 	z	2, x		. into action if so
-	j	i_xint_r	. then next
+	j	i_timer_r	. then next
 
-i_xint_x
+i_timer_x
 	z	switch_lock_cell
 	ir	0
 
 
 .	if "this" instruction processor is the one
-.	wired for i_xint ISR, it could save a few
+.	wired for i_timer ISR, it could save a few
 .	cycles by not being wired for its own broadcast
 .	interrupt of the new dayclock value
 
 
-i_getit	inA	DAYCLOCK$UPDATE$U
+i_time	inA	DAYCLOCK$UPDATE$U
 	inB	DAYCLOCK$UPDATE$
 	ds	DAYCLOCK$U
 	ir	0
