@@ -59,28 +59,28 @@ Scalability is claimed for the RTA1 architecture. It can run simple dedicated
 microcontroller applications in a few dozen words of storage, and it can run
 as a major system maintaining some millions of TCP connections simultaneously
 
-RTA1 is also designed from the start for symmetric multiprocessing,
-a second plane of scalability
+RTA1 is designed for symmetric multiprocessing,
+an important plane of scalability
 
-The emulated prototype is interfaced to Internet Protocol networks and
-communicates with other computers with the Telnet, SNMP, HTTP and ICMP-Echo
-(Ping) protocols. A floating-point server application also runs over UDP
-to demonstrate the power and range of the RTA1 96-bit floating architecture
+Excellent code density is claimed for RTA1. The emulated prototype runs
+IP, UDP and TCP in 3250 instructions. One instruction takes one storage location.
+
+Another 4000 instructions run Telnet, MIB-II and snmp v1,
+a simple HTTP server, and a floating point server program
+for online interaction with RTA1 96-bit floating architecture
+
+IP in the  emulated prototype is interfaced to real networks.
+RTA1 Telnet, SNMP, HTTP and ICMP interact with other computers
 
 RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic
 
-Excellent code density is claimed for RTA1. The emulated prototype runs
-IP, UDP and TCP in 3000 instructions which each take one storage location.
+RTA1 minimises storage reads and writes with an internal stack and
+runs without operand cache. SMP operation needs no cache coherency
+electronics
 
-Another 4000 instructions run Telnet, MIB-II + snmpv1, a simple HTTP server,
-and an online floating point server program
+RTA I/O space is a further plane of scalability
 
-RTA1 is intended to work very fast without having operand cache
+I/O cycles broadcast interrupts between SMP instruction processors for true
+synchronisation and exact realtime response
 
-The large array of scratch registers is organised as an internal stack
-
-RTA1 SMP scalability has a vast lateral dimension, without expensive
-electronic co-ordination. The internal stack minimises storage reads
-and writes without any operand cache
-
-
+I/O ports are used to organise memory space
