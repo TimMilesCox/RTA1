@@ -540,11 +540,20 @@ Banks in devices outside system memory can only be based by interrupt code. This
 accidental damage to anything like a static RAM file system. An inadvertant attempt to base
 a device from an application raises the guard interrupt
 
+<p>
+Applications may call ISRs to place device banks in their address space and
+subsequently read and write each based bank without restriction. See Section 1.11:
+Interrupt Assignments
+
+The initial reason for allowing only ISRs to base device banks is to avoid accident
+
+ISRs which base device banks on user request may also include a credential check
+
 
 <h3>1.9 Thread Switch and Address Space</h3>
 
 Task current relocation pointers are not saved on task switch because they are
-already mirrored in the TCB
+already mirrored in the TCB at the point when the application selects memory
 
 <p>
 Typically &frac34; of relocation registers are part of task context, OS depending
@@ -589,6 +598,150 @@ Devices like network interfaces and local file systems are detected by reading I
 These values are primed by the emulator to help the emulated machine to run.
 Hardware implementations must wire the real memory and device information to I/O Ports 124, 128+ upwards
 
+
+<h3>1.11 Interrupt Assignments</h3>
+
+<p>
+The first 4K-word bank of storage or PAGE_0 contains the restart location and is
+otherwise reserved for any future restart and image load firmware
+
+<p>
+The second 4K-word bank of storage or PAGE_1 populates certain of its 63 vector
+locations PAGE_1:0 thru PAGE_1:63 with external and internal interrupt vectors
+
+<p>
+These interrupt vectors are assigned to external events. They are classed as external because I/O
+activity or processor contingency raises them
+<pre>
+
+
+				Encoding of Interrupt Vector
+				_________________________________
+
+				_________________________________
+	GUARD$		1:31	| 000000 000000 000001 | 011111	|	internal stack limit overstep
+				|______________________|________|	device bank base attempt from application
+									storage access outside address space
+									software diagnostic
+				_________________________________
+	ALERT$		1:61	| 000000 000000 000001 | 111101	|	preemtive event notify broadcast
+				|______________________|________|
+
+				_________________________________
+	TIME$POINT	1:62	| 000000 000000 000001 | 111110 |	dayclock broadcast
+				|______________________|________|
+
+				_________________________________
+	TIMER$		1:63	| 000000 000000 000001 | 111111	|	high-frequency incrementer overflow
+				|______________________|________|
+
+</pre>
+
+Prototype kernel smaragd7 assigns these vectors in PAGE_1 to kernel calls reached with the
+Internal Interrupt instruction
+
+<pre>
+
+
+				Encoding of Interrupt Vector and
+				Operand Value of ii Instruction
+				_________________________________
+				
+				_________________________________
+	YIELD$		1:1	| 000000 000000 000001 | 000001 |	switch context in response
+				|______________________|________|	preemptive or voluntary event
+
+				_________________________________
+	SPAWN$		1:2	| 000000 000000 000001 | 000010 |	start a process
+				|______________________|________|
+
+				_________________________________
+	BANK$		1:3	| 000000 000000 000001 | 000011 |	obtain storage up to 16777215 words
+				|______________________|________|
+
+				_________________________________
+	ARRAY$		1:4	| 000000 000000 000001 | 000100 |	obtain storage 16777216+ words
+				|______________________|________|
+
+				_________________________________
+	BANK$FREE	1:5	| 000000 000000 000001 | 000101 |	return storage to kernel
+				|______________________|________|
+
+				_________________________________
+	EXIT$		1:6	| 000000 000000 000001 | 000110 |	end process or thread
+				|______________________|________|
+
+				_________________________________
+	THREAD$		1:7	| 000000 000000 000001 | 000111 |	start a thread
+				|______________________|________|
+
+
+				_________________________________
+	HANDLE$		1:16	| 000000 000000 000001 | 010000 |	obtain a handle
+				|______________________|________|
+
+				_________________________________
+	FREE_HANDLE$	1:17	| 000000 000000 000001 | 010001 |	free a handle for re-use
+				|______________________|________|
+
+				_________________________________
+	READ_HANDLE$	1:18	| 000000 000000 000001 | 010010 |	retrieve handle encoding
+				|______________________|________|
+
+				_________________________________
+	READ_XVECTOR$	1:19	| 000000 000000 000001 | 010011 |	retrieve a bank pointer
+				|______________________|________|	from kernel vector bank
+
+				_________________________________
+	WRITE_XVECTOR$	1:20	| 000000 000000 000001 | 010100 |	write a bank pointer in
+				|______________________|________|	kernel vector bank
+
+				_________________________________
+	READ_SOCKET$	1:21	| 000000 000000 000001 | 010101 |	retrieve network socket 
+				|______________________|________|	information
+
+				_________________________________
+	UHANDLE$	1:22	| 000000 000000 000001 | 010110 |	map port informatiom
+				|______________________|________|	into address space
+
+				_________________________________
+	KERNEL$B1	1:23	| 000000 000000 000001 | 010111 |	switch to kernel B1 frame[&nu;]
+				|______________________|________|
+
+				_________________________________
+	B1$		1:24	| 000000 000000 000001 | 011000 |	switch to application
+				|______________________|________|	current B1 frame
+
+				_________________________________
+	KERNEL$B1_1	1:25	| 000000 000000 000001 | 011001 |	switch to kernel
+				|______________________|________|	primary B1 frame
+
+				_________________________________
+	DAYCLOCK$W	1:26	| 000000 000000 000001 | 011010 |	write an initial time from
+				|______________________|________|	application to dayclock
+
+				_________________________________
+	TWAIT$		1:27	| 000000 000000 000001 | 011011 |	wait dayclock quanta
+				|______________________|________|
+
+				_________________________________
+	EVENT_WAIT$	1:28	| 000000 000000 000001 | 011100 |	wait for event
+				|______________________|________|
+
+				_________________________________
+	EVENT_FREE$	1:29	| 000000 000000 000001 | 011101 |	clear event wait status
+				|______________________|________|	of target thread
+
+
+				_________________________________
+	XBASE$(32)	1:32	| 000000 000000 000001 | 100000 | 
+		.		|______________________|________|	base a device bank 
+		.							in window 32..43
+		.		_________________________________
+	XBASE$(43)	1:43	| 000000 000000 000001 | 101011 |
+				|______________________|________|	
+
+</pre>
 
 <h2>2. Registers and Instruction Set</h2>
 
