@@ -86,7 +86,7 @@ static int				 first = 73;
 
 void exout(int locator, long loc, char *b, int c, int handle, int flag)
 {
-   static long long loc0 = 0;
+   static unsigned long long loc0 = 0;
    static char data[3*4096+16];
    static char plen[4];
    static int index=12, sum=0, p=0;
@@ -513,8 +513,8 @@ main(int argc, char *argv[])
        if (x > 2)
        {
           if (flag['v'-'a']) printf("$%2.2x:%6.6lx:%6.6lx\n", locator, loc, index); 
-          loc <<= 12;
-          loc += index;
+          bankp[locator] = (long long) loc << 12;
+          loc = index;
        }
 
        exout(locator, loc, NULL, 0, j, 0); 
