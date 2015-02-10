@@ -362,7 +362,7 @@ main(int argc, char *argv[])
   char			 *filename[2] = { NULL, NULL } ;
 
   int c, d, locator, e, f, symbol, x, y = 0, interval;
-  long loc, transfer, offset = 0;
+  long loc, transfer, offset = 0, index;
 
   unsigned long long bank;
 
@@ -503,12 +503,20 @@ main(int argc, char *argv[])
           continue;
        }
        offset = 0;
-       x = sscanf(&data[1], "%x:%lx", &locator, &loc);
+       x = sscanf(&data[1], "%x:%lx:%lx", &locator, &loc, &index);
        if (x < 2)
        {
           printf("bad location line\n");
           continue;
        }
+
+       if (x > 2)
+       {
+          if (flag['v'-'a']) printf("$%2.2x:%6.6lx:%6.6lx\n", locator, loc, index); 
+          loc <<= 12;
+          loc += index;
+       }
+
        exout(locator, loc, NULL, 0, j, 0); 
        continue;
     }
