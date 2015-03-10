@@ -32,7 +32,7 @@ RTA1 is designed for symmetric multiprocessing, an important plane of scalabilit
 
 <p>
 RTA  I/O space is a further plane of scalability.<br>
-I/O ports broadcast interrupts between SMP instruction processors for true
+I/O ports multicast or unicast interrupts between SMP instruction processors for true
 synchronisation and exact realtime response.<br>
 I/O ports are used to organise memory space
 
@@ -568,7 +568,7 @@ Typically &frac34; of relocation registers are part of task context, OS dependin
 <h3>1.10 I/O Ports for Inter-Processor Signalling and for Memory Configuration</h3>
 
 <p>
-I/O ports are written to broadcast interrupts and parameters between Instruction Processors
+I/O ports are written to multicast or unicast interrupts between Instruction Processors
 in order to obtain true synchronisation and exact realtime response
 
 <p>
@@ -576,11 +576,11 @@ Interrupts driven via I/O ports include
 
 	<blockquote>
 
-	preemptive event notification broadcast<br><br>
+	preemptive event notification unicast<br><br>
 
 	timer interrupt interval<br><br>
 
-	dayclock update broadcast
+	dayclock update multicast advertisement
 
 	</blockquote>
 
@@ -953,22 +953,25 @@ is reloaded and all flags are restored
 		All tasks read the dayclock register pair atomically with 48-bit-operand instructions
 
 		Interrupt TIMER$ is sprung for example from a nanosecond incrementer
-		and updates the 48-bit millisecond dayclock in one designated processor.
-		Writes to two I/O ports broadcast the updated time to other SMP instruction
-		processors and notify them by interrupt
+		and one designated core updates the 48-bit millisecond dayclock and
+		writes it to kernel storage
+
+		The designated core writes I/O port DAYCLOCK$UPDATE$ to multicast
+		interrupt TIME$POINT to the other cores. They update the dayclock
+		value in their own registers
+
+				dl	dayclock$	. read kernel storage
+				ds	DAYCLOCK$U	. write registers
+				ir	0		. return from TIME$POINT ISR
 
 		The incrementer can be programmed for doubled, octupled or other power-2
 		higher frequency than a millisecond, making the dayclock quantum a fraction
 		of a millisecond and timer interrupt more frequent
 
 		A negative number of beats is output to a high-frequency incrementer via
-		I/O port 96 OVERFLOWER$. TIMER$ interrupts when when the incrementer carries
+		I/O port OVERFLOWER$. TIMER$ interrupts when when the incrementer carries
 
-		The processor executing ISR TIMER$ programs OVERFLOWER$ and writes
-		I/O port 98 DAYCLOCK$UPDATE$U and then I/O port 99 DAYCLOCK$UPDATE$
-
-		Writing DAYCLOCK$UPDATE$ broadcasts interrupt TIME$POINT. Instruction processors 
-		interrupted with TIME$POINT input DAYCLOCK$UPDATE$U:DAYCLOCK$UPDATE$ to DAYCLOCK$U:DAYCLOCK$
+		The processor executing ISR TIMER$ reprograms OVERFLOWER$
 
 		The emulated machine retrieves millisecond time periodically from the emulator host
 
@@ -3769,7 +3772,7 @@ immediate operand
 	|																|
 	|			A process has at least one B1 frame or B1 bank								|
         |                                                                                                                               |
-        |                       a B1 frame contains private data at addresses 4096..8191                                                |       
+        |                       a B1 frame contains private data at addresses 4096..8191                                                |
 	|																|
 	|			a B1 frame is not in the address space of an entity which has a different B1 frame			|
 	|																|
