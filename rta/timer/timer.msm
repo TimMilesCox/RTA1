@@ -119,22 +119,29 @@ twait_ii
 .	is wired to just one instruction processor
 .	optimally via a switch block. It shares
 .	the updated DAYCLOCK$U:DAYCLOCK$ with other
-.	instruction processors by writing ports
+.	instruction processors by writing kernel B1_1
 
-.		DAYCLOCK$UPDATE$U
-.		DAYCLOCK$UPDATE$
+.		ds	dayclock$
 
-.	DAYCLOCK$UPDATE$ is written second of the two
-.	and broadcasts the interprocessor interrupt
+.	and then advertises the update by writing I/O port
+
+.		DAYCLOCK_UPDATE$
+
+.	This multicasts the interprocessor interrupt
 
 .		TIME$BROADCAST
 
-.	ISR i_getit reads ports DAYCLOCK$UPDATE$:DAYCLOCK$UPDATE$
+.	ISR i_time reads kernel storage dayclock%
 .	and writes registers DAYCLOCK$U and DAYCLOCK$
+
+.		dl	dayclock$
+.		ds	DAYCLOCK$U
 
 
 i_timer	ts	switch_lock_cell . this ISR doesn't update pointers
 	j	$-1		. but another one might
+
+	on	see$all
 
 	$if	INCREMENTER_INTERVAL>32768
 	la	(-INCREMENTER_INTERVAL)
@@ -146,11 +153,15 @@ i_timer	ts	switch_lock_cell . this ISR doesn't update pointers
 	dl	DAYCLOCK$U
 	da	(1d)
 
-	outA	DAYCLOCK$UPDATE$U	. share with other CPUs
-	outB	DAYCLOCK$UPDATE$	. interrupt them to say so
-
 	ds	DAYCLOCK$U
+	ds	dayclock$	. write B1_1 kernel storage
+				. or mybe vector bank instead
 
+	la, xi	THIS_CORE--(1*/CORES)-1
+	outA	DAYCLOCK_UPDATE$
+
+				. walk the switch list for
+				. expired time waits
 	lx, xi	stem(PRIORITIES)
 i_timer_r
 	la	0, x
@@ -176,14 +187,11 @@ i_timer_x
 	ir	0
 
 
-.	if "this" instruction processor is the one
-.	wired for i_timer ISR, it could save a few
-.	cycles by not being wired for its own broadcast
-.	interrupt of the new dayclock value
+.	ISR of the multicast interrupt which advertises
+.	the updated dayclock value in kernel storage
 
 
-i_time	inA	DAYCLOCK$UPDATE$U
-	inB	DAYCLOCK$UPDATE$
+i_time	dl	dayclock$
 	ds	DAYCLOCK$U
 	ir	0
 

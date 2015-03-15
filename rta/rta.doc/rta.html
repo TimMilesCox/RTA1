@@ -270,12 +270,15 @@ but can produce a very large performance advantage
 
 <p>
 The part of the register stack available to an application is 128 words, and the part
-of it organised in an internal stack is 104 words. The working of the internal stack is
-somewhat inverse to an external stack.
+of it organised in an internal stack is 104 words
 
 <p>
-Pushes and pops generate an operand effective address like all other instructions.
+The working of the internal stack is somewhat inverse to an external stack.
 
+<p>
+Push and pop operands have an effective address in memory space
+
+<p>
 A push is a load into CPU registers in RTA1, and a pop is a store
 <pre>
 
@@ -289,7 +292,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	|		|		|		|					|
 	|		|		|		|					|
 	|	CPU	|	scalar	|		|	total operand space
-	|		|    registers	|		|	registers + storage
+	|		|    registers	|		|	registers + storage + immediate values
 	|		|		|		|
 	|		|_______________|		|
 	|		|	--sp	|		|
@@ -565,26 +568,33 @@ Typically &frac34; of relocation registers are part of task context, OS dependin
 
 
 <p>
-<h3>1.10 I/O Ports for Inter-Processor Signalling and for Memory Configuration</h3>
+<h3>1.10 I/O Ports for Inter-Processor Signalling / Memory and Peripheral Configuration / Timer Restart</h3>
+
+<h4>1.10.1: I/O Ports for Inter-Processor Signalling</h4>
 
 <p>
 I/O ports are written to multicast or unicast interrupts between Instruction Processors
-in order to obtain true synchronisation and exact realtime response
+in order to obtain true synchronisation and exact realtime response. The bit positions
+in the output value drive interrupt lines to individual cores
 
 <p>
 Interrupts driven via I/O ports include
 
 	<blockquote>
 
-	preemptive event notification unicast<br><br>
+	preemptive switch unicast<br><br>
 
-	timer interrupt interval<br><br>
+	attention request unicast/multicast<br><br>
 
 	dayclock update multicast advertisement
 
 	</blockquote>
 
 <p>
+
+<h4>1.10.2: I/O Ports for Memory and Peripheral Configuration</h4>
+
+
 I/O ports function as relocation registers and also read out memory configuration values
 <p>
 The emulated machine detects from Port 124 <b>ram$threshold</b> on system start how large its ROM is,
@@ -601,7 +611,32 @@ These values are primed by the emulator to help the emulated machine to run.
 Hardware implementations must wire the real memory and device information to I/O Ports 124, 128+ upwards
 
 
-<h3>1.11 Interrupt Assignments</h3>
+<h4>1.10.3: I/O Port for Timer Interval Restart</h4>
+
+A write to I/O Port 96 restarts the timer interrupt interval
+
+<p>
+One core is designated to interrupt at high-frequency incrementer overflow
+and to and to restart the incrementer by writing Port 96
+
+<h4>1.10.4: I/O Port Assignments</h4>
+<pre>
+
+	0		instruction window relocation
+	1:63		data memory relocation windows
+	65		thread control block relocation
+	66:71		kernel data relocation windows
+	96		high-frequency timer incrementer restart write
+	97		dayclock update advertisement multicast
+	98		preemptive thread switch unicast
+	99		resource attention unicast/multicast
+	124		ROM/RAM threshold
+	128		system memory bank high index
+	129:191		devices 1:63 attributes / array size
+
+</pre>
+
+<h3>1.11: Interrupt Assignments</h3>
 
 <p>
 The first 4K-word bank of storage or PAGE_0 contains the restart location and is
@@ -625,12 +660,17 @@ activity or processor contingency raises them
 				|______________________|________|	device bank base attempt from application
 									storage access outside address space
 									software diagnostic
+
 				_________________________________
-	ALERT$		1:61	| 000000 000000 000001 | 111101	|	preemtive event notify broadcast
+	ATTENTION$	1:60	| 000000 000000 000001 | 111100 |	resource service request unicast/multicast
 				|______________________|________|
 
 				_________________________________
-	TIME$POINT	1:62	| 000000 000000 000001 | 111110 |	dayclock broadcast
+	ALERT$		1:61	| 000000 000000 000001 | 111101	|	preemtive thread switch unicast
+				|______________________|________|
+
+				_________________________________
+	TIME$POINT	1:62	| 000000 000000 000001 | 111110 |	dayclock multicast
 				|______________________|________|
 
 				_________________________________
@@ -1730,7 +1770,7 @@ Instructions in File 7 take a one-word two-word or four-word operand in register
 
 <h3>2.5 Instructions</h3>
 
-<h5>Note on Instruction Layout vs Assembly Language Syntax</h5>
+<h4>Note on Instruction Layout vs Assembly Language Syntax</h4>
 
 <p>
 No instruction has both *indirection and indexing
@@ -1738,7 +1778,7 @@ No instruction has both *indirection and indexing
 File 1 and File 5A instructions, J=5, with sign extended immediate operand,,xi can have neither *indirection nor indexing
 
 
-<h5>Instruction File 1</h5>
+<h4>Instruction File 1</h4>
 <p>
 22 File 1 instructions read a one-word operand, a third or halfword, the effective address itself as an immediate operand, or a sign-extended immediate operand.
 
@@ -1988,7 +2028,7 @@ File 1 instructions can read or write thirdwords when PSR Flag <b>half$w</b> = 0
 				|							|
 				|	store Arithmetic Register B			|
 				|_______________________________________________________|
-				|	destination is memory/registe at EA		|
+				|	destination is memory/register at EA		|
 				|	memory target may be a word, half or thirdword	|
 				|_______________________________________________________|
 
@@ -3593,7 +3633,7 @@ File 1 instructions can read or write thirdwords when PSR Flag <b>half$w</b> = 0
 </pre>
 
 
-<h5>Instruction File 4A</h5>
+<h4>Instruction File 4A</h4>
 <p>
 The eight instructions in Instruction File 4A use the effective address with or without indirection or indexing as an
 immediate operand
@@ -3859,7 +3899,7 @@ immediate operand
 
 
 </pre>
-<h5>Instruction File 5A</h5>
+<h4>Instruction File 5A</h4>
 <p>
 The eight instructions in Instruction File 5A have a sign extended immediate operand
 <pre>
@@ -4311,7 +4351,7 @@ The eight instructions in Instruction File 5A have a sign extended immediate ope
 
 </pre>
 
-<h5>Instruction File 6</h5>
+<h4>Instruction File 6</h4>
 
 <p>
 The 32 instructions in Instruction File 6 use the effective address with or without indirection or indexing as an
@@ -5002,7 +5042,7 @@ immediate operand
 
 
 </pre>
-<h5>Instruction File 7</h5>
+<h4>Instruction File 7</h4>
 
 <p>
 The 31 instructions in Instruction File 7 have an operand of one, two or four words
