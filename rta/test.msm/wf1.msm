@@ -1,8 +1,24 @@
 
-TARGET	$equ	8
-OFFSET	$equ	9
-BITS	$equ	7
 
+.	stores for subscripted bit-aligned fields
+
+.	single = up to 24 bits inclusive
+.	double = 25 to 48 bits inclusive
+.	triple = 49 to 72 bits inclusive
+
+.	this is strictly for subscripted writes
+.	where the bit offset is subscripted as well as the word address
+
+.	otherwise it should all be done in macro code
+.	in about half the number of instructions
+
+
+.	registers left unchanged except minor volatile set [r a b 6 7]
+
+
+TARGET	$equ	6
+OFFSET	$equ	7
+BITS	$equ	7
 
 
 
@@ -10,19 +26,23 @@ fs1x	$head_far	 params(bits1,	int	;
 				target1,long	;
 				input1,	int)
 
-				.	you don't know. offset is subscripted
+				. offset is subscripted
 
-	la	target1
-	dsr	24
-	d, xi	24
+
+	la	target1		. normalise the bit offset / address tuple
+	dsr	24		. which is a sum mostly of unnormalised
+	d, xi	24		. bit offset / word offset tuples
 	aa	target1+1
-	ds	TARGET
-	la	bits1
-	sa	BITS
+	sx	TARGET
+	lx	a
+	sb	OFFSET		.	_________________________________
+				.	|	bits	|	words	|
+				.	|_______________|_______________|
+				.	 47		 23	       0
 
+				. you do know, bits + offset > 24
+				. macro text for that case is:
 
-				.	you do know, bits + offset > 24
-				.	macro text for that case is
 				.	$if	p(1, 4)+p(1, 5)>48
 				.	{sa|sb}	7
 				.	dl	p(1)
@@ -35,85 +55,194 @@ fs1x	$head_far	 params(bits1,	int	;
 				.	drr	p(1, 4)
 				.	ds	p(1)
 				.	$else
-				.	that avoids 10 more call sequence instructions
 
-fs1l
+				. that avoids 10 more call sequence instructions
 
-	dl	*TARGET		.	UUUUUUXXXXXXYYYYYYZZZZZZ	UUUXXXXXXXXXXXXYYYYYYZZZ
-	drl	*OFFSET		.	XXXXXXYYYYYYZZZZZZUUUUUU	XXXXXXXXXXXXYYYYYYZZZUUU
-	sb	6
-	sal	*BITS		.	YYYYYY000000SSSSSS111111	000000000000111111111111
+				. this follows a wish never to read / rewrite any
+				. word which you are not changing, in case you
+				. are updating the last word of writeable storage
+
+				. you might time-slice and do a late rewrite on
+				. the first word of some other process' storage
+				. or reverse an update by another SMP core
+	lr	bits1
+	ab	r		.	OFFSET + BITS
+	ab, xi	-24-1
+
+	jc	fs1l
+
+	la	0, x		. offset + bits all in one word
+	ral	*OFFSET
+	sal	*r
 	lb	input1
-	drr	*BITS		.	111111YYYYYY000000SSSSSS	111111111111000000000000
-	lb	6		.	111111YYYYYYZZZZZZUUUUUU	111111111111YYYYYYZZZUUU
-	drr	*OFFSET		.	UUUUUU111111YYYYYYZZZZZZ	UUU111111111111YYYYYYZZZ
-	ds	*TARGET
+	drr	*r
+	rar	*OFFSET
+	sa	0, x
 
-	$ret
+	lx	TARGET
+	fret	0
+
+fs1l				. offset + bits in two words
+
+	lr, i	1, b		. r = bits + offset - 24
+				. = bits to insert in 2nd word
+	la	1, x		. read 2nd target word
+	lb	input1		. new data bits in LS positions b
+	sal	*r		. make space for new data bits
+	drr	*r		. new data bit in MS positons a
+	sa	7		. keep updated 2nd word
+	la	bits1	
+	ana	r		. bits - (bits + offset - 24) = 24 - offset
+	lr	a		. = bits to insert in 1st word
+	la	0, x		. read 1st target word
+	drr	*r		. swivel low order bits from b
+	ral	*r		. to low-order bits in a
+	lb	7		
+	ds	0, x		. write 2 words
+	
+	lx	TARGET
+	fret	0
+
 
 
 fd1x	$head_far	 params(bits2,	int	;
 				target2,long	;
 				input2,	long	)
 
-				.	you don't know, offset is subscripted
-
 	la	target2
 	dsr	24
 	d, xi	24
 	aa	target2+1
-	ds	TARGET
-	la	bits2
+	sx	TARGET
+	lx	a
+
+	ab	bits2		. += OFFSET
+
+	ab, xi	-48
+
+	jc	fd3		. 2 words+ to write
+	ab, xi	24		. # bits in 2nd word
+
+	sb	BITS
+	dl	input2		. data for 2nd word
+	drr	*BITS		. in high order positions a
+	sb	input2		. save shifted data
+	lb	1, x		. read 2nd target word
+	drl	*BITS		. swivel to high order positions
+	rbr	*BITS
+	sb	1, x		. write 2nd target word
+	la	bits2		. remaining bits =
+	ana	BITS		. required bits - transferred bits
 	sa	BITS
-				.	macro text does other cases better
+	lb	input2+1	. read remaining data
+	la	0, x
+	drr	*BITS		. swivel to low-order positions
+	ral	*BITS		. of 1st target word
+	sa	0, x
 
-	aa	OFFSET
-	aa, xi	-48
+	lx	TARGET	
+	fret	0
 
-	jc	fd3		.	2 words+ to write
-	aa, xi	24		.	# bits in 2nd word
-	sa	6
-	la	BITS
-	ana	6
-	sa	BITS		.	# bits in 1st word
-	dl	*TARGET
-	sa	10		.	save MS word target a moment
-	la	input2+1	.	retrieve LS word of write value
-	sbl	*6		.	insert bits in LS word of target
-	dsr	*6
-	sb	11		.	keep LS word result a moment
-	dl	input2		.	take whole write value
-	dsr	*6		.	shift out bits inserted in LS result
-	la	10		.	retrieve MS word target
-	drr	*BITS		.	rotate value bits to result high-order
-	ral	*BITS		.	swivel to offset position
-	lb	11		.	retrieve second result word
-	ds	*TARGET
-	$ret
+fd3	sb	BITS
+	jza	fd2		. 2nd word is an exact fit already
+	dl	input2		. some bits to write to 3rd word
+	drr	*BITS		. place them at the top of a
+	ds	input2		. save the new alignment
+	lb	2, x
+	drl	*BITS		. place the write bits at low-order
+	rbr	*BITS		.swivel to high-order positions
+	sb	2, x
 
-fd3	sa	6
-	jza	fd2		.	2nd word is an exact fit already
-	dl	input2		.	some bits to write to 3rd word
-	drr	*6		.	place them at the top of a
-	ds	input2		.	save the new alignment
-	lb	TARGET		.	read the 3rd target word
-	lb	2, b
-	drl	*6		.	place the write bits at low-order
-	rbr	*6		.	swivel to high-order positions
-	la	TARGET		.	write the 3rd target word
-	sb	2, a
-
-fd2	la	BITS		.	subtract (24 + bits written)
-	lb	6
+fd2	la	bits1		. subtract (24 + bits written)
+	lb	BITS
 	ana, i	24, b
-	sa	BITS		.	bits to insert in 1st word
+	sa	BITS		. bits to insert in 1st word
 
-	la	*TARGET		.	only read 1 word
+	la	0, x		. only read 1 word
 	lb	input2
-	drr	*BITS		.	copy low order bits of MS word
-	ral	*BITS		.	swivel to offset position
-	lb	input2+1	.	all of LS word is written
-	ds	*TARGET
+	drr	*BITS		. copy low order bits of MS word
+	ral	*BITS		. swivel to offset position
+	lb	input2+1	. all of LS word is written
+	ds	0, x
 
-	$ret
+	lx	TARGET
+	fret	0
+
+ft1x	$head_far	 params(bits3,	int	;
+				target3,long	;
+				input3,	3	)
+
+	la	target3
+	dsr	24
+	d, xi	24
+	aa	target3+1
+	sx	TARGET
+	sa	x
+
+	ab	bits3		. = OFFSET
+	ab, xi	-72
+	
+	jc	ft4		. fits in 3 words+
+
+	ab, xi	24		. bits in 3rd word
+	sb	BITS
+
+	lb	2, x		. read the 3rd target word
+	la	input3+2	. and the LS data bits
+	sbl	*BITS		. make room for new data
+	dsr	*BITS		. swivel the new bits in
+	sb	2, x		. write the 3rd target word
+
+	
+	dl	input3+1	. shift available data starboard
+	dsr	*BITS		. by the amount already written
+	sb	input3+2	
+	dl	input3
+	dsa	*BITS
+	sb	1, x		. this word is aligned to write thru
+
+	lb	bits3		. calculate bits to insert in 1st word
+	anb	BITS		. minus bits in 3rd word
+	ab, xi	-24		. minus bits in 2nd word
+	sb	BITS
+
+	lb	0, x		. available data bits are in LS positions a
+	dsr	*BITS		
+	rbl	*BITS
+	
+	sb	0, x
+	lx	TARGET
+	fret	0
+
+ft4	sb	BITS
+	jzb	ft3		. starboard margin is LSB 3rd word
+
+	la	input3+2	. some data bits for 4th word
+	lb	3, x
+	sbl	*BITS
+	dsr	*BITS
+	sb	3, x
+
+	dl	input3+1	. shift available data right
+	dsr	*BITS		. by the number of bits in the 4th word
+	sb	input3+2
+	dl	input3
+	dsa	*BITS
+	ds	input3
+
+ft3	dl	input3+1	. 2 words are aligned to write thru
+	ds	1, x
+
+	la	BITS		. calulate bits to insert in the 1st word
+	lb	bits3
+	anb, i	48, a		. = bits required minus bits already written
+	sb	BITS
+	lb	input3		. available data is in LS positions b
+	la	0, x		. read the first target word
+	drr	*BITS		. swivel the available data
+	ral	*BITS		. to offset positions a
+	sa	0, x		. write the MS target word
+	
+	lx	TARGET
+	fret	0
 
