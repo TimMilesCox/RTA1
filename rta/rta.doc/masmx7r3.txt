@@ -97,6 +97,7 @@ See also the licensing notice at the foot of this document
 			<li>Structure Description</li>
 			<li>Bit-Aligned Structure Overlay and Overload</li>
 			<li>Structure Access</li>
+			<li>Signed Bit Field and Macro Language</li>
 			</ol>
 		<li>Assembling Structures Larger than the Address Space</li>
 		</ol>
@@ -2861,16 +2862,17 @@ $(1:01000)
 </pre>
 
 smaragd7 kernel assigns at least one 4096-word B1 bank at process start, but does not 
-place any values in it. The application may assemble B1 at a read-only load-address
-in the ROM system image, and copy the initial values on startup.
+place any values in it. The application may initialise B1 on startup. Initial values may
+be built into ROM-resident file systems and retrieved for all variable sections with one
+call to library routine <b>seg$load</b>
 
 <p>
 $(2) contains the vector bank. smaragd7 constructs the 4096-word vector-bank on
 process launch at program-visible address 8192 = 02000 hex, based as bank B2
 
 <p>
-$(2) is declared by including vector.def. It is common to the whole process and
-contains elements which are shared between all threads. These include all handle
+$(2) is declared by including vector.def. B2 is common to all threads of the process
+and contains elements which are shared between all threads. These include all handle
 descriptors and pointers to all initial banks and entry points of this process.
 
 <p>
@@ -2878,7 +2880,7 @@ $(3) is assigned by the kernel to contain the program data in address windows
 B3..B31
 
 <p>
-However at process start B3 is not based and the program's RAM initial data is not loaded
+However at process start B3 is not based and the application RAM initial data is not loaded
 
 <p>
 A typical ROM application memory configuration is
@@ -3459,8 +3461,6 @@ may be found within a <b>$proc</b> macro
 <p>
 <b>$proc</b> macros can assign actual arguments to any nested <b>$record</b> in their scope
 
-<p>
-Repeating field groups to any nesting depth are constructed with records inside <b>$proc</b> macros
 <pre>
 
 $ ~/masmx betaille -lnkx
@@ -3698,6 +3698,89 @@ base_d.msm=0<000003
 
 </pre>
 
+	<h3>7.7.5: Signed Bit Field and Macro Language</h3>
+
+Option <b>-Y</b> causes bit fields to be flagged as signed unless the length is marked
+with trailing <b>u</b>
+<pre>
+
+record1	$record
+quarter	4	; signed if option -Y	
+quintet	5u	; never signed
+	$root
+
+</pre>
+
+If <b>-Y</b> is not opted, only fields marked with trailing <b>s</b> on the length
+are flagged to be signed
+<pre>
+
+record2	$record
+quartet	4	; signed if option -Y
+quintet	5s	; always signed
+	$root
+
+</pre>
+Signedness is flagged on the length attribute of the field identifier. The flag
+indicates an intention of signedness which macro text <i>may</i> action
+
+<p>
+Macro text responds in this sample assembly to signed attribute on bit quintet fields
+<pre>
+
+layer4:quartet(9)=$03:003001,,,000008,000004
+?=000028
+layer5=$03:003000,,,,000190
+layer5:quintet(1)=$03:003000,,,,*000005
+layer5:quintet(2)=$03:003000,,,000005,*000005
+
+$ masmx mfeuille -lnk
+MASMX 7r3
+3/mfeuille.msm
+*EOF*
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3 	$path
+  :                            4: 	$include	record_x.def
+  :                            5 
+  :                            6 $(3:03000)
+  :                            7 
+  :                            8 layer4	$record,$branch		10 11 12 13 14 15
+  :                            9 ?	$do	9,quartet(?)	4
+03:003000 ABCDEF000000        +10 	$root
+  :                            11 layer5	$record,$branch
+  :                            12 ?	$do	80,quintet(?)	5s
+  :                            13 	$root
+  :                            14 layer6	$record,$branch
+  :                            15 ?	$do	40,sextet(?)	6
+  :                            16 	$root
+  :                            17 
+  :                            18 $(0:64)
+00:000040 68300C              +19 	retrieve	b	layer5:quintet(60)
+00:000041 2E0007              +19 
+00:000042 8E0013              +19 
+  :                            20 
+*EOF*
+:$(00):000040:000043 :$(03):003000:003011 
+
+</pre>
+Macro text may on access override the flagged signedness of a field. Here is an extract
+from macro definition file <b>record_x.def</b> with entry point names for default, unsigned
+override and signed override
+<pre>
+
+
+p       $proc
+retrieve* $name         1       . signed if field is flagged signed
+retrieves* $name        2       . signed override
+retrieveu* $name        0       . unsigned override
+
+SIGNED  $set    p(2, *5)+p(0, 0)/*1
+.
+.
+
+
+</pre>
 
 <h3>7.8: Assembling Structures Larger than the Address Space</h3>
 <p>
