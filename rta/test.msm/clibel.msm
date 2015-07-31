@@ -8,10 +8,13 @@ POINTER	$equ	d$save1
 ALL	$equ	d$save2
 COLUMNS	$equ	d$save3
 
-WORDS	$equ	8
+DELIMITER $equ	8
+CACHE	$equ	9
+WORDS	$equ	10
 
 
-up	lk	0, y
+up	z	DELIMITER
+up1	lk	0, y
 	tp	k
 	j	up2_24by1
 	tnz	k
@@ -31,6 +34,7 @@ up	lk	0, y
 	ds	ASIDE
 	lsc	k
 	sb	COLUMNS
+	sy	DELIMITER
 up2_more
 	lcal	along
 	ds	ASIDE
@@ -38,15 +42,17 @@ up2_more
 	tnz	ALL
 	lret	0		. margin
 
-	tnz	STREAM
-	lret	0		. margin	
+	tz	CACHE
+	tp	CACHE		. nonzero? positively?
+	lret	0		. reach here if zero or less
 
+	ly	DELIMITER
 	mta	2, y
 	lret	0		. margin
 	j	up2_more
 
 up3	ay, xi	3
-	j	up
+	j	up1
 
 	
 
@@ -57,11 +63,12 @@ up2_48	lk, xi	-1
 	la	b
 	lk	1, y
 	mta	3, y
-	j	up44
+	j	up4reload
 
 	lsc	k
 	lb, i	24, b
 	sb	COLUMNS
+	sy	DELIMITER
 
 up4_more
 	lcal	along
@@ -70,14 +77,26 @@ up4_more
 	tnz	ALL
 	lret	0		. margin
 
-	tnz	STREAM
+	tz	CACHE
+	tp	CACHE		. nonzero? positively?
 	lret	0		. margin
 
-	j	up4_more
+	ly	DELIMITER
+	lk, xi	-1
+	mta	2, y
+	lret	0		. margin, delimiter hit
+	la	b		. once at least already
+	lk	1, y
+	mta	3, y
+	j	$+2
+	j	up4_more	. calls along = reloads a
+	la	ASIDE
+	lret	0
 
-up44	la	ASIDE
+up4reload
+	la	ASIDE
 up4	ay, xi	4
-	j	up
+	j	up1
 
 up2_24by1
 	mta	1, y
@@ -85,20 +104,30 @@ up2_24by1
 	ds	ASIDE
 	lsc	k
 	sb	COLUMNS
+	sy	DELIMITER
 	lcal	along
 	ds	ASIDE
 	lret	0		. margin
 
 up2	ay, xi	2
-	j	up
+	j	up1
 	
+initial	ly, xi	48		. startup load CACHE
+	sy	CACHE		. after STREAM is initialised
+	j	along1
 
 along	dl	ASIDE
 	ly	COLUMNS
 along1	tz	STREAM
 	j	along2
 	dsl	0, y
+
+	n	y		. available bits reduced
+	push, i	1, y		. instead of replenished
+	popA	CACHE
+
 	lret	0
+
 along2	dec	STREAM
 	inc	POINTER
 	rsr	$byte
@@ -109,5 +138,31 @@ along2	dec	STREAM
 	lret	0
 	tz	y
 	j	along1
+	lret	0
+
+aquif	lcal	up
+	lret	0
+	j	aquif?
+aquif!	tz	CACHE
+	tp	CACHE
+	lret	0
+	wsr	$byte
+	lcal	next
+aquif?	jdr	aquif!
+	lret	0
+
+
+next	tz	STREAM
+	j	qnew
+	push,xi	-$byte
+	popA	CACHE
+	sar	$byte
+	dsl	$byte
+	lret	0
+qnew	dec	STREAM
+	sar	$byte
+	rsr	$byte
+	rar	$byte
+	drl	$byte
 	lret	0
 
