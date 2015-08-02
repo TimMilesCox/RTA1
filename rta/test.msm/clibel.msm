@@ -11,9 +11,12 @@ COLUMNS	$equ	d$save3
 DELIMITER $equ	8
 CACHE	$equ	9
 WORDS	$equ	10
+LIST	$equ	11
 
 
 up	z	DELIMITER
+	ly	LIST
+
 up1	lk	0, y
 	tp	k
 	j	up2_24by1
@@ -54,7 +57,6 @@ up2_more
 up3	ay, xi	3
 	j	up1
 
-	
 
 up2_48	lk, xi	-1
 	mta	2, y
@@ -112,15 +114,17 @@ up2_24by1
 up2	ay, xi	2
 	j	up1
 	
-initial	ly, xi	48		. startup load CACHE
-	sy	CACHE		. after STREAM is initialised
-	j	along1
+initial	ana	b		. reduce outstanding bytes by POINTER
+	ds	STREAM		. POINTER is relative zero here
+	ly, xi	48		. startup load CACHE
+	sy	CACHE		. after RDATA RDATAC are initialised
+	j	along1		. with any subscripts, POINTER etc
 
 along	dl	ASIDE
 	ly	COLUMNS
 along1	tz	STREAM
 	j	along2
-	dsl	0, y
+	dsl	0, y		. advance width of delimiter
 
 	n	y		. available bits reduced
 	push, i	1, y		. instead of replenished
@@ -140,26 +144,28 @@ along2	dec	STREAM
 	j	along1
 	lret	0
 
-aquif	lcal	up
-	lret	0
-	j	aquif?
-aquif!	tz	CACHE
+aquif	j	aquif?		. final count r + 1 in all cases
+aquif!	lcal	up
+	lret	0		. return because a delimiter is walked
+	tz	CACHE
 	tp	CACHE
-	lret	0
+	lret	0		. return because no more bytes in stream
 	wsr	$byte
 	lcal	next
 aquif?	jdr	aquif!
-	lret	0
+	lret	0		. return because no more bytes wanted
 
 
 next	tz	STREAM
 	j	qnew
-	push,xi	-$byte
-	popA	CACHE
+	push,xi	-$byte		. no more bytes to load
+	popA	CACHE		. pay out what's cached
 	sar	$byte
 	dsl	$byte
+	inc	POINTER
 	lret	0
 qnew	dec	STREAM
+	inc	POINTER
 	sar	$byte
 	rsr	$byte
 	rar	$byte
@@ -167,10 +173,10 @@ qnew	dec	STREAM
 	lret	0
 
 fima	lcal	up
-	lret	0		. with DELIMITER
+	lret	0		. with DELIMITER written
 	tz	CACHE		. this column is not a delimiter
 	tp	CACHE
-	lret	0		. without DELIMITER
+	lret	0		. with DELIMITER clear
 	lcal	next
 	j	fima
 
