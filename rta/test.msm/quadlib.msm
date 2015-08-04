@@ -7,39 +7,57 @@ LINE2	$equ	10
 STREAM	$equ	d$save
 CACHE	$equ	d$save1
 
-next	lk	(-1*/$word-$byte)
-	tz	STREAM
-	j	acquire
-	push,xi	-$byte
-	popA	CACHE
-	sar	$byte
-	dsl	$byte
-	sa	ASIDE
-	la	LINE2
-	ral	$byte
-	mlb	a
-	sb	ASIDE+1
-	sar	$byte
-	lb	LINE2+1
-	dsl	$byte
-	ds	LINE2
-	dl	ASIDE
-	lret	0
 
-acquire	dec	STREAM
-	sar	$byte
-	dsl	$byte
-	sa	ASIDE
-	la	LINE2
-	ral	$byte
-	mlb	a
-	sb	ASIDE+1
-	sar	$byte
-	rsr	$byte
-	rar	$byte
-	lb	LINE2+1
-	drl	$byte
-	ds	LINE2
-	dl	ASIDE
+.	strings manipulation library
+.	for size-determined string / search functions
+.	with large search / replace arguments
+.	up to 96 bits in size
+
+.	a faster version with search arguments
+.	up to 48 bits in size may be called
+.	on compiler / macro-text decision
+
+
+$(0:64)
+
+.	function to scope next input column after
+.	write from high-order positions of register a
+
+				. bytes are any size
+				. columnular comments show
+				. octets as an example
+
+
+next	sar	$byte		.	00xxxx yyyyyy
+	dsl	$byte		.	xxxxyy yyyy00
+	ds	ASIDE
+
+	dl	LINE2		.	mmmmmm nnnnnn
+	drl	$byte		.	mmmmnn nnnnmm
+	sa	LINE2
+
+	la	LINE2+1		.	       nnnnnn
+	tz	STREAM		. read no words outside the field
+	j	read1
+
+	push,xi	-$byte		. pay out cached bytes
+	popA	CACHE		. without read replenishment
+	sal	$byte		. 	       nnnn00
+
+	$do	$o('c')--$o('z')=0,	;
+	or, xi	' '		. depending programming language
+				. you may want to match trailing
+				. space on search arguments
+				. with shadow space outside field
+	j	cache1
+
+read1	dec	STREAM		. remaining unread columns
+	rsr	$byte		.	       nnnnNN
+
+cache1	sa	LINE2+1
+	andB,xi	+(1*/$byte)-1	.	       0000mm	
+	orB	ASIDE+1		.	       yyyymm
+
+	la	ASIDE		.	xxxxyy yyyymm
 	lret	0
 
