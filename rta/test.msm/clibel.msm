@@ -2,17 +2,20 @@
 	$include	def/rta.def
 	$path
 
-ASIDE	$equ	6
+ASIDE	$equ	8
+
+DELIMITER $equ	6
+LIST	$equ	7
+
 STREAM	$equ	d$save
 POINTER	$equ	d$save1
 ALL	$equ	d$save2
 COLUMNS	$equ	d$save3
 
-DELIMITER $equ	8
-CACHE	$equ	9
-WORDS	$equ	10
-LIST	$equ	11
+CACHE	$equ	11
 
+
+$(0:64)
 
 up	z	DELIMITER
 	ly	LIST
@@ -25,9 +28,8 @@ up1	lk	0, y
 
 	src	k
 	sc	ALL
-	sk	WORDS
 
-	tz	WORDS
+	tz	k
 	j	up2_48
 
 	lk	1, y
@@ -100,7 +102,7 @@ up4reload
 up4	ay, xi	4
 	j	up1
 
-up2_24by1
+up2_24by1			. search string up to 24 bits nonrepeat
 	mta	1, y
 	j	up2
 	ds	ASIDE
@@ -122,41 +124,12 @@ initial	ana	b		. reduce outstanding bytes by POINTER
 
 along	dl	ASIDE
 	ly	COLUMNS
-along1	tz	STREAM
-	j	along2
-	dsl	0, y		. advance width of delimiter
-
-alongz	inc	POINTER		. one column consumed
-	push,xi	-$byte		. available bits reduced
-	popA	CACHE		. instead of replenished
+along1	lcal	next
 	ay, xi	-$byte		. count down delimiter width
-	tz	x
-	tp	x		. hit zero or dived past it
-	lret	0
-	j	alongz
-
-along2	dec	STREAM		. columns available to load
-	inc	POINTER		. one column consumed
-	rsr	$byte		. load a column
-	rar	$byte
-	drl	$byte		. to tail of cache
-	ay,xi	-$byte		. count down delimiter width
 	tz	y
 	tp	y
-	lret	0		. hit zero or dived past it
+	lret	0		. reached zero or less
 	j	along1
-
-aquif	j	aquif?		. final count r + 1 in all cases
-aquif!	lcal	up
-	lret	0		. return because a delimiter is walked
-	tz	CACHE
-	tp	CACHE
-	lret	0		. return because no more bytes in stream
-	wsr	$byte
-	lcal	next
-aquif?	jdr	aquif!
-	lret	0		. return because no more bytes wanted
-
 
 next	inc	POINTER		. one column consumed
 	tz	STREAM
@@ -165,6 +138,11 @@ next	inc	POINTER		. one column consumed
 	popA	CACHE		. pay out what's cached
 	sar	$byte
 	dsl	$byte
+
+	$do	$o('c')--$o('z')=0,	;
+	orB, xi	' '		. some program languages match
+				. trailing space in delimiters with
+				. shadow space outside the field
 	lret	0
 read1	dec	STREAM
 	sar	$byte
@@ -173,11 +151,30 @@ read1	dec	STREAM
 	drl	$byte		. to tail of cache
 	lret	0
 
-fima	lcal	up
+				. extract a field from input
+				. bytes delivered = maximum + NOT r
+				. detect input exhaust if that is
+				. the next position after maximum
+				. in order to walk the delimiter
+aquif	dec	r		. final count r + 1 in all cases
+aquif!	lcal	up
+	lret	0		. return because a delimiter is walked
+	tz	CACHE
+	tp	CACHE
+	lret	0		. return because no more bytes in stream
+	wsr	$byte
+	lcal	next
+	jdr	aquif!
+	lret	0		. return because no more bytes wanted
+
+
+
+walk	lcal	up		. find the search argument and step past
 	lret	0		. with DELIMITER written
 	tz	CACHE		. this column is not a delimiter
 	tp	CACHE
 	lret	0		. with DELIMITER clear
 	lcal	next
-	j	fima
+	j	walk
 
+	$do	$<256,$(0:256)
