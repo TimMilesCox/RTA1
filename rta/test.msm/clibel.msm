@@ -2,17 +2,20 @@
 	$include	def/rta.def
 	$path
 
-ASIDE	$equ	8
+ASIDE	$equ	8		. save registers for 48 cached bits
 
-DELIMITER $equ	6
-LIST	$equ	7
+DELIMITER $equ	6		. result: pointer to matched search
+				. string descriptor in delimiter stack
 
-STREAM	$equ	d$save
-POINTER	$equ	d$save1
-ALL	$equ	d$save2
-COLUMNS	$equ	d$save3
+LIST	$equ	7		. argument: pointer to delimiter stack
 
-CACHE	$equ	11
+STREAM	$equ	d$save		. remaining bytes not yet cached
+POINTER	$equ	d$save1		. consumed columns relative zero
+COLUMNS	$equ	d$save2		. temp: bits size of matched search string
+ALL	$equ	d$save3		. temp: all flag in matched
+				.	search string descriptor
+
+CACHE	$equ	11		. remaining bits cached in registers
 
 
 $(0:64)
@@ -22,9 +25,11 @@ up	z	DELIMITER
 
 up1	lk	0, y
 	tp	k
-	j	up2_24by1
+	j	up2_24by1	. simplest path
+				. nonrepeat delimiter up to 24 bits
 	tnz	k
-	lret	1		. store 1 byte and advance
+	lret	1		. even simpler, end of delimiter list
+				. store 1 byte and advance
 
 	src	k
 	sc	ALL
@@ -32,7 +37,8 @@ up1	lk	0, y
 	tz	k
 	j	up2_48
 
-	lk	1, y
+	lk	1, y		. 2nd simplest path
+				. delimiter up to 24 bits, ALL may be set
 	mta	2, y
 	j	up3
 
@@ -123,8 +129,8 @@ initial	ana	b		. reduce outstanding bytes by POINTER
 	sy	CACHE		. after RDATA RDATAC are initialised
 				. with any subscripts, POINTER etc
 	lr, xi	48/$byte-1
-init1b	lcal	nexp		. not not advance POINTER
-	jdr	init1b		. this is caching bytes
+init1b	lcal	nexp		. do not advance POINTER
+	jdr	init1b		. this is caching input columns
 	lret	0		. not consuming them
 
 along	dl	ASIDE
@@ -137,23 +143,22 @@ along1	lcal	next
 	j	along1
 
 next	inc	POINTER		. one column consumed
+	sar	$byte		.	00xxxx
 nexp	tz	STREAM
 	j	read1
 	push,xi	-$byte		. no more bytes to load
 	popA	CACHE		. pay out what's cached
-	sar	$byte
-	dsl	$byte
+	dsl	$byte		.	xxxxyy yyyy00
 
 	$do	$o('c')--$o('z')=0,	;
-	orB, xi	' '		. some program languages match
+	orB, xi	' '		. some programming languages match
 				. trailing space in delimiters with
 				. shadow space outside the field
 	lret	0
 read1	dec	STREAM
-	sar	$byte
-	rsr	$byte		. load a byte
-	rar	$byte
-	drl	$byte		. to tail of cache
+	rsr	$byte		.	xxxxYY
+	rar	$byte		.	YYxxxx
+	drl	$byte		.	xxxxyy yyyyYY
 	lret	0
 
 				. extract a field from input
