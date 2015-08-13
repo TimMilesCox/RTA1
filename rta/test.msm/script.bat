@@ -100,6 +100,7 @@ masmx -kw simply.msm ..\test.rta\simply -c
 masmx -kw sizes.msm ..\test.rta\sizes
 masmx -kw sort_out.msm ..\test.rta\sort_out
 masmx -kw sowino.msm ..\test.rta\sowino
+lstring -b ..\test.rta\sowino.txo ..\test.rta\sowino
 masmx -kw soyuno.msm ..\test.rta\soyuno
 masmx -kw spiko.msm ..\test.rta\spiko
 masmx -kw splices.msm ..\test.rta\splices

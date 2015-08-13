@@ -497,8 +497,10 @@ main(int argc, char *argv[])
           printf("Relocatable Counter Not Used\n");
           continue;
        }
+
        offset = 0;
        x = sscanf(&data[1], "%x:%lx:%lx", &locator, &loc, &index);
+
        if (x < 2)
        {
           printf("bad location line\n");
