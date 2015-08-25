@@ -194,7 +194,7 @@ int main(int argc, char *argv[])
 		print = FRAMES -1 is the default setting for serial view
 		the newest-read 4-word block will be displayed
 
-		a search-argument hit cases containing blocks to display
+		a search-argument hit causes containing blocks to display
          *******************************************************************/
 
          print = FRAMES - 1;
