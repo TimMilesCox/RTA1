@@ -94,12 +94,13 @@ char *fline(int x)
 int main(int argc, char *argv[])
 {
    int			 x, y, print, length, symbol, bytes;
+
    unsigned char	*p, *q;
 
    int			 f = -1,
 			 s = -1;
 
-   off_t	cursor = 0;
+   off_t		cursor = 0;
 
 
    argue(argc, argv);
@@ -115,7 +116,16 @@ int main(int argc, char *argv[])
          #endif
       }
 
-      if (s < 0) printf("no special strings file found at argument_3 -s\n");
+      if (s < 0)
+      {
+         printf("no special strings file found at argument_3 -s\n");
+         if (arguments > 2) arguments = 2;
+
+         /*************************************************************
+		prevent any failed-open pathname
+		from getting used as a search string
+         *************************************************************/
+      }
    }
    else
    {
@@ -155,12 +165,21 @@ int main(int argc, char *argv[])
    {
       if (cursor)
       {
+         /*******************************************************************
+		2nd argument is a read start 24-bit word position
+         *******************************************************************/
+
          x = lseek(f, cursor, SEEK_SET);
          if (flag['v'-'a']) printf("status %d file position %lx\n", x, (long) cursor / 3);
       }
 
       for(;;)
       {
+         /*******************************************************************
+		read the file in 4-word * 24-bit blocks
+		cache 4 blocks for straddling search strings
+         *******************************************************************/
+
          data[0] = data[1];
          #if (FRAMES==4)
          data[1] = data[2];
@@ -168,13 +187,43 @@ int main(int argc, char *argv[])
          #endif
          
          bytes = read(f, data[FRAMES-1].b, FRAME);
+         if (bytes == 0) break;
+
+
+         /*******************************************************************
+		print = FRAMES -1 is the default setting for serial view
+		the newest-read 4-word block will be displayed
+
+		a search-argument hit cases containing blocks to display
+         *******************************************************************/
 
          print = FRAMES - 1;
 
          if (arguments > 2)
          {
+            /****************************************************************
+
+			search strings either on the command line
+			or in data file 3rd argument
+
+			presence of search strings causes search
+			instead of serial view
+
+			only the 4-word blocks containing each search hit
+			are displayed
+
+            ****************************************************************/
+
             if (s < 0)
             {
+               /************************************************************
+
+			there is no search strings file
+			3rd..zth argument are ASCII octet search strings
+
+               ************************************************************/
+
+
                for (x = 2; x < arguments; x++)
                {
                   length = octets[x - 2];
@@ -207,9 +256,25 @@ int main(int argc, char *argv[])
             }
             else
             {
+               /**********************************************************
+			there are search strings on the data file
+			handle int s
+
+			they are assembled by masmx and may be
+			not octet byte and / or not ASCII-based data code
+               **********************************************************/
             }
          }
          
+         /****************************************************************
+
+		one 4-word block per line
+		on search hit, display the containing number of blocks
+		on serial view display one block
+
+         ***************************************************************/
+
+
          while (print < FRAMES)
          {
             if (flag['p'-'a']) printf("%s ", argument[0]);
