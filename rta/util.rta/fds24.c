@@ -48,18 +48,15 @@
 #include <fcntl.h>
 #include <string.h>
 
-typedef struct { char		b[16]; } frame;
+#include "../include.rta/argue.h"
 
-typedef struct { frame   	 f[4]; } window;
+#define	FRAME	12
+#define	FRAMES	4
 
-typedef struct { unsigned short     u;
-                 char              *p; } argum;
+typedef struct { unsigned char	b[FRAME]; } frame;
                  
-typedef struct { argum          s[12]; } argil;
-
-static char option[26];
-static argil s;
-static window data;
+static unsigned char		 octets[8];
+static frame			 data[FRAMES];
 
 char *rline(int x)
 {
@@ -96,142 +93,155 @@ char *fline(int x)
 
 int main(int argc, char *argv[])
 {
-   int v, x, y = 0, print, maybe, length, symbol;
-   char *p, *q, *r = argv[1], *arg;
-   int f = 0;
+   int			 x, y, print, length, symbol, bytes;
+   unsigned char	*p, *q;
+
+   int			 f = -1,
+			 s = -1;
 
    off_t	cursor = 0;
-   
-   if (argc > 1)
-   {
-      q = argv[1];
-      symbol = *q++;
-      if (symbol == '-')
-      {
-         while (symbol = *q++)
-         {
-            if ((symbol > 0x60) && (symbol < 0x7B)) symbol &= 0x5F;
-            if ((symbol > 0x40) && (symbol < 0x5B)) option[symbol-'A'] = 1;
-         }
-      }
-   }
-   
-   if (argc > 2)
-   {
-      q = argv[2];
-      symbol = *q++;
-      if (symbol == '-')
-      {   
-         while (symbol = *q++)
-         {
-            if ((symbol > 0x60) && (symbol < 0x7B)) symbol &= 0x5F;
-            if ((symbol > 0x40) && (symbol < 0x5B)) option[symbol-'A'] = 1;
-         }
-      }
-   }
-   
 
-   for (x = 3; x < argc; x++)
+
+   argue(argc, argv);
+   
+   if (flag['s'-'a'])
    {
-      if (x > 11) break;
-      q = argv[x];
-      s.s[y].u = strlen(q);
-      s.s[y].p = q;
-      y++;
+      if (arguments > 2)
+      {
+         #ifdef DOS
+         s = open(argument[2], O_RDONLY | O_BINARY);
+         #else
+         s = open(argument[2], O_RDONLY);
+         #endif
+      }
+
+      if (s < 0) printf("no special strings file found at argument_3 -s\n");
+   }
+   else
+   {
+      for (x = 2; x < arguments; x++) octets[x-2] = strlen(argument[x]);
    }
 
-   if ((argc) && (*r != '-')) f = open(r, O_RDONLY);
-   
-   while (f > -1)
+   if (arguments > 1)
    {
-      if (!f)
-      {
-         r = fline(0);
-         if (!r) break;
-         f = open(r, O_RDONLY);
-         if (f < 0)
-         {
-            printf("%s not opened\n", r);
-            f = 0;
-            continue;
-         } 
-      }
-      
-      cursor = 0;
+      p = argument[1];
+      symbol = *p;
 
-      if ((argc > 2) && (*argv[2] > 0x2A) && (*argv[2] < 0x3A))
+      if ((symbol > '0' - 1) && (symbol < '9' + 1))
       {
-         if (*argv[2] == '0') sscanf(argv[2], "%llx", &cursor);
-         else                 sscanf(argv[2], "%lld", &cursor);
+         if      (symbol == '0') sscanf(p, "%llx", &cursor);
+         else                    sscanf(p, "%lld", &cursor);
          cursor *= 3;
-         lseek(f, cursor, SEEK_SET);
+      }
+      else printf("argument 2 not an address. Initial file position zero\n");
+   }
+
+   if (arguments)
+   {
+      #ifdef DOS
+      f = open(argument[0], O_RDONLY | O_BINARY);
+      #else
+      f = open(argument[0], O_RDONLY);
+      #endif
+   }
+   else printf("\n\tfds24 input_file [start_position] [strings_file -s|octet_string_1] [...octet_string_n] [-Z]\n\n"
+               "\t-Z displays the file without prompt\n"
+               "\tstart_position is the first data word for display or search\n"
+               "\tstrings_file -s contains bit-string search masks assembled by masmx\n"
+               "\toctet_string_x... are 8-bit ASCII search strings\n\n");
+
+   if (f < 0) printf("input file at argument 1 not opened\n");
+   else
+   {
+      if (cursor)
+      {
+         x = lseek(f, cursor, SEEK_SET);
+         if (flag['v'-'a']) printf("status %d file position %lx\n", x, (long) cursor / 3);
       }
 
       for(;;)
       {
-         data.f[0] = data.f[1];
-         data.f[1] = data.f[2];
-         data.f[2] = data.f[3];
+         data[0] = data[1];
+         #if (FRAMES==4)
+         data[1] = data[2];
+         data[2] = data[3];
+         #endif
          
-         v = read(f, data.f[3].b, 12);
+         bytes = read(f, data[FRAMES-1].b, FRAME);
 
-         print = 3;
-         if (y)
+         print = FRAMES - 1;
+
+         if (arguments > 2)
          {
-            print = 4;
-            for (x = 0; x < y; x++)
+            if (s < 0)
             {
-               maybe = 4;
-               arg = s.s[x].p;
-               length = s.s[x].u;
-               q = data.f[2].b;
-               if (length > 33) q = data.f[1].b;
-               if (length > 49) q = data.f[0].b;
-               while (q + length < data.f[3].b + 17)
+               for (x = 2; x < arguments; x++)
                {
-                  if (memcmp(q, arg, length) == 0)
+                  length = octets[x - 2];
+                  if (length > FRAME*FRAMES-FRAME+1) length = FRAME*FRAMES-FRAME+1;
+
+                  y = FRAME;
+                  p = data[FRAMES-1].b - length + 1;
+
+                  q = argument[x];
+               
+                  while (y)
                   {
-                     if (q >= data.f[3].b) maybe = 3;
-                     if ((q < data.f[3].b) && (q + length > data.f[3].b))
-                        maybe = 2; 
-                     if ((q < data.f[2].b) && (q + length > data.f[3].b))
-                        maybe = 1; 
-                     if ((q < data.f[1].b) && (q + length > data.f[3].b))
-                        maybe = 0; 
+                     if (memcmp(p, q, length) == 0) break;
+                     p++;
+                     y--;
                   }
-                  q++;
+                  if (y) break;
                }
-               if (maybe < print) print = maybe;  
+ 
+               if (x < arguments)
+               {
+                  print = (p - data[0].b) / FRAME;
+               }
+               else
+               {
+                  cursor += FRAME;
+                  if (bytes < FRAME) break;
+                  continue;
+               }
+            }
+            else
+            {
             }
          }
          
-         while (print < 4)
+         while (print < FRAMES)
          {
-            if (option['p'-'a']) printf("%s ", r);
+            if (flag['p'-'a']) printf("%s ", argument[0]);
          
-            printf("%8.8llx:", (cursor - 12 * (3 - print))/3);
-            for (x = 0; x < 12; x++)
+            printf("%8.8llx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
+
+            for (x = 0; x < FRAME; x++)
             {
-               symbol = data.f[print].b[x];
+               symbol = data[print].b[x];
                if (!(x % 3)) printf(" ");
-               if ((print < 3) || (x < v)) printf("%2.2x", data.f[print].b[x]);
+               if ((print < FRAMES - 1) || (x < bytes)) printf("%2.2x", data[print].b[x]);
                else       printf("  ");
             }
             printf("  \"");
-            for (x = 0; x < 12; x++)
+            for (x = 0; x < FRAME; x++)
             {
-               if ((print == 3) && (x == v)) break;
-               symbol = data.f[print].b[x];
+               if ((print == FRAMES - 1) && (x == bytes)) break;
+               symbol = data[print].b[x];
                if ((symbol > 32) && (symbol < 127)) printf("%c", symbol);
                else                                 printf(" ");
             }
-            printf("\"");
+
+            putchar('\"');
+            if (print < FRAMES-1) putchar('\n');
             print++;
          }
 
-         cursor += 12;
-         if (v < 12) break;
-         if (option['g'-'a'])
+         cursor += FRAME;
+
+         if (bytes < FRAME) break;
+
+         if (uflag['Z'-'A'])
          {
             printf("\n");
             continue;
@@ -242,20 +252,30 @@ int main(int argc, char *argv[])
          }
 
          p = rline(0);
-         if (!p) continue;
-         if (*p == '.') break;
-         if ((*p > 0x2F) && (*p < 0x3A))
+         if (!p) break;
+         symbol = *p;
+
+         if (symbol == '.') break;
+
+         if ((symbol > '0' - 1) && (symbol < '9' + 1))
          {
-            if (*p == '0') sscanf(p, "%llx", &cursor);
-            else           sscanf(p, "%lld", &cursor);
+            if (symbol == '0') sscanf(p, "%llx", &cursor);
+            else               sscanf(p, "%lld", &cursor);
             cursor *= 3;
             lseek(f, cursor, SEEK_SET);
          }
+
+         if (symbol == '-') reflag(p + 1);
       }
+
       close(f);
-      f = 0;
-      if ((argv[1]) && (*argv[1] != '-')) break;
    }
+
+   if (s < 0)
+   {
+   }
+   else close(s);
+
    printf("\n");
    return 0;
 }
