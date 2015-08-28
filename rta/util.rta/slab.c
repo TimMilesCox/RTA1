@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 
    if (flag['h'-'a'])
    {
-      printf("\nslab [-options] input[.bxl] output[.rom] [target-rom-words]\n\n");
+      printf("\nslab [-options] input output[.rom] [target-rom-words]\n\n");
 
       printf("default ROM size is 1024 RTA1 words\n");
       printf("target-rom-words is leading-zero for hex else decimal\n\n");
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 
       if (i < 0)
       {
-         printf("rbx file not available to read\n");
+         printf("load strings file not available to read\n");
       }
       else
       {

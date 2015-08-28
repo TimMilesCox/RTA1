@@ -46,6 +46,9 @@
 
 #include <stdio.h>
 #include <fcntl.h>
+#ifdef DOS
+#include <sys/types.h>
+#endif
 #include <string.h>
 
 #include "../include.rta/argue.h"
@@ -58,7 +61,9 @@ typedef struct { unsigned char	b[FRAME]; } frame;
 static unsigned char		 octets[8];
 static frame			 data[FRAMES];
 
-char *rline(int x)
+static int fieldcmp(char *table, int offset, char *string, int bits);
+
+static char *rline(int x)
 {
    static char data[384];
 
@@ -74,33 +79,23 @@ char *rline(int x)
    return data;
 }
 
-char *fline(int x)
-{
-   static char data[384];
-
-   int y = 0;
-
-   while (y < 383)
-   {
-      if (read(x, &data[y], 1) != 1) break;
-      if (data[y] == 10) break;
-      y++;
-   }
-   if (y == 0) return NULL;
-   data[y] = 0;
-   return data;
-}
-
 int main(int argc, char *argv[])
 {
    int			 x, y, print, length, symbol, bytes;
+   int			 hits;
 
    unsigned char	*p, *q;
 
    int			 f = -1,
 			 s = -1;
 
-   off_t		cursor = 0;
+   off_t		 cursor = 0;
+
+   off_t		 forward,
+			 back;
+
+   unsigned char	 pointers[6];
+   unsigned char	 string[48];
 
 
    argue(argc, argv);
@@ -263,6 +258,65 @@ int main(int argc, char *argv[])
 			they are assembled by masmx and may be
 			not octet byte and / or not ASCII-based data code
                **********************************************************/
+
+               lseek(s, (off_t) 0, SEEK_SET);
+               hits = 0;
+
+               for (;;)
+               {
+                  x = read(s, pointers, 6);
+                  if (x < 6) break;
+
+                  length = (pointers[3] << 16) | (pointers[4] << 8) | pointers[5];
+                  if (!length) break;
+
+                  if (length > FRAME * 8 * (FRAMES - 1) + 1)
+                  length     = FRAME * 8 * (FRAMES - 1) + 1;
+
+                  y = (pointers[0] << 16) | (pointers[1] << 8) | pointers[2];
+                  forward = y * 3;
+
+                  back = lseek(s, (off_t) 0, SEEK_CUR);
+                  lseek(s, forward, SEEK_SET);
+
+                  y = 3 * ((length + 23) / 24);
+                  x = read(s, string, y);
+                  if (x < y) break;
+
+                  lseek(s, back, SEEK_SET);
+
+                  y = 96;
+
+                  while (y--)
+                  {
+                     x = fieldcmp(data[0].b, 16 * 24 - length - y, string, length);
+                     if (x == 0) break;
+                  }              
+
+                  if (x == 0)
+                  {
+                     if (hits == 0) print = (16 * 24 - length - y) / (24 * 4);
+                     hits++;
+
+                     if (flag['v'-'a'])
+
+                     #ifdef DOS
+                     printf("\t\t\tmatch @%8.8lx:%x %d decimal bits\n",
+                     #else
+                     printf("\t\t\tmatch @%8.8llx:%x %d decimal bits\n",
+                     #endif
+                           (cursor - FRAME * (FRAMES - 1)) / 3 + (FRAMES * FRAME * 8 - length - y) / 24,
+                           (16 * 24 - length - y) % 24,
+                           length);
+                  }
+               }
+
+               if (hits == 0)
+               {
+                  cursor += FRAME;
+                  if (bytes < FRAME) break;
+                  continue;
+               }
             }
          }
          
@@ -344,3 +398,41 @@ int main(int argc, char *argv[])
    printf("\n");
    return 0;
 }
+
+static int fieldcmp(char *table, int offset, char *string, int bits)
+{
+   unsigned char	*q = table + (offset >> 3);
+   int			 bias = offset & 7;
+   int			 octets = bits >> 3;
+   int			 final_mask = 255 & (0xFFFFFF00 >> (bits & 7));
+
+   int			 left,
+			 right;
+
+
+   while (octets--)
+   {
+      left = *q++;
+      left <<= 8;
+
+      left |= *q;
+
+      left <<= bias;
+      right = *string++;
+      right <<= 8;
+      right ^= left;
+      right &= 0xFF00;
+      if (right) return right;
+   }
+
+   if (final_mask)
+   {
+      right = *q;
+      right <<= bias;
+      right ^= *string;
+   }
+
+   right &= final_mask;
+   return right;
+}
+
