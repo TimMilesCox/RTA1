@@ -46,9 +46,13 @@
 
 #include <stdio.h>
 #include <fcntl.h>
+
 #ifdef DOS
 #include <sys/types.h>
+#else
+#include <unistd.h>
 #endif
+
 #include <string.h>
 
 #include "../include.rta/argue.h"
