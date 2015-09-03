@@ -398,8 +398,8 @@ main(int argc, char *argv[])
   y = 0;
 
   #ifdef DOS
-  i = open(filename[0], O_RDONLY|O_TEXT);
-  j = open(filename[1], O_WRONLY|O_CREAT|O_TRUNC|O_TEXT, S_IREAD|S_IWRITE);
+  i = open(filename[0], O_RDONLY|O_BINARY);
+  j = open(filename[1], O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, S_IREAD|S_IWRITE);
   #else
   i = open(filename[0], O_RDONLY);
   j = open(filename[1], O_WRONLY | O_CREAT |O_TRUNC,

@@ -57,6 +57,10 @@
 
 #include "../include.rta/argue.h"
 
+#ifdef	DOS
+#define	OFF_T32
+#endif
+
 #define	FRAME	12
 #define	FRAMES	4
 
@@ -138,8 +142,13 @@ int main(int argc, char *argv[])
 
       if ((symbol > '0' - 1) && (symbol < '9' + 1))
       {
+         #ifdef OFF_T32
+         if      (symbol == '0') sscanf(p, "%lx", &cursor);
+         else                    sscanf(p, "%ld", &cursor);
+         #else
          if      (symbol == '0') sscanf(p, "%llx", &cursor);
          else                    sscanf(p, "%lld", &cursor);
+         #endif
          cursor *= 3;
       }
       else printf("argument 2 not an address. Initial file position zero\n");
@@ -304,7 +313,7 @@ int main(int argc, char *argv[])
 
                      if (flag['v'-'a'])
 
-                     #ifdef DOS
+                     #ifdef OFF_T32
                      printf("\t\t\tmatch @%8.8lx:%x %d decimal bits\n",
                      #else
                      printf("\t\t\tmatch @%8.8llx:%x %d decimal bits\n",
@@ -337,7 +346,11 @@ int main(int argc, char *argv[])
          {
             if (flag['p'-'a']) printf("%s ", argument[0]);
          
+            #ifdef OFF_T32
+             printf("%8.8lx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
+            #else
             printf("%8.8llx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
+            #endif
 
             for (x = 0; x < FRAME; x++)
             {
@@ -382,8 +395,13 @@ int main(int argc, char *argv[])
 
          if ((symbol > '0' - 1) && (symbol < '9' + 1))
          {
+            #ifdef OFF_T32
+            if (symbol == '0') sscanf(p, "%lx", &cursor);
+            else               sscanf(p, "%ld", &cursor);
+            #else
             if (symbol == '0') sscanf(p, "%llx", &cursor);
             else               sscanf(p, "%lld", &cursor);
+            #endif
             cursor *= 3;
             lseek(f, cursor, SEEK_SET);
          }

@@ -43,7 +43,11 @@
 **********************************************************************/
 
 #include <stdio.h>
+#ifdef DOS
+#include <sys/types.h>
+#else
 #include <unistd.h>
+#endif
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
@@ -196,12 +200,12 @@ static tree label1  =  { { { 'L', 0, 4 } ,
                          { { '.' } } } ,
 
 			 { { 'L', 0, 4 } ,
-                           { } ,
+                           { 0 } ,
                            { 255, 255, 255, 255, 255, 255 } ,
                          { { '.', '.' } } } ,
 
 			 { { { 'V', 0, EXTENT1_WORDS - 1 + 2 + 2 + 1 } ,
-                             { } ,
+                             { 0 } ,
                              { 0, 0, 0, 0, 0, 16 } } ,
                            { 0, 0, 0 } ,
                            { 0, 0, 0 } ,
@@ -209,13 +213,13 @@ static tree label1  =  { { { 'L', 0, 4 } ,
 
 
 static tree label2  =  { { { 'L', 0, 4 }  ,
-                           { } ,
-                           {       } ,
+                           { 0 } ,
+                           { 0     } ,
                          { { '.' } } } ,
 
 
 			 { { 'L', 0, 4 } ,
-                           { } ,
+                           { 0 } ,
                            { 0, 0, 0, 0, 0, 0 } ,
                          { { '.', '.' } } } } ;
 
@@ -668,7 +672,11 @@ int main(int argc, char *argv[])
 
    if (arguments)
    {
+      #ifdef DOS
+      f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0777);
+      #else
       f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC, 0777);
+      #endif
 
       if (f < 0) printf("file at argument 1 cannot be written %d\n", errno);
       else

@@ -43,10 +43,19 @@
 **********************************************************************/
 
 #include <stdio.h>
-#include <sys/fcntl.h>
+#ifdef DOS
+#include <sys/types.h>
+#include <fcntl.h>
+#else
 #include <unistd.h>
+#include <sys/fcntl.h>
+#endif
 
 #include "../include.rta/argue.h"
+
+#ifdef	DOS
+#define	OFF_T32
+#endif
 
 #define	BYTES_TARGETW	3
 
@@ -102,7 +111,11 @@ int main(int argc, char *argv[])
 
    if (arguments > 1)
    {
+      #ifdef DOS
+      i = open(argument[0], O_RDONLY | O_BINARY, 0644);
+      #else
       i = open(argument[0], O_RDONLY, 0644);
+      #endif
 
       if (i < 0)
       {
@@ -110,7 +123,11 @@ int main(int argc, char *argv[])
       }
       else
       {
+         #ifdef DOS
+         o = open(argument[1], O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0644);
+         #else
          o = open(argument[1], O_RDWR | O_CREAT | O_TRUNC, 0644);
+         #endif
 
          if (o < 0)
          {
@@ -150,7 +167,12 @@ int main(int argc, char *argv[])
             if (flag['v'-'a'])
             {
                location = lseek(o, (off_t) 0, SEEK_CUR);
-               printf("%lld bytes written\n", location);
+
+               #ifdef OFF_T32
+               printf("%ld bytes written\n", location);
+               #else
+               printf("lld bytes written\n", location);
+               #endif
             }
 
             if (y == BYTES_TARGETW)
@@ -178,12 +200,23 @@ int main(int argc, char *argv[])
 
 
                      if (flag['w'-'a'])
-                     printf("writing file hex byte position %llx "
-                                 " target hex word position %llx"
-                                             " decimal words %d\n",
-                                          location * BYTES_TARGETW,
-                                                          location,
-                                                             words);
+                     {		
+                        #ifdef OFF_T32
+                        printf("writing file hex byte position %lx "
+                                    " target hex word position %lx"
+                                                " decimal words %d\n",
+                                             location * BYTES_TARGETW,
+                                                             location,
+                                                                words);
+                        #else
+                        printf("writing file hex byte position %llx "
+                                    " target hex word position %llx"
+                                                " decimal words %d\n",
+                                             location * BYTES_TARGETW,
+                                                             location,
+                                                                words);
+                        #endif
+                     }
 
                      next_location = location + words - 1;
 
@@ -192,11 +225,19 @@ int main(int argc, char *argv[])
                      }
                      else
                      {
+                        #ifdef OFF_T32
+                        printf("load string target words"
+                                  " @ hex %6.6lx..%6.6lx"
+                               " beyond prepared space\n",
+                                                 location,
+                                            next_location);
+                        #else 
                         printf("load string target words"
                                 " @ hex %6.6llx..%6.6llx"
                                " beyond prepared space\n",
                                                  location,
                                             next_location);
+                        #endif
                         break;
                      }
 
@@ -209,9 +250,15 @@ int main(int argc, char *argv[])
 
                      if (x < 0)
                      {
+                        #ifdef OFF_T32
+                        printf("%s write hex byte position %ld failed\n",
+                                                              argument[1],
+                                                 location * BYTES_TARGETW);
+                        #else
                         printf("%s write hex byte position %lld failed\n",
                                                               argument[1],
                                                  location * BYTES_TARGETW);
+                        #endif
                         break;
                      }
                      else
@@ -261,11 +308,19 @@ int main(int argc, char *argv[])
 
                         if (sum ^ checksum)
                         {
+                           #ifdef OFF_T32
+                           printf("%s checksum failed in string @ %lx ["
+                                                       "%6.6lx:%6.6lx]\n",
+                                                              argument[0],
+                                                                 location,
+                                                            checksum, sum);
+                           #else
                            printf("%s checksum failed in string @ %llx ["
                                                        "%6.6lx:%6.6lx]\n",
                                                               argument[0],
                                                                  location,
                                                             checksum, sum);
+                           #endif
                            break;
                         }
                      }
@@ -285,6 +340,15 @@ int main(int argc, char *argv[])
 
             if (flag['v'-'a'])
             {
+               #ifdef OFF_T32
+               printf("%s\n"
+                      "latest write to target word @ %6.6lx hex\n",
+                                                       argument[1],
+                                                    next_location);
+
+               printf("highest write to target word @ %6.6lx hex\n",
+                                                     high_location);
+               #else
                printf("%s\n"
                       "latest write to target word @ %6.6llx hex\n",
                                                         argument[1],
@@ -292,6 +356,7 @@ int main(int argc, char *argv[])
 
                printf("highest write to target word @ %6.6llx hex\n",
                                                       high_location);
+               #endif
             }
 
             close (o);
