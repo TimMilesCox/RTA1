@@ -37,17 +37,43 @@
 .
 .
 
+	$list	0
+
 	$include	../def/rta.def
+
+	$list
+
 	$include	../def/ii.def
 	$include	../def.sys/banks.def
 	$include	../def.sys/base.def
 	$include	../language/stack.def
-	$include	fs.def
-	$include	fs24.def
+	$include	fs.def			. defines file-open application state blocks
+	$include	fs24.def		. defines directory structures on FS media
 
 	$list		2
-	$include	fs24	.	this contains the vectors
-	$include	fsrom
+
+$(0::FS24_BANK)
+fs_1st*		$vector	fs_first		. low level extent-view commands
+fs_read*	$vector	fs_next			. 256K-maxextent device-array FS
+fs_find*	$vector	fs_search
+fs_dsearch*	$vector	fs_directory_search
+fs_xbase*	$vector	fs_base_extent_advance
+
+fsrom_da*	$vector	fsrom_direct		. word-oriented R/W data transfer routines,
+fsrom_read*	$vector	fsrom_words		. 4K-maxextent FS in executable space
+
+seg$load*	$vector	seg_load
+recursive$seg$load $vector recursive_seg_load
+array$seg$load	$vector	array_seg_load
+
+	$list	0
+
+	$do	64-$,	fret	0
+
+	$list	2
+
+	$include	fs24			. routines, 256K-maxextent device-array FS
+	$include	fsrom			. routines, 4K-maxextent FS in executable space
 	$include	seg_load
 	$include	recursld
 	$include	arraylod
@@ -96,4 +122,7 @@ fs_xfer1?
 	jdr		fs_xfer1!
 
 	lret		0
+
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	fs block overruns expected high address
 
