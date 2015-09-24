@@ -282,7 +282,7 @@ typedef struct { unsigned short flags,		 banks;
 	their places 148..151 are taken by clock and timer registers
 
 	ISRs are not likely to do bit-stream programming, but if
-	they do, they must save RDATAC RTDATA WDATAC WDATA first
+	they do, they must save RDATAC RDATA WDATAC WDATA first
 
 **********************************************************************/
 
