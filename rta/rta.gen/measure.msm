@@ -894,35 +894,35 @@ deleted	lr	sp_x
 guard	la, xi	-1
 	sa	PRIORITY$	
 
-yield	ql	0, fp
+yield	ql	0, fp		. retrieve the interrrupted application frame
+				. switch visibility to TCB and kernel banks
+
 	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
-	qs	UPACKET
 
-	inA	1
-	sa	ABT+1
+	qs	UPACKET		. interrupt stack frame of application -> TCB
 
-	lr	sp_x
-	z	sp_x
+	inA	1		. relocation pointer, application private stack page
+	sa	ABT+1		. other relocation pointers do not need saving
+
+	lr	sp_x		. keep aside the value of the interrupt sp
+	z	sp_x		. point interrupt sp to start of user registers
+				. 32 stores for 128 registers
 
 ?	$do	128/4,	qpop	RSAVE+4*?-4
 
-			. interrupt SP now contains 128
+				. interrupt SP now contains 128
 
 	ts	switch_lock_cell
 	j	$-1
 
-	tp	PRIORITY$
-	j	out_of_order
+	la	PRIORITY$	. copy of thread priority in interrupt register 149
+	lx	TDESCRIPTOR	. retrieve pointer in TCB to descriptor in kernel space
 
-	lx	TDESCRIPTOR
-	la	1, x	. priority
-
-	jna	out_of_order
+	jna	out_of_order	. PRIORITY$ unlikely to become wrong, but that should be handled
 	tanu,xi	PRIORITIES
-
 	jc	out_of_order
 
-	sal	2
+	sal	2		. address the 4-word priority list tail pointer
 	aa, xi	stem(1)
 
 	lb	3, a	. uplink to last in priority chain
@@ -931,6 +931,8 @@ yield	ql	0, fp
 	sa	0, x	. ->next = stem_post
 
 choose			. now load another task
+			. run forward from the lowest priority chain tail
+			. to the first task descriptor in the highest priority chain
 
 	la,xi	stem(PRIORITIES)
 forward	lb	a_x
@@ -950,45 +952,33 @@ forward	lb	a_x
 	z	switch_lock_cell
 
 
-	lb	3, a
-	outB	65
+	lb	3, a	. retrieve the TCB relocation pointer from the descriptor
+	outB	65	. base the TCB
 
-	lb	1, a
-	sb	PRIORITY$
+	lb	1, a		. copy priority level to interrupt register 149
+	sb	PRIORITY$	. for quick reference
 
-	$if	1
-
-	la, xi	ABT+2
+	la, xi	ABT+2		. application data relocation registers
+				. never need saving, only loading
 ?	$do	48/2-1,	reload	2*?
 
-	$else
-
-load_pair* $proc
-	dl	ABT+2*?
-	fsabr	2*?
-	fsbbr	2*?+1
-	$end
-
-?	$do	23,	load_pair
-
-	$endif
-
-	la	ABT+1
-	outA	1
+	la	ABT+1		. relocation register to application private stack page
+	outA	1		. not in scope of reload instruction
 
 
-			. ISR ISP still = 128
+			. ISR ISP still = 128. 32 load instructions for 128 registers
 
 ?	$do	128/4,	qpush	RSAVE+128-4*?
 
-	sr	sp_x
+	sr	sp_x	. recover the interrupt stack pointer
 
-	la	ULIMIT
+	la	ULIMIT	. automatic time slice decrementer, zero = no limit
 	sa	REALTIME$_CLOCK
 
-	ql	UPACKET
-	qs	0, fp
-	ir	0
+	ql	UPACKET	. interrupt return stack frame of applicatiom
+	qs	0, fp	. interrupt fp = interrupt sp at application interrupt
+	ir	0	. if we got here from another interrupt
+			. we shall return to there first
 
 out_of_order		. priority in descriptor
 			. does not figure

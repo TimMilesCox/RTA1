@@ -271,10 +271,26 @@ typedef struct { unsigned short flags,		 banks;
 #define fp	_register[iselect | FP]
 #define sp	_register[iselect | SP]
 
-#define rdatac	_register[iselect | RDATAC]
-#define rdata	_register[iselect | RDATA]
-#define wdatac	_register[iselect | WDATAC]
-#define wdata	_register[iselect | WDATA]
+
+/**********************************************************************
+
+	RDATAC	RTDATA
+	WDATAC	WDATA
+
+	are not duplicated in the interrupt register stack
+
+	their places 148..151 are taken by clock and timer registers
+
+	ISRs are not likely to do bit-stream programming, but if
+	they do, they must save RDATAC RTDATA WDATAC WDATA first
+
+**********************************************************************/
+
+
+#define rdatac	_register[RDATAC]
+#define rdata	_register[RDATA]
+#define wdatac	_register[WDATAC]
+#define wdata	_register[WDATA]
 
 #define SEE1	16384
 #define SEE2    8192

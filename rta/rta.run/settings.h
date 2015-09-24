@@ -46,9 +46,9 @@
 #define	ARRAY		68
 #define	BANK_FREE	69
 #define	EXIT		70
-#define	REALTIME_CLOCK	144
-#define	DAYCLOCK_U	146
-#define	DAYCLOCK	147
+#define	REALTIME_CLOCK	148
+#define	DAYCLOCK_U	150
+#define	DAYCLOCK	151
 
 #undef	TIMER		127
 #undef	SIGALERT
