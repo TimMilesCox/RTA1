@@ -1,0 +1,128 @@
+
+	offline models getthere / gothere / ixar
+	concern chains of database records ordered
+	by data key
+
+	the sequence is coarse-indexed by pointer array
+
+	this is an alternative to calc where either 
+	a sequence is required or general-use calc
+	algorithms do not perform well with the actual
+	key values
+
+	the pointer array requires memory which calc
+	does not require. It may be generated dynamically
+	in memory on database loadup and never written
+	to the database filestore
+
+	getthere is a study on doing binary chop
+	on a pointer array into a number of database
+	pages each containing some or no records in
+	the target chain
+
+	comparisons in the chop are < if the
+	candidate key is < the first record in the
+	page, and > if the candidate key is > the
+	last record in the page
+
+	< means move the binary chop downwards
+	> means move the binary chop upwards
+
+	otherwise the target record is in the page
+	under examination or absent and the result
+	is the next record or end of records
+
+	(at 6. Otober 2015) so far so good with a
+	a data set as initially loaded
+
+	to be any use, these ideas must keep working
+	with large numbers of insertions
+
+	deletions are very little trouble, because they
+	can come out of chain and get marked for re-use
+
+	at least the top index block is in memory
+
+	one lower level of index blocks is foreseen
+	(and modelled). The top index block is an
+	array of pointers to the lower index blocks.
+	The lower index blocks are arrays of database
+	page pointers
+
+	If for example each lower index block contains
+	up to 262144 page pointers and the top index
+	contains up to 262144 pointers to lower index
+	blocks, then the number of database pages
+	which can be addressed is 68719476736 (2 power 36)
+	and the number of keyed records something
+	in multiple of that
+
+	data so large as that would of course have a
+	three-level pointer array, because shuffling
+	1..4096 pointers at two or three levels on page
+	insertion is prefereable to shuffling 1..262144
+	pointers at one or two levels. Splitting blocks of
+	262144 pointers is also extreme in memory use
+
+	It is foreseen that lower index blocks are filled
+	if an orderly load takes place. Record insertions
+	can be accommodated to a large extent by chaining
+	onto overflow pages. But if there are hundred-
+	and thousandfold- insertions at any one point
+	in the initial order, the page search part of
+	the lookup becomes a multi-page search and
+	realtime efficiency is no longer a fact
+
+	The intended answer is more pointers in the array
+
+	New pointers are added one block at a time, and must
+	be added in a way which does not break the integrity
+	of the binary chop search
+
+	When a pointer array block is split to insert
+	a new page pointer, neither new block is full
+
+	The top index is shuffled to account for the new
+	pointer block
+
+	The empty pointer slots in the block all point to
+	a key value space between the highest pointed page
+	of this block and the lowest pointed page of the
+	next higher block
+
+	The total number of pages which the chop algorithm
+	considers must include unused slots embedded in the
+	table. When the unused slots are fingered, they
+	need to be discounted in a way which deflects the
+	search in the right direction
+
+	(at 7. October 2015) this seems to work with
+	prototype routine gothere
+
+	The reaction to a non-existent page pointer is to adjust
+	downwards half of the previous traverse distance, because
+	an unpopulated part of the array block can only start
+	to be traversed from below, never from above
+
+	This is because the binary search does not start
+	halfway through the pointer array, but halfway
+	through the containing power-2 size of the array
+
+	the lower edge of an array block is examined before
+	any other part of the block, and the first entries
+	are always populated
+
+	prototype gothere tests that the principle works
+	by allowing initial load to partially load each
+	index block
+
+	array blocks may optionally be partially loaded
+	to simplify insertion. Insertion requires either
+	a shuffle into spare space of the array block,
+	or a split of the array block plus a shuffle of
+	the top index
+
+	prototype ixar has structure modifications and is
+	being developed further to test record and page
+	insertion
+
