@@ -1,3 +1,14 @@
+
+/***********************************************************
+
+	this models distribution of calc chain heads
+	according to a variable algorithm
+	in a primary area of given size
+
+***********************************************************/
+
+
+
 #include <stdio.h>
 #include "util/include/argue.h"
 

@@ -14,8 +14,14 @@
 #define	COMMAND	72
 #define	MIDSQUARE
 
-typedef struct {  int		pages;
-		  char		  **p; } indexp;
+typedef struct {  int				pages;
+		  char				  **p; } indexp;
+
+typedef struct {  int				space;
+		  int			       *first,
+						*last;
+		  char	 data[PAGE - 3 * sizeof(int)]; } page;
+
 
 #ifdef	MIDSQUARE
 static int midsquare(int pages)
@@ -38,7 +44,8 @@ int main(int argc, char *argv[])
 
    int		 records = 0,
 		 blocks = 0,
-                 pages = 0;
+                 pages = 0,
+		 top_pages;
 
    int		 point = 0,
 		 line = -1,
@@ -110,6 +117,7 @@ int main(int argc, char *argv[])
 
                  q->pages = intra;
                  pages += POINTERS;
+                 top_pages = pages - POINTERS + pointers - y;
                  if (data == NULL) break;
                  if (x < 7) break;
                  q++;
@@ -138,6 +146,7 @@ int main(int argc, char *argv[])
                  switch (symbol)
                  {
                     case '=':
+                    case '+':
                        #ifdef MIDSQUARE
                        point = midsquare(pages);
                        #else
@@ -164,6 +173,7 @@ int main(int argc, char *argv[])
                           }
                           else
                           {
+                             if (flag['w'-'a']) putchar('^');
                              point -= variation;
                              continue;
                           }
@@ -186,6 +196,8 @@ int main(int argc, char *argv[])
 
                           x = memcmp(command + 1, data, 6);
 
+                          if (flag['w'-'a']) printf("[%d]\n", x);
+
                           if ((x < 0) || (*data == 0))
                           {
                              /*************************************************
@@ -205,42 +217,54 @@ int main(int argc, char *argv[])
                           }
 
 
-                         /*****************************************************
+                          /*****************************************************
 
                                 lucky hit time ?
 
-                         *****************************************************/
+                          *****************************************************/
 
 
                           if (x == 0) break;
                      
 
-                         /*****************************************************
+                          /*****************************************************
 
                                 > last in page ?
 
-                         *****************************************************/
+                          *****************************************************/
+
+                          iput = data + LINE * LINES - LINE;
+                          while (*iput == 0) iput -= LINE;
+
+                          /****************************************************
+				this part will get replaced by proper logic
+				last instance of this record type on page
+                          ****************************************************/
+
+                          if (iput < data)
+                          {
+                             printf("bad anomaly\n");
+                             exit(0);
+                          }
+
+                          x = memcmp(command + 1, iput, 6);
+
+                          if (flag['w'-'a']) printf("[%x >7?] %s", x, iput);
 
 
+                          line = (iput - data) / LINE;
 
-                          x = memcmp(command + 1, data + LINE * LINES - LINE, 6);
-
-                          printf("[%x >7?] %s", x, data + LINE * LINES - LINE);
-
-
-                          line = LINES - 1;
-
-                         /*****************************************************
+                          /*****************************************************
 
                                lucky hit time ?
 
-                         *****************************************************/
+                          *****************************************************/
 
 
 
                           if (x == 0)
                           {
-                             data += LINE * LINES - LINE;
+                             data = iput;
                              break;
                           }
 
@@ -260,7 +284,7 @@ int main(int argc, char *argv[])
                              if (variation == 0)
                              {
                                 point++;
-                                if (point < pages)
+                                if (point < top_pages)
                                 {
                                    line = 0;
                                    p = top_index[point >> 10].p;
@@ -287,6 +311,7 @@ int main(int argc, char *argv[])
                                    p = top_index->p;
                                    data = *p;
                                 }
+                                variation = 1;
                                 continue;
                              }
 
@@ -296,12 +321,12 @@ int main(int argc, char *argv[])
 
                           line = 0;
 
-                         /*****************************************************
+                          /*****************************************************
 
                                 we have hit the page and are > first record
 				and < last record
 
-                         *****************************************************/
+                          *****************************************************/
 
                           while (line < LINES - 1)
                           {
@@ -319,7 +344,7 @@ int main(int argc, char *argv[])
                              ************************************************/
 
                              x = memcmp(command + 1, data, 6);
-                             printf("[%x %x] %s", x, line, data);
+                             if (flag['w'-'a']) printf("[%x %x] %s", x, line, data);
 
                              if (x < 0) break;
                              if (x == 0) break;
@@ -328,7 +353,80 @@ int main(int argc, char *argv[])
                           break;
                        }
 
-                       printf("%x:%x %s", point, line, data);
+                       if (symbol == '+')
+                       {
+                          if (flag['w'-'a']) printf("+[%p %p]\n", p, data);
+
+
+                          if (data == NULL)
+                          {
+                             /**********************************************
+				in this model this should mean
+				insert is beyond the last existing record
+
+				logic using a chain will be much simpler
+
+				there may be space in the highest page
+				and if there are interative inserts beyond
+				the end, you don't need a new page for each
+                             **********************************************/
+
+                             point = top_pages - 1;
+                             q = top_index + (point >> 10);
+                             p = q->p;
+                             data = p[point & 1023];
+
+                             printf("++[%p %p %2.2x]\n", p, data, *data);
+
+                             for (line = 0; line < LINES; line++)
+                             {
+                                if (*data == 0) break;
+                                data += LINE;
+                             }
+
+                             if (line < LINES) memcpy(data, command + 1, LINE);
+                             else
+                             {
+                                data = calloc(1, PAGE);
+                                if (q->pages < pointers)
+                                {
+                                   top_pages++;
+                                   point++;
+                                   q->pages++;
+                                   p[point & 1023] = data;
+                                   memcpy(data, command + 1, LINE);
+                                }
+                                else
+                                {
+                                }
+                             }
+                          }
+
+
+                          else if (*data == 0) memcpy(data, command + 1, LINE);
+                          else if (x < 0)
+                          {
+                             iput = (p[point & 1023]) + LINES * LINE - LINE;
+
+                             if (*iput == 0)
+                             {
+                                while (iput > data)
+                                {
+                                   iput -= LINE;
+                                   memcpy(iput + LINE, iput, LINE);
+                                }
+
+                                memcpy(data, command + 1, LINE);
+                             }
+                             else
+                             {
+                                data = calloc(1, PAGE);
+                                memcpy(data, command + 1, 8);
+                             }                       
+                          }
+                       }
+
+                       printf("%x %x:%x %s", x, point, line, data);
                        break;
 
                     case '\n':
