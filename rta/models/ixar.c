@@ -60,7 +60,9 @@ int main(int argc, char *argv[])
 		*top_index;
 
    char		*data,
-		*iput;
+		*iput,
+		*oput,
+		*newpage;
 
    char		 command[COMMAND];
 
@@ -406,10 +408,18 @@ int main(int argc, char *argv[])
                           else if (*data == 0) memcpy(data, command + 1, LINE);
                           else if (x < 0)
                           {
-                             iput = (p[point & 1023]) + LINES * LINE - LINE;
+                             iput = (p[point & 1023]);
+                             line = (data - iput) / LINE;
 
-                             if (*iput == 0)
+                             if (*(iput + LINES * LINE - LINE) == 0)
                              {
+                                /*******************************************
+					space in this page
+					data is @ next higher record
+                                *******************************************/
+
+                                iput += LINES * LINE - LINE;
+
                                 while (iput > data)
                                 {
                                    iput -= LINE;
@@ -420,9 +430,108 @@ int main(int argc, char *argv[])
                              }
                              else
                              {
-                                data = calloc(1, PAGE);
+                                /********************************************
+
+				if new record < first in page, new page
+				inserted before old page
+
+				otherwise
+
+				split, pointer data -> next higher record. A new 
+				page is sequenced after the page for insert, so
+				records before the new record do not reposition
+
+				physical page split chosen. Array pointers
+				need only be relative page numbers within area
+
+				and this will work for data files as well as
+				network database
+
+                                ********************************************/                              
+
+                                newpage = calloc(1, PAGE);
+
+                                if (line == 0) data = newpage;
+                                else
+                                {
+                                   p[point & 1023] = newpage;
+
+                                   /****************************************
+					swap the new and old pointers, so the
+					pointer to incremented old page is
+					reinserted before the pointer to the
+					new page containing higher keyed
+					records than the new record
+                                   ****************************************/
+
+                                   oput = data;
+                                   x = line;
+
+                                   while (x < LINES)
+                                   {
+                                      if (flag['w'-'a'])
+                                      {
+                                         printf("[%p > %p %2.2x]", oput, newpage, *oput);
+                                         printf("(Z > %p]\n", oput);
+                                      }
+
+                                      memcpy(newpage, oput, LINE);
+                                      memset(oput, 0, LINE);
+                                      newpage += LINE;
+                                      oput += LINE;
+                                      x++;
+                                   }
+
+                                   newpage = iput;
+                                   /***************************************
+					that is really the old page
+					containing the new record
+                                   ***************************************/
+                                }
+
                                 memcpy(data, command + 1, 8);
-                             }                       
+
+                                y = q->pages;
+
+                                /*******************************************
+				the new page containing higher keyed records
+				is inserted after the page with the new record
+                                *******************************************/
+
+                                if (y < POINTERS)
+                                {
+				   q->pages++;
+                                   while (y > (point & 1023))
+                                   {
+                                      y--;
+                                      p[y + 1] = p[y];
+                                   }
+                                   p[y] = newpage;
+                                }
+                                else
+                                {
+                                   /***************************************
+					not complete
+					a pointer block must be split unless
+					the new page with one record is 
+					between the ranges of two adjacent
+					pointer blocks
+                                   ***************************************/
+
+                                   p = calloc(1, BLOCK);
+                                   *p = newpage;
+                                   x = blocks++;
+                                   
+                                   while (x > (point >> 10))
+                                   {
+                                      top_index[x + 1] = top_index[x];
+                                      x--;
+                                   }
+                                   top_index[x + 1].p = p;
+                                   top_index[x + 1].pages = 1;
+                                }
+                             }
+                             x = 0;
                           }
                        }
 
