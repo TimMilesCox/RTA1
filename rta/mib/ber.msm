@@ -66,37 +66,37 @@ ber_edit_integer
 	lb	mo:data
 	la	mo:bytes
 	aa, xi	-4
-	jc	ber_edit_long
+	jc	ber_edit_long	. stored value > 1 word
 
-	push	0, b
-	lsc	0, sp
-	ab, xi	-1
-	andB,xi	-8
-	pop	a
-	sal	0, b
+	push	0, b		. stored value 1 word
+	lsc	0, sp		. count signs
+	ab, xi	-1		. leave at least one sign
+	andB,xi	-8		. suppress a whole number
+	pop	a		. of leading octets if any
+	sal	0, b		. suppress by shifting left
 	sa	ber_t:data
-	la, xi	24
-	ana	b
+	la, xi	24		. calculate the number
+	ana	b		. of unsuppressed octets
 	sar	3
 	sa	ber_t:bytes
 	aa, xi	2
 	lret	0
 
-ber_edit_long
+ber_edit_long			. stored value 2 words
 	dpush	0, b
-	dlsc	0, sp
+	dlsc	0, sp		. count signs
 
 	la	6
-	aa, xi	-1
-	and,xi	-8
-	sa	6
+	aa, xi	-1		. leave at least one sign
+	and,xi	-8		. suppress a whole number
+	sa	6		. of leading octets if any
 
 	pop	a
 	pop	b
-	dsl	*6
+	dsl	*6		. suppress by shifting left
 	ds	ber_t:data
-	la, xi	48
-	ana	6
+	la, xi	48		. calculate the number
+	ana	6		. of unsuppresed octets
 	sar	3
 	sa	ber_t:bytes
 	aa, xi	2
@@ -107,18 +107,22 @@ ber_edit_unsigned
 	lb	mo:data
 	la	mo:bytes
 	aa, xi	-4
-	jc	ber_edit_ul
-
+	jc	ber_edit_ul	. stored number > 1 word
+				. stored number = 1 word
 	push	0, b
-	lsc	0, sp
-	andB,xi	-8
-	pop	a
+	lsc	0, sp		. calculate whole zero octets
+	andB,xi	-8		. to suppress
+	pop	a		. but 1s are not signs
+	jpa	ber_edit_rotate1
+	lb, xi	0		. force out 3 unsigned octets
+ber_edit_rotate1
 	sal	0, b
 	sa	ber_t:data
-	la, xi	24
+	la, xi	24		. calculate output octets
 	ana	b
-	jnza	$+2
-	la, xi	8
+	jnza	ber_edit_length1
+	la, xi	8		. force 1 byte out
+ber_edit_length1
 	sar	3
 	sa	ber_t:bytes
 	aa, xi	2
@@ -126,18 +130,22 @@ ber_edit_unsigned
 
 ber_edit_ul
 	dpush	0, b
-	dlsc	0, sp
-	la	6
+	dlsc	0, sp		. calculate whole zero octets
+	la	6		. to suppress
 	and, xi	-8
 	sa	6
-	pop	a
+	pop	a		. but 1s are not signs
 	pop	b
+	jpa	ber_edit_rotate2
+	z	6		. force out 6 unsigned octets
+ber_edit_rotate2
 	dsl	*6
 	ds	ber_t:data
-	la, xi	48
+	la, xi	48		. calculate output octets
 	ana	6
-	jnza	$+2
-	la, xi	8
+	jnza	ber_edit_length2
+	la, xi	8		. force 1 byte out
+ber_edit_length2
 	sar	3
 	sa	ber_t:bytes
 	aa, xi	2
