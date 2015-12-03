@@ -47,7 +47,7 @@
 #include "rw.h"
 #include "fpu.h"
 
-#define	GUARD_BITS	0x00A00000
+#define	GUARD_BITS	0x00C00000
 
 extern int			 iselect;
 extern int			 _register[256];
@@ -357,6 +357,7 @@ static void ones_add(int ea, int direction)
             normalised_addend[1] = biased_addend[1];
             normalised_addend[2] = biased_addend[2];
             normalised_addend[3] = biased_addend[3];
+            normalised_addend[4] = signs_right ^ GUARD_BITS;
             
             biased_addend[0] = signs;
             biased_addend[1] = b;
@@ -379,15 +380,24 @@ static void ones_add(int ea, int direction)
             normalised_addend[1] = b;
             normalised_addend[2] = mantissa2;
             normalised_addend[3] = mantissa3;
+            normalised_addend[4] = signs ^ GUARD_BITS;
 
             biased_addend[4] = signs_right;
             biased_addend[0] = signs_right;
          }
 
-         normalised_addend[4] = signs ^ GUARD_BITS;
          characteristic = normalised_addend[0] ^ signs;
 
          normalised_addend[0] = signs;
+
+         #ifdef TRACE
+         printf("%6.6X:%6.6X:%6.6X:%6.6X:%6.6X+%6.6X:%6.6X:%6.6X:%6.6X:%6.6X:=\n",
+                normalised_addend[0], normalised_addend[1],
+                normalised_addend[2], normalised_addend[3],
+                normalised_addend[4], biased_addend[0],
+                biased_addend[1],     biased_addend[2],
+                biased_addend[3],     biased_addend[4]);
+         #endif
 
          carry = add_bias(magnitude_characteristic_difference,
                           normalised_addend,
@@ -395,7 +405,6 @@ static void ones_add(int ea, int direction)
 
          characteristic += carry;
          if (carry < -71) characteristic = 0x00400000;
-
 
          /******************************************************
 
@@ -434,6 +443,9 @@ static void ones_add(int ea, int direction)
          mantissa2 = biased_addend[2];
          mantissa3 = biased_addend[3];
       }
+      #ifdef TRACE
+      printf("%6.6X:%6.6X:%6.6X:%6.6X\n", a, b, mantissa2, mantissa3);
+      #endif
    }
 
    /*******************************************************************
@@ -458,8 +470,8 @@ void fan(int ea)
 
 void fm(int ea)
 {
-   int		 result[7] = { 0, 0, 0, 0, 0, 0, 0 } ;
-   int		 addend[7] = { a, b, mantissa2, mantissa3, GUARD_BITS, 0, 0 } ;
+   int		 result[7] = { 0, 0, 0, 0, GUARD_BITS, 0, 0 } ;
+   int		 addend[7] = { a, b, mantissa2, mantissa3, 0, 0, 0 } ;
 
    int		 multiplier[4] = { 0, 0, 0, 0 } ;
 
