@@ -38,6 +38,13 @@
 .
 
 
+	$if	AQUIFORM_NET16
+AQUIFORM_BITS $set	16
+	$else
+AQUIFORM_BITS $set	24
+	$endif
+
+
 $(0:*1)
 
 repoussez	. LAST_BYTE_READ has not been consumed
@@ -65,15 +72,13 @@ repoussez	. LAST_BYTE_READ has not been consumed
 	aa, xi	$byte
 	ds	RDATAC
 
-	$if	24///$byte		. for example UTF16 or any byte
-	$if	AQUIFORM_NET16**$byte>9++(AQUIFORM_NET16=0)**$byte>1
+	$if	AQUIFORM_BITS///$byte
 	aa, xi	-24			. size that straddles words
 	jnc	repousse_in_range	. < 24 is OK
-	jza	repousse_in_range	. = 24 is OK
+	jc	repousse_in_range	. = 24 is OK
 	sa	RDATAC
 	dec	q
 repousse_in_range
-	$endif
 	$endif
 
 	$if	COUNTED_STREAM
@@ -105,33 +110,71 @@ first_digit
 	lb, xi	0
 	lx, xi	6
 	lcal	read5
-	sb	11
+
 	lr, xi	6
-	jxge	adjust_scale_no6
+	jxge	adjust_scale_no6	. got no digits
+					. result registers are zero
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
+	sb	11
+
 	tz	x
 	j	adjust_scale
 	lcal	read6
-	jxge	adjust_scale_no6
+	jxge	adjust_scale_no6	. got no more digits
+					. got 1 to 6 digits
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
 	sb	7
 	z	6
 	lb	11
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
 	mf	(1000000)
+	$endif
+
 	da	6
 	ds	10
 
 	tz	x
 	j	adjust_scale
 	lcal	read6
-	jxge	adjust_scale_no6
+	jxge	adjust_scale_no6	. got no more digits
+					. got 1 to 6 digits
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
 	sb	7
 	lb	11
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
 	mf	(1000000)
+	$endif
+
 	da	6
 	sb	11
 	sa	7
 	sc	6
 	lb	10
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
 	mf	(1000000)
+	$endif
+
 	da	6
 	ds	9
 
@@ -143,22 +186,45 @@ first_digit
 	lr, xi	3
 	jxge	adjust_scale_no3	. got no more digits
 
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
 	sb	7			. got 1 2 or 3 digits
 	z	6
 
 	lb	11
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
 	mf, xi	1000
+	$endif
+
 	da	6
 	sb	11
 	sa	7
 	sc	6
 	lb	10
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
 	mf, xi	1000
+	$endif
+
 	da	6
 	sb	10
 	sa	7
 	lb	9
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
 	mf, xi	1000
+	$endif
+
 	ab	7
 	sb	9
 
@@ -178,9 +244,12 @@ first_digit
 				. just weigh the rest of them
 
 adjust_scale
+	$if	$FINESSE=0
 	lb	SCALE
 	anb	x
 	sb	SCALE
+	$endif
+
 adjust_scale_no3
 adjust_scale_no6
 	

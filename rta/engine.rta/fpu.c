@@ -48,6 +48,7 @@
 #include "fpu.h"
 
 #define	GUARD_BITS	0x00C00000
+#undef	TRACE
 
 extern int			 iselect;
 extern int			 _register[256];
@@ -470,7 +471,9 @@ void fan(int ea)
 
 void fm(int ea)
 {
-   int		 result[7] = { 0, 0, 0, 0, GUARD_BITS, 0, 0 } ;
+   static int	 around[4] = { 0, 0, 0, GUARD_BITS } ;
+
+   int		 result[7] = { 0, 0, 0, 0, 0, 0, 0 } ;
    int		 addend[7] = { a, b, mantissa2, mantissa3, 0, 0, 0 } ;
 
    int		 multiplier[4] = { 0, 0, 0, 0 } ;
@@ -564,6 +567,15 @@ void fm(int ea)
          sleft(0, 4, &result[1]);
          characteristic--;
       }
+
+      /**************************************************************
+		because of the conditional shift left just above
+		the result string could not be primed with guard
+		bits, so they are added afterwards
+      **************************************************************/
+
+      shift = add(4, result + 1, around); 
+      if (shift) sright(shift, 3, result + 1); 
 
       if (characteristic & 0xFF800000)
       {
