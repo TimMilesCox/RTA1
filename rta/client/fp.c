@@ -50,6 +50,8 @@ int main(int argc, char *argv[])
    {
       while (p = fgets(rdata, TEXT-1, config))
       {
+         if (flag['q'-'a']) printf(p);
+
          x = sscanf(rdata, "%s %hhd.%hhd.%hhd.%hhd", sdata, &newnet[0][0],
                                                             &newnet[0][1],
                                                             &newnet[0][2],
@@ -92,6 +94,9 @@ int main(int argc, char *argv[])
    {
       p = fgets(sdata, TEXT, stdin);
       if (!p) break;
+
+      if (flag['p'-'a']) printf(p);
+
       if (sdata[0] == '.') break;
 
       x = send(s, sdata, strlen(sdata), 0);
