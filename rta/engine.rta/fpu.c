@@ -47,7 +47,7 @@
 #include "rw.h"
 #include "fpu.h"
 
-#define	GUARD_BITS	0x00C00000
+#define	GUARD_BITS	0x00E00000
 #undef	TRACE
 
 extern int			 iselect;
@@ -574,7 +574,8 @@ void fm(int ea)
 		bits, so they are added afterwards
       **************************************************************/
 
-      shift = add(4, result + 1, around); 
+      shift = add(4, result + 1, around);
+      characteristic += shift;			/*      1 or 0     */ 
       if (shift) sright(shift, 3, result + 1); 
 
       if (characteristic & 0xFF800000)

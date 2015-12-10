@@ -400,7 +400,8 @@ next_symbol
 	jzb	next_symbol
 	fret	0
 
-fedit	WRITE_START
+fedit_start
+	WRITE_START
 	qs	8
 	la, xi	'+'
 	tn	8
@@ -412,7 +413,19 @@ fedit	WRITE_START
 	la, xi	'-'
 write_sign
 	WRITE_BYTE
-	ql	8
+	lret	0
+
+fediti	lcal	fedit_start
+	lcal	scale_integrate
+	j	fedit1
+
+	call	(iedit72u_xdr)
+	z	SCALE
+	lb	11
+	j	fedit_fraction
+
+fedit	lcal	fedit_start
+fedit1	ql	8
 	lcal	scale_out
 	la	8
 	and, xi	15
@@ -437,52 +450,41 @@ write_sign
 
 	or, xi	'0'
 	WRITE_BYTE
+
+fedit_fraction
 	la, xi	'.'
 	WRITE_BYTE
 
-	mf, xi	1000
-	sb	11
-	sa	7
-	z	6
-	lb	10
-	mf, xi	1000
-	da	6
-	sb	10
-	sa	7
-	sc	6
-	lb	9
-	mf, xi	1000
-	da	6
-	sb	9
+	lcal	fraction3
 	
 	la	table, a
 	WRITE3_BYTES
 
 	lcal	fraction6
 
-	tz	9
+	tz	11
 	j	edit18
 	tz	10
 	j	edit12
-	tz	11
+	tz	9
 	j	edit6
 	j	edit_scale
 
-edit18	la	11
+edit18	la	9
 	lcal	allsix
 	la	10
 	lcal	allsix
-	la	9
+	la	11
 	lcal	up2six
 	j	edit_scale
 
-edit12	la	11
+edit12	la	9
 	lcal	allsix
 	la	10
 	lcal	up2six
 	j	edit_scale
 
-edit6	la	11
+edit6	la	9
 	lcal	up2six
 
 edit_scale
@@ -564,29 +566,89 @@ ieditz	la, xi	'0'
 
 iedit48u
 	WRITE_START
-	d	(1000000)
-	sb	7
-	sa	b
+	d	(1000000)	. 48-bit quotient in 6:a
+	sb	7		. remainder
+	sa	b		. divide the quotient
 	la	6
 	d	(1000000)
 
-	jza	i48_12
-	lcal	izedit3
-	lcal	iprint6
+	jza	i48_12		. up to  12 columns
+	lcal	izedit3		. up to 3 columns from a
+	lcal	iprint6		. all of 6 columns from b
 	lb	7
-	lcal	iprint6
+	lcal	iprint6		. all of 6 columns from 1st remainder
 	fret	0
 
-i48_12	jzb	i48_6
-	lcal	izedit6
+i48_12	jzb	i48_6		. no columns from 2nd remainder
+	lcal	izedit6		. up to 6 columns from 2nd remainder
 	lb	7
-	lcal	iprint6
+	lcal	iprint6		. all of 6 columns from 1st remainder
 	fret	0
 
 i48_6	lb	7
-	jzb	ieditz
-	lcal	izedit6
+	jzb	ieditz		. force out a '0'
+	lcal	izedit6		. up to 6 columns from 1st remainder
 	fret	0
+
+iedit72u
+	WRITE_START
+				. you can't start with 1st word in a
+				. because this is unsigned positive
+				. maybe all of 72 bits
+	la, xi	0
+	push	6		. you don't need the ms quotient word
+				. but you get it
+
+	d	(1000000)	. 
+	push	a		. first quotient word
+	la	b
+	lb	1, sp		. 2nd input word
+	d	(1000000)
+	push	a		. second quotient word
+	la	b
+	lb	7		. 3nd input word
+	d	(1000000)
+	push	a		. 3rd quotient word
+	sb	3, sp		. lowest remainder word
+
+	la	2, sp		. first quotient ms word
+	lb	1, sp		. and 2nd word
+	d	(1000000)
+	sa	1, sp
+	la	b
+	lb	0, sp		. first quotient ls word
+	d	(1000000)
+	sb	2, sp		. second lowest remainder word
+	lb	a
+	la	1, sp
+	d	(1000000)
+	ds	0, sp
+
+	z	7		. significance off	
+	lr, xi	4-1
+
+izeditugo
+	pop	b
+	tp	7
+	j	izeditudo
+	jzb	izeditudont
+	n	7
+	lcal	izedit6
+	j	izeditudid
+izeditudo
+	lcal	iprint6
+izeditudont
+izeditudid
+	jdr	izeditugo
+	
+	tz	7		. significance on?
+	j	izexit
+
+	la, xi	'0'
+	WRITE_BYTE
+
+izexit	fret	0
+
 
 
 izedit6	la, xi	0

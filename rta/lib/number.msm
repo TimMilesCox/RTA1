@@ -47,6 +47,8 @@
 .	in the first place
 
 
+	$set_option	"G"
+
 u72tofloat*
 	z	6
 	tp	TRIPLE		. 
@@ -97,12 +99,89 @@ apply_scale*
 	lret	0
 
 apply_minus_scale
+	$do	$o('E'),	$note	flag E
+	$do	$o('F'),	$note	flag F
+	$do	$o('G'),	$note	flag G
+	$trace	1*-2
 	ab, xi	-1
 	sb	SCALE
 	ql	8
 ?	$do	21,	down
 	lret	0
 
+fraction3*
+        mf, xi  1000
+        sb      11
+        sa      7
+        z       6
+        lb      10
+        mf, xi  1000
+        da      6
+        sb      10
+        sa      7
+        sc      6
+        lb      9
+        mf, xi  1000
+        da      6
+        sb      9
+	lret	0
+
+	$if	1
+
+fraction6*
+	tz	11
+	j	raise3w
+	tz	10
+	j	raise2w
+
+	lb	9
+	mf	(1000000)
+	sa	9
+	lret	0
+
+raise2w	z	6
+	z	7
+	lcal	double_mf
+	push	a
+	z	6
+	z	7
+	lcal	double_mf
+	tz	10
+	sa	10
+	pop	9
+	lret	0
+
+raise3w	lcal	triple_mf
+	push	a
+	lcal	triple_mf
+	push	a
+	lcal	triple_mf
+	tz	11
+	sa	11
+	pop	10
+	pop	9
+	lret	0
+
+triple_mf
+        lb      11
+        mf      (1000000)
+	sb	11
+        sa      7
+        z       6
+double_mf
+	lb      10
+        mf      (1000000)
+        da      6
+        sb      10
+        sa      7
+        sc      6
+        lb      9
+        mf      (1000000)
+        da      6
+        sb      9
+	lret	0
+
+	$else
 
 fraction6*
 	lb	11
@@ -119,7 +198,8 @@ fraction6*
 	mf	(1000000)
 	da	6
 	sb	9
-	sa	11
+	push	a
+
 
 	lb	10
 	mf	(1000000)
@@ -133,7 +213,11 @@ fraction6*
 
 	mf	(1000000)
 	sa	9
-	lret	0	
+
+	pop	11
+	lret	0
+
+	$endif
 
 	$if	1
 
@@ -213,6 +297,99 @@ over_midpoint
 	$endif
 
 	lret	0
+
+
+scale_integrate
+	.	if scale < midpoint + 73 pull up integral part
+	.	in b:6:7
+	.	set scale to midpoint and return + 1 instruction
+	.	else return to instruction after call
+
+	.	the number must be represented positive
+
+	lx	8
+	lr	(0400049)
+	jxge	scale_outside_integer
+
+	lr	(0400031)
+	jxge	scale72
+
+	lr	(0400019)
+	jxge	scale48
+
+	lr	(0400001)
+	jxge	scale24
+
+scale_outside_integer
+	lret	0
+
+scale24	ax	(-0400000)
+
+	la, xi	0
+	lb	11
+	dsl	0, x		. displacement sought
+	sb	11		. shifted mantissa3
+	lb	10
+	rar	0, x
+	drl	0, x		. bits shifted out
+	sb	10		. shifted mantissa2
+	lb	9
+	rar	0, x
+	drl	0, x		. bits shifted round
+	sb	9		. to mantissa1 lower
+	sa	7		. ms bits to integer
+	z	6
+	lb, xi	0
+
+	j	scale_in_order
+
+scale48	ax	(-0400018)
+
+	la, xi	0
+	lb	11
+	z	11		. mantissa3 all bits shifted
+	push	9
+	push	10
+	dsl	0, x		. displacement - 24
+	sb	10		. ahifted mantissa2
+	pop	b
+	rar	0, x		. bits shifted up
+	drl	0, x		. to mantissa1 lower
+	sb	9
+
+	pop	b
+	rar	0, x
+	drl	0, x		. ms bits to integer
+	ds	6
+	lb, xi	0
+
+	j	scale_in_order
+
+scale72	ax	(-0400030)
+
+	la, xi	0		. integer bits < 72
+	lb	11
+	z	11
+	dsl	0, x		. shift displacement - 48
+	push	9
+	sb	9
+	lb	10
+	z	10		. mantissa2..3 all bits shifted
+	rar	0, x		. low integer bits in ms positions a
+	drl	0, x		. low integer bits in ls positions b
+	sb	7		. write integer ls word
+	pop	b
+	rar	0, x		. next word ls bits in ms positions a
+	drl	0, x		. next word ls bits in ls positions b
+
+	sb	6		. write integer ms 48 bits
+	dsr	24
+
+scale_in_order
+	la	(0400000)
+	sa	8
+	lret	1
+
 
 	$if	$FINESSE
 	.	called from character to float scan routine
