@@ -47,7 +47,7 @@
 #include "rw.h"
 #include "fpu.h"
 
-#define	GUARD_BITS	0x00E00000
+#define	GUARD_BITS	0x00C00000
 #undef	TRACE
 
 extern int			 iselect;

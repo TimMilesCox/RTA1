@@ -156,7 +156,7 @@ raise3w	lcal	triple_mf
 	lcal	triple_mf
 	push	a
 	lcal	triple_mf
-	tz	11
+	tz	8		. 11 before operation
 	sa	11
 	pop	10
 	pop	9
@@ -164,6 +164,7 @@ raise3w	lcal	triple_mf
 
 triple_mf
         lb      11
+	sb	8		. 11 before operation
         mf      (1000000)
 	sb	11
         sa      7
@@ -397,11 +398,60 @@ scale_in_order
 	.	making this adjustment in fixed point
 	.	sometimes avoids rounding floating values
 	.	which are in 72-bit integer range
+
+	$if	0
+
+.	this surprisingly works for all the benchmark numbers
+.	in fpscript.txt
+
+.	library high speed scan expects groups of six numerals
+.	If a frame is less than six a divide is needed somewhere
+
+.	subtracting the non-arrived numerals from the decimal
+.	exponent before conversion to binary exponent is not
+.	precise for every integer
+
+.	it's necessary that every value in 72-bit unsigned
+.	integer range (up to the maximim value of 21 decimal
+.	numerals at least) is accurately represented in floating
+.	format
+
+.	so scan path $FINESSE effects a conditional fixed point
+.	divide of the last scanned 6-numeral-group if it contained
+.	< 6 numerals
+
+.	the surprising part is, this multiply by approximate
+.	reciprocals is giving accurate results for benchmark
+.	values
+
+.	turned off for checkin to select instead the path with
+.	a divide instruction, because that isn't much more
+.	expensive, and  much more verification with benchmark
+.	values is desirable
+
+.	this isn't executed if no columns are missing. The
+.	first value 1 isn't the reciprocal of anything
+
+c1 $set    07FFFFFFFFFFFF+0CCCCCCCCCCCCCCCCCD/*3+48
+c2 $set   03FFFFFFFFFFFFF+0A3D70A3D70A3D70A3E/*6+48
+c3 $set  01FFFFFFFFFFFFFF+083126E978D4FDF3B65/*9+48
+c4 $set 01FFFFFFFFFFFFFFF+0D1B71758E219652BD4/*13+48
+c5 $set 0FFFFFFFFFFFFFFFF+0A7C5AC471B47842310/*16+48
+
+diminish6
+	mf	(1, c1, c2, c3, c4, c5:h), x
+	sa	b
+	lret	0
+
+	$else
+
 diminish6
 	la, xi	0
 	d	(1, 10, 100, 1000, 10000, 100000h), x
 	sa	b
 	lret	0
+
+	$endif
 	$endif
 
 	$do	$<256,$(0:256)
