@@ -704,6 +704,7 @@ int main(int argc, char *argv[])
                                             rxdata->frame + 12);
                         csum = (rxdata->frame[y + 6] << 8)
                              |  rxdata->frame[y + 7];
+                        if (flag['v'-'a'])
                         printf("[UDP:%4.4x:%4.4x]\n", psum, csum);
                      }
                      else
@@ -724,6 +725,7 @@ int main(int argc, char *argv[])
 
                      csum = tcp_checksum(x - y, rxdata->frame + y,
                                                 rxdata->frame + 12);
+                     if (flag['v'-'a'])
                      printf("[TCP:%4.4x:%4.4x]\n", psum, csum);
 
                      #ifdef INTEL

@@ -9,6 +9,7 @@
 #include "../include.rta/address.h"
 #include "fp.h"
 
+#define	RESENDS	5
 
 #ifdef	LINUX
 static struct sockaddr_in target = {     AF_INET, PORT(FP_SERVICE) } ;
@@ -37,6 +38,9 @@ int main(int argc, char *argv[])
 			 y,
 			 maxtry,
 			 symbol;
+
+   int			 resends,
+			 bytes;
 
    unsigned char	*p;
 
@@ -85,6 +89,8 @@ int main(int argc, char *argv[])
    x = bind(s, (struct sockaddr *) &local, 16);
    y = connect(s, (struct sockaddr *) &target, 16);
 
+   if ((uflag['Q'-'A'] == 0)
+   ||  (s < 0) || (x < 0) || (f < 0) || (u < 0) || (y < 0))
    printf("remote application socket %d bind state %d "
           "F %x NB %d udconnect state %d\n",
 	   s, x, f, u, y);
@@ -99,27 +105,49 @@ int main(int argc, char *argv[])
 
       if (sdata[0] == '.') break;
 
-      x = send(s, sdata, strlen(sdata), 0);
-      printf("send state %d\n", x);
+      resends = 1;
+      if (uflag['R'-'A']) resends = RESENDS;
+      bytes = strlen(sdata);
 
-      if (flag['z'-'a']) continue;
-
-      maxtry = MAXTRY;
-      while (maxtry--)
+      while (resends--)
       {
-         x = recv(s, rdata, TEXT, 0);
-         if (x < 0)
+         /*****************************************************
+		RESEND is about sending again optionally
+                for scripted benchmarks where one lost
+		UDP response ought not stop benchmark
+         *****************************************************/
+
+         x = send(s, sdata, bytes, 0);
+
+         if ((uflag['Q'-'A'] == 0) || (x < 0))
+         printf("send state %d\n", x);
+
+         if (flag['z'-'a']) continue;
+
+         maxtry = MAXTRY;
+         while (maxtry--)
          {
-            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            /*************************************************
+		MAXTRY is about restarting the nonblock
+		receive / wait. There are MAXTRY polls
+            *************************************************/
+
+            x = recv(s, rdata, TEXT, 0);
+            if (x < 0)
             {
-               x = 0;
-               usleep(TWARP);
+               if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+               {
+                  x = 0;
+                  usleep(TWARP);
+               }
+               else
+               {
+                  printf("RX state %d\n", errno);
+                  break;
+               }
             }
-            else
-            {
-               printf("RX state %d\n", errno);
-               break;
-            }
+
+            if (x) break;
          }
 
          if (x) break;
@@ -134,7 +162,12 @@ int main(int argc, char *argv[])
          for (y = 0; y < x; y++) printf("%2.2x", rdata[y]);
          if (y) putchar(10);
       }
-      else printf("recv state %d/%d %s", x, errno, rdata);
+      else
+      {
+         if ((uflag['Q'-'A'] == 0) || (x < 0))
+         printf("recv state %d/%d %s", x, errno, rdata);
+         else if (x >= 0) printf("%s", rdata);
+      }
    }
 
    close(s);
