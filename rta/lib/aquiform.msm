@@ -419,7 +419,7 @@ fediti	lcal	fedit_start
 	lcal	scale_integrate
 	j	fedit1
 
-	call	(iedit72u_xdr)
+	lcal	iedit72_u
 	z	SCALE
 	lb	11
 	j	fedit_fraction
@@ -544,53 +544,126 @@ ffi6	d, xi	1000
 .	not much trouble however to push sign-handling
 .	onto the start of them
 
-ieditu	
+
+iedit	jpa	ieditp
+	dsr	24
+	la	('-'*/$word-$byte:s)
 	WRITE_START
+	WRITE_UBYTE
+	ana	b
+ieditp	lcal	iedit_u
+	fret	0
+
+iedits	WRITE_START
+	sa	b
+	la	('+'*/$word-$byte:s)
+	jpb	ieditsp
+	la	('-'*/$word-$byte:s)
+	n	b
+	ab, xi	1
+ieditsp	WRITE_UBYTE
+	la	b
+	lcal	iedit_u
+	fret	0
+
+ieditu	lcal	iedit_u
+	fret	0
+
+iedit48	jpa     iedit48p
+        ds	6
+        la      ('-'*/$word-$byte:s)
+        WRITE_START
+        WRITE_UBYTE
+        lb, xi	0
+	dan	6
+iedit48p
+	lcal    iedit48_u
+        fret    0
+
+iedit48s
+	WRITE_START
+        ds	6
+	jpa	iedit48sp
+        la      ('-'*/$word-$byte:s)
+        WRITE_UBYTE
+	dsr	48
+	dan	6
+	j	iedit48si
+iedit48sp
+	la	('+'*/$word-$byte:s)
+	WRITE_UBYTE
+        dl	6
+iedit48si
+        lcal    iedit48_u
+        fret    0
+
+iedit48u
+	lcal	iedit48_u
+	fret	0
+
+iedit72	jpa     iedit72p
+	WRITE_START
+	la	('-'*/$word-$byte:s)
+	WRITE_UBYTE
+	lcal	triverse
+iedit72p
+	lcal    iedit72_u
+        fret    0
+
+triverse
+	push	b
+	dsr	48
+	dan	6
+	ds	6
+	pop	b
+	sc	a
+	n	b
+	ab	a
+	lret	0
+
+iedit72s
+	WRITE_START
+        la      ('+'*/$word-$byte:s)
+        jpb     iedit72sp
+	lcal	triverse
+        la      ('-'*/$word-$byte:s)
+iedit72sp WRITE_UBYTE
+        lcal    iedit72_u
+        fret    0
+
+iedit72u
+	lcal	iedit72_u
+	fret	0
+
+
+iedit_u	WRITE_START
 
 	dsr	24
 	d	(1000000)
+	dpush	a
+	lr, xi	2-1
+	j	izeditugo
 
-	jza	iedit6
-	lcal	izedit3
-	lcal	iprint6
-	fret	0
-
-iedit6	jzb	ieditz
-	lcal	izedit6
-	fret	0
-
-ieditz	la, xi	'0'
-	WRITE_BYTE
-	fret	0
-
-
-iedit48u
+iedit48_u
 	WRITE_START
-	d	(1000000)	. 48-bit quotient in 6:a
-	sb	7		. remainder
-	sa	b		. divide the quotient
-	la	6
+	sb	9		. it may be unsigned all 48 bits
+	dsr	24		. divide it as positive
 	d	(1000000)
+	sa	8		. 1st quotient upper
+	la	b
+	lb	9		. dividend 2nd word
+	d	(1000000)
+	push	b		. 1st remainder	
+	sa	b		. 1st quotient lower
+	la	8		. 1st quotient upper
+	d	(1000000)
+	dpush	a
 
-	jza	i48_12		. up to  12 columns
-	lcal	izedit3		. up to 3 columns from a
-	lcal	iprint6		. all of 6 columns from b
-	lb	7
-	lcal	iprint6		. all of 6 columns from 1st remainder
-	fret	0
+	lr, xi	3-1
+	j	izeditugo
 
-i48_12	jzb	i48_6		. no columns from 2nd remainder
-	lcal	izedit6		. up to 6 columns from 2nd remainder
-	lb	7
-	lcal	iprint6		. all of 6 columns from 1st remainder
-	fret	0
 
-i48_6	lb	7
-	jzb	ieditz		. force out a '0'
-	lcal	izedit6		. up to 6 columns from 1st remainder
-	fret	0
-
-iedit72u
+iedit72_u
 	WRITE_START
 				. you can't start with 1st word in a
 				. because this is unsigned positive
@@ -647,7 +720,7 @@ izeditudid
 	la, xi	'0'
 	WRITE_BYTE
 
-izexit	fret	0
+izexit	lret	0
 
 
 
@@ -691,7 +764,8 @@ iprint6	la, xi	0
 	WRITE3_BYTES
 	lret	0
 
-iscan	READ_START
+iscan_skip
+	READ_START
 iscanf	READ_BYTE
 
 	aa, xi	-' '
@@ -722,3 +796,197 @@ iscanlsm
 	fret	1
 
 iscanx1	fret	0
+
+quix	lx, xi	6
+	lb, xi	0
+quil	READ_BYTE
+quiv	aa, xi	-'0'-10
+	jc	quit
+	aa, xi	10
+	jnc	quit
+	ax, xi	-1
+	ex	table_add, x
+	tz	x
+	j	quil
+quit	lret	0
+
+
+bi	lb, xi	0
+bi_sense
+	READ_BYTE
+	aa, xi	-' '
+	jza	bi_sense
+	aa, xi	' '-'+'
+	jza	bi_plus
+	aa, xi	'+-'-'
+	jza	bi_minus
+	aa, xi	'-'-'0'-10
+	lcal	free_iq
+	fret	0
+bi_plus	lcal	free_ip
+	fret	0
+bi_minus
+	lcal	free_in
+	fret	0
+
+bdi	z	6
+	z	7
+	z	8
+bdi_sense
+	READ_BYTE
+	aa, xi	-' '
+	jza	bdi_sense
+
+	lr, xi	6
+	lb, xi	0
+	lx, xi	6
+
+	aa, xi	' '-'+'
+	jza	bdi_rp
+	aa, xi	'+'-'-'
+	jza	bdi_rn
+	aa, xi	'-'
+	lcal	bdi_rp1		. this should be a numeral
+	fret	0
+
+bdi_rp	lcal	bdi_rp0
+	fret	0
+
+bdi_rn	lcal	bdi_rp0
+	ds	6
+	dsr	48
+	dan	6
+	fret	0
+
+bdi_rp0	READ_BYTE		. read the 1st numeral
+bdi_rp1	lcal	quiv		. interpret up to 6 numerals
+	jxge	bdi_z		. not a single one
+	tz	x
+	j	bdi_qx		. up to 5
+	sb	7
+bdi_r6	lcal	quix		. read up to 6 more numerals
+	jxge	bdi_z		. not a single one
+	tz	x
+	j	bdi_x		.
+	sb	9
+	lb	7
+	mf	(1000000)
+	push	6
+	ds	6
+	pop	b
+	mf	(1000000)
+	dsl	24
+	da	6
+	da	8
+	ds	6
+	j	bdi_r6
+
+bdi_qx	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+	dsr	24
+	ds	6
+	lret	0
+
+bdi_x	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+	sa	9
+	lb	7
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	push	6
+	ds	6
+	pop	b
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	dsl	24
+	da	6
+	da	8
+	ds	6
+bdi_z	dl	6
+	lret	0
+
+bti	z	8
+	z	9
+	z	10
+	z	11
+bti_sense
+	READ_BYTE
+	aa, xi	-' '
+	jza	bti_sense
+
+	lr, xi	6
+	lx, xi	6
+	lb, xi	0
+
+	aa, xi	' '-'+'
+	jza	bti_rp
+	aa, xi	'+'-'-'
+	jza	bti_rn
+	aa, xi	'-'
+	lcal	bti_rp1
+	fret	0
+
+bti_rp	lcal	bti_rp0
+	fret	0
+
+bti_rn	lcal	bti_rp0
+	dsr	24
+	dan	10
+	ds	6
+	la, xi	-1
+	sc	b
+	ab	a
+	ab	9
+	fret	0
+
+bti_rp0	READ_BYTE
+bti_rp1	lcal	quiv
+	jxge	bti_z
+	tz	x
+	j	bti_qx
+	sb	11
+bti_r6	lcal	quix
+	jxge	bti_z
+	tz	x
+	j	bti_x
+	sb	7
+	z	6
+	lb	11
+	mf	(1000000)
+	da	6
+	sb	11
+	sa	7
+	sc	6
+	lb	10
+	mf	(1000000)
+	da	6
+	sb	10
+	sa	7
+	lb	9
+	mf	(1000000)
+	ab	7
+	sb	9
+	j	bti_r6
+
+bti_qx	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+	sa	11
+	ql	8
+	lret	0
+
+bti_x	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+	sa	7
+	z	6
+	lb	11
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	da	6
+	sb	11
+	sa	7
+	sc	6
+	lb	10
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	da	6
+	sb	10
+	sa	7
+	lb	9
+	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+	ab	7
+	sb	9
+bti_z	ql	8
+	lret	0
+
