@@ -580,9 +580,7 @@ void   d(int operand)	/*	divide			*/
       dividend[0] = carry & 0x00FFFFFF;
    }
 
-   if (signs2)
-   {
-   }
+   if (signs2) divisor[0]--;
    else divisor[0] ^= 0x00FFFFFF;
 
    while (divisor[0] & 0x00800000)
