@@ -595,8 +595,9 @@ void   d(int operand)	/*	divide			*/
    while (beats--)
    {
       upper <<= 1;
-      upper  |= (quotient >> 23) & 1;
+      upper |= (quotient >> 23) & 1;
       quotient <<= 1;
+      quotient &= 0x00FFFFFF;
 
       divisor[1] >>= 1;
       divisor[1] |= (divisor[0] & 1) << 23;
