@@ -1,0 +1,315 @@
+
+	$path		../
+.	$include	def/rta.def
+.	$include	def/ii.def
+.	$include	def.sys/banks.def
+	$include	def.sys/base.def
+.	$include	language/stack.def
+	$include	lib/lib.def
+	$include	lib/register.def
+	$include	lib/aquiform.def
+	$include	t77.4/dq.def
+.	$include	t77.4/ip.def
+	$include	t77.4/socket.def
+	$path
+
+AQUIFORM_NET16	$equ	1
+COUNTED_STREAM	$equ	1
+ISERVER_PORT	$equ	4612
+
+$(1)
+socket1	+	0
+i_bound -	1
+portcb_lva	0
+portcb		0
+
+$(70::,fp)
+descriptor	acw
+
+$(66::,x)
+so	$socket
+
+$(0)
+i_server1	$head_far	scalars(response_axw,	int	;		
+					operator,	int	;
+					left,		float	;
+					right,		float	;
+					signs1,		int	;
+					signs,		long	)
+
+	tz	socket1
+	j	i_rx
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socket1
+	jna	i_error
+	lb, xi	ISERVER_PORT
+	sb	7
+	z	6
+	call	(bind)
+	sa	i_bound
+	jna	i_error
+
+	dl	10
+	ds	portcb_lva
+
+i_rx	tp	i_bound
+	j	i_error
+
+	dl	portcb_lva
+	sabr	BSOCKET
+
+i_rx1	lb	so:udp:socket_inq.head, b
+	jzb	i_no_traffic
+	la	descriptor:bytes, b
+	sa	BYTES
+
+	z	RDATAC
+
+	push	descriptor:apdata, b
+	pop	q
+
+	la, xi	21+7+1+2+1
+	call	(udp_rtxbuffer)
+	jza	i_release
+
+	ly	descriptor:apdata, a
+	sa	response_axw
+	sy	p
+	z	WDATAC
+	z	WDATA
+
+	call	(iscan72)
+	qs	left
+
+	call	(symbol_scan)
+	sa	operator
+
+	call	(iscan72)
+	qs	right
+
+
+	lr, xi	0
+	la	LAST_BYTE_READ	.	LAST_BYTE_READ
+	aa, xi	-','
+
+	jnza	i_again
+	call	(iscan_skip)
+	lb, xi	1		.	nothing scanned
+	ab, xi	-1
+	jnb	i_again
+	lr	b
+
+i_again
+	la	operator
+
+	anu, xi	'+'
+	jzb	i_add
+	anu, xi	'-'
+	jzb	i_add_negative
+	anu, xi	'*'
+	jzb	i_multiply
+	anu, xi	'/'
+	jzb	i_divide
+	j	i_nop
+
+i_add
+i_add_again
+	dl	left+2
+	da	right+2
+	ds	left+2
+	sc	a
+	lb	left+1
+	ab	right+1
+	ab	a
+	sb	left+1
+	jdr	i_add_again
+	j	i_edit
+
+i_add_negative
+i_add_negative_again
+	dl	left+2
+	dan	right+2
+	ds	left+2
+	sc	a
+	aa, xi	-1
+	lb	left+1
+	ab	a
+	anb	right+1
+	sb	left+1
+	jdr	i_add_negative_again
+	j	i_edit
+
+i_multiply
+i_multiply_again
+	lb	left+3
+	mf	right+3
+	sb	left+3
+	dsa	24
+	ds	6
+	lb	left+2
+	mf	right+3
+	da	6
+	sb	left+2
+	sa	7
+	lb	left+1
+	m	right+3
+	ab	7
+	sb	left+1
+	jdr	i_multiply_again
+	j	i_edit
+
+	$if	1
+i_divide
+i_divide_again
+
+.	this is the very great joy of doing multiword divide
+.	in 2s-complement integer
+
+.	stop dividing after the first part if the remainder
+.	and the last dividend word are both absolute zero
+
+.	then if the remainder from a negative dividend dividend
+.	is absolute zero, change it to 1s-complement zero
+.	= 1111 1111 1111 1111 1111 1111
+
+.	add the first 48-bit quotient to its own extended sign
+.	if any of the 72 quotient bits is nonzero
+
+.	this has no effect on positive values but changes
+.	negative values from 2s complement to 1s complement
+
+.	the divide instruction itself returns a 48-bit quotient
+.	for a 48-bit dividend, so only two divides are needed
+.	for a three-word dividend and quotient
+
+	la	left+1
+	saa	24		. remainder signs
+	sa	signs1
+	xor	right+1		. quotient signs
+	dsa	48
+	ds	signs
+
+	dl	left+1		. read first 48 dividend bits
+	d	right+3		. only 24 divisor bits can be used
+				. with integer divide instruction
+				. for more than that use floating point
+				. or program a bit-race routine
+
+	sb	7		. set aside the upper remainder
+	sa	b		. reassemble the first 48-bit quotient
+	la	6		. recover the ms 24 quotient bits
+	ds	left+1
+	la	7
+	lb	left+3
+				. if upper remainder:lower dividend = zero
+	jdz	i_div_dont	. do no more
+
+	jnza	$+2		. if upper remainder = absolute zero
+	la	signs1		. change it to signs
+	d	right+3		. divide stage 2
+	sa	left+3		. store third quotient word
+	sb	left		. store the final remainder
+
+	dl	left+1		. add signs to ms 48 quotient bits
+	tz	left+3		. if any of the 72 quotient bits
+	j	$+2		. is nonzero
+	jdz	i_div_dont	. 
+	da	signs
+	ds	left+1
+i_div_dont
+
+	jdr	i_divide_again
+
+	j	i_edit
+
+	$else
+
+i_divide
+i_divide_again
+	ql	right
+	z	right
+	jpb	i_divide_p2
+	n	right
+	call	(n72comp2)
+	la	right
+	qs	right
+i_divide_p2
+	ql	left
+	la	b
+	saa	24
+	sa	left
+	jpb	i_divide_p1
+	call	(n72comp2)
+i_divide_p1
+	la	left
+	qs	left
+
+	dl	left+1
+	d	right+3
+	sb	7
+	sa	b
+	la	6
+	ds	left+1
+	la	7
+	lb	left+3
+	d	right+3
+	sa	left+3
+
+	la	left	.	read the dividend sign
+	xorB	a	.	if 1s flip the remainder
+	anb	a	.	and add 1 to it
+
+	sb	left
+
+	xor	right	.	record mixed or equal signs
+	sa	right	.	
+	ql	left
+	tp	right
+	call	(n72comp2)
+	qs	left
+
+	j	i_edit
+	$endif
+
+i_nop
+i_edit
+	z	BYTES
+	ql	left
+	call	(edit72s)
+
+	la	operator
+	aa, xi	-'/'			. operation was divide?
+	jnza	i_ecomplete		. no
+	lb	left			. remainder?
+	jzb	i_ecomplete		. no
+	la	(" ":0:0)
+	WRITE_UBYTE
+	la	b
+	call	(edits)			. sprint the remainder
+i_ecomplete
+	la	("":10:0:0)
+	WRITE3_BYTES
+	
+	lx	response_axw
+	la	BYTES
+	sa	descriptor:bytes, x
+
+
+	call	(udp_acw_send)
+
+i_release
+	lx	portcb			. port structure in scalar frame
+	call	(release_udgram)
+	lb	portcb			. port structure in scalar frame
+	j	i_rx1
+i_no_traffic
+	ii	YIELD$
+	lb	portcb
+	j	i_rx1
+i_error
+
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
