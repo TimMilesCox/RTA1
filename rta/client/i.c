@@ -95,7 +95,6 @@ int main(int argc, char *argv[])
           "F %x NB %d udconnect state %d\n",
 	   s, x, f, u, y);
 
-
    for (;;)
    {
       p = fgets(sdata, TEXT, stdin);

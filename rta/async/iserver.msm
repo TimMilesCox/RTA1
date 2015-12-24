@@ -159,39 +159,20 @@ i_multiply_again
 	jdr	i_multiply_again
 	j	i_edit
 
-	$if	0
+	$if	1
+				. integer divide instruction executed
+				. simply and once gives 48-bit signed
+				. quotient and 24-bit signed remainder
+				. from 48-bit dividend and 24-bit divisor
+
+				. quotient high order bits are in register 6
+				. quotient low-order bits are in a
+				. remainder is in b
+
+				. this sequence produces 72-bit signed
+				. quotient from 72-bit dividend
 i_divide
 i_divide_again
-
-.	this is the very great joy of doing multiword divide
-.	in 2s-complement integer
-
-.	stop dividing after the first part if the remainder
-.	and the last dividend word are both absolute zero
-
-.	then if the remainder from a negative dividend dividend
-.	is absolute zero, change it to 1s-complement zero
-.	= 1111 1111 1111 1111 1111 1111
-
-.	add the first 48-bit quotient to its own extended sign
-.	if any of the 72 quotient bits is nonzero
-
-.	this has no effect on positive values but changes
-.	negative values from 2s complement to 1s complement
-
-.	the divide instruction itself returns a 48-bit quotient
-.	for a 48-bit dividend, so only two divides are needed
-.	for a three-word dividend and quotient
-
-
-
-	la	left+1
-	saa	24		. remainder signs
-	sa	signs1
-	xor	right+1		. quotient signs
-	dsa	48
-	ds	signs
-
 
 	dl	left+1		. read first 48 dividend bits
 	d	right+3		. only 24 divisor bits can be used
@@ -199,27 +180,20 @@ i_divide_again
 				. for more than that use floating point
 				. or program a bit-race routine
 
-	sb	7		. set aside the upper remainder
+	sb	7		. set aside the first remainder
 	sa	b		. reassemble the first 48-bit quotient
 	la	6		. recover the ms 24 quotient bits
-	ds	left+1
-	la	7
-	lb	left+3
-				. if upper remainder:lower dividend = zero
-	jdz	i_div_dont	. do no more
-
-	jnza	$+2		. if upper remainder = absolute zero
-	la	signs1		. change it to signs
+	ds	left+1		. store the upper 48 quotient bits
+	la	7		. recover 1st remainder
+	lb	left+3		. zone with 3rd dividend word
 	d	right+3		. divide stage 2
+	sb	left		. store final remainder
 	sa	left+3		. store third quotient word
-	sb	left		. store the final remainder
 
-	dl	left+1		. add signs to ms 48 quotient bits
-	tz	left+3		. if any of the 72 quotient bits
-	j	$+2		. is nonzero
-	jdz	i_div_dont	. 
-	da	signs
-	ds	left+1
+	la	6		. add ms word 2nd quotient to 1st quotient
+	dsa	24		. this part is important in decrementing
+	da	left+1		. the 2s complement effect on 
+	ds	left+1		. the 1st 2 words of a negative quotient
 i_div_dont
 
 	jdr	i_divide_again
@@ -227,7 +201,17 @@ i_div_dont
 	j	i_edit
 
 	$else
+				. this is a cautious method until
+				. the efficient sign-handling version
+				. above is checked for all cases
 
+				. it flips everything to positive
+				. magnitude and flips the results
+				. back to intended polarities
+
+				. temporary measure while examining
+				. the effects to successive divides
+				. in 2s complement
 i_divide
 	ql	right
 	z	right
