@@ -1,0 +1,182 @@
+
+
+.	for areas with 16777216+ primary pages
+.	so that the final folded XOR
+.	includes all key bits which have
+.	been scanned
+
+page_pointer_l	$tree
+	$head_near	 params(key_bits,	int	;
+				primary_pages,	long	;
+				key_p,		long)	;
+			scalars(log,		int	;
+				mask,		long	;
+				key,		24)
+
+	dl	primary_pages	. the containing power of 2
+	dan	(1d)		. = itself and lower numbers
+	dlsc	a		. down to the next power of 2
+	dl	(1d)		. turn that through the top
+	drr	*6
+	dan	(1d)		. 1 less is the containing mask
+	ds	mask
+	la, xi	48
+	ana	6		. reciprocal of shift count
+	sa	log
+
+	lc	key_array	key_bits	;
+				key,,i		;
+				key_p,,long
+
+	aa, xi	-1
+	sar	2
+	lr	a
+	lx, i	key
+	dl	key
+	ds	6
+	j	pair_right
+
+pair_left
+	dl	0, x
+	xor	6
+	xorB	7
+	ds	6
+
+pair_right
+	dl	2, x
+	drl	3		. this should stop empty lanes
+				. through primary pages
+	xor	6
+	xorB	7
+	ds	6
+
+	ax, xi	4
+	jdr	pair_left
+
+	lx	log
+	dsr	0, x
+
+	xor	6
+	xorB	7
+
+	and	mask
+	andB	mask+1
+
+	dan	primary_pages
+	jnc	$+2
+	ds	6
+	dl	6
+
+	$ret
+	$root
+
+
+.	this is also called to extract keys which might
+.	be unaligned from storage when walking calc
+.	chains
+
+.	the number of words tabled is returned in a
+
+key_array $tree
+	$head_near	 params(key_bits,	int	;
+				key,		int	;
+				key_p,		long)
+	lx	key
+	la	key_bits
+	sa	6
+	z	7	. initialise output words count
+
+	dl	key_p
+	jza	no_offset
+
+	dsr	24
+	d, xi	24
+	aa	key_p+1
+
+	lcal	offset_array
+	j	key_array_x
+
+no_offset
+	lcal	qarray
+key_array_x
+	la	7
+	$ret
+	$root
+
+
+qarray	ly	b
+q_more	dl	0, y
+	ds	0, x
+
+	inc	7
+	inc	7
+
+	push,xi	-48
+	popA	6
+
+	jc	q_advance
+
+	n	6
+	inc	6
+	dsr	*6
+	dsl	*6
+	ds	0, x
+	lret	0	
+
+q_advance
+	ax, xi	2
+	ay, xi	2
+	
+	tz	6
+	j	q_more
+	
+	lret	0
+
+
+offset_array
+	ly	a
+	lr	b
+
+o_more	dl	0, y		. nnyyyy yyyyyy
+o_round	drl	*r		. yyyyyy yyyynn 
+	sa	0, x
+
+	inc	7
+	push,xi	-24
+	popA	6
+	jnc	o_trim
+	tnz	6
+	j	o_x
+
+	ay, xi	2
+	la	0, y		. zzzzzz yyyynn
+
+	drr	*r		. nnzzzz zzyyyy
+	rbl	*r		. nnzzzz yyyyzz
+	sb	1, x
+	ax, xi	1		. if it needs trimming
+				. it must point there
+	inc	7
+
+	push,xi	-24
+	popA	6
+
+	jnc	o_trim
+	tnz	6
+	j	o_x
+
+	ax, xi	1		. if it needs no trimming
+				. it must point along
+	lb	1, y		. nnzzzz oooooo
+	j	o_round
+
+o_trim	n	6
+	inc	6
+
+	la	0, x
+	sar	*6
+	sal	*6
+	sa	0, x
+
+o_x	lret	0
+
