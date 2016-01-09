@@ -5,7 +5,7 @@
 .	includes all key bits which have
 .	been scanned
 
-page_pointer_l	$tree
+page_pointer	$tree
 	$head_near	 params(key_bits,	int	;
 				primary_pages,	long	;
 				key_p,		long)	;
@@ -46,6 +46,13 @@ pair	dl	0, x
 	ax, xi	2
 	jdr	pair
 
+	tz	mask		. if the # primary pages is < 16777217
+	j	in_page_range
+	xorB	a		. turn the 2-word sum
+	la, xi	0		. into a 1-word accumulation
+	ds	6
+
+in_page_range
 	lx	log		. fold over the bits outside the
 	dsr	0, x		. primary-pages containing mask
 
@@ -54,14 +61,89 @@ pair	dl	0, x
 
 	and	mask
 	andB	mask+1
+	ds	6
 
 	dan	primary_pages
-	jnc	$+2
-	ds	6
+	jc	$+2
 	dl	6
 
 	$ret
 	$root
+
+.	compilers can choose this call instead
+.	if there are no part-words in the key
+
+.	it doesn't call key_array to load / trim / align the key
+.	and so saves processing and internal stack
+
+LAST_WORD $equ	k
+
+page_pointer_fast $tree
+
+	$head_near	 params(key_words,	int	;
+				key,		int	;
+				primary_pages,	long)	;
+							;
+			scalars(log,		int	;
+				mask,		long)
+
+	dl	primary_pages
+	dan	(1d)		. size the containing power2-bucket
+	dlsc	a		. of the number of pages
+	dl	(1d)
+	drr	*6		. roll this through the top for size
+	dan	(1d)		. the mask is 1 less
+	ds	mask
+	la, xi	48		. the log is the shift count reciprocal
+	ana	6
+	sa	log
+
+	lr	key_words
+	off	carry$
+	src	r		. word-pairs = words / 2
+	sc	LAST_WORD
+
+	lx	key
+	dsr	48		. in case there is only
+	ds	6		. one word in the key
+	j	pair?
+
+pair!	dl	0, x
+	drr	*r		. vary the position of the most variable bits
+	drr	*LAST_WORD
+	xor	6
+	xorB	7
+	ds	6
+	ax, xi	2
+pair?	jdr	pair!
+
+	tz	LAST_WORD
+	xor	0, x
+	ds	6
+
+	tz	mask		. < 16777217 primary pages?
+	j	in_page_range
+	xorB	a
+	la, xi	0
+	ds	6
+
+in_page_range
+	lx	log		. fold the sum bits beyond pages radix
+	dsr	0, x
+	xor	6
+	xorB	7
+
+	and	mask		. find the remainder
+	andB	mask+1
+
+	ds	6
+	dan	primary_pages
+	jc	$+2
+	dl	6
+
+	$ret
+
+	$root			. page_pointer_fast
 
 
 .	this is also called to extract keys which might
@@ -90,15 +172,15 @@ key_array $tree
 	j	key_array_x
 
 no_offset
-	lcal	qarray
+	lcal	quick_array
 key_array_x
 	la	7
 	$ret
-	$root
 
 
-qarray	ly	b
-q_more	dl	0, y
+quick_array $tree
+	ly	b
+more	dl	0, y
 	ds	0, x
 
 	inc	7
@@ -107,39 +189,39 @@ q_more	dl	0, y
 	push,xi	-48
 	popA	6
 
-	jc	q_advance
+	jc	advance
 
-	n	6
-	inc	6
+	n	6		. trim off the bits
+	inc	6		. which aren't in the key
 	dsr	*6
 	dsl	*6
 	ds	0, x
 	lret	0	
 
-q_advance
-	ax, xi	2
+advance	ax, xi	2
 	ay, xi	2
 	
 	tz	6
-	j	q_more
+	j	more
 	
 	lret	0
+	$root			. quick_array
 
+offset_array $tree
 
-offset_array
 	ly	a
 	lr	b
 
-o_more	dl	0, y		. nnyyyy yyyyyy
-o_round	drl	*r		. yyyyyy yyyynn 
+	dl	0, y		. nnyyyy yyyyyy
+round	drl	*r		. yyyyyy yyyynn 
 	sa	0, x
 
 	inc	7
 	push,xi	-24
 	popA	6
-	jnc	o_trim
+	jnc	trim
 	tnz	6
-	j	o_x
+	j	exit
 
 	ay, xi	2
 	la	0, y		. zzzzzz yyyynn
@@ -147,23 +229,21 @@ o_round	drl	*r		. yyyyyy yyyynn
 	drr	*r		. nnzzzz zzyyyy
 	rbl	*r		. nnzzzz yyyyzz
 	sb	1, x
-	ax, xi	1		. if it needs trimming
-				. it must point there
 	inc	7
 
 	push,xi	-24
 	popA	6
 
-	jnc	o_trim
+	jnc	trim1
 	tnz	6
-	j	o_x
+	j	exit
 
-	ax, xi	1		. if it needs no trimming
-				. it must point along
+	ax, xi	2
 	lb	1, y		. nnzzzz oooooo
-	j	o_round
+	j	round
 
-o_trim	n	6
+trim1	ax, xi	1		. point at 2nd word of pair
+trim	n	6
 	inc	6
 
 	la	0, x
@@ -171,5 +251,6 @@ o_trim	n	6
 	sal	*6
 	sa	0, x
 
-o_x	lret	0
-
+exit	lret	0
+	$root			. offset_array
+	$root			. key_array
