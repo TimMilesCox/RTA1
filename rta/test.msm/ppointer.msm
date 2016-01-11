@@ -1,8 +1,26 @@
+LAST_WORD	$equ	k
+KEY_ARRAY	$equ	12
 
+.	there is no restriction in the size of calc keys
+.	but this routine only includes the KEY_ARRAY words
+.	in the placement calc. The subsequent walk through
+.	a calc chain compares pairs of entire keys
 
-.	for areas with many times 16777216 primary pages
-.	so that the final folded XOR
-.	includes all key bits which have
+.	this routine is aimed at string elements not much
+.	larger than octets
+
+.	where keys are strings of something larger than
+.	octets, a good calc placement might need more words
+.	that KEY_ARRAY, and page_pointer_fast routine might be
+.	considered instead, because it does not restrict the
+.	number of words summed into calc
+
+.	for areas with up to 1 */ 46 primary pages
+.	(128 terapages)
+
+.	or for areas with < 16777217 primary pages
+
+.	final folded XOR includes all key bits which have
 .	been scanned
 
 page_pointer	$tree
@@ -11,7 +29,7 @@ page_pointer	$tree
 				key_p,		long)	;
 			scalars(log,		int	;
 				mask,		long	;
-				key,		24)
+				key,		KEY_ARRAY)
 
 	dl	primary_pages	. obtain the containing power of 2
 	dan	(1d)		. of itself and lower numbers
@@ -23,6 +41,15 @@ page_pointer	$tree
 	la, xi	48
 	ana	6		. reciprocal of shift count
 	sa	log
+
+	la, xi	KEY_ARRAY*$word
+	ana	key_bits
+	jc	length_in_range
+
+	la, xi	KEY_ARRAY*$word
+	sa	key_bits
+
+length_in_range
 
 	lc	key_array	key_bits	;
 				key,,i		;
@@ -70,13 +97,18 @@ in_page_range
 	$ret
 	$root
 
-.	compilers can choose this call instead
-.	if there are no part-words in the key
+.	this routine requires integral words of key
 
-.	it doesn't call key_array to load / trim / align the key
-.	and so saves processing and internal stack
+.	it doesn't call key_array to load / trim / align
+.	the key and so saves processing and internal stack
 
-LAST_WORD $equ	k
+.	it has no key length restriction and is optimal for
+.	UTF-32 24-bit character keys which might need more
+.	than KEY_ARRAY words to get a good calc placement
+
+.	it can also be wrappered to use an external stack
+.	frame for very long keys with no alignment guarantee
+.	if > KEY_ARRAY words must be summed for calc
 
 page_pointer_fast $tree
 
@@ -147,9 +179,13 @@ in_page_range
 	$root			. page_pointer_fast
 
 
-.	this is also called to extract keys which might
-.	be unaligned from storage when walking calc
-.	chains
+.	this routine extracts keys
+.	for alignment / copy / comparison
+
+.	it's restricted to KEY_ARRAY words
+.	when loading the internal stack
+
+.	otherwise it extracts unlimited data words
 
 .	the number of words tabled is returned in a
 
@@ -168,8 +204,11 @@ key_array $tree
 	dsr	24
 	d, xi	24
 	aa	key_p+1
-
-	lcal	offset_array
+	jnzb	offset
+	dsr	24
+	j	no_offset
+	
+offset	lcal	offset_array
 	j	key_array_x
 
 no_offset
@@ -218,6 +257,7 @@ round	drl	*r		. yyyyyy yyyynn
 	sa	0, x
 
 	inc	7
+
 	push,xi	-24
 	popA	6
 	jnc	trim
@@ -230,7 +270,6 @@ round	drl	*r		. yyyyyy yyyynn
 	drr	*r		. nnzzzz zzyyyy
 	rbl	*r		. nnzzzz yyyyzz
 	sb	1, x
-	inc	7
 
 	push,xi	-24
 	popA	6
