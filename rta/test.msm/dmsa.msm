@@ -24,7 +24,8 @@ assign_area $tree
 				name_words,	int	;
 				tree_insert,	long	;
 				area_words,	long)	;
-			scalars(aheadu,		$DMSA_WORDS+1	)
+							;
+			scalars(aheadu,		$DMSA_WORDS+1+1	)
 
 
 	dl	area_words
@@ -52,49 +53,56 @@ assign_area $tree
 	aa	name_words		. calculate 1st header length minus rfw
 	ab, i	1, a			. add 1st header length + rfw
 
-	aa	($DMSA*/16s)
+	aa	($DMSA*/16s)		. construct the initial record format word
 	sa	ahead:rfw
 
 					. request directory space with 2nd rfw
+
 	c	(tree$space$)	1,b,i	tree_insert,,long
-	j	cannot
+	j	cannot			. this would be a sign of a large problem
 
 	ly	a			. can: target address for directory entry
-	la	ahead:rfwx
-	and, xi	32767			. retrieve # extent pointers
-	lr	a
 
 .	ahead:quanta is already zero = dynamic variable default
 
-	dl	ahead
-	ds	0, y
+	dl	ahead			. write fixed part of file descriptor
+	ds	0, y			. rfw:granules_extent
 	ql	ahead+2
-	qs	2, y
+	qs	2, y			. granules_max:quanta_written
 
 	ly, i	6, y
 
-	lcal	wzextent?
-
-wzextent!
-	z	0, y
-	ay, xi	1
-wzextent?
-	jdr	wzextent!
-
-	lx	name
 	lr	name_words
+	lx	name			. pointer to text words string
 	j	wname?
 
-wname!	la	0, x
-	sa	0, y
+wname!	la	0, x			. write filename to locations 6+
+	sa	0, y			. of descriptor
 	ax, xi	1
 	ay, xi	1
 wname?	jdr	wname!
+	
+	la	ahead:rfwx		. write rfw of extent list
+	sa	0, y			. after filename
+	ay, xi	0
+
+	and, xi	32767			. retrieve # extent pointers
+	lr	a
+
+	j	wzextent?
+
+wzextent!				. initialise all extent slots
+	z	0, y			. unpopulated
+	ay, xi	1
+wzextent?
+	jdr	wzextent!		. that's all, y marks the spot
 
 	call	(confirm$write$)
 	la, xi	0
 	j	can
+
 cannot	la, xi	-1
+
 can	$ret
 	$root
 
