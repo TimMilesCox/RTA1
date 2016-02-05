@@ -1,0 +1,172 @@
+
+tree_space $tree
+
+	. return long address in 10:11 to directory page
+
+	. if starting a new block to contain requested words
+
+	. add a jump forward entry in the last 3 words of the
+	. hitherto last directory page in the chain
+
+	. unused intervening words become a bypass record
+	. with zero..n payload words. Record Format Word lengths
+	. are not self-inclusive
+
+	.	|				|
+	.	|_______________________________|
+	.	| BY$PASS | # words following	|
+	.	|_________|_____________________|
+	.	|				|
+
+	.		  spare words
+
+	.	|				|
+	.	|_______________________________|
+	.	| RELAY$|    0     |    2	|
+	.	|_________|__________|__________|________________________________
+	.	|		granule-ID of next directory page		|
+	.	|_______________________________________________________________|
+
+
+	. return address in y of the directory space for caller to write
+
+	. a new block is TREE_BLOCK words * as many as the new
+	. new entry requires with 3-word PAGE$CONTROL record and
+	. 3-word buffer for a possible later RELAY$ record
+
+	. on success skip one instruction on return, otherwise don't
+
+INSERT_POINT	$equ	8
+FREE_WORDS	$equ	7
+WORDS_SOUGHT	$equ	6
+WORDS_DELIVERED	$equ	9
+
+	sa	WORDS_SOUGHT
+
+tree_walk
+	lb	tpage:write_space
+	ay	tpage:write_point	. 1st free location in page
+					. no longer pointing at directory page start
+					. but register 11 does if you need that
+
+	sb	FREE_WORDS
+	anb	3, a			. we have required words + RELAY$ buffer?
+
+	lk, xi	(255*/16s)
+	la	0, y			. is the word at that location a bypass
+					. or end of directory?
+
+	jc	it_goes_in_here		. new entry fits
+
+	sy	INSERT_POINT		. save the insert point
+	ay	FREE_WORDS		. scan end - 3 words
+	ay, xi	-3
+
+	mta	(BY$PASS*/16s)		. test the word @ write_point
+	j	tree_extend		. there is no bypass
+					. = there is no forward part
+	la	0, y			. test the word @ end - 3
+	mta	(RELAY$*/16s)
+	lret	0			. anomaly
+
+	
+	drr	LOG24(GRANULE)+6	. ms bits a = offset: ls bits b = bank
+	lk	(040003F)		.
+	sal	6
+	mlb	10			. acquire device information
+
+	or, xi	BASE			. construct the pointer
+	rar	6
+	drr	24
+	ds	10
+	ly	b
+
+	sabr	BASE
+	j	tree_walk
+
+tree_extend
+	la, xi	3+3		. the new page wants a page control word
+				. and a forward buffer
+	aa	WORDS_SOUGHT
+	lcal	tpage
+	lret	0		. failure to obtain
+
+	ds	1, y		. store at page end - 2
+	la	(RELAY$,,2s)
+	sa	0, y
+
+	lb	FREE_WORDS
+	ab, xi	-3-1		. leave space for the forward pointer
+				. plus this record control word
+
+	jnc	base_tpage	. not even space for a zero-length bypass
+	or	(BY$PASS*/16s)
+	sa	*INSERT_POINT	. write a bypass record unless there is
+				. no space for it
+base_tpage
+	la	10
+	ly	11
+	sabr	BASE
+	la, xi	3
+	lb	WORDS_DELIVERED
+	ab, xi	-3
+	aa	WORDS_SOUGHT
+	anb	WORDS_SOUGHT
+	ds	tpage:write_point
+	z	3, y		. no BY$PASS record in sight
+	la	(PAGE$CONTROL,,2)
+	sa	0, y
+
+	ay, xi	3		. the actual delivered buffer
+	j	deliver
+
+
+it_goes_in_here
+
+	. at this point y points to the user write buffer
+	. if this has previously been a BY$PASS record
+	. move it further down, unless you can't
+
+	. INSERT_POINT marks the spot
+
+	ly	11		. back to page start
+	lb	FREE_WORDS
+	anb	WORDS_SOUGHT
+	la	tpage:write_point
+	aa	WORDS_SOUGHT
+	ds	tpage:write_point
+
+	ly	INSERT_POINT
+	la	0, y
+	mta	(BY$PASS*/16s)
+	j	deliver
+
+	and	(00FFFF)
+	lb	WORDS_SOUGHT
+	ana, i	3-1, b		. this must fit on the page
+				. leaving a 3-word buffer
+	jnc	deliver		. underflow
+
+	or	((BY$PASS*/16s)	. replant the bypass record
+	ab	y		. smaller and further down
+	sa	0, b
+	
+deliver	lret	1
+
+	
+tpage	aa, xi	1023
+	and, xi	-1024
+	sa	WORDS_DELIVERED
+
+			. register 10 bits 5:0 identify the device
+	lcal	filestore24
+	lret	0	. failure to obtain
+
+	dl	10	. long address of where it's at
+	sal	2	. suppress the big flag
+	sar	8	. and the device pointer
+	sbl	6	. and the base selector
+	dsr	6	. this should look like a granule pointer
+	lret	1
+
+	$root
