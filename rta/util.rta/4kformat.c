@@ -82,8 +82,14 @@
 
 ********************************************************/
 
-#define	EXTENT1_WORDS	4
-#define	EXTENT2_WORDS	7
+#define	EXTENT1_WORDS	3
+#define	EXTENT2_WORDS	6
+#define	CONTROL_WORDS	4
+
+typedef struct { msw                rfw,
+                            write_point,
+                              remainder;
+		 dmsw granule_next_page;  } page_control;
 
 typedef struct { msw		    rfw;
 		 msw		 offset;
@@ -167,15 +173,14 @@ typedef struct { msw		    rfw,
 
 
 typedef struct { extent1             ex;
-                 msw        write_point,
-                              remainder,
-                            name[360-7]; } file_tree;
+                 msw        name[360-4]; } file_tree;
 
-typedef struct { forward	 label1,
+typedef struct { page_control	  space;
+		 forward	 label1,
 				 label2;
 		 file_tree	 label3;
 		 msw
- dspace[DIRECTORY_BLOCK-360-8-8+LEEWAY];  } tree;
+      dspace[DIRECTORY_BLOCK-3-5-5-360];  } tree;
 
 
 /*******************************************************
@@ -194,7 +199,9 @@ typedef struct { extent2	     ex;
 
 
 
-static tree label1  =  { { { 'L', 0, 4 } ,
+static tree label1  =  { { { 'P', 0, CONTROL_WORDS } } ,
+
+			 { { 'L', 0, 4 } ,
                            { 0, 0, 10 } ,
                            { 0, 0, 0, 0, 0, 0 } ,
                          { { '.' } } } ,
@@ -204,15 +211,16 @@ static tree label1  =  { { { 'L', 0, 4 } ,
                            { 255, 255, 255, 255, 255, 255 } ,
                          { { '.', '.' } } } ,
 
-			 { { { 'V', 0, EXTENT1_WORDS - 1 + 2 + 2 + 1 } ,
+			 { { { 'V', 0, EXTENT1_WORDS + 2 + 1 } ,
                              { 0 } ,
                              { 0, 0, 0, 0, 0, 16 } } ,
-                           { 0, 0, 0 } ,
-                           { 0, 0, 0 } ,
-                           { { 'F', 'I', 'X' } , { '0', '0', '1' } } } } ;
+                           { { 0, 0, 0 } ,
+                             { 'F', 'S', '0' } , { '0', '0', '1' } } } } ;
 
 
-static tree label2  =  { { { 'L', 0, 4 }  ,
+static tree label2  =  { { { 'P', 0, CONTROL_WORDS } } ,
+
+			 { { 'L', 0, 4 }  ,
                            { 0 } ,
                            { 0     } ,
                          { { '.' } } } ,
@@ -227,8 +235,8 @@ static tree label2  =  { { { 'L', 0, 4 }  ,
 
 static int		 f;
 
-static unsigned		 pointer1 = 8 + 5 + 5;
-static unsigned		 remainder1 = 1024 - 8 - 5 - 5;
+static unsigned		 pointer1 = 5 + 5 + 5 + 7;
+static unsigned		 remainder1 = 1024 - 5 - 5 - 5 - 7;
 static unsigned long long gpointer = 16;
 
 
@@ -325,7 +333,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    static dmsw		 restart_link   = { 0, 0, 0, 0, 0, 0  } ;
    static msw		 start_zero        =          { 0, 0, 0  } ;
 
-   static msw		 extrahead            = { 'X', 0, EXTENT2_WORDS - 1  } ;
+   static msw		 extrahead            = { 'X', 0, EXTENT2_WORDS  } ;
 
 
    char			 data[DATA + 4];
@@ -335,7 +343,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    char			 argument[48];
    char			 path[360];
 
-   unsigned long	 vpointer = 10;
+   unsigned long	 vpointer = 5 + 5 + 5;
    unsigned long	 vremainder;
 
    long			 p32 = 3 * (*displacement) + (long) actual;
@@ -359,6 +367,10 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    long long		 apointer;
    off_t                 dstart_position;
 
+   int                   byword;
+   msw                   bypass = { 128, 0, 0 } ;
+   msw                  *indexp = (msw *) &labelv;
+
    #ifdef MYGETS
    rp = mygets(data, DATA);
    #else
@@ -373,22 +385,23 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    if      (strcmp(command, "volume") == 0)
    {
       label1.label3.ex.rfw.t3 = pointer1
-                              = EXTENT1_WORDS - 1
-			      + 2 + 1
+                              = EXTENT1_WORDS
+			      + 1	/* volume has extra ms granule count */
 			      + copy(&label1.label3.name[1].t1, argument);
 
       gpointer = 16;
       label1.label3.ex.granule = restart_offset;
 
-      pointer1 += 10 + 1;
+      pointer1 += 5 + 5 + 5 + 1;
    }
 
    else if (strcmp(command, "tree")   == 0)
    {
       next->ex.rfw.t1 = 'D';
-      next->ex.rfw.t3 = EXTENT1_WORDS - 1
-                     + 2
+      next->ex.rfw.t3 = EXTENT1_WORDS
                      + copy(&next->name[0].t1, argument);
+
+      vpointer = 5 + 5 + 5;
 
       slab = *displacement;
       *displacement = slab + new->ex.rfw.t3 + 1;
@@ -444,6 +457,15 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
       vremainder = slot - vpointer;
 
+      #if 1
+      labelv.space.write_point.t3 = vpointer;
+      labelv.space.write_point.t2 = vpointer >>  8;
+      labelv.space.write_point.t1 = vpointer >> 16;
+
+      labelv.space.remainder.t3 = vremainder;
+      labelv.space.remainder.t2 = vremainder >>  8;
+      labelv.space.remainder.t1 = vremainder >> 16;
+      #else
       next->write_point.t3 = vpointer;
       next->write_point.t2 = vpointer >>  8;
       next->write_point.t1 = vpointer >> 16;
@@ -451,6 +473,31 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       next->remainder.t3 = vremainder;
       next->remainder.t2 = vremainder >>  8;
       next->remainder.t1 = vremainder >> 16;
+      #endif
+
+      byword = vremainder - 1;
+
+      if (byword < 0)
+      {
+      }
+      else
+      {
+         /*********************************************
+                bypass record is an indication of free
+                space at the end of a directory page
+
+                Mostly for viewing because file system
+                managers use write_point algebraically.
+                write_point also points at this spot
+
+         *********************************************/
+
+         bypass.t3 = byword;
+         bypass.t2 = byword >> 8;
+
+         indexp += vpointer;
+         *indexp = bypass;
+      }
 
       #if 0
       labelv.label1.write_point = next->label1.write_point;
@@ -486,7 +533,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                {
                   new->ex.rfw.t1 = 'F';
                   new->ex.rfw.t2 = 0;
-                  new->ex.rfw.t3 = EXTENT2_WORDS - 1
+                  new->ex.rfw.t3 = EXTENT2_WORDS
                                  + 2
                                  + copy(&new->name[0].t1, argument);
 
@@ -667,6 +714,10 @@ int main(int argc, char *argv[])
    long long		 net_granules = GRANULES;
    unsigned char	*uptr;
 
+   int                   byword;
+   msw                   bypass = { 128, 0, 0 } ;
+   msw                  *indexp = (msw *) &label1;
+
 
    argue(argc, argv);
 
@@ -724,13 +775,36 @@ int main(int argc, char *argv[])
 
       remainder1 = 1024 - pointer1;
 
-      label1.label3.write_point.t1 = pointer1 >> 16;
-      label1.label3.write_point.t2 = pointer1 >>  8;
-      label1.label3.write_point.t3 = pointer1;
+      byword = remainder1 - 1;
 
-      label1.label3.remainder.t1 = remainder1 >> 16;
-      label1.label3.remainder.t2 = remainder1 >>  8;
-      label1.label3.remainder.t3 = remainder1;
+      if (byword < 0)
+      {
+      }
+      else
+      {
+         /*********************************************
+                bypass record is an indication of free
+                space at the end of a directory page
+
+                Mostly for viewing because file system
+                managers use write_point algebraically.
+                write_point also points at this spot
+
+         *********************************************/
+
+         bypass.t3 = byword;
+         bypass.t2 = byword >> 8;
+         indexp += pointer1;
+         *indexp = bypass;
+      }
+
+      label1.space.write_point.t1 = pointer1 >> 16;
+      label1.space.write_point.t2 = pointer1 >>  8;
+      label1.space.write_point.t3 = pointer1;
+
+      label1.space.remainder.t1 = remainder1 >> 16;
+      label1.space.remainder.t2 = remainder1 >>  8;
+      label1.space.remainder.t3 = remainder1;
 
       label1.label3.ex.granule.octet[5] = gpointer;
       label1.label3.ex.granule.octet[4] = gpointer >>  8;

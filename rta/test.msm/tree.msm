@@ -3,72 +3,29 @@ tree_space $tree
 
 	. return long address in 10:11 to directory page
 
-	. if starting a new block to contain requested words
-
-	. add a jump forward entry in the last 3 words of the
-	. hitherto last directory page in the chain
-
-	. unused intervening words become a bypass record
-	. with zero..n payload words. Record Format Word lengths
-	. are not self-inclusive
-
-	.	|				|
-	.	|_______________________________|
-	.	| BY$PASS | # words following	|
-	.	|_________|_____________________|
-	.	|				|
-
-	.		  spare words
-
-	.	|				|
-	.	|_______________________________|
-	.	|  RELAY$ |    0     |    2	|
-	.	|_________|__________|__________|________________________________
-	.	|		granule-ID of next directory page		|
-	.	|_______________________________________________________________|
-
-
 	. return address in y of the directory space for caller to write
 
 	. a new block is TREE_BLOCK words * as many as the new
-	. new entry requires with 3-word PAGE$CONTROL record and
-	. 3-word buffer for a possible later RELAY$ record
+	. new entry requires with 5-word PAGE$CONTROL record and
 
 	. on success skip one instruction on return, otherwise don't
 
-INSERT_POINT	$equ	8
-FREE_WORDS	$equ	7
-WORDS_SOUGHT	$equ	6
+INSERT_POINT	$equ	7
+WORDS_SOUGHT	$equ	8
 WORDS_DELIVERED	$equ	9
 
 	sa	WORDS_SOUGHT
 
 tree_walk
 	ly	11			. 11 should be @ directory page start
-	lb	tpage:write_space
-	ay	tpage:write_point	. 1st free location in page
-					. no longer pointing at directory page start
-					. but register 11 does if you need that
-
-	sb	FREE_WORDS
-	anb, i	3, a			. we have required words + RELAY$ buffer?
-
-	lk, xi	(255*/16s)
-	la	0, y			. is the word at that location a bypass
-					. or end of directory?
+	dl	tpage:write_point
+	sa	INSERT_POINT
+	anb	WORDS_SOUGHT		. b is tpage:write_space
 
 	jc	it_goes_in_here		. new entry fits
 
-	sy	INSERT_POINT		. save the insert point
-	ay	FREE_WORDS		. scan end - 3 words
-	ay, xi	-3
-
-	mta	(BY$PASS*/16s)		. test the word @ write_point
-	j	tree_extend		. there is no bypass
-					. = there is no forward part
-	la	0, y			. test the word @ end - 3
-	mta	(RELAY$*/16s)
-	lret	0			. anomaly
+	dl	tpage:next_page_granule
+	jdz	tree_extend
 
 	
 	drr	LOG24(GRANULE)+6	. ms bits a = offset: ls bits b = bank
@@ -86,71 +43,47 @@ tree_walk
 	j	tree_walk
 
 tree_extend
-	la, xi	3+3		. the new page wants a page control word
-				. and a forward buffer
+	la, xi	CONTROL_WORDS$+1	. the new page wants a page control word
+
 	aa	WORDS_SOUGHT
 	lcal	tpage
-	lret	0		. failure to obtain
+	lret	0			. failure to obtain
 
-	ds	1, y		. store forward granule ID
-	la	(RELAY$,,2s)	. at end of old page -2
-	sa	0, y
+	ds	tpage:next_page_granule	. store forward granule ID
+					. of next directory page
 
-	lb	FREE_WORDS
-	ab, xi	-3-1		. leave space for the forward pointer
-				. plus this record control word
-
-	jnc	base_tpage	. not even space for a zero-length bypass
-	or	(BY$PASS*/16s)
-	sa	*INSERT_POINT	. write a bypass record unless there is
-				. no space for it
-base_tpage
-	la	10		. base the new page and point to its start
+	la	10			. base the new page and point to its start
 	ly	11
 	sabr	BASE
-	la, xi	3		. initialise write point
-	lb	WORDS_DELIVERED . initialise write space
-	ab, xi	-3
-	aa	WORDS_SOUGHT	. update write point
-	anb	WORDS_SOUGHT	. update write space
-	ds	tpage:write_point
-	z	3, y		. no BY$PASS record in sight
-	la	(PAGE$CONTROL,,2)
-	sa	tpage:rfw
 
-	ay, xi	3		. the actual delivered buffer
-	j	deliver
+	lb	(PAGE$CONTROL,,CONTROL_WORDS$)
+	sb	tpage:rfw
 
+	la, xi	CONTROL_WORDS$+1	. initialise write point
+	lb	WORDS_DELIVERED		. initialise write space
+	ab, xi	-CONTROL_WORDS$-1
+	anb	WORDS_SOUGHT
+
+	sa	INSERT_POINT
 
 it_goes_in_here
 
-	. at this point y points to the user write buffer
-	. if this has previously been a BY$PASS record
-	. move it further down, unless you can't
+	. at this point y points to the directory page head
+	. b has been decremented by the requested length
+	. a has write_point inside
 
-	. INSERT_POINT marks the spot
+	aa	WORDS_SOUGHT		. update the write point
+	ds	tpage:write_point	. update the page control word
+	
+	ay	INSERT_POINT		. the final result pointer
 
-	ly	11		. back to page start
-	lb	FREE_WORDS	. update write space
-	anb	WORDS_SOUGHT
-	la	tpage:write_point
-	aa	WORDS_SOUGHT	. update write point
-	ds	tpage:write_point
+	ab, xi	-1			. shall we write a bypass record?
+	jnb	deliver			. no
+	orB	(BY$PASS*/16s)
+	la	WORDS_SOUGHT
+	aa	y
+	sb	0, a
 
-	ly	INSERT_POINT	. is this replacing the front
-	la	0, y		. of a bypass record?
-	mta	(BY$PASS*/16s)
-	j	deliver		. no
-
-	and	(00FFFF)	. change the bypass record simply by
-	ana	WORDS_SOUGHT	. the amount of storage subtracted
-	jnc	deliver		. underflow, so not even BY$PASS.0.0
-
-	or	((BY$PASS*/16s)	. replant the bypass record
-	lb	WORDS_SOUGHT
-	ab	y		. smaller and further down
-	sa	0, b
-				. result pointer is in y
 deliver	lret	1
 
 .	this routine is less generic. for RTA1 16-GWord filestore device arrays

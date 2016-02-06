@@ -51,9 +51,11 @@ EXTENT$	$equ	'X'
 LINK$	$equ	'L'
 RELAY$	$equ	'J'
 LIST$END $equ	'Z'
+BY$PASS	$equ	128
+PAGE$CONTROL $equ 'P'
 
-DIRECTORY_NAME_OFFSET$	$equ	EXTENT1_WORDS$+2
-VOLUME_NAME_OFFSET$	$equ	EXTENT1_WORDS$+3
+DIRECTORY_NAME_OFFSET$	$equ	EXTENT1_WORDS$
+VOLUME_NAME_OFFSET$	$equ	EXTENT1_WORDS$+1
 
 p	$proc
 "$filetree"* $name
@@ -117,3 +119,40 @@ next_offset +	p(1, 3:2)	. word offset next descriptor
 	$root	
 	$end
 
+CONTROL_WORDS$ $equ	4
+
+p	$proc
+"$page_control"* $name		. top of every directory block
+*	$tree			. not yet implemented
+rfw	+	PAGE$CONTROL,,CONTROL_WORDS$
+write_point	3
+write_space	p(1, 1)-6s
+next_page_granule	0:d
+	$root
+	$end
+
+
+p	$proc			. re-usable space at the end of
+*	$tree			. a directory block
+"$bypass"* $name		. before the forward pointer
+rfw	+	BY$PASS*/16++p(1, 1)-1s
+	$root			. bit 23 on for 16 length bits
+	$end
+				. if you use some of this space
+				. repaint this further down
+				. with reduced length
+
+				. if this is present, the next
+				. word writeable in the directory
+				. block header points to it
+
+				. if this is instead 0 or 'Z'
+				. then there is no forward pointer
+
+p	$proc			. forward link
+"$relay"* $name			. to another directory block
+*	$tree
+rfw	+	RELAY$,,2
+next_granule	+p(1, 1)d	. save the last 3 locations of
+	$root			. the directory block for this
+	$end
