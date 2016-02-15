@@ -603,8 +603,13 @@ When the wait time is expired, the thread becomes a candidate for switching
 
 <h4>2.1.4 EXIT$</h4>
 <p>
-<b>EXIT$</b> deletes the thread. Subsidiary threads also exit. When the process
-initial thread exits, all handles close
+<b>EXIT$</b> deletes the thread. Threads, handles and storage banks are
+owned directly by the process initial thread without intervening hierarchy.
+Other threads own only their thread control block and can exit without
+removing any resources, which remain available to remaining threads.
+The exit of the initial thread removes all other threads in the process
+
+
 
 <div    style="font-size:11pt">
 <pre>
@@ -617,8 +622,8 @@ initial thread exits, all handles close
 </pre>
 </div>
 
-Storage which the thread acquires with BANK$ and ARRAY$ returns to the kernel
-when the thread exits if the storage is not freed earlier
+Storage which any thread acquires with BANK$ and ARRAY$ returns to the kernel
+when the process initial thread exits if the storage is not freed earlier
 
 <p>
 If the application internal stack is empty (sp = 128), hardware raises
@@ -665,8 +670,20 @@ of the new thread
 thread execution start
 
 <p>
-The new thread has a new thread control block. All other resources are as
-the calling thread. All threads have visibility of the process handles list
+The new thread has a new thread control block. The process initial thread owns
+all other storage banks directly even if subsidiary threads obtain them
+
+<p>
+The process initial thread owns all new threads directly without
+intervening hierarchy. New threads own only their thread control
+block and can exit without removing resources, which remain available
+to remaining threads. The exit of the process initial thread removes
+all other threads in the process
+
+<p>
+Handles in the process are global to all threads and
+coordinating their use is a duty of process design
+
 
 <h3>2.2 Adding and Releasing Program Storage: BANK$ ARRAY$ BANK$FREE</h3>
 
@@ -695,9 +712,9 @@ Bank pointer or index is the 4K-word block where a bank starts = physical addres
 <h4>2.2.1 BANK$</h4>
 <p>
 <b>BANK$</b> obtains a bank from 1 to 16777215 words in size and
-records it in the thread control block. The argument in application
-register a is words requested. value returned in a is the bank
-pointer. Zero = no memory granted
+records it in the process initial thread control block. The argument
+in application register a is words requested. Value returned in a is
+the bank pointer. Zero = no memory granted
 
 <div    style="font-size:11pt">
 <pre>
@@ -719,9 +736,9 @@ The bank is a single linear block
 <h4>2.2.2 ARRAY$</h4>
 <p>
 <b>ARRAY$</b> obtains a bank from 4096 words to 16 Gigawords in size
-and records it in the thread control block. The argument in application
-register a is 4096-word blocks requested. value returned in a is the bank
-pointer. Zero = no memory granted
+and records it in the process initial thread control block. The argument
+in application register a is 4096-word blocks requested. Value returned
+in a is the bank pointer. Zero = no memory granted
 
 <div    style="font-size:11pt">
 <pre>
@@ -741,9 +758,9 @@ in 262144-word blocks. The bank is a single linear block
 
 <h4>2.2.3 BANK$FREE</h4>
 <p>
-<b>BANK$FREE</b> returns a bank of any size to the kernel. If the thread
-does not possess the bank, no action is taken. The argument in
-application register a is the bank pointer
+<b>BANK$FREE</b> returns a bank of any size to the kernel. If the process
+does not possess the bank, no action is taken. The argument in application
+register a is the bank pointer
 
 <div    style="font-size:11pt">
 <pre>
@@ -770,6 +787,11 @@ Error conditions return a range of negative values identifying the
 problem. There is no errno variable
 
 <h3>3.1 The POSIX Network API</h3>
+
+Socket handle values share a number space with file handles. The socket
+is modelled in the vector bank, which is global to the process. Therefore
+multithread processes must be designed to coordinate the use of handles
+
 
 <div	style="font-size:11pt">
 <pre>
@@ -2440,7 +2462,91 @@ the entry type and size in words, excluding the format word itself
 	|_______|_______|_______|
 
 
+
+	Directory entries with bit 23 = 0 contain an 8-bit
+	count of following words in bits 7..0
+
+	Directory entries with bit 23 = 1 contain a 16-bit
+	count of following words in bits 15..0
+
+
+
+
+	directory page header
+	_____________________
+
+	Each page of a directory has a header format word
+	and four control words
+
+
+	47					       0
+	_________________________________________________
+	|  'P'  |   0   |   4   |next write word in page|
+	|_______|_______|_______|_______________________|
+	|unwritten words in page|
+	|_______________________|________________________
+	|	start granule of next page in directory	|
+	|_______________________________________________|
+
+
+	Directory pages may be any number of granules in size
+	and are by default 1024 words
+
+	The pointer next write word points to unused words
+	at the end of the directory page
+
+
+
+	Unused space at page end is one case of a bypass record.
+        The record format word of a bypass record has bit 23 set
+	to indicate that the count of following words is a 16-bit
+	field in bits 15..0
+
+	If the bypass record is only one word long, the length
+	field is zero
+
+	Bypass records are inserted to assist directory searches
+	in navigating beyond unused words in directories.
+	Directory entries never straddle pages
+
+	A bypass record including its header word is re-usable space
 	
+
+
+	bypass record
+	_____________
+
+	23	 15	       0
+	_________________________
+	|  0x80	|following words|
+	|_______|_______________| 
+
+
+
+
+	End of page record indicates that subsequent directory entries
+	if any are on following directory pages, found with the next
+	page first granule pointer in the directory page header
+
+	The end of page record has a following words count of zero
+	to indicate that it consists only of a record format word
+
+	The last word of a directory page is always a page end record
+
+
+
+	end of directory page record
+	_____________________________
+
+
+	23	15	       0
+	_________________________
+	|  'E'	|   0	|   0	|
+	|_______|_______|_______|
+
+
+
+
 
 
 	filetree (directory) label
@@ -2448,19 +2554,24 @@ the entry type and size in words, excluding the format word itself
 
 	47					       0
 	_________________________________________________
-	|  'D'  |   0   | words | granules first extent	|
+	|  'D'  |   0   | words |  granules first page	|
 	|_______|_______|_______|_______________________|
-        | 		   start granule		|
+        |    start granule of first directory page	|
 	|_______________________________________________|
-	|words written dir.block|words free in dir.block|
-	|_______________________|_______________________|
 	|	name...   ...   ...   ...   ...   ...   ...   ...
 	|_______________________|_______________________|
 	
 
 
-	volume label (top directory)
-	____________________________
+
+
+	The volume label is in the top directory and
+	does not describe it. It describes space on
+	the medium
+
+
+	volume label
+	____________
 
         47                                             0
         _________________________________________________
@@ -2468,10 +2579,9 @@ the entry type and size in words, excluding the format word itself
         |_______|_______|_______|_______________________|
         |            next assignable granule            |
         |_______________________________________________| 
-        |words written dir.block|words free in dir.block|       
-        |_______________________|_______________________|
         | device granules 47..24|	name...   ...	...   ...
         |_=_device_gigawords____|_______________________|
+
 
 
 
@@ -2486,9 +2596,9 @@ the entry type and size in words, excluding the format word itself
         |_______________________________________________|
         |   granule containing next extent descriptor   |
         |_______________________________________________| 
-        |   word offset next    |file total octets 47..24     
+        |   word offset next    |file written octets msW|    
         |___extent descriptor___|_______________________|
-        |file total octets 23..0|	name...   ...   ...  ...
+        |file written octets lsW|	name...   ...   ...  ...
         |_______________________|_______________________|
 
 
@@ -2509,6 +2619,13 @@ the entry type and size in words, excluding the format word itself
 
 
 
+	Very large files requiring rapid and frequent seek actions
+	have, instead of linked extent descriptors, a differently
+	constructed file label containing a compressed array of
+	descriptors to large extents
+
+
+
 	link
 	____
 
@@ -2521,19 +2638,6 @@ the entry type and size in words, excluding the format word itself
         |	name...		...		...
         |_______________________|
 
-
-
-
-
-	relay (directory extension block pointer)
-	_________________________________________
-
-        71								       0
-        _________________________________________________________________________
-        |  'J'  |   0   | words |	start granule next block of directory	|
-        |_______|_______|_______|_______________________________________________|
-	|	zero pad words...	...	...
-	|___________________________
 
 
 
