@@ -54,10 +54,10 @@ fs_first
 	lb	(B_FS1*/18:s)
 fs_next	jdz	fs_first
 	ii	XBASE$(32)
-	push	1, b, i		. add the length field + 1 to b
-	lb	0, b
-	lcal	fs_record_lengthB
-	popA	b
+.	push	1, b, i		. add the length field + 1 to b
+.	lb	0, b
+.	lcal	fs_record_lengthB
+.	popA	b
 	fret	0
 
 fs_directory_search		. down one level
@@ -65,26 +65,36 @@ fs_directory_search		. down one level
 	push	r		. # words in the search argument
 	push	x		. you just might like that saved
 	push	y		. search argument i.e. name
-	push	a		. bank of owning directory
+	dpush	a		. bank / offset of this directory
+				. descriptor. This updates immediately
+				. to directory contents page, and
+				. updates again if the directory has
+				. multiple pages
+				. b addresses target entry on return
+
 	la	0, b		. record format word
 	lk	(255*/16:s)
 	mta	(TREE$*/16)
-	j	fs_wrong_type
-	j	fs_forward
-
+	j	fs_wrong_type	. this must be a directory because
+				. this is a request to search IN it
+	dl	fsys:e:granule, b
+	j	fs_directory_page
+				. first move is to contents
 fs_wrong_type
 	lb, xi	-2
 	j	fs_nogo
-
-fs_search			. search from somewhere
-	call	(fs_read)	. or from device start
+				. search FOR something starts here
+fs_search			. search from somewhere = device / directory
+	call	(fs_read)	. or from nowhere = a device start
 	push	r		. # words in the save argument
 	push	x		. you just might like that saved
 	push	y		. search argument i.e. name
-	push	a		. bank of this directory
-	lk	(0FF0000:s)
-
+	dpush	a		. bank and offset of this directory
+				. this updates if the directory has
+				. multiple pages
+				. b addresses target entry on return
 fs_search1
+	lk	(0FF0000:s)
 	la	fsys:e:rfw, b
 	mtane	('F'*/16)
 	j	fs_entity_file
@@ -92,8 +102,8 @@ fs_search1
 	j	fs_entity_directory
 .	mtane	(LINK$*/16)
 .	j	fs_entity_directory
-	mtane	(RELAY$*/16)
-	j	fs_forward	. this won't quite be right
+	mtane	(PAGE$END*/16)
+	j	fs_next_directory_page
 	mtane	(VOLUME$*/16)
 	j	fs_entity_volume
 	mtane	(0)
@@ -126,10 +136,10 @@ fs_entity
 	lr	a
 					. name length is next entry address
 	ana	x			. minus name field address
-	ana	3, sp			. if the length is different
+	ana	4, sp			. if the length is different
 	jnza	fs_search_again		. then it aint the same label
 
-	ly	1, sp			. search argument address
+	ly	2, sp			. search argument address
 
 fs_testw
 	la	0, x
@@ -141,21 +151,25 @@ fs_testw
 	jxge	fs_found
 	j	fs_testw
 
-fs_forward
-	la	0, sp
-	and	(0400000++63)
-	sa	0, sp
-	dl	fsys:e:granule, b
-	dsl	12
-	and	(FS24$_BANK_HIGH_INDEX)
+fs_next_directory_page
+	lb	1, sp			. start of this directory page
+	dl	tpage:next_page_granule, b
+	jdz	fs_nohit
 
-	orB, xi	5+5+5*/6++B_FS1		. skip the 1st 10 words
-	rbr	6			. they are the links . ..
-					. if links are turned on
+fs_directory_page
+	drr	18-LOG24(GRANULE$)
+	sbl	6
+	lk	(040003F)
+	mlb	0, sp			. read back the device # / bank flag
+
+	drr	24
+	orB	B_FS1,,xi
+	rbr	6
+	ds	0, sp			. long address current directory
+					. page maintained at stack top
+
+.	orB, xi	5+5+5			. skip the 1st 15 words
 					. this will misdirect you
-	sal	6
-	or	0, sp
-	sa	0, sp
 	ii	XBASE$(B_FS1)
 	j	fs_search1
 
@@ -169,11 +183,20 @@ fs_nogo
 	z	0, sp
 
 fs_found
+	sb	1, sp			. functional result in b
 	pop	a
+	pop	b
 	pop	y
 	pop	x
 	pop	r
 	fret	0
+
+.		end of directory searches part
+
+.		next part places data file extents
+.		in caller address space
+.		while maintaining an extents cursor
+.		in caller meta-information
 
 fs_base_extent_advance
 	push	x			. you might like x saved
@@ -266,4 +289,16 @@ fs_record_lengthB $tree
 rfw_8	andB,xi	255
 	lret	0
 	$root
+
+	$if	0
+granule2base10A
+	drr	18
+	sbl	6
+	lk	(040003F)
+	mlb	10
+	drr	24
+	orB, xi	B_FS1
+	rbr	6
+	lret	0
+	$endif
 

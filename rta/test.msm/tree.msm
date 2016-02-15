@@ -43,25 +43,32 @@ tree_walk
 	j	tree_walk
 
 tree_extend
-	la, xi	CONTROL_WORDS$+1	. the new page wants a page control word
-
+	la, xi	CONTROL_WORDS$+1+1	. the new page wants a page control record
+					. and an end of page record
 	aa	WORDS_SOUGHT
 	lcal	tpage
 	lret	0			. failure to obtain
 
+	ly	11
 	ds	tpage:next_page_granule	. store forward granule ID
 					. of next directory page
 
-	la	10			. base the new page and point to its start
-	ly	11
+	lcal	granule2base10A
 	sabr	BASE
+	ds	10
+	ly	b
 
 	lb	(PAGE$CONTROL,,CONTROL_WORDS$)
 	sb	tpage:rfw
+	la	WORDS_DELIVERED
+	aa, xi	-1
+	aa	y
+	lb	(PAGE$END,0,0)
+	sb	0, a)
 
 	la, xi	CONTROL_WORDS$+1	. initialise write point
 	lb	WORDS_DELIVERED		. initialise write space
-	ab, xi	-CONTROL_WORDS$-1
+	ab, xi	-CONTROL_WORDS$-1-1
 	anb	WORDS_SOUGHT
 
 	sa	INSERT_POINT
@@ -92,15 +99,20 @@ tpage	aa, xi	1023
 	and, xi	-1024
 	sa	WORDS_DELIVERED
 
-			. register 10 bits 5:0 identify the device
+			. filestore24 works in a different address window
+			. and does not change BASE_FS1
+			. or save locations 10:11
+
 	lcal	filestore24
 	lret	0	. failure to obtain
+
+	
 
 	dl	10	. long address of where it's at
 	sal	2	. suppress the big flag
 	sar	8	. and the device pointer
 	sbl	6	. and the base selector
-	dsr	6+LOG24(GRANULE) . this should look like a granule pointer
+			. assignment is a granule pointer returned in a:b
 	lret	1
 
 	$root

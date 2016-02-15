@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
                #ifdef OFF_T32
                printf("%ld bytes written\n", location);
                #else
-               printf("lld bytes written\n", location);
+               printf("%lld bytes written\n", location);
                #endif
             }
 

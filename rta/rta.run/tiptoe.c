@@ -270,8 +270,8 @@ int main(int argc, char *argv[])
 
       printf("rom image %d target words read\n", image_size);
       image_size += 4095;
-      base[124] = image_size >> 12;
-      base[128] = PAGES_IN_MEMORY - 1;
+      base[124] = image_size >> 12;		/*	ROM boundary port	*/
+      base[128] = PAGES_IN_MEMORY - 1;		/*	system memory size port	*/
 
       close(f);
    }

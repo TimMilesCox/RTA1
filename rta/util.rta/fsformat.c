@@ -156,7 +156,7 @@ typedef struct { msw		    rfw,
 	theoretically a device can have 256 MegaGranules
 
 	directory blocks are assigned at 1024 words
-	per scoop, but on any granule.octetoundary. If that
+	per scoop, but on any granule.boundary. If that
 	brings them over a bank boundary they get an
 	exceptional small directory block. If they get
 	64 words it should be some use, but if it isn't
@@ -184,8 +184,8 @@ typedef struct { page_control	  space;
 
 /*******************************************************
 
-	file also contains an extent which is the first
-	extent of the file
+	file descriptor contains the first
+	extent descriptor of the file
 
 *******************************************************/
 
@@ -229,10 +229,13 @@ static tree label2  =  { { { 'P', 0, CONTROL_WORDS } } ,
                            { 0, 0, 0, 0, 0, 0 } ,
                          { { '.', '.' } } } } ;
 
+
+static msw eopage = { 'E', 0, 0 } ;
+
 static int		 f;
 
 static unsigned		 pointer1 = 5 + 5 + 5 + 7;
-static unsigned		 remainder1 = 1024 - 5 - 5 - 5 - 7;
+static unsigned		 remainder1 = DIRECTORY_BLOCK - 5 - 5 - 5 - 7 - 1;
 static unsigned long long gpointer = 16;
 
 
@@ -391,15 +394,22 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       slot *= GRANULE;
       if (slot > DIRECTORY_BLOCK) slot = DIRECTORY_BLOCK;
 
+      #if 0
       next->ex.granules.t3 = slot >> 6;
       next->ex.granules.t2 = slot >> 14;
       next->ex.granules.t1 = slot >> 22;
+      #else
+      next->ex.granules.t3 = DIRECTORY_BLOCK >> 6;
+      next->ex.granules.t2 = DIRECTORY_BLOCK >> 14;
+      next->ex.granules.t1 = DIRECTORY_BLOCK >> 22;
+      #endif
 
       #if 0
       labelv.label1.ex.granules = next->label1.ex.granules;
       #endif
 
-      vremainder = slot - vpointer;
+      vremainder = slot - vpointer - 1;
+      vremainder = DIRECTORY_BLOCK - 1 - vpointer;
 
       #if 1
       labelv.space.write_point.t3 = vpointer;
@@ -442,6 +452,9 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
          indexp += vpointer;
          *indexp = bypass;
       }
+
+      indexp = ((msw *) &labelv) + DIRECTORY_BLOCK - 1;
+      *indexp = eopage;
 
       #if 0
       labelv.label1.write_point = next->label1.write_point;
@@ -669,7 +682,7 @@ int main(int argc, char *argv[])
       if (f < 0) printf("file at argument 1 cannot be written %d\n", errno);
       else
       {
-         status = write(f, &label1, 1024 * 3);
+         status = write(f, &label1, DIRECTORY_BLOCK * 3);
          if (status < 0) printf("write error %d\n", errno);
 
          for (;;)
@@ -710,7 +723,7 @@ int main(int argc, char *argv[])
       label1.label3.name[0].t2 = net_granules >> 32;
       label1.label3.name[0].t3 = net_granules >> 24;
 
-      remainder1 = 1024 - pointer1;
+      remainder1 = DIRECTORY_BLOCK - pointer1 - 1;
 
       label1.space.write_point.t1 = pointer1 >> 16;
       label1.space.write_point.t2 = pointer1 >>  8;
@@ -742,6 +755,9 @@ int main(int argc, char *argv[])
          indexp += pointer1;
          *indexp = bypass;
       }
+      
+      indexp = ((msw *) &label1) + DIRECTORY_BLOCK - 1;
+      *indexp = eopage; 
 
       label1.label3.ex.granule.octet[5] = gpointer;
       label1.label3.ex.granule.octet[4] = gpointer >>  8;
@@ -751,7 +767,7 @@ int main(int argc, char *argv[])
       label1.label3.ex.granule.octet[0] = gpointer >> 40;
 
       lseek(f, (off_t) 0, SEEK_SET);
-      status = write(f, &label1, 1024 * 3);
+      status = write(f, &label1, DIRECTORY_BLOCK * 3);
       if (status < 0) printf("write error %d\n", errno);      
 
       close (f);

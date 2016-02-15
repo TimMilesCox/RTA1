@@ -146,7 +146,12 @@ int	 base[IO_PORTS] = { 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 				used as a filestore, bit 21 may hint
 				that the filestore has a boot file
 
-				bit 16 says this isn't a 24-bit array,
+				device zero at port 128 is always
+				system memory in pages. Device flag
+				bit 23 is not examined. Emulator startup
+				sets the memory size
+
+				bit 18 says this isn't a 24-bit array,
 				but the data words in it are 16-bits
 				network interfaces are expected to
 				be 16 bit memories
@@ -166,7 +171,7 @@ int	 base[IO_PORTS] = { 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 				0x00800000,
 				0x00E00000,
-				0x00880000,
+				0x00880000 | BANKS_IN_DEVICE,
 
                                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
