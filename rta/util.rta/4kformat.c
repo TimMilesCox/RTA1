@@ -85,6 +85,7 @@
 #define	EXTENT1_WORDS	3
 #define	EXTENT2_WORDS	6
 #define	CONTROL_WORDS	4
+#define	VOLUME1_WORDS	3
 
 typedef struct { msw                rfw,
                             write_point,
@@ -99,7 +100,6 @@ typedef struct { msw		    rfw;
 typedef struct { msw                rfw,
                                granules;
                  dmsw           granule;  } extent1;
-
 
 typedef struct { msw		    rfw,
 			       granules;
@@ -173,14 +173,24 @@ typedef struct { msw		    rfw,
 
 
 typedef struct { extent1             ex;
-                 msw        name[360-4]; } file_tree;
+                 msw    name[DIRECTORY_BLOCK
+                - CONTROL_WORDS   - 1
+                - 5 * 2
+                - EXTENT1_WORDS   - 1] ; } file_tree;
 
-typedef struct { page_control	  space;
-		 forward	 label1,
-				 label2;
-		 file_tree	 label3;
-		 msw
-      dspace[DIRECTORY_BLOCK-3-5-5-360];  } tree;
+typedef struct { extent1	     ex;
+                 msw    name[DIRECTORY_BLOCK
+                - CONTROL_WORDS   - 1
+                - 5 * 2
+                - VOLUME1_WORDS   - 1] ; } volume;
+
+
+
+typedef struct { page_control     space;
+                 forward         label1,
+                                 label2;
+        union  { volume    v;
+                 file_tree d; }  label3; } tree;
 
 
 /*******************************************************
@@ -199,21 +209,21 @@ typedef struct { extent2	     ex;
 
 static tree label1  =  { { { 'P', 0, CONTROL_WORDS } } ,
 
-			 { { 'L', 0, 4 } ,
+                         { { 'L', 0, 4 } ,
                            { 0, 0, 10 } ,
                            { 0, 0, 0, 0, 0, 0 } ,
                          { { '.' } } } ,
 
-			 { { 'L', 0, 4 } ,
+                         { { 'L', 0, 4 } ,
                            { 0 } ,
                            { 255, 255, 255, 255, 255, 255 } ,
                          { { '.', '.' } } } ,
 
-			 { { { 'V', 0, EXTENT1_WORDS + 2 + 1 } ,
+                         { { { { 'V', 0, VOLUME1_WORDS + 2 } ,
                              { 0 } ,
                              { 0, 0, 0, 0, 0, 16 } } ,
-                           { { 0, 0, 0 } ,
-                             { 'F', 'S', '0' } , { '0', '0', '1' } } } } ;
+                           { { 'F', 'S', '0' } , { '0', '0', '1' } } } } } ;
+
 
 
 static tree label2  =  { { { 'P', 0, CONTROL_WORDS } } ,
@@ -234,8 +244,8 @@ static msw eopage = { 'E', 0, 0 } ;
 
 static int		 f;
 
-static unsigned		 pointer1 = 5 + 5 + 5 + 7;
-static unsigned		 remainder1 = DIRECTORY_BLOCK - 5 - 5 - 5 - 7 - 1;
+static unsigned          pointer1 = CONTROL_WORDS + 1 + 2 * 5 + VOLUME1_WORDS + 1 + 2;
+static unsigned          remainder1 = DIRECTORY_BLOCK - CONTROL_WORDS - 1 - 2 * 5 - VOLUME1_WORDS - 1 - 2;
 static unsigned long long gpointer = 16;
 
 
@@ -383,19 +393,39 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    if      (strcmp(command, "volume") == 0)
    {
-      label1.label3.ex.rfw.t3 = pointer1
-                              = EXTENT1_WORDS
-			      + 1	/* volume has extra ms granule count */
-			      + copy(&label1.label3.name[1].t1, argument);
+      label1.label3.v.ex.rfw.t3 = pointer1
+                                = VOLUME1_WORDS
+			        + copy(&label1.label3.v.name[0].t1, argument);
 
       gpointer = 16;
-      label1.label3.ex.granule = restart_offset;
+      label1.label3.v.ex.granule = restart_offset;
 
-      pointer1 += 5 + 5 + 5 + 1;
+      pointer1 += CONTROL_WORDS + 1 + 2 * 5 + 1;
+   }
+
+   else if (strcmp(command, "tree/")   == 0)
+   {
+      /************************************************
+        placeholder directory entry with no files
+        and no space to write file entries
+      ************************************************/
+
+      next->ex.rfw.t1 = 'D';
+      next->ex.rfw.t3 = EXTENT1_WORDS
+                     + copy(&next->name[0].t1, argument);
+
+      next->ex.granules = start_zero;
+      next->ex.granule = restart_link;
+
+      *displacement += new->ex.rfw.t3 + 1;
    }
 
    else if (strcmp(command, "tree")   == 0)
    {
+      /************************************************
+                        directory
+      ************************************************/
+
       next->ex.rfw.t1 = 'D';
       next->ex.rfw.t3 = EXTENT1_WORDS
                      + copy(&next->name[0].t1, argument);
@@ -572,7 +602,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                   new->ex.granule.octet[1] = gpointer >> 32;
                   new->ex.granule.octet[0] = gpointer >> 40;
 
-                  #if 0
+                  #if 1
                   new->ex.granules.t3 = slot;
                   new->ex.granules.t2 = slot >>  8;
                   new->ex.granules.t1 = slot >> 16;
@@ -730,6 +760,7 @@ int main(int argc, char *argv[])
 			 symbol;
 
    long long		 net_granules = GRANULES;
+   int			 net_pages = PAGES_IN_DEVICE;
    unsigned char	*uptr;
 
    int                   byword;
@@ -775,21 +806,21 @@ int main(int argc, char *argv[])
             if      (uflag['T'-'A']) net_granules <<= 34;
             else if (uflag['G'-'A']) net_granules <<= 24;
             else if (uflag['M'-'A']) net_granules <<= 14;
+            else if  (flag['b'-'a']) net_granules <<= 12;
+            else if  (flag['p'-'a']) net_granules <<=  6;
             else if (uflag['K'-'A']) net_granules <<=  4;
+
+            net_pages = (net_granules + 63) >> 6;
          }
       }
+
+      label1.label3.v.ex.granules.t3 = net_pages;
+      label1.label3.v.ex.granules.t2 = net_pages >>  8;
+      label1.label3.v.ex.granules.t1 = net_pages >> 16;
 
       net_granules -= gpointer;
 
       printf("%lld granules written, %lld free\n", gpointer, net_granules);
-
-      label1.label3.ex.granules.t1 = net_granules >> 16;
-      label1.label3.ex.granules.t2 = net_granules >>  8;
-      label1.label3.ex.granules.t3 = net_granules;
-
-      label1.label3.name[0].t1 = net_granules >> 40;
-      label1.label3.name[0].t2 = net_granules >> 32;
-      label1.label3.name[0].t3 = net_granules >> 24;
 
       remainder1 = DIRECTORY_BLOCK - pointer1 - 1;
 
@@ -827,12 +858,12 @@ int main(int argc, char *argv[])
       label1.space.remainder.t2 = remainder1 >>  8;
       label1.space.remainder.t3 = remainder1;
 
-      label1.label3.ex.granule.octet[5] = gpointer;
-      label1.label3.ex.granule.octet[4] = gpointer >>  8;
-      label1.label3.ex.granule.octet[3] = gpointer >> 16;
-      label1.label3.ex.granule.octet[2] = gpointer >> 24;
-      label1.label3.ex.granule.octet[1] = gpointer >> 32;
-      label1.label3.ex.granule.octet[0] = gpointer >> 40;
+      label1.label3.v.ex.granule.octet[5] = gpointer;
+      label1.label3.v.ex.granule.octet[4] = gpointer >>  8;
+      label1.label3.v.ex.granule.octet[3] = gpointer >> 16;
+      label1.label3.v.ex.granule.octet[2] = gpointer >> 24;
+      label1.label3.v.ex.granule.octet[1] = gpointer >> 32;
+      label1.label3.v.ex.granule.octet[0] = gpointer >> 40;
 
       lseek(f, (off_t) 0, SEEK_SET);
       status = outputw(f, &label1, DIRECTORY_BLOCK);
