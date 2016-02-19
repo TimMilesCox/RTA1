@@ -49,7 +49,6 @@ extern int	 _register[];
 
 system_memory	memory;
 
-device24	f_s[1];
 
 #if	1
 #else

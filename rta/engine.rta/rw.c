@@ -48,15 +48,15 @@
 #include "ii.h"
 
 extern system_memory		 memory;
-extern device24			 f_s[];
 #if 1
 #else
+extern device24			*f_s[];
 extern device16			 i_f[];
 #endif
 
 device				 devices[64] = 
 	{ { DEVICE,           BANKS_IN_DEVICE,   { &memory } } ,
-	  { DEVICE,           BANKS_IN_DEVICE,   { f_s     } } ,
+	  { DEVICE,           BANKS_IN_DEVICE,   { NULL    } } ,
 	  { DEVICE | DATA16,  BANKS_IN_DEVICE16, { NULL    } } } ;
 
 extern int			 _register[256];

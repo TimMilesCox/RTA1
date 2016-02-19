@@ -43,6 +43,7 @@
 
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <memory.h>
 #include <sys/fcntl.h>
 #include <signal.h>
@@ -71,7 +72,7 @@ extern unsigned int	 psr;
 extern unsigned int	_register[256];
 extern unsigned int	 base[];
 extern system_memory	 memory;
-extern device24		 f_s[];
+extern device		 devices[];
 
 static word		*breakpoint;
 char			 flag[26];
@@ -535,6 +536,16 @@ static void action(char request[])
             printf(" %6.6x", base[x]);
          }
 
+         printf("\n7c                             ");
+
+         for (x = 124; x < 192; x++)
+         {
+            if (!(x & 7)) printf("\n%2.2x:", x);
+            printf(" %6.6x", base[x]);
+         }
+
+         putchar('\n');
+
          break;
 
       case 'z':
@@ -553,9 +564,10 @@ static void action(char request[])
 static void load_fs(char *path)
 {
    int		 x,
+		 banks,
 		 index = 0;
 
-   char		*loader = (char *) f_s;
+   char		*loader;
    int		 f = open(path, O_RDONLY, 0444);
 
    vpage	 page;
@@ -573,11 +585,28 @@ static void load_fs(char *path)
       if (x ^ sizeof(page))
       {
          printf("volume header read unsuccessful\n");
+         return;
       }
-      else printf("octets %d\n", x);
 
       x = 3 * (page.label.ex.rfw.t3 - VOLUME1_WORDS);
-      printf("%.*s %d storage banks\n", x, &page.label.name[0].t1, msw2i(page.label.ex.granules));
+      banks = msw2i(page.label.ex.granules);
+
+      printf("%.*s %d storage banks\n", x, &page.label.name[0].t1, banks);
+
+      #if 0
+      loader = malloc(banks * sizeof(fsbank));
+      #else
+      loader = (char *) calloc(banks, sizeof(fsbank));
+      #endif
+
+      if (loader == NULL)
+      {
+         printf("%d unable to cache file system\n", errno);
+         return;
+      }
+
+      devices[1].s.dev24 = (device24 *) loader;
+      base[129] = 0x00E00000 | banks;
 
       memcpy(loader, (char *) &page, sizeof(page));
       loader += sizeof(page);
