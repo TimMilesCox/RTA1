@@ -43,12 +43,14 @@
 
 
 #include <stdio.h>
+#include <memory.h>
 #include <sys/fcntl.h>
 #include <signal.h>
 #include <sys/time.h>
 
 #include "../engine.rta/emulate.h"
 #include "../engine.rta/ii.h"
+#include "../engine.fs/device24.h"
 
 #define	ASYNC
 
@@ -127,6 +129,11 @@ static void *async()
 
 #endif
 
+static int msw2i(msw w)
+{
+   printf("[%2.2x%2.2x%2.2x]\n", w.t1, w.t2, w.t3);
+   return (w.t1 << 16) | (w.t2 << 8) | w.t3;
+}
 
 static void print_register_row(int index)
 {
@@ -551,10 +558,30 @@ static void load_fs(char *path)
    char		*loader = (char *) f_s;
    int		 f = open(path, O_RDONLY, 0444);
 
+   vpage	 page;
+
    if (f < 0) printf("file system image %s error %d\n", path, errno);
    else
    {
       printf("loading file system image %s\n", path);
+      x = read(f, (void *) &page, sizeof(page));
+
+      /**************************************************
+	more exactly volume root directory initial page
+      **************************************************/
+
+      if (x ^ sizeof(page))
+      {
+         printf("volume header read unsuccessful\n");
+      }
+      else printf("octets %d\n", x);
+
+      x = 3 * (page.label.ex.rfw.t3 - VOLUME1_WORDS);
+      printf("%.*s %d storage banks\n", x, &page.label.name[0].t1, msw2i(page.label.ex.granules));
+
+      memcpy(loader, (char *) &page, sizeof(page));
+      loader += sizeof(page);
+      index = DIRECTORY_BLOCK / GRANULE;
 
       for (;;)
       {
