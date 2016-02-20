@@ -72,6 +72,8 @@ next_tdescriptor_sp		$res	1
 uq_head				$res	1
 uq_tail				$res	1
 
+first_bdx			$equ	$
+
 $(65:$bank_address($(64)+7**-8))
 
 next_page_descriptor		$res	2
@@ -107,7 +109,77 @@ next_stem
 
 	lret	0
 
-measure	inB	device$flags	. read system memory configuration
+measure
+
+	$if	MANAGER_BANKS=5
+
+	on	see$3++see$4++see$5++see$6++see$7
+	lcal	management_words
+	j	large_system
+	sbl	1
+	sb	BANKS		. save 2 * # banks of 262144 words
+	lb	a_x
+	sbr	12		. calculate # management pages	
+	lr	3,b,i		. calculate how far
+	lx	3,,xi
+	lb	FREE_BASE
+
+base_management_page
+	outB	0, x
+	ab	1,,xi
+	ax	1,,xi
+	jxge	management_pages_based
+	j	base_management_page
+
+management_pages_based
+	lr	b_x		. save the bank index reached
+	lb	BANKS		. calculate page address highest bank + 1
+	sbl	5
+	lx	first_bdx,,xi
+	aa	03000-2,,xi
+	j	memory_configured
+
+large_system
+	sbl	1
+	sb	BANKS		. save 2 * # banks of 262144 words
+	lb	a
+	sbr	18		. calculate # management banks
+
+	lx	3,b,1		. top base + 1
+	lr	3+1,,xi
+	lb	BANKS		. 2 * memory banks of 262144 words
+	sbl	5		. calculate page address highest bank + 1
+	orB	(0400000)	. think big
+
+base_management_bank
+	ax	-1,,xi
+	ab	-64,,xi
+	outB	0, x
+	jxge	base_management_bank
+
+	andB	(03FFFFF)	. stop thinking big
+				. This will be compared with page addresses
+	lr	FREE_BASE
+	lx	($bank_address(first_bdx))
+	aa	($bank_address(03000)-2))
+
+memory_configured
+	z	0, x
+	sr	1, x		. store the available small banks index
+	sx	next
+	
+	sa	large_bank_descriptor_sp
+	ds	0, a
+
+	ana	BANKS
+	sa	next_tdescriptor_sp
+	
+
+
+
+	$else
+
+	inB	device$flags	. read system memory configuration
 	andB	(03fffff)	. isolate the highest page index
 	ab, xi	1		. convert the highest index (+1)
 				. to the number of pages
@@ -213,6 +285,13 @@ large_system
 memory_configured
 	sx	next
 	ds	0, a
+        sa      large_bank_descriptor_sp
+
+        ana     BANKS
+
+        sa      next_tdescriptor_sp
+
+	$endif
 
 	z	banks_lock_cell
 	z	free_tdescriptor
@@ -235,11 +314,11 @@ memory_configured
 				. This pointer decrements as 2-word
 				. big-bank descriptors are added
 
-	sa	large_bank_descriptor_sp
-
-	ana	BANKS
-
-	sa	next_tdescriptor_sp
+.	sa	large_bank_descriptor_sp
+.
+.	ana	BANKS
+.
+.	sa	next_tdescriptor_sp
 
 				. *next points to next_descriptor
 				. for small banks
