@@ -167,12 +167,12 @@
 #define	IO_PORTS	192
 #define	BASE_TABLE	64
 
-#define BANKS_IN_DEVICE			64
+#define	BANKS_IN_DEVICE			64
 
-#ifdef	BANKS_IN_DEVICE
+#if	(BANKS_IN_DEVICE)
 #define	PAGES_IN_MEMORY			64 * BANKS_IN_DEVICE
 #else
-#define	PAGES_IN_MEMORY			16
+#define	PAGES_IN_MEMORY			32
 #endif
 
 #define	WORDS_IN_MEMORY			4096 * PAGES_IN_MEMORY
