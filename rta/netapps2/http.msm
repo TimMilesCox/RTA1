@@ -71,18 +71,28 @@ http_name_buffer
 
 $(0)
 http_serve
+
+	$if	HTTP_THREADED
+
+	ql	(http_thread,,,:q)
+	ii	THREAD$
+	fret	0
+
+http_thread
+	$endif
+
 	tz	http_s
 	j	http_bound?
 	la	(IPPROTO_TCP*/16)
 	call	(__socket)
-	jna	http_xserve
+	jna	http_zserve
 	sa	http_s
 	lb	(HTTP_PORT)
 	sb	7
 	z	6
 	call	(bind)
 	sa	http_bound
-	jna	http_xserve
+	jna	http_zserve
 	dl	10
 	ds	http_sla
 
@@ -94,7 +104,7 @@ http_serve
 
 http_bound?
 	tp	http_bound
-	j	http_xserve
+	j	http_zserve
 
 	dl	http_sla
 	sabr	BSOCKET
@@ -102,6 +112,8 @@ http_bound?
 	sabr	BSOCKET
 
 .	call	(tcp_hash_localsocket)
+
+http_walk_q
 	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(HTTP_PORT))
 
 	sx	http_transmission
@@ -161,6 +173,7 @@ http_located
 	push,xi	05010
 	pop	SOCKET_CALL_FLAGS
 
+	lx	http_transmission
 	call	(tcp_tx)
 	
 	pop	a
@@ -181,11 +194,13 @@ http_located
 	push,xi	http_formation2
 	pop	q
 
+	lx	http_transmission
 	call	(tcp_tx)
 
 	push,xi $1("":CR:LF:CR:LF)
 	pop	q
 	la, xi	4
+	lx	http_transmission
 	call	(tcp_tx)
 
 http_next_extent
@@ -204,11 +219,13 @@ http_next_extent
 	jnc	http_final_extent
 	ds	http_file_octets
 	la	7
+	lx	http_transmission
 	call	(tcp_tx)
 	j	http_next_extent
 
 http_final_extent
 	la	http_file_octets+1
+	lx	http_transmission
 	call	(tcp_tx)
 
 http_pushover
@@ -217,6 +234,7 @@ http_pushover
 	la, xi	2
 	push, xi	05018
 	pop		SOCKET_CALL_FLAGS
+	lx	http_transmission
 	call	(tcp_tx)
 	call	(tcp_release_rxline)
 	lx	http_transmission
@@ -234,6 +252,7 @@ http_drop_request
 		   "thank you so much":CR:LF:"</div></html>":CR:LF)
 
 	sb	q
+	lx	http_transmission
 	call	(tcp_tx)
 
 	la, xi	84
@@ -241,6 +260,7 @@ http_drop_request
 		"of course you understand, this is what I wish to say":CR:LF:;
 		"</div></html>":CR:LF)
 	sb	q
+	lx	http_transmission
 	call	(tcp_tx)
 
 
@@ -249,6 +269,11 @@ http_drop_request
 	j	http_walk
 
 http_xserve
+	$if	HTTP_THREADED
+	ii	YIELD$
+	j	http_walk_q
+	$endif
+http_zserve
 	fret	0
 
 http_get_what?
