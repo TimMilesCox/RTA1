@@ -52,7 +52,7 @@ B4			$equ	x$save1
 .	any other bank management routines
 .	in this file
 
-$(64)
+$(65)
 
 banks_lock_cell			$res	1
 
@@ -74,7 +74,7 @@ uq_tail				$res	1
 
 first_bdx			$equ	$
 
-$(65:$bank_address($(64)+7**-8))
+. $(65:$bank_address($(64)+7**-8))
 
 next_page_descriptor		$res	2
 
@@ -729,6 +729,37 @@ end_big_spiral
 	z	banks_lock_cell
 	lret	0
 
+
+available_banks
+	on	 see$all**(see$7*/MANAGER_BANKS)-1
+	lx	large_bank_descriptor_sp
+	la	1, x
+	lx	next		. the consolidated free space
+	ana	1, x		. between large banks and small banks
+
+	lx, xi	free_chain(1)
+	lr, xi	free_chain(64)
+
+add_chain
+	ly	0, x
+	tz	y_x
+	lcal	add_chain_total
+	jxge	chains_added
+	ax, xi	1
+	j	add_chain
+chains_added
+	lret
+
+add_chain_total
+	lb	3, y		. difference next higher bank
+	anb	1, y		. and this bank
+	aa	b_x
+	ly	0,y
+	tz	y_x
+	j	add_chain_total
+	lret	0		. and of this free chain
+
+
 bank	aa, xi	-1
 	jnc	cannot_add_bank
 	sar	12
@@ -968,7 +999,7 @@ deleted	lr	sp_x
 	la, xi	128
 	sa	sp_x
 
-	ts	banks_lock_cell
+	ts	switch_lock_cell
 	j	$-1
 
 	j	choose
