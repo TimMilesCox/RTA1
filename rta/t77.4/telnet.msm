@@ -48,12 +48,19 @@ tn_helpx
 
 $(0)
 telnet_i
+	$if	TELNET_THREADED
+	ql	(telnet_start,,,:q)
+	ii	THREAD$
+	fret	0
+telnet_start
+	$endif
+
 	tz	thandle
 	j	telnet_tstate?
 
 	la	(IPPROTO_TCP*/16)
 	call	(__socket)
-	jna	telnet_x
+	jna	telnet_z
 	sa	thandle
 	la, xi	23
 	z	6
@@ -61,13 +68,13 @@ telnet_i
 	la	thandle
 	call	(bind)
 	sa	tnetbound
-	jna	telnet_x
+	jna	telnet_z
 	dl	10
 	ds	tlsoc_va
 	
 telnet_tstate?
 	tp	tnetbound	
-	j	telnet_x
+	j	telnet_z
 
 
 	dl	tlsoc_va
@@ -77,7 +84,7 @@ telnet_tstate?
 	sabr	BSOCKET
 
 
-	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23)
+	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23))
 
 telnet_walk
 	la	transmission:next
@@ -109,7 +116,12 @@ telnet_traffic?
 	jza	telnet_walk
 	lcal	telnet_console
 	j	telnet_walk
+
 telnet_x
+	ii	YIELD$
+	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23))
+	j	telnet_walk
+telnet_z
 	fret	0
 
 telnet_console
