@@ -43,8 +43,10 @@ tnetbound -	1
 tlsoc_va  -	1:d
 
 
-tn_help		"commands are":9:"t":9:"h":9:"bsh&":10:9:9:"stay":10
+tn_help		"commands are":HT:"t":HT:"h":HT:"bsh&":LF:HT:HT:"stay":HT:"m":LF
 tn_helpx
+
+tn_editline	$res	6
 
 $(0)
 telnet_i
@@ -138,10 +140,13 @@ telnet_command
 	z	TELNET_BITS
 	lcal	telnet_token
 
-	anu	('t'*/16:)
+	anu	('t'*/16:s)
 	jzb	telnet_tasks
 	anu	('h'*/16:s)
 	jzb	telnet_help
+
+	anu	('m'*/16:s)
+	jzb	telnet_memory
 
 	dl	10
 	dan	('bsh&'*/16:d)
@@ -188,6 +193,22 @@ telnet_zero_timer1
 	lb, xi	$1("no timeout":10)	
 	j	telnet_respond
 
+telnet_memory
+	ii	TOTAL$FREE
+	push,xi	tn_editline
+	pop	p
+	z	BYTES
+	call	(iedit48ua)
+	la	BYTES
+	lb, xi	tn_editline
+	lcal	telnet_insert
+	lb,xi	$1(" words free":10)
+
+	la,xi	12
+	
+	j	telnet_respond
+
+
 telnet_test_resend
 .	la	DAYCLOCK$
 .	aa, xi	1
@@ -209,6 +230,13 @@ telnet_test_resend
 telnet_respond
 	sb	q
 	push,xi	05000++TCP_ACK++TCP_PSH
+	pop	SOCKET_CALL_FLAGS
+	call	(tcp_tx)
+	lret	0
+
+telnet_insert
+	sb	q
+	push,xi 05000++TCP_ACK
 	pop	SOCKET_CALL_FLAGS
 	call	(tcp_tx)
 	lret	0
