@@ -122,9 +122,11 @@ static void *async()
       }
 
       putchar(':');
+
+
       fgets(request, 62, stdin);
 
-      action(request);
+      if (request[0] == 's') flag['s'-'a'] = 1;
    }
 }
 
@@ -132,13 +134,12 @@ static void *async()
 
 static int msw2i(msw w)
 {
-   printf("[%2.2x%2.2x%2.2x]\n", w.t1, w.t2, w.t3);
    return (w.t1 << 16) | (w.t2 << 8) | w.t3;
 }
 
 static void print_register_row(int index)
 {
-   printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
+   printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x",
            index,
            _register[index],   _register[index+1],
            _register[index+2], _register[index+3],
@@ -157,16 +158,8 @@ static void statement()
 
    while (index < (iselect | 24))
    {
-      #if 1
       print_register_row(index);
-      #else
-      printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
-              index,
-              _register[index],   _register[index+1],
-              _register[index+2], _register[index+3],
-              _register[index+4], _register[index+5],
-              _register[index+6], _register[index+7]);
-      #endif
+      putchar('\n');
       index += 8;
    }
 
@@ -200,7 +193,7 @@ int main(int argc, char *argv[])
 
    int			 time_pointer;
 
-   char			 command[48];
+   char			 command[84];
 
    int			 index = 1;
    int			 offset;
@@ -399,14 +392,18 @@ int main(int argc, char *argv[])
       }
 
       statement();
-      putchar('>');
-      fflush(stdout);
 
-      fgets(command, 48, stdin);
-
-      switch (command[0]) 
+      for (;;)
       {
-         case 'g':
+         putchar('>');
+         fflush(stdout);
+         fgets(command, 80, stdin);
+         symbol = command[0];
+
+         if (symbol == '\n') break;
+
+         if (symbol == 'g') 
+         {
             symbol = sscanf(&command[1], "%x:%x", &index, &offset);
 
             if (symbol)
@@ -417,12 +414,11 @@ int main(int argc, char *argv[])
 
             flag['s'-'a'] = 0;
             break;
+         }
 
-         case '.':
-            return 0;
+         if (symbol ==  '.') return 0;
 
-         default:
-            action(command);
+         action(command);
       }
    }
    return 0;
@@ -450,10 +446,6 @@ static void action(char request[])
 
    switch(request[0])
    {
-      case 's':
-         flag['s'-'a'] = 1;
-         break;
-
       case 'r':
 
          index = iselect | 24;
@@ -461,17 +453,7 @@ static void action(char request[])
 
          while (index < 256)
          {
-            #if 1
             print_register_row(index);
-            #else
-            printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x\n",
-                    index,
-                    _register[index],   _register[index+1],
-                    _register[index+2], _register[index+3],
-                    _register[index+4], _register[index+5],
-                    _register[index+6], _register[index+7]);
-            #endif
-
             index += 8;
             fgets(request, 48, stdin);
             if (request[0] == '.') break;
@@ -567,7 +549,7 @@ static void load_fs(char *path)
 		 banks,
 		 index = 0;
 
-   char		*loader;
+   char		*loader = (char *) devices[1].s.dev24;
    int		 f = open(path, O_RDONLY, 0444);
 
    vpage	 page;
@@ -593,11 +575,9 @@ static void load_fs(char *path)
 
       printf("%.*s %d storage banks\n", x, &page.label.name[0].t1, banks);
 
-      #if 0
-      loader = malloc(banks * sizeof(fsbank));
-      #else
+      if (loader) free(loader);
+
       loader = (char *) calloc(banks, sizeof(fsbank));
-      #endif
 
       if (loader == NULL)
       {
