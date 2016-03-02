@@ -107,6 +107,13 @@ tcp4	la	tcpq.head
 	lcal	net_drop
 	j	tcp4
 
+
+tcp_restart_timer2
+	la	(TCP_TIMER2)
+	aa	DAYCLOCK$
+	sa	transmission:timer(2)
+	lret	0
+
 tcp_restart_timer1
 	la	(TCP_TIMER1)		. something arrived
 	aa	DAYCLOCK$		. restart the big timer
@@ -271,6 +278,7 @@ tcp_no2ndsyn
 	jzb	tcp_lastack
 
 tcp_established
+tcp_closewait
 	la	transmission:q4ack:head
 	jza	tcp_rx_in_range?
 
@@ -417,10 +425,8 @@ tcp_rx_exact_sequence
 	push,xi	TCP_CLOSEWAIT
 	pop	transmission:state
 
-	tp	transmission:automatic_fin
-
-	j	tcp_rx_already_acked
-	call	(xdisco)
+	lcal	tcp_send_ack
+	j	tcp_stepover_response
 	j	tcp_stepover_response
 
 tcp_lastack
@@ -529,9 +535,18 @@ tcp_rx_ack_nopayload
 tcp_finwait1
 	lcal	tcp_ripdown
 tcp_deletetcb
-tcp_synreceived
-        j	tcp_stepover_response
 
+tcp_synreceived
+	dl	transmission:sequence_ackx
+	xor	transmission:remote_ack_window
+	xorB	transmission:remote_ack_window+1
+	dsr	16
+	jdz	tcp_syn_ack_acked
+	j	tcp_ripdown_reset
+tcp_syn_ack_acked
+	la, xi	TCP_ESTABLISHED
+	sa	transmission:state
+        j	tcp_stepover_response
 
 tcp_reset_dq_lx
 	lx	TP_HEADER
@@ -549,7 +564,6 @@ tcp_ripdown_reset
 tcp_ripdown_silently
 	lcal	tcp_ripdown
 
-tcp_closewait
 tcp_stepover_response
 	ly, xi	tcpq
 	lcal	net_drop
@@ -601,8 +615,11 @@ tcp4_service_next_connection
 	
 
 	anu, xi	TCP_ESTABLISHED
-	jnzb	tcp4_finwait1?
+	jzb	tcp4_established!
+	ab, xi	TCP_ESTABLISHED-TCP_CLOSEWAIT
+	jnzb	tcp4_synreceived?
 
+tcp4_established!
 	lcal	tcp_send_on_window
 
 	la	transmission:q4ack:head
@@ -654,7 +671,21 @@ tcp4_service_next_connection
 
 	j	tcp4_globaltime?
 
+tcp4_synreceived?
+	anu, xi	TCP_SYNRECEIVED
+	jnza	tcp4_finwait1?
+
+	la	DAYCLOCK$
+	ana	transmission:timer(2)
+	jna	tcp4_globaltime?
+
+	lcal	tcp_restart_timer2
+	call	(tcp_accept)
+	j	tcp4_globaltime?
+	j	tcp4_globaltime?
+
 tcp4_finwait1?
+
 	anu, xi	TCP_FINWAIT1
 	jnzb	tcp4_finwait2?
 
@@ -683,39 +714,7 @@ tcp4_free_block
 				. free all buffers attached
 				. first
 
-	push	x		. the connection will be 1, sp
-	push	y		, whatever was in y will be 0, sp
-
-	lx	1, sp
-	ly, i	transmission:receiveq
-	lcal	readq
-	jza	$+3
-	lcal	net_free
-	j	$-5
-
-	lx	1, sp
-	ly, i	transmission:deferq
-	lcal	readq
-	jza	$+3
-	lcal	net_free
-	j	$-5
-
-	lx	1, sp	
-	ly, i	transmission:q4window
-	lcal	readq
-	jza	$+3
-	lcal	net_free_txbx
-	j	$-5
-
-	lx	1, sp
-	ly, i	transmission:q4ack
-	lcal	readq
-	jza	$+3
-	lcal	net_free_txbx
-	j	$-5
-
-	pop	y
-	pop	x
+	lcal	tcp_free_rxtx
 
 	lb	transmission:next, x
 	sb	transmission:next, y
@@ -727,6 +726,44 @@ tcp4_free_block
 	call	(tcp_agent_free)
 	lx	b
 	j	tcp4_located_next_connection
+
+tcp_free_rxtx $head_near	scalars(xy, long, x)
+	ly, i	transmission:receiveq
+	lcal	tcp_freerxq
+	lx	xy
+	ly, i	transmission:deferq
+	lcal	tcp_freerxq
+	lx	xy
+	ly, i	transmission:q4window
+	lcal	tcp_freetxq
+	lx	xy
+	ly, i	transmission:q4ack
+	lcal	tcp_freetxq
+	pop	x
+	pop	y
+	lret	0
+
+tcp_freerxq $tree
+	$head_near	scalars(qtuple, int, y)
+sample	lcal	readq
+	jza	clear
+	lcal	net_free
+	ly	qtuple
+	j	sample
+clear	pop	y
+	lret	0
+	$root
+
+tcp_freetxq $tree
+	$head_near	scalars(qtuple, int, y)
+sample	lcal	readq
+	jza	clear
+	lcal	net_free_txbx
+	ly	qtuple
+	j	sample
+clear	pop	y
+	lret	0
+	$root
 
 tcp4_locate_next_connection
 	ly	x
@@ -781,18 +818,21 @@ tcp_auto_accept
 	pop	transmission:state
 	call	(tcp_agent_add)
 	lret	2
+
 tcp_hv_accept
+	lcal	tcp_restart_timer2
 	call	(tcp_accept)
 	lret	1			. could not respond yet
-	dl	transmission:sequence_ackx, x
-	da	(1*/16:d)
-	ds	transmission:sequence_ackx, x
-	push,xi	TCP_ESTABLISHED
-	pop	transmission:state
+        dl      transmission:sequence_ackx, x
+        da      (1*/16:d)
+        ds      transmission:sequence_ackx, x
 	lret	2			. good
 
 tcp_xaccept
-	push	transmission:mss	. this may be happing
+	la	transmission:q4ack:head
+	or	transmission:q4window.head
+	jnza	tcp_e0_accept
+	push	transmission:mss	. this may be happening
 	pop	MSS			. many circuits later than
 					. SYNC receive
 
@@ -800,6 +840,8 @@ tcp_xaccept
 	j	tcp_e1_accept
 	j	tcp_e2_accept
 	la, xi	0			. generate a handle!
+
+tcp_e0_accept
 	fret	0
 tcp_e1_accept
 tcp_e2_accept
@@ -1867,7 +1909,7 @@ tcp_xdisco		. vector is xdisco
 	jzb	tcp_xclosewait
 
 tcp_xclosewait
-	call	(tcp_ack_fin)
+	call	(tcp_ack_fin)	. 
 	fret	0		. no change if you could not send ACK++FIN
 
 	dl	transmission:sequence_ackx
