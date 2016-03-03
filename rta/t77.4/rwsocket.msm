@@ -196,7 +196,7 @@ tcp_add_part
 				.	xor	(00FFFF)
 				.	sa	segment:checksum
 
-				. if a resend is needed, the local
+				. if a resend is needed, the old
 				. ACK and window remaining in the
 				. segment header are subtracted from
 				. the checksum by adding the positive
@@ -205,37 +205,66 @@ tcp_add_part
 				. the new ACK and window, and further
 				. inverting
 
-				. 	la	segment:ack
-				.	aa	segment:ack+1
+				. 	dl	segment:ack	. add 3 words positive
+				.	aa	b		
 				.	aa	segment:window
-				.	aa	segment:checksum
-				.	dsr	16
-				.	sbr	8
 				.	aa	b
-				.	xor	(00FFFF)
-				.	push	a
-				.	dl	connection:ack
+				.	aa	segment:checksum . to 1s complement checksum
+				.	dsr	16		. to effect subtraction from
+				.	sbr	8		. magnitude
+				.	ab	a
+				.	xorB	(00FFFF)	. reduced positive checksum
+				.	push	b
+				.	dl	connection:ack_window
+				.	dsr	8
+				.	sbr	8
 				.	ds	segment:ack
 				.	aa	b
-				.	lb	connection:window
+				.	lcal	window
 				.	sb	segment:window
 				.	aa	b
-				.	popA	a
+				.	lk	(0FF0000s)
+				.	mlb	connection:ack_window+1
+				.	sb	connection:ack_window+1
+				.	popA	a		. revised positive checksum
 				.	dsr	16
 				.	sbr	8
-				.	aa	b
-				.	xor	(00FFFF)
+				.	ab	a
+				.	xorB	(00FFFF)
 				.	sa	segment:checksum
-				
+
+				. this can be replaced at some time by storing
+				. incomplete checksum aside from the segment
+				. header and restarting ACK / WINDOW / CHECKSUM
+				. in the segment header at every transmission
+				. and retransmission
+
+				. this obvious step can be taken by finding a
+				. location for the fixed incomplete part of the
+				. checksum in the segment buffer or its descriptor
+
+				.	dl	connection:ack_window
+				.	dsr	8
+				.	sbr	8
+				.	ds	segment:ack
+				.	aa	b
+				.	lcal	window
+				.	sa	segment:window
+				.	aa	b
+				.	aa	SAVED_POSITIVE_CHECKSUM
+				.	lk	(0FF0000s)
+				.	mlb	connection:ack_window+1
+				.	sb	connection:ack_window+1
+				.	dsr	16
+				.	sbr	8
+				.	ab	a
+				.	xorB	(00FFFF)
+				.	sa	segment:checksum
 
 
-				. resend should not often be needed
 
-				. the obverse checksum without ACK or
-				. window could be cached, halving that
-				. sequence. But it needs to be cached
-				. somewhere for every segment in a location
-				. outwith the transmitted datagram
+				. a minority of segments ought ever be resent
+
 
 	jnc	tcp_add_words
 

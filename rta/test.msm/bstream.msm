@@ -1,0 +1,90 @@
+$(66::,x)
+bchan	bstream
+
+$(0)
+sichan_store
+	dl	RDATAC
+	on	see$1
+	lx	ACTIVE_ICHANNEL
+	ds	bchan:datac		. save data count and buffer
+	la	1, sp
+	lb	q			. stream read pointer, application registers
+	ds	bchan:psr_flags		. save PSR and storage read pointer
+	lret	0
+
+sichan_load
+	sx	ACTIVE_ICHANNEL
+	dl	bchan:datac		. save data count and buffered data
+	ds	RDATAC
+	lk, xi	b$stream16r++b$streamZR	. mask available read control bits
+	dl	bchan:psr_flags
+	sb	q			. stream read pointer, application registers
+	lb	1, sp
+	mlb	a_x			. control bits to saved PSR
+	sb	1, sp
+	lret	0
+
+sochan_store
+	dl	WDATAC
+	on	see$1
+	lx	ACTIVE_OCHANNEL
+	ds	bchan:datac		. save data count and buffered data
+	la	1, sp
+	lb	p			. stream write pointer, application registers
+	ds	bchan:psr_flags		. save PSR and storage write pointer
+	lret	0
+
+sochan_load
+	sx	ACTIVE_OCHANNEL
+	dl	bchan:datac		. save data count and buffered data
+	ds	WDATAC
+	lk, xi	b$stream16w		. mask available write control bits
+	dl	bchan:psr_flags
+	sb	p			. stream write pointer, application registers
+	lb	1, sp
+	mlb	a_x			. control bits to saved PSR
+	sb	1, sp
+	lret	0	
+
+sichan_switch_ii
+	lcal	sichan_store	. save stream state
+	lx	a		. parameter in application register a
+	lcal	sichan_load	. load next stream state
+	ir	0
+
+sochan_switch_ii
+	lcal	sochan_store	. save stream state
+	lx	a		. parameter in application register a
+	lcal	sochan_load	. load next stream state
+	ir	0
+
+sichan_push_ii
+	lcal	sichan_store	. save stream state
+	dec	ICHANNEL_STAC
+	sx	*ICHANNEL_STAC
+	lx	a		. parameter in application register a
+	lcal	sichan_load	. load next stream state
+	ir	0
+
+sichan_pop_ii
+	lcal	sichan_store	. save stream state
+	lx	*ICHANNEL_STAC	. parameter from saved list in TCB
+	inc	ICHANNEL_STAC
+	lcal	sichan_load	. load next stream state
+	ir	0
+
+sochan_push_ii
+	lcal	sochan_store	. save stream state
+	dec	OCHANNEL_STAC
+	sx	*OCHANNEL_STAC
+	lx	a		. parameter in application register a
+	lcal	sochan_load	. load next stream state
+	ir	0
+
+sochan_pop_ii
+	lcal	sochan_store	. save stream state
+	lx	*OCHANNEL_STAC	. parameter from saved list in TCB
+	inc	OCHANNEL_STAC
+	lcal	sochan_load	. load next stream state
+	ir	0
+
