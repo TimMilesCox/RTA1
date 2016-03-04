@@ -258,24 +258,39 @@ tcp_no2ndsyn
 	.		remote ACK is still in 6:7
 
 
-	la	transmission:state
-	anu, xi	TCP_ESTABLISHED
+	lb	transmission:state
+	ab, xi	-TCP_ESTABLISHED
 	jzb	tcp_established
 
-	anu, xi	TCP_SYNRECEIVED
+	ab, xi	TCP_ESTABLISHED-TCP_SYNRECEIVED
 	jzb	tcp_synreceived
 
-	anu, xi	TCP_FINWAIT1
-	jzb	tcp_finwait1
-
-	anu, xi	TCP_DELETETCB
-	jzb	tcp_deletetcb
-
-	anu, xi	TCP_CLOSEWAIT
+	ab, xi	TCP_SYNRECEIVED-TCP_CLOSEWAIT
 	jzb	tcp_closewait
 
-	anu, xi	TCP_LASTACK
+	ab, xi	TCP_CLOSEWAIT-TCP_LASTACK
 	jzb	tcp_lastack
+
+	ab, xi	TCP_LASTACK-TCP_SYNSENT
+	jzb	tcp_synsent
+
+	ab, xi	TCP_SYNSENT-TCP_FINWAIT1
+	jzb	tcp_finwait1
+
+	ab, xi	TCP_FINWAIT1-TCP_FINWAIT2
+	jzb	tcp_finwait2
+
+	ab, xi	TCP_FINWAIT2-TCP_CLOSING	
+	jzb	tcp_closing
+
+	ab, xi	TCP_CLOSING-TCP_TIMEWAIT
+	jzb	tcp_timewait
+
+	ab, xi	TCP_TIMEWAIT-TCP_DELETETCB
+	jzb	tcp_deletetcb
+
+	ab, xi	TCP_DELETETCB-TCP_CLOSED
+	jzb	tcp_closed
 
 tcp_established
 tcp_closewait
@@ -430,7 +445,12 @@ tcp_rx_exact_sequence
 	j	tcp_stepover_response
 
 tcp_lastack
-	push,xi	TCP_DELETETCB
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_lastack2closed
+	j	tcp_stepover_response
+
+tcp_lastack2closed
+	push,xi	TCP_CLOSED
 	pop	transmission:state
 	j	tcp_stepover_response
 	
@@ -533,16 +553,68 @@ tcp_rx_ack_nopayload
 	j	tcp_ack_point
 
 tcp_finwait1
-	lcal	tcp_ripdown
-tcp_deletetcb
+	la	HL_FLAGS
+	and, xi	TCP_FIN
+	jza	tcp_finwait1_acked?
+	dl	(1*/16d)
+	da	transmission:ack_window
+	ds	transmission:ack_window
+	push,xi	TCP_CLOSING
+	pop	transmission:state
+	lcal	tcp_send_ack
+	j	tcp_closing	. there are two comebacks
+				. and the ACK and FIN  may be together
+tcp_closing
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_close2timewait
+	j	tcp_stepover_response
+
+tcp_finwait1_acked?
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_finwait1tofinwait2
+	j	tcp_stepover_response
+
+tcp_finwait1tofinwait2
+	push,xi	TCP_FINWAIT2
+	pop	transmission:state
+	j	tcp_stepover_response
+
+tcp_close2timewait
+	push,xi	TCP_TIMEWAIT
+	pop	transmission:state
+	la	DAYCLOCK$
+	aa, xi	2
+	sa	transmission:timer(1)
+	j	tcp_stepover_response
+	
+tcp_finwait2
+	la	HL_FLAGS
+	and, xi	TCP_FIN
+	jza	tcp_stepover_response
+	dl	(1*/16d)
+	da	transmission:ack_window
+	ds	transmission:ack_window
+	j	tcp_close2timewait
+	
+tcp_timewait
+	la	DAYCLOCK$
+	ana	transmission:timer(1)
+	jna	tcp_stepover_response
+	la, xi	TCP_CLOSED
+	sa	transmission:state
+	j	tcp_stepover_response
+
+tcp_event1_acknowledged?
+	dl	transmission:sequence_ackx
+	andB	(0FF0000s)		. ls 16 bits aren't used yet, but...
+	dan	6			. is the new remote ACK
+	lret	0
 
 tcp_synreceived
-	dl	transmission:sequence_ackx
-	xor	transmission:remote_ack_window
-	xorB	transmission:remote_ack_window+1
-	dsr	16
+	lcal	tcp_event1_acknowledged?
 	jdz	tcp_syn_ack_acked
 	j	tcp_ripdown_reset
+
 tcp_syn_ack_acked
 	la, xi	TCP_ESTABLISHED
 	sa	transmission:state
@@ -564,10 +636,26 @@ tcp_ripdown_reset
 tcp_ripdown_silently
 	lcal	tcp_ripdown
 
+tcp_deletetcb
+tcp_closed				. the TCB may already be reassigned
 tcp_stepover_response
 	ly, xi	tcpq
 	lcal	net_drop
 	j	tcp4
+
+tcp_synsent
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_synsent1
+	j	tcp_ripdown_reset
+tcp_synsent1
+	la	HL_FLAGS
+	and, xi	TCP_SYN++TCP_ACK
+	xor, xi	TCP_SYN++TCP_ACK
+	jnza	tcp_ripdown_reset
+	la, xi	TCP_ESTABLISHED
+	sa	transmission:state
+	j	tcp4
+
 
 tcp4_routine				. walk and maintain all connections
 
@@ -673,7 +761,7 @@ tcp4_established!
 
 tcp4_synreceived?
 	anu, xi	TCP_SYNRECEIVED
-	jnza	tcp4_finwait1?
+	jnza	tcp4_state?
 
 	la	DAYCLOCK$
 	ana	transmission:timer(2)
@@ -681,20 +769,7 @@ tcp4_synreceived?
 
 	lcal	tcp_restart_timer2
 	call	(tcp_accept)
-	j	tcp4_globaltime?
-	j	tcp4_globaltime?
-
-tcp4_finwait1?
-
-	anu, xi	TCP_FINWAIT1
-	jnzb	tcp4_finwait2?
-
-	j	tcp4_globaltime?
-
-tcp4_finwait2?
-	anu, xi	TCP_FINWAIT2
-	jnzb	tcp4_deletetcb?
-
+	j	tcp4_globaltime?	. there are 2 comebacks from accept
 
 tcp4_globaltime?
 	la	transmission:timer(1)
@@ -706,9 +781,10 @@ tcp4_globaltime?
 	lcal	tcp_reset
 	j	tcp4_free_block	
 
-tcp4_deletetcb?
-	anu, xi	TCP_DELETETCB
-	jnzb	tcp4_locate_next_connection
+tcp4_state?
+tcp4_closed?
+	anu, xi	TCP_CLOSED
+	jnzb	tcp4_globaltime?
 	
 tcp4_free_block
 				. free all buffers attached
@@ -1907,16 +1983,37 @@ tcp_xdisco		. vector is xdisco
 				. close from local socket awaited
 
 	jzb	tcp_xclosewait
+	ab, xi	TCP_CLOSEWAIT-TCP_ESTABLISHED
+	jzb	tcp_xfinwait1
 
-tcp_xclosewait
+tcp_xclose
+				. it's been ripped and the owner knows
+	push,xi	TCP_CLOSED	. It can be really reassigned
+	pop	transmission:state
+	fret	0
+
+tcp_xfinwait1
+	call	(tcp_ack_fin)
+	j	tcp_xclose	. better delete roughly
+				. if you could not send ACK++FIN
+
+	push,xi	TCP_FINWAIT1
+	pop	transmission:state
+	j	tcp_xfin_upsequence
+
+tcp_xclosewait			. passive close
 	call	(tcp_ack_fin)	. 
-	fret	0		. no change if you could not send ACK++FIN
+	j	tcp_xclose	. better delete roughly
+				. if you could not send ACK++FIN
+
+	push,xi TCP_LASTACK
+	pop	transmission:state
+
+tcp_xfin_upsequence
 
 	dl	transmission:sequence_ackx
-	da	(65536)
+	da	(65536d)
 	ds	transmission:sequence_ackx
-	push,xi	TCP_LASTACK
-	pop	transmission:state
 	fret	0
 
 	$if	RX_FRAGMENTS
