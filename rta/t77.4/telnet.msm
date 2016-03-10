@@ -107,10 +107,6 @@ telnet_walk
 	call	(xaccept)
 	jna	telnet_walk	. could not accept
 
-	la, xi  32
-	lb, xi $1("RTA1 smaragd7 OS shared console":10)
-	lcal	telnet_respond
-
 	j	telnet_walk
 
 telnet_traffic?
@@ -140,26 +136,20 @@ telnet_console
 telnet_command
 	ly	transmission:receiveq:head
 
-	$if	1
 	la	descriptor:bytes, y
 	lb	descriptor:apdata, y
 	call	(rstream_start_xdr)
 
-	la, xi	6
-	lb, xi	10
+	la	*q		. check text or something else
+	and	(00F000)	. a configuration sequence?
+	xor	(00F000)
+	jza	telnet_configure
+
+	la, xi	6		. input a command text word
+	lb, xi	10		. max 2 registers in size
 	call	(token_xdr)
 
 	dl	10
-
-	$else
-
-	lr	descriptor:bytes, y
-	ly	descriptor:apdata, y
-
-	z	TELNET_BITS
-	lcal	telnet_token
-
-	$endif
 
 	anu	('t'*/16:s)
 	jzb	telnet_tasks
@@ -176,10 +166,6 @@ telnet_command
 	dl	10
 	dan	("stay")
 	jdz	telnet_zero_timer1
-
-	dl	10
-	dan	("rstest")
-	jdz	telnet_test_resend
 
 	j	telnet_prompt
 
@@ -231,21 +217,13 @@ telnet_memory
 	j	telnet_respond
 
 
-telnet_test_resend
-.	la	DAYCLOCK$
-.	aa, xi	1
-.	sa	transmission:timer(2)
-	la, xi	12
-	lb, xi	$1("resend test":10)
+telnet_configure
+		. something received clearly not keyed text
+		. it should include line mode
+		. nothing much will happen if not
+		. for the moment just lay the welcome mat
 
-	lcal	telnet_respond
-.	push	x
-.	call	(jv_ift1_rxtx)
-.	pop	x
-.	la	DAYCLOCK$
-.	aa, xi	-1
-.	sa	transmission:timer(2)
-	lret	0
+	lcal	telnet_configuration
 
 .	fall	thru	
 
@@ -263,65 +241,14 @@ telnet_insert
 	call	(tcp_tx)
 	lret	0
 
-	$if	0
+telnet_configuration
+		. for the moment no analysis. just encourage
 
-TELNET_BITS $equ 8
-
-telnet_token
-	lk	(255*/16:s)
-
-	j	telnet_read_abyte?
-
-telnet_read_abyte!
-	tz	TELNET_BITS
-	j	telnet_test_abyte
-
-	dl	0, y
-
-	sbl	8
-	dsl	8
-
-	orB	2, y
-	ay, xi	3
-
-	push,xi	48
-	pop	TELNET_BITS
-
-telnet_test_abyte
-
-	mta	(' '*/16)
-	j	$+2
-	j	telnet_token_end
-	mta	(09*/16)
-	j	$+2
-	j	telnet_token_end
-	mta	(0D*/16)
-	j	$+2
-	j	telnet_token_end
-	mta	(0A*/16)
-	j	$+2
-	j	telnet_token_end
-	mta	(0)
-	j	telnet_read_abyte
-	j	telnet_token_end
-
-telnet_read_abyte
-	drl	8
-	push,xi	-8
-	popA	TELNET_BITS
-
-	tz	TELNET_BITS
-
-telnet_read_abyte?
-	jdr	telnet_read_abyte!
-
-telnet_token_end
-	ds	6
-	dsl	*TELNET_BITS
-	ds	10
+	lb, xi	$1("RTA1 smaragd7 OS shared console":10)
+	la, xi	$bits/$byte
 	lret	0
 
-	$endif
+
 
 telnet_tasklist
 	on	+(see$7*/MANAGER_BANKS)-see$7
