@@ -20,6 +20,21 @@ CACHE	$equ	11		. remaining bits cached in registers
 
 $(0:64)
 
+
+.	_________________________________
+.	| 1xxx xxxx xxxx xxxx xxxx xxxx |	delimiter mask up to 24b, not ALL
+.	|_______________________________|
+.	| 0000 0000 0000 0000 0000 0000 |	end of delimiters
+.	|_______________________________|
+.	| 0000 0000 0000 0000 0000 0001 |	ALL up to 24b
+.	|_______________________________|
+.	| 0xxx xxxx xxxx xxxx xxxx 0010 |	multiword delimiter not ALL
+.	|_______________________________|
+.	| 0xxx xxxx xxxx xxxx xxxx 0011 |	multiword delimiter ALL
+.	|_______________________________|________________________________
+.					|	last word mask		| all or multiword
+.					|_______________________________|
+					
 up	z	DELIMITER
 	ly	LIST
 
@@ -31,93 +46,96 @@ up1	lk	0, y
 	lret	1		. even simpler, end of delimiter list
 				. store 1 byte and advance
 
-	src	k
+	off	carry$
+	src	k		. low bit is for ALL
 	sc	ALL
 
-	tz	k
-	j	up2_48
+	tz	k		. otherwise zero = one-word-ALL
+	j	up2_48		. positive nonzero = multiword
 
 	lk	1, y		. 2nd simplest path
 				. delimiter up to 24 bits, ALL may be set
 	mta	2, y
-	j	up3
+	j	up3		. but no hit anyway
 
-	ds	ASIDE
-	lsc	k
-	sb	COLUMNS
-	sy	DELIMITER
+	ds	ASIDE		. hit
+	lsc	k		. measure the delimiter length
+	sb	COLUMNS		. in bits
+	sy	DELIMITER	. save the delimiter pointer
+
 up2_more
-	lcal	along
+	lcal	along		. advance the input stream delimiter bits
 	ds	ASIDE
 
-	tnz	ALL
+	tnz	ALL		. if not repeating jump to caller, itsa hit
 	lret	0		. margin
 
-	tz	CACHE
+	tz	CACHE		. exhausted input anyway?
 	tp	CACHE		. nonzero? positively?
 	lret	0		. reach here if zero or less
 
-	ly	DELIMITER
+	ly	DELIMITER	. try again, but it'a already a hit
 	mta	2, y
 	lret	0		. margin
-	j	up2_more
+	j	up2_more	. pass by any more instances this delimiter
 
 up3	ay, xi	3
 	j	up1
 
 
-up2_48	lk, xi	-1
+up2_48	lk, xi	-1		. first of 2 words, compare all bits
 	mta	2, y
-	j	up4
+	j	up4		. next comparand
 	ds	ASIDE
-	la	b
+	la	b		. the masked compare is 2nd delimiter word
 	lk	1, y
 	mta	3, y
-	j	up4reload
+	j	up4reload	. notso
 
-	lsc	k
-	lb, i	24, b
-	sb	COLUMNS
-	sy	DELIMITER
+	lsc	k		. yesso
+	lb, i	24, b		. delimiter length is 24 + mask width
+	sb	COLUMNS		. save the delimiter width in bits
+	sy	DELIMITER	. and the pointer which delimiter was it
 
 up4_more
-	lcal	along
+	lcal	along		. slip by the size of the encountered delimiter
 	ds	ASIDE
 
-	tnz	ALL
-	lret	0		. margin
+	tnz	ALL		. ALL ?
+	lret	0		. no, jump to caller after one hit
 
-	tz	CACHE
+	tz	CACHE		. run out of bits?
 	tp	CACHE		. nonzero? positively?
 	lret	0		. margin
 
-	ly	DELIMITER
+	ly	DELIMITER	. compare again, one whole word +
 	lk, xi	-1
 	mta	2, y
-	lret	0		. margin, delimiter hit
-	la	b		. once at least already
-	lk	1, y
+	lret	0		. jump to caller. One hit at least
+	la	b		. compare second delimiter part
+	lk	1, y		. under mask
 	mta	3, y
-	j	$+2
+	j	$+2		. not quite more so, jump to caller now
 	j	up4_more	. calls along = reloads a
 	la	ASIDE
 	lret	0
 
 up4reload
 	la	ASIDE
-up4	ay, xi	4
+up4	ay, xi	4		. move from long delimiter to next delimiter
 	j	up1
 
+				. simplest, 1-word delimiter not ALL
 up2_24by1			. search string up to 24 bits nonrepeat
-	mta	1, y
-	j	up2
+	mta	1, y		. hit?
+	j	up2		. no, next delimiter
+	ds	ASIDE		. yes
+	lsc	k		. measure the delimiter width
+	sb	COLUMNS		. in bits
+	sy	DELIMITER	. save the delimiter pointer
+	lcal	along		. move delimiter bits along the input
 	ds	ASIDE
-	lsc	k
-	sb	COLUMNS
-	sy	DELIMITER
-	lcal	along
-	ds	ASIDE
-	lret	0		. margin
+	lret	0		. jump to caller
 
 up2	ay, xi	2
 	j	up1

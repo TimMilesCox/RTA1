@@ -1,0 +1,190 @@
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$list
+	$path
+
+FORMAT_START* $proc
+	sy	FORMAT_STRING
+	ly, xi	0
+	$end
+
+FORMAT_READ* $proc
+	ex	format_read, y
+	ay, xi	0
+	$end
+
+FORMAT_READZ* $proc
+	FORMAT_READ
+	and, xi	+(1*/$byte)-1
+	$end
+
+	$if	$t(WRITE_BYTE)=0
+WRITE_BYTE* $proc
+	sal	$word-$byte
+	wsr	$byte
+	$end
+	$endif
+
+
+$(0:64)
+
+oform	lk, xi	+(1*/$byte)-1
+	FORMAT_START
+oloop	FORMAT_READZ
+	jza	xloop
+
+	mta	('%')
+	j	plant
+
+	lcal	token_scan
+	j	xloop		. zero byte analysing format command
+
+	mtane	('s')		.
+	j	stringo
+
+	mtane	('x')
+	j	hexlo
+
+	mtane	('X')
+	j	hexuo
+
+	mtane	('p')
+	j	pointo
+
+	mtane	('d')
+	j	decimo
+
+	mta	('f')
+	j	plant		. just output it then
+
+floato	lcal	floating_edit
+	j	oloop
+decimo	lcal	decimal_edit
+	j	oloop
+pointo	lcal	pointer_edit
+	j	oloop
+hexuo	lcal	hex_edit_upper
+	j	oloop
+hexlo	lcal	hex_edit
+	j	oloop
+stringo	lcal	string_merge
+	j	oloop
+	
+plant	WRITE_BYTE
+count	j	oloop
+
+xloop	wsr	$word-$byte
+	fret	0
+
+token_scan
+	z	minimum
+	z	maximum
+	z	type_size_d
+
+	FORMAT_READZ
+	mtane	'-'		. a left-justify flag?
+	j	minimum_width?
+	la	(0800000s)
+	sa	type_size_d
+	FORMAT_READZ
+
+minimum_width?
+	sa	6
+	aa, xi	-'0'-10
+	jc	minimum_indirect?
+	aa, xi	10
+	jnc	minimum_indirect?
+	lcal	size_given
+	j	token_break
+
+	push	maximum
+	pop	minimum
+	j	min_point_max?
+
+minimum_indirect?
+	la	6
+	mta	('*')
+	j	min_point_max?
+	n	minimum
+	FORMAT_READZ
+
+min_point_max?
+	z	maximum
+	mta	('.')
+	j	type_size?
+	FORMAT_READZ
+	sa	6
+	aa, xi	-'0'-10
+	jc	maximum_indirect?
+	aa, xi	10
+	jc	maximum_indirect?
+	lcal	size_given
+	j	type_size?
+
+maximum_indirect?
+	la	6
+	mta	'*'
+	j	type_size?
+	n	maximum
+	FORMAT_READZ
+
+type_size?
+	mta	('l')
+	j	type?
+	push,xi	256
+	popA	type_size_d
+	FORMAT_READZ
+
+	mta	('l')
+	j	type?
+	push,xi	256
+	popA	type_size_d
+	FORMAT_READZ
+
+type?	or	type_size_d	. ll and left-justify bits
+	lret	1		. whatever is there is a type s d x X f c p
+				. otherwise it just gets printed
+
+token_break
+	lret	0		. a zero byte during scan of token
+
+size_given
+	sa	maximum
+size_byte
+	FORMAT_READZ
+	jza	size_break
+	push	a
+	aa, xi	-'0'-10
+	jc	rezone1
+	aa, xi	10
+	jnc	rezone1
+
+	push	a		. maximum = maximum + 10 + new digit
+	la	maximum
+	push	a
+	sal	3
+	push	a
+	popA	maximum
+	popA	maximum
+	popA	maximum
+
+rezone1	pop	a
+	or	maximum
+	rar	$byte
+	lret	1
+size_break
+	lret	0
+
+
+	$do	$<256,$(0:256)
+format_read
+	lcal	format_reload
+	$do	$word/$byte-1,	dsl	$byte
+format_reload
+	lb	*FORMAT_STRING
+	inc	FORMAT_STRING
+	ly, xi	0
+	dsl	$byte
+	lret	1		. skip the add to y
+
