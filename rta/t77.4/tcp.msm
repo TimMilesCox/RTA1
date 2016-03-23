@@ -109,13 +109,28 @@ tcp4	la	tcpq.head
 
 
 tcp_restart_timer2
+	$if	TCP_TIMER2<32768
+	la	TCP_TIMER2,,xi
+	$else
 	la	(TCP_TIMER2)
+	$endif
+
 	aa	DAYCLOCK$
 	sa	transmission:timer(2)
 	lret	0
 
+tcp_start_timewait
+	$if	TCP_TIMEWAIT_MS<32768
+	la	TCP_TIMEWAIT_MS,,xi
+	$else
+	la	(TCP_TIMEWAIT_MS)
+	$endif
+
+	j	tcp_add_timer1
+
 tcp_restart_timer1
 	la	(TCP_TIMER1)		. something arrived
+tcp_add_timer1
 	aa	DAYCLOCK$		. restart the big timer
 	jnza	tcp_store_timer1
 	aa, xi	1			. but don't restart it to zero
@@ -582,9 +597,7 @@ tcp_finwait1tofinwait2
 tcp_close2timewait
 	push,xi	TCP_TIMEWAIT
 	pop	transmission:state
-	la	DAYCLOCK$
-	aa	(60000)
-	sa	transmission:timer(1)
+	lcal	tcp_start_timewait
 	j	tcp_stepover_response
 	
 tcp_finwait2
@@ -782,9 +795,23 @@ tcp4_globaltime?
 	ana	DAYCLOCK$
 	jpa	tcp4_locate_next_connection
 
-	la	DAYCLOCK$		. don't repeat the same timeout
-	aa	(60000)			. during final state transitions
-	sa	transmission:timer(1)
+	lcal	tcp_restart_timer1	. don't repeat the same timeout
+					. during final state transitions
+
+		. an inactivity timeout is not part of TCP protocol except
+		. in state TCP_TIMEWAIT during outgoing close.
+		. However t77.4 provides inactivity timeout as an optional
+		. socket service in states
+
+		.	TCP_ESTABLISHED
+		.	TCP_FINWAIT2
+		.	TCP_CLOSEWAIT
+
+		. because many application protocols use an inactivity timeout.
+		. The timeout is signalled upwards by connection state change
+		.
+
+		. The timeout is not active if connection:timer(1) is zero
 
 	call	(xdisco)
 
