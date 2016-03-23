@@ -583,7 +583,7 @@ tcp_close2timewait
 	push,xi	TCP_TIMEWAIT
 	pop	transmission:state
 	la	DAYCLOCK$
-	aa, xi	2
+	aa	(60000)
 	sa	transmission:timer(1)
 	j	tcp_stepover_response
 	
@@ -594,6 +594,8 @@ tcp_finwait2
 	dl	(1*/16d)
 	da	transmission:ack_window
 	ds	transmission:ack_window
+	lcal	tcp_send_ack
+	j	$+1
 	j	tcp_close2timewait
 	
 tcp_timewait
@@ -637,6 +639,8 @@ tcp_ripdown_silently
 	lcal	tcp_ripdown
 
 tcp_deletetcb
+	push,xi	TCP_CLOSED
+	pop	transmission:state
 tcp_closed				. the TCB may already be reassigned
 tcp_stepover_response
 	ly, xi	tcpq
@@ -778,8 +782,13 @@ tcp4_globaltime?
 	ana	DAYCLOCK$
 	jpa	tcp4_locate_next_connection
 
-	lcal	tcp_reset
-	j	tcp4_free_block	
+	la	DAYCLOCK$		. don't repeat the same timeout
+	aa	(60000)			. during final state transitions
+	sa	transmission:timer(1)
+
+	call	(xdisco)
+
+	j	tcp4_locate_next_connection
 
 tcp4_state?
 tcp4_closed?
