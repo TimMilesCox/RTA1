@@ -1,0 +1,65 @@
+
+	$path		../
+	$include	def/rta.def
+	$path
+
+AREAS	$equ	4
+RECORDS	$equ	6
+SETS	$equ	4
+
+LOG	$equ	8
+PAGE_SIZE $equ	d$save
+SLOT	$equ	9
+PAGE	$equ	10
+
+	$include	subschem.def
+
+$(1:01000)
+this	subschema	1,3	3, 6
+
+$(66::,x)
+target	area
+
+$(69::,b)
+page	dpage
+
+$(0:64)
+
+	ds	6
+	sar	12
+	jza	notreally
+	lx, xi	this:actual(1)-1
+	ax	a
+
+	lr, xi	this:actual(AREAS)+1
+	jxge	notreally		. outside schema
+
+	lx	0, x
+	tnz	x
+	j	notreally		. in schema but not subschema
+
+	qpush	target
+	qpop	8
+	dl	6
+	ds	target:dbk
+
+	and, xi	4095
+	drr	*LOG
+	sa	SLOT
+	lcal	page			. page buffering is in the schema
+	jdz	notreally		. so is page I/O
+	lb, xi	0
+	la	SLOT
+	drl	*LOG
+	sb	SLOT
+	lb	target:page_location+1
+	la	page:slots
+	anb	SLOT
+	jnc	notreally
+	ab	PAGE_SIZE		. retrieved by page subroutine
+	anb	SLOT
+	sb	target:slot_location
+	lret	1
+notreally
+	lret	0
+
