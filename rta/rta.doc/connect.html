@@ -30,7 +30,7 @@ if you haven't either Intel OSX or PowerPC OSX
 The build directions are further down this page
 
 <p>
-The default binary path is <b>../binary.rta/osx.x86</b>
+The default binary path is <b>/Users/YOU/rta/binary.rta/osx.x86</b>
 
 <p>
 The emulator run scripts dynamically assign that value to
@@ -40,11 +40,10 @@ The emulator run scripts dynamically assign that value to
 To run the supplied OSX PowerPC binaries, you can export
 <pre>
 
-	export RTA_BINARY=../binary.rta/osx.ppc
+	export RTA_BINARY=/Users/YOU/rta/binary.rta/osx.ppc
 
 </pre>
-in your shell profile. You may prefer an absolute path,
-but the relative path is dependable
+into your shell profile. 
 
 <p>
 It is important to key <b>export</b> and not just
@@ -136,23 +135,26 @@ in the shell where netifx is running
 
 <h3>Starting the Emulated RTA1 Machine</h3>
 
-In another shell run
+In another shell run the emulator, which is the host binary <b>tiptoe[<i>x</i>]</b>, for example
+<b>tiptoe2</b> (see below <a href="#tiptoe">Emulated RTA1 Executable Space Sizes</a>). The
+supplied RTA1 code image is called <b>minimal.rom</b>. A file system image called <b>rand7</b>
+containing web pages is supplied
 <pre>
 
 
 	cd rta/rta.run
 
-	./run	srom	[rand7]
+	./run	minimal	rand7
 
 	g
 
 </pre>
 This runs the emulated machine. The script <b>./run</b> looks
-for a file <b>../rta.gen/srom.rom</b>, which is the system image
+for a file <b>../rta.gen/minimal.rom</b>, which is the system image
 in RTA1 target instruction code. A script in <b>rta/rta.gen</b>
 <pre>
 
-	./make
+	./micro
 
 </pre>
 constructs this RTA1 executable image
@@ -162,7 +164,7 @@ constructs this RTA1 executable image
 optionally a file-system-image argument to the emulator
 <pre>
 
-	./run	srom	rand7
+	./run	minimal	rand7
 
 </pre>
 The file system image enables the emulated RTA1 to webhost
@@ -178,10 +180,11 @@ with the script in <b>rta/</b>
 </pre>
 The output of script <b>mrand7</b>, file system image
 <b>fsimages/rand7</b>, can be loaded as command line
-argument 2, or as the first emulator command
+argument 2, or as an emulator command at single step
+prompt <b>&gt</b>
 <pre>
 
-	&gt;l	rand7
+	&gt;l	rand7		# load the file system
 
 </pre>
 Command <b>g</b> leaves single-step and RTA1 is running free.
@@ -202,21 +205,66 @@ command input
 
 </pre>
 <p>
-You can see the emulator's appearance while running at the end
-of this document, along with some interactive commands
+You can see the emulator's appearance while running and some
+more interactive commands in section
+<a	href="#operate">Operating the Emulator</a>
 
-<h3>Loaded Image Sizes</h3>
 
-The emulator image is $RTA_BINARY/tiptoe
+<a      name="tiptoe"/>
+<h3>Emulated RTA1 Executable Space Sizes</h3>
+
+The emulator image is <b>$RTA_BINARY/tiptoe[<i>x</i>]</b> where the optional <i><b>x</b></i>
+is emulated machine executable in banks of 262144 24-bit words
 
 <p>
 RTA_BINARY contains alternative binaries tiptoe1 tiptoe2 tiptoe8 tiptoe32 tiptoe64. These images emulate RTA hardware with respectively 1, 2, 8, 32, or 64 RTA1 system memory banks of 262144 words. Each 24-bit RTA computer word is modelled in a 32-bit emulator host word for optimal efficiency, so each RTA1 bank takes a megabyte of emulator host memory
 
 <p>
+Working from PWD <b>rta.run/</b>, script <b>./run</b> executes the RTA1 emulation <b>tiptoe</b> which loads
+an RTA1 code image for execution and optionally a file system. To run a larger or smaller RTA1
+precede <b>./run</b> with <b>export RTA_MBANKS=<i>banks</i></b>, for example
+<pre>
+
+	export	RTA_MBANKS=4
+	./run	minimal rand7
+
+</pre>
+
+An emulation tiptoe0 containing only half a bank (131072 24-bit words) is also supplied and runs everything
+in the RTA1 code image <b>minimal.rom</b>, which are the smaragd7 kernel and network stack plus http server,
+snmp v 1 agent, telnet daemon, and floating-point server
+
+<p>
+However tiptoe0 will not run much more target software than that, so to run more applications
+in the target *.rom image or to calibrate the performance of larger or
+smaller RTA1s under heavy network traffic, export RTA_MBANKS { 1|2|4|8|32|64 }
+
+<p>
+To construct an emulated machine with a different number of banks than the supplied emulated machines,
+export the required value and construct the machine from PWD <b>rta.run</b>, for example
+<pre>
+
+	export	RTA_MBANKS=12
+	./micro			# construct the emulated machine tiptoe12
+	./run	minimal	rand7	# have tiptoe12 execute system image minimal.rom
+				# and load file system image rand7	
+
+</pre>
+To construct an emulated machine smaller than 131072 RTA1 words, generate tiptoe0 with macro PAGES_IN_MEMORY
+in engine.rta/emulate.h changed from 32 to the required number of 4096-word pages
+<pre>
+
+#define	PAGES_IN_MEMORY	<i>pages</i>
+
+</pre>
+A machine smaller than 131072 words would either not run many daemons and threads, or would not be intended
+for smaragd7 kernel 
+
+<p>
 RTA1 emulation tiptoe1 takes a megabyte to run on the emulator host, a comparable memory size to an MS-DOS system of 1982. tiptoe64 takes 64 megabytes on the emulator host
 
 <p>
-The default image copied to tiptoe is tiptoe2, which emulates an RTA1 with 524288 words of system memory. smaragd7 OS assigns 262144 words as network buffers
+The default emulated machine is tiptoe2, which emulates an RTA1 with 524288 words of system memory. smaragd7 OS assigns 262144 words as network buffers
 
 <p>
 If a larger or smaller emulated machine is required, either copy tiptoe[1|2|8|32|64] to $RTA_BINARY/tiptoe or change which binary is executed in script rta/rta.run/run
@@ -519,6 +567,7 @@ compiled
 
 
 </pre>
+<a      name="operate"/>
 <h2>Operating the Emulator</h2>
 
 This is how RTA1 emulator looks when you run it. Don't forget to have
