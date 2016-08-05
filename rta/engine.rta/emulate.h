@@ -156,18 +156,24 @@
 	the right-side operand of any instruction which has a
 	storage operand.
 
-	The non-addressable program-counter is modelled with a pointer
-	to structure word. Its saved value is modeled with base - pointer
+	The non-addressable absolute program-counter is modelled with a pointer
+	to structure word. Its saved value is modeled with pointer - base[0]
 	yielding an integer value.
 
-	Storage locations are modelled with the following structure word
+	executable space locations are modelled with the structure word
+
+        filestore array locations are modelled with structure msw
 
 ****************************************************************************/
 
 #define	IO_PORTS	192
 #define	BASE_TABLE	64
 
-#define	BANKS_IN_DEVICE			2
+#ifndef	MBANKS
+#define	MBANKS	2
+#endif
+
+#define	BANKS_IN_DEVICE			MBANKS
 
 #if	(BANKS_IN_DEVICE)
 #define	PAGES_IN_MEMORY			64 * BANKS_IN_DEVICE
