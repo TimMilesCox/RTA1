@@ -67,7 +67,6 @@ masmx -kw large.msm ..\test.rta\large
 masmx -kw leftala.msm ..\test.rta\leftala
 masmx -kw leveler.msm ..\test.rta\leveler
 masmx -kw levels.msm ..\test.rta\levels
-masmx -kw liboctet.msm ..\test.rta\liboctet
 masmx -kw linkrel.msm ..\test.rta\linkrel
 masmx -kw loademup.msm ..\test.rta\loademup
 masmx -kw loadg.msm ..\test.rta\loadg
@@ -122,6 +121,7 @@ masmx -kw sand5.msm ..\test.rta\sand5
 masmx -kw sand5_2.msm ..\test.rta\sand5_2
 masmx -kw sandwich.msm ..\test.rta\sandwich
 masmx -kw schema.msm ..\test.rta\schema
+masmx -kw schema1.msm ..\test.rta\schema1
 masmx -kw sema.msm ..\test.rta\sema
 masmx -kw semi.msm ..\test.rta\semi
 masmx -kw shadow.msm ..\test.rta\shadow

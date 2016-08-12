@@ -1,3 +1,4 @@
+@echo off
 rem #
 rem #    Copyright Tim Cox, 2012
 rem #    TimMilesCox@gmx.ch
@@ -65,3 +66,14 @@ popd
 masmx minimal minimal -lnubxk %1 >>mlist.txt
 %RTA_BINARY%\lstring -b minimal.txo minimal
 %RTA_BINARY%\slab -v minimal minimal.rom 32 -k
+
+seeif -as minimal.zak minimal.txo
+seeif -s minimals.zak minimal
+seeif -s minimalr.zak minimal.rom
+
+if [%1]==[] goto talk
+if [%1]==[-d] goto end
+:talk
+echo	option ./micro -d for optimal view of memory map in mlist.txt
+echo	-d option also writes expected summaries in output binary minimal.txo
+:end
