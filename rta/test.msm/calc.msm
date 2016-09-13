@@ -1,0 +1,72 @@
+
+
+OFFSET_UNDERHANG $equ	8
+OFFSET		$equ	OFFSET_UNDERHANG
+UNDERHANG	$equ	OFFSET+1
+ASIDE		$equ	6
+
+calc	$tree
+	$head_near	 params(offset,	int	;
+				underhang,int	;
+				words,	int	;
+				key,	int	;
+				configp)
+	dl	offset
+	ds	OFFSET_UNDERHANG
+	lx	key
+	ax	words
+	lr	x		. address last word of key + 1
+	lx	key
+
+				. it is safe to read one more word than
+				. the record. record is never at page end
+	dl	0, x		. first two words of key
+	ax	2,,xi
+	dsl	*OFFSET
+	dsr	*OFFSET
+	jxge	very_short_key
+	j	pair
+
+very_short_key
+	ds	ASIDE		. try to stop bunching in case the key
+	and	(0202020)	. is ASCII octets
+	andB	(0202020)	. XOR the case bits onto octets bit 7
+	drr	6
+	xor	ASIDE
+	xorB	ASIDE+1
+	dsr	*UNDERHANG
+	j	adjust2
+
+				. there are always 1+ more word pairs
+				. when you get here
+pair	drr	1		. corkscrew everything so far
+	ds	ASIDE		. to prevent 7-bit ASCII bunching
+	dl	0, x
+	ax	2,,xi
+	jxge	adjust1		. there are 2 words or less
+
+	xor	ASIDE		. there are 2 words and more
+	xorB	ASIDE+1
+	j	pair
+
+adjust1	dsr	*UNDERHANG
+	xor	ASIDE
+	xorB	ASIDE+1
+
+	
+adjust2	ds	ASIDE
+	lx	configp
+	lr	area_config:primary_pages_log
+	dsr	*r
+	xor	ASIDE
+	xorB	*ASIDE+1
+
+	and	area_config:primary_pages_mask
+	andB	area_config:primary_pages_mask+1
+	ds	ASIDE
+	dan	area_config:primary_pages
+	jc	$+2
+	dl	ASIDE		. long divide
+				. return page #
+	$ret
+	$root
