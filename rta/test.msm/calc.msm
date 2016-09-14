@@ -1,16 +1,20 @@
 
 
-OFFSET_UNDERHANG $equ	8
+OFFSET_UNDERHANG $equ	6
 OFFSET		$equ	OFFSET_UNDERHANG
 UNDERHANG	$equ	OFFSET+1
-ASIDE		$equ	6
 
 calc	$tree
 	$head_near	 params(offset,	int	;
 				underhang,int	;
 				words,	int	;
 				key,	int	;
-				configp)
+				configp,int)	;
+						;
+			scalars(caller_r, int,	r	;
+				caller_x, int,	x	;
+				temp,	long)
+
 	dl	offset
 	ds	OFFSET_UNDERHANG
 	lx	key
@@ -28,45 +32,51 @@ calc	$tree
 	j	pair
 
 very_short_key
-	ds	ASIDE		. try to stop bunching in case the key
+	ds	temp		. try to stop bunching in case the key
 	and	(0202020)	. is ASCII octets
 	andB	(0202020)	. XOR the case bits onto octets bit 7
 	drr	6
-	xor	ASIDE
-	xorB	ASIDE+1
+	xor	temp
+	xorB	temp+1
 	dsr	*UNDERHANG
 	j	adjust2
 
 				. there are always 1+ more word pairs
 				. when you get here
 pair	drr	1		. corkscrew everything so far
-	ds	ASIDE		. to prevent 7-bit ASCII bunching
+	ds	temp		. to prevent 7-bit ASCII bunching
 	dl	0, x
 	ax	2,,xi
 	jxge	adjust1		. there are 2 words or less
 
-	xor	ASIDE		. there are 2 words and more
-	xorB	ASIDE+1
+	xor	temp		. there are 2 words and more
+	xorB	temp+1
 	j	pair
 
 adjust1	dsr	*UNDERHANG
-	xor	ASIDE
-	xorB	ASIDE+1
+	xor	temp
+	xorB	temp+1
 
 	
-adjust2	ds	ASIDE
+adjust2	ds	temp
 	lx	configp
 	lr	area_config:primary_pages_log
 	dsr	*r
-	xor	ASIDE
-	xorB	*ASIDE+1
+	xor	temp
+	xorB	temp+1
 
 	and	area_config:primary_pages_mask
 	andB	area_config:primary_pages_mask+1
-	ds	ASIDE
+	ds	temp
 	dan	area_config:primary_pages
 	jc	$+2
-	dl	ASIDE		. long divide
-				. return page #
+	dl	temp		. long divide
+	
+	lr	area_config:page_size_log
+	ds	6		. return page id in 6:7
+	dsl	*r		. return seek location in a:b
+
+	lr	caller_r
+	lx	caller_x
 	$ret
 	$root
