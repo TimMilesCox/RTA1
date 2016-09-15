@@ -1,26 +1,32 @@
 
 
-OFFSET_UNDERHANG $equ	6
-OFFSET		$equ	OFFSET_UNDERHANG
+OFFSET		$equ	6
 UNDERHANG	$equ	OFFSET+1
 
-calc	$tree
-	$head_near	 params(offset,	int	;
-				underhang,int	;
-				words,	int	;
-				key,	int	;
-				configp,int)	;
-						;
-			scalars(caller_r, int,	r	;
-				caller_x, int,	x	;
-				temp,	long)
+.	ARGUMENTS ARE
+.	offset		unused bit positions in 1st word of key	
+.	underhang	unused bit positions in last 48 bits read for key
+.	words		number of data words containing the key
+.	key		address of the 1st word containing the key
+.	configp		address of area descriptor in schema
 
-	dl	offset
-	ds	OFFSET_UNDERHANG
-	lx	key
-	ax	words
+calc	$tree
+	$head_near	 params(offset,		int	;
+				underhang,	int	;
+				words,		int	;
+				key,		int	;
+				configp,	int)	;
+							;
+			scalars(caller_r, 	int, r	;
+				caller_x, 	int, x	;
+				temp,		long	)
+
+	dl	offset		. bit position in 1st word of key
+	ds	OFFSET		. plus unused bit positions last word pair
+	lx	key		. address of 1st containing word
+	ax	words		.
 	lr	x		. address last word of key + 1
-	lx	key
+	lx	key		. address of 1st containing word
 
 				. it is safe to read one more word than
 				. the record. record is never at page end
@@ -28,18 +34,18 @@ calc	$tree
 	ax	2,,xi
 	dsl	*OFFSET
 	dsr	*OFFSET
-	jxge	very_short_key
-	j	pair
+	jxge	very_short_key	. 48 bits or less in key + offset
+	j	pair		. key + offset > 48 bits. read more words
 
-very_short_key
+very_short_key			. 48 bits or less in key + offset
 	ds	temp		. try to stop bunching in case the key
 	and	(0202020)	. is ASCII octets
 	andB	(0202020)	. XOR the case bits onto octets bit 7
 	drr	6
 	xor	temp
 	xorB	temp+1
-	dsr	*UNDERHANG
-	j	adjust2
+	dsr	*UNDERHANG	. unused bit positions in last PAIR
+	j	adjust2		. of words in key, from 0 to 47 bits
 
 				. there are always 1+ more word pairs
 				. when you get here
@@ -47,23 +53,27 @@ pair	drr	1		. corkscrew everything so far
 	ds	temp		. to prevent 7-bit ASCII bunching
 	dl	0, x
 	ax	2,,xi
-	jxge	adjust1		. there are 2 words or less
+	jxge	adjust1		. key complete with these 2 words
+				. or part of them
 
-	xor	temp		. there are 2 words and more
+	xor	temp		. there are these 2 words and more
 	xorB	temp+1
 	j	pair
-
-adjust1	dsr	*UNDERHANG
+				. words are read in pairs although an
+				. odd number of words may contain the key
+				. if # words is odd UNDERHANG is 0..47 bits
+adjust1	dsr	*UNDERHANG	. if # words is even UNDERHANG is 0..23 bits
 	xor	temp
 	xorB	temp+1
 
 	
 adjust2	ds	temp
-	lx	configp
+	lx	configp		. point to the area descriptor
+
 	lr	area_config:primary_pages_log
 	dsr	*r
-	xor	temp
-	xorB	temp+1
+	xor	temp		. fold sum positions outside pages radix
+	xorB	temp+1		. back into the sum
 
 	and	area_config:primary_pages_mask
 	andB	area_config:primary_pages_mask+1
