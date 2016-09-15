@@ -4,8 +4,8 @@ OFFSET		$equ	6
 UNDERHANG	$equ	OFFSET+1
 
 .	ARGUMENTS ARE
-.	offset		unused bit positions in 1st word of key	
-.	underhang	unused bit positions in last 48 bits read for key
+.	offset		unused leading bit positions in 1st word of key	
+.	underhang	unused trailing bit positions in last 48 bits read for key
 .	words		number of data words containing the key
 .	key		address of the 1st word containing the key
 .	configp		address of area descriptor in schema
@@ -21,15 +21,15 @@ calc	$tree
 				caller_x, 	int, x	;
 				temp,		long	)
 
-	dl	offset		. bit position in 1st word of key
+	dl	offset		. bit offset in 1st word of key
 	ds	OFFSET		. plus unused bit positions last word pair
 	lx	key		. address of 1st containing word
 	ax	words		.
 	lr	x		. address last word of key + 1
 	lx	key		. address of 1st containing word
 
-				. it is safe to read one more word than
-				. the record. record is never at page end
+				. it is safe to read one word more than the
+				. record contains. record is never at page end
 	dl	0, x		. first two words of key
 	ax	2,,xi
 	dsl	*OFFSET
@@ -44,8 +44,8 @@ very_short_key			. 48 bits or less in key + offset
 	drr	6
 	xor	temp
 	xorB	temp+1
-	dsr	*UNDERHANG	. unused bit positions in last PAIR
-	j	adjust2		. of words in key, from 0 to 47 bits
+	dsr	*UNDERHANG	. unused trailing bits numbering 0..47
+	j	adjust2		. in last 48 bits read
 
 				. there are always 1+ more word pairs
 				. when you get here
@@ -59,16 +59,14 @@ pair	drr	1		. corkscrew everything so far
 	xor	temp		. there are these 2 words and more
 	xorB	temp+1
 	j	pair
-				. words are read in pairs although an
-				. odd number of words may contain the key
-				. if # words is odd UNDERHANG is 0..47 bits
-adjust1	dsr	*UNDERHANG	. if # words is even UNDERHANG is 0..23 bits
+				. unused trailing bits numbering 0..47
+adjust1	dsr	*UNDERHANG	. in last 48 bits read
 	xor	temp
 	xorB	temp+1
 
 	
 adjust2	ds	temp
-	lx	configp		. point to the area descriptor
+	lx	configp		. point to area descriptor in schema
 
 	lr	area_config:primary_pages_log
 	dsr	*r
