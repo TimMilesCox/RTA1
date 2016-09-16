@@ -1,0 +1,86 @@
+
+store_i	$tree
+	$head_far	 params(pointer,	int		;
+				offset,		int		;
+				bits,		int		;
+				data,		int)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	la	data
+	ly	offset
+	ay	bits
+
+	lr, xi	24+1
+	jyge	word_plus	. straddles more than 1 word
+	lr, xi	24
+	jyge	word_exact	. offset plus data are 1 word
+
+word_insert			. less than 1 word
+	lb	0, x		. retrieve the target word
+	ly	offset
+	lr	bits
+	rbl	0, y		. hide offset bits if any
+	sbl	*r		. discard old values of field
+	dsr	*r		. replace old values of field
+	rbr	0, y		. replace the offset bits if any
+	sb	0, x		. store the target word
+	j	return
+
+word_exact
+	tz	offset		. is it one aligned word?
+	j	trailing_insert	. no, it's the trailing positions
+	sa	0, x		. yes it's the entire word
+	j	return
+
+word_plus	
+	ay	-24,,xi		. send some data bits
+	lb	1, x		. to target word + 1
+	sbl	0, y
+	dsr	0, y		. via register b
+	sb	1, x
+
+trailing_insert
+	lb	0, x		. write the low order positions
+	ly	offset		. if the first target word
+	dsl	0, y
+	rar	0, y
+	sa	0, x
+
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+
+store_d	$tree
+	$head_far	 params(pointer,	int		;
+				offset,		int		;
+				bits,		int		;
+				data,		long)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	dl	data
+	ly	offset
+	ay	bits
+
+	lr, xi	48+1
+	jyge	words_plus	. straddles more than 2 words
+	lr, xi	48
+	jyge	words_exact	. offset + bits = 48
+
+words_insert			. less than 48 bits
+	la	1, x
+	drr	0, y
+	sb	1, x
+
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
