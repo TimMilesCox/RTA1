@@ -44,7 +44,7 @@ word_plus
 
 trailing_insert
 	lb	0, x		. write the low order positions
-	ly	offset		. if the first target word
+	ly	offset		. of the first target word
 	dsl	0, y
 	rar	0, y
 	sa	0, x
@@ -76,11 +76,208 @@ store_d	$tree
 
 words_insert			. less than 48 bits
 	la	1, x
-	drr	0, y
+	ay	-24,,xi		. insert offset + bits - 24
+	sal	0, y		. in second target word
+	drr	0, y		. from low-order end of value
+	sa	1, x
+
+	la	data		. refetch value 1st word
+	sbl	0, y		. replace stored bits
+	drr	24, y
+
+	tz	offset
+	j	merge_offset
+	sa	0, x
+	j	return
+
+words_plus
+	ay	-48,,xi		. align 2nd word
+	drr	0, y		. roll offset + bits - 48 aside
+	sb	1, x		. store a complete word
+	lb	2, x		. place offset + bits - 48
+	drl	0, y		. in 3rd word
+	rbr	0, y
+	sb	2, x
+
+	sar	0, y		. align LS unused value at LS a
+	j	merge_offset
+
+words_exact
+	tz	offset
+	j	merge_2
+	ds	0, x
+	j	return
+
+merge_2
 	sb	1, x
+merge_offset
+	ly	offset
+	lb	0, x
+	dsl	0, y
+	rar	0, y
+	sa	0, x
+		
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+store_t	$tree
+	$head_far	 params(pointer,	int		;
+				offset,		int		;
+				bits,		int		;
+				data,		triple)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	dl	data+1
+	ly	offset
+	ay	bits
+
+	lr	72+1,,xi
+	jyge	words_plus
+	lr	72,,xi
+	jyge	words_exact
+
+words_insert			. < 72 bits
+	ay	-48,,xi		. offset + bits - 48 to 3rd word
+	la	2, x
+	sal	0, y
+	drr	0, y
+	sa	2, x
+
+	la	data+1		. reload bits 47..24 of value
+	sbl	0, y
+	dsr	0, y		. replace used bits in b
+	sb	1, x
+
+	lb	data
+	sal	0, y
+	drr	24, y
+
+	tz	offset
+	j	merge_offset
+	sb	0, x
+	j	return
+
+words_plus
+	ay	-72,,xi		. insert offset + bits - 72 in 4th word
+	drr	0, y
+	sb	2, x
+	lb	3, x
+	drl	0, y
+	rbr	9, y
+	sb	3, x
+	lb	data		. roll LS bits from value 1st word
+	drr	0, y
+	sa	1, x		. into target 2nd word
+	
+merge_offset
+	ly	offset
+	la	0, x
+	drl	0, y
+	rbr	0, y
+	sb	0, x
+	j	return
+
+words_exact
+	ds	1, x
+	lb	data
+	tz	offset
+	j	merge_offset
+	sb	0, x
 
 return	qpop	r
 	qpop	a
 	fret	0
 	$root
 
+store_q	$tree
+	$head_far	 params(pointer,	int		;
+				offset,		int		;
+				bits,		int		;
+				data,		float	)	;
+								;
+			scalars(caller_ab67,	float,	a	;
+				caller_rkxy,	float,	r	)
+
+	lx	pointer
+	dl	data+2
+	ly	offset
+	ay	bits
+
+	lr	96+1,,xi
+	jyge	words_plus
+	lr	96,,xi
+	jyge	words_exact
+				. < 96 bits
+words_insert			. place offset + bits - 72 in 4th word
+	ay	-72,,xi
+	la	3, x
+	sal	0, y
+	drr	0, y
+	sa	3, x
+
+	la	data+2
+	sbl	0, y
+	dsr	0, y
+	sb	2, x
+
+	lb	data+1
+	sal	0, y
+	drr	24, y
+	sb	1, x
+
+	lb	data
+	sal	0, y
+	drr	0, y
+
+	tz	offset
+	j	merge_offset
+	sa	0, x
+	j	return
+				. > 4 words
+words_plus			. place offset + bits - 96 in 5th word
+	ay	-96,,xi
+	drr	0, y
+	sb	3, x		. write last complete word
+	lb	4, x
+	drl	0, y		. write LS bits to 5th word
+	rbr	0, y		. MS positions
+	sb	4, x
+
+	lb	data+1
+	drr	0, y		. roll LS bits higher order word to MS positions
+	sa	2, x
+
+	sbl	0, y
+	la	data
+	dsr	0, y
+	sb	1, x
+
+	j	merge_offset
+	
+words_exact
+	tz	offset
+	j	merge_q
+	ql	data
+	qs	0, x
+	j	return
+
+merge_q	ds	2, x
+	dl	data
+	sb	1, x
+
+merge_offset
+	ly	offset
+	lb	0, x
+	dsl	0, y
+	rbr	0, y
+	sa	0,x
+	
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
