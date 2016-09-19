@@ -149,20 +149,15 @@ store_t	$tree
 
 words_insert			. < 72 bits
 	ay	-48,,xi		. offset + bits - 48 to 3rd word
-	la	2, x		. load 3rd target insert word
-	sal	0, y		. shunt low bits of store value in
-	drr	0, y		. roll to high-order positions
-	sa	2, x		. write that away
-
-	la	data+1		. reload bits 47..24 of store value
-	sbl	0, y		. align and drop overwritten positions
-	dsr	0, y		. replace used bits in b
-	sb	1, x		. write second word of shifted value
-
-	lb	data		. replace stored bits in a
-	sal	0, y
-	drr	24, y		. but shift it all the way round to b
-
+	drr	0, y		. roll bits for last target word aside
+	sb	1, x		. write 2nd target word
+	lb	2, x		. read 3rd target word
+	drl	0, y		. insert low-order bits of store value
+	rbr	0, y
+	sb	2, x		. write 3rd target word
+	lb	data
+	drr	24, y		. shift a down [offset + bits - 48]
+				. with new bits, then  down to b
 	tz	offset
 	j	merge_offset	. either insert in 1st target word
 	sb	0, x		. or write all of it
@@ -224,29 +219,21 @@ store_q	$tree
 				. < 96 bits
 words_insert			. place offset + bits - 72 in 4th word
 	ay	-72,,xi
-	la	3, x		. insert low-order bits of store value
-	sal	0, y		. in high-order positions of 4th target word
-	drr	0, y		
-	sa	3, x
-				. recover bits 47..24 of store value
-	la	data+2		. from internal stack
-	sbl	0, y		. queue more bits into b
-	dsr	0, y
-	sb	2, x		. write 3rd target word
-
-				. acquire bits 71..48 of store value
-	lb	data+1		. from internal stack
-	sal	0, y		. queue more bits into a
-	drr	24, y		. but rotated down to b
-	sb	1, x		. write 2nd data word
-
-				. acquire bits 95..72 of store value
-	lb	data		. from internal stack
-	sal	0, y		. queue more bits into a
+	drr	0, y
+	sb	2, x		. write target 3rd word
+	lb	3, x		. read target 4th word
+	drl	0, y		. insert [offset + bits - 72] bits
+	rbr	0, y
+	sb	3, y		. write target 4th word
+	lb	data+1
+	drr	24, y		. add new bits, shift to b
+	sb	1, x		. write 2nd target word
+	lb	data
+	sal	0, y		. join residual bits
 	drr	0, y
 
 	tz	offset
-	j	merge_offset	. either insert in 1st target word
+	j	merge_offset
 	sa	0, x		. or write all of 1st target word
 	j	return
 				. write straddles 5 target words
