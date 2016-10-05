@@ -42,10 +42,14 @@
 
 **********************************************************************/
 
+
+
 #include <stdio.h>
 #ifdef DOS
 #include <sys/types.h>
 #include <fcntl.h>
+#define	off_t	__int64
+#define	lseek	_lseeki64
 #else
 #include <unistd.h>
 #include <sys/fcntl.h>
@@ -53,8 +57,10 @@
 
 #include "../include.rta/argue.h"
 
+#if 0
 #ifdef	DOS
 #define	OFF_T32
+#endif
 #endif
 
 #define	BYTES_TARGETW	3
@@ -76,6 +82,7 @@ int main(int argc, char *argv[])
    unsigned long	 sum, checksum, carry;
 
    off_t		 location,
+			 new_location,
 			 next_location = 0,
                          high_location = 0;
 
@@ -246,9 +253,9 @@ int main(int argc, char *argv[])
                         high_location = next_location;
                      }
 
-                     x = lseek(o, location * BYTES_TARGETW, SEEK_SET);
+                     new_location = lseek(o, location * BYTES_TARGETW, SEEK_SET);
 
-                     if (x < 0)
+                     if (new_location < 0)
                      {
                         #ifdef OFF_T32
                         printf("%s write hex byte position %ld failed\n",

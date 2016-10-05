@@ -44,22 +44,22 @@
 **********************************************************************/
 
 
+
 #include <stdio.h>
-#include <fcntl.h>
 
 #ifdef DOS
+#include <fcntl.h>
 #include <sys/types.h>
+#define off_t	__int64
+#define lseek	_lseeki64
 #else
+#include <fcntl.h>
 #include <unistd.h>
 #endif
 
 #include <string.h>
 
 #include "../include.rta/argue.h"
-
-#ifdef	DOS
-#define	OFF_T32
-#endif
 
 #define	FRAME	12
 #define	FRAMES	4
@@ -97,7 +97,8 @@ int main(int argc, char *argv[])
    int			 f = -1,
 			 s = -1;
 
-   off_t		 cursor = 0;
+   off_t		 cursor = 0,
+			 position;
 
    off_t		 forward,
 			 back;
@@ -177,8 +178,8 @@ int main(int argc, char *argv[])
 		2nd argument is a read start 24-bit word position
          *******************************************************************/
 
-         x = lseek(f, cursor, SEEK_SET);
-         if (flag['v'-'a']) printf("status %d file position %lx\n", x, (long) cursor / 3);
+         position = lseek(f, cursor, SEEK_SET);
+         if (flag['v'-'a']) printf("status %d file position %llx\n", x, cursor / 3);
       }
 
       for(;;)
@@ -316,7 +317,7 @@ int main(int argc, char *argv[])
                      #ifdef OFF_T32
                      printf("\t\t\tmatch @%8.8lx:%x %d decimal bits\n",
                      #else
-                     printf("\t\t\tmatch @%8.8llx:%x %d decimal bits\n",
+                     printf("\t\t\tmatch @%12.12llx:%x %d decimal bits\n",
                      #endif
                            (cursor - FRAME * (FRAMES - 1)) / 3 + (FRAMES * FRAME * 8 - length - y) / 24,
                            (16 * 24 - length - y) % 24,
@@ -349,7 +350,7 @@ int main(int argc, char *argv[])
             #ifdef OFF_T32
              printf("%8.8lx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
             #else
-            printf("%8.8llx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
+            printf("%12.12llx:", (cursor - FRAME * (FRAMES - 1 - print))/3);
             #endif
 
             for (x = 0; x < FRAME; x++)

@@ -42,15 +42,24 @@
 
 **********************************************************************/
 
+
+
 #include <stdio.h>
+
 #ifdef DOS
 #include <sys/types.h>
-#else
-#include <unistd.h>
-#endif
 #include <fcntl.h>
 #include <string.h>
 #include <errno.h>
+#define off_t	__int64
+#define lseek	_lseeki64
+#else
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#include <errno.h>
+#endif
+
 #include "../engine.rta/emulate.h"
 #include "../include.rta/argue.h"
 
@@ -63,7 +72,7 @@
 #define UPLINKS	83
 #define DATA 120
 
-#define	PAGE		262144
+#define	PAGE (unsigned)	262144
 #define	GRANULE		64
 #define	DIRECTORY_BLOCK	1024
 #define	LEEWAY		GRANULE
@@ -73,16 +82,59 @@
 
 /********************************************************
 
-	a forward record is found at the end of a
-	block of a volume or tree list if that
-	has needed to be extended
+	a page-control record type 'P' is found at the
+	start of each directory block
 
+	its forward pointer is nonzero if there is
+	another block. It has an insert pointer to its
+	next writable word and a count of remaining
+	available write locations
+
+	a link record type 'L' (typedef struct forward)
+	points to the entry for a file or a directory with
+	a pointer to the target directory block and a word
+	offset
+
+	the link "." in each directory points to its
+	directory entry in the owning directory
+	(one above ".")
+
+	the link ".." points to the directory entry of
+	the owner in the directory owning the owner
+	(two above ".")
+
+	structure extent1 describes directory space. The
+	first extent1 descriptor in a chain is within the
+	directory entry record which names the directory
+
+	structure extent2 describes file space. The first
+	extent2 descriptor in a chain is within the file
+	entry record which names the file
+
+	extent2 records contain more information than
+	extent1 records because an extent1 record only
+	identifies a directory block and its size in 
+	granules. page_control record in the target
+	directory block describes it internally and
+	identifies the next directory block in chain
+
+	extent2 records identify a file extent and its
+	size in granules. Three more words identify
+	the directory block and word offset of the
+	next file extent descriptor record
+
+	record size words in  bits 7..0 of the record
+	format word does not include the record format
+	word itself
+	
 ********************************************************/
 
 #define	EXTENT1_WORDS	3
 #define	EXTENT2_WORDS	6
 #define	CONTROL_WORDS	4
 #define VOLUME1_WORDS	3
+
+#define	VOLUME_LABEL_OFFSET 15
 
 typedef struct { msw		    rfw,
 			    write_point,
@@ -105,67 +157,30 @@ typedef struct { msw		    rfw,
 		 		   next;
 		 msw	    next_offset;  } extent2;
 
+
 /********************************************************
 
+	directory blocks contain directory descriptors
+	record type 'D' and file descriptors record type
+	'F'
 
-	A Tree at the start of the 
-	Volume contains the first free extent block
-	in the volume and it's initialised to the
-	whole device 
+	directory descriptors are an extent1 descriptor
+	and a name
 
-        volume tree has one extra word of granule
-        free count in front of the name, because
-        the total may be more than 16M granules = 1GW
+	file descriptors are an extent2 descriptor
+	and a name
 
-        The extra count word allows 256 teragranules
-        although some file access structures only
-        reach 256 terawords
+	a directory block at volume start contains
+	the volume label record type 'V' in addition
+	to top-level directory and file entries
 
-	write_point and remainder are about where
-	more information can go in this directory
-	block
+	the volume label shows the number of banks in the
+	device, and points to next unassigned filestore
+	granule
 
-	this initial free extent gets smaller as files are
-	assigned and gets extent descriptors chained onto
-	it as files are freed
-
-	only the free extent pieces can be larger than
-	PAGE words or 4096 granules,
-	and nothing assigned straddles a bank boundary
-
-	the extent block pointer in the tree increments
-	as its leading edge is sliced. The block pointer
-	in an extent in use stays how it is
-
-	how successful this will be managing extents
-	assignable from one to 4096 small granules
-	in size remains to be seen
-
-	It isn't wished to assign files of a couple of
-	text lines 1K words at a time, or to have a
-	class of small files or subfiles either
-
-	the forward pointer of an extent descriptor
-	is 48 bits because it can be anywhere on the
-	device in another block of the containing list
-	and it is a granule address. Six bits of the
-	next word are a word offset
-
-	the granule address is also two words because
-	theoretically a device can have 256 MegaGranules
-
-	directory blocks are assigned at 1024 words
-	per scoop, but on any granule.boundary. If that
-	brings them over a bank boundary they get an
-	exceptional small directory block. If they get
-	64 words it should be some use, but if it isn't
-	any use it will just contain a forward record
-	-you must always leave 3+ words for the forward
-	record at the end of any directory block
-
-	the plan is different for any files where 
-	table-like random accesses all intended
-
+	directory blocks are by default 16 granules of
+	64 words. Directory blocks do not straddle bank
+	boundaries of 262144 words
 
 ********************************************************/
 
@@ -211,7 +226,7 @@ typedef struct { extent2	     ex;
 static tree label1  =  { { { 'P', 0, CONTROL_WORDS } } ,
 
 			 { { 'L', 0, 4 } ,
-                           { 0, 0, 10 } ,
+                           { 0, 0, VOLUME_LABEL_OFFSET } ,
                            { 0, 0, 0, 0, 0, 0 } ,
                          { { '.' } } } ,
 
@@ -313,14 +328,15 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    long                  slab;
 
-   unsigned long long	 p64;
+   off_t		 p64;
 
    int			 f2;
 
    char			 fbuffer[GRANULE * sizeof(msw)];
 
    long long		 apointer;
-   off_t                 dstart_position;
+   off_t                 dstart_position,
+			 zero_position;
 
    int			 byword;
    msw			 bypass = { 128, 0, 0 } ;
@@ -383,19 +399,21 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       *displacement = slab + new->ex.rfw.t3 + 1;
 
       dstart_position = lseek(f, (off_t) 0, SEEK_CUR);
+
       status = write(f, &label2, DIRECTORY_BLOCK * 3);
 
       labelv = label2;
-      labelv.label1.offset.t3 = slab;
 
-      #if 1
+      labelv.label1.offset.t3 = slab;
+      labelv.label1.offset.t2 = slab >> 8;
+      labelv.label1.offset.t1 = slab >> 16;
+
       labelv.label1.granule.octet[5] = dstart_granule;
       labelv.label1.granule.octet[4] = dstart_granule >>  8;
       labelv.label1.granule.octet[3] = dstart_granule >> 16;
       labelv.label1.granule.octet[2] = dstart_granule >> 24;
       labelv.label1.granule.octet[1] = dstart_granule >> 32;
       labelv.label1.granule.octet[0] = dstart_granule >> 40;
-      #endif
 
       labelv.label2.offset = up1->offset;
       labelv.label2.granule = up1->granule;
@@ -411,36 +429,20 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
       for (;;)
       {
-         if (interpret(&labelv, &vpointer, apointer, &labelv.label1) == 0) break;
+         if (interpret(&labelv, (unsigned *) &vpointer, apointer, &labelv.label1) == 0) break;
       }
-
-      #if 1
-      #else
-      labelv.label1.ex.granule = next->label1.ex.granule;
-      #endif
 
       slot = PAGE/GRANULE - (gpointer & (PAGE/GRANULE-1));
       slot *= GRANULE;
       if (slot > DIRECTORY_BLOCK) slot = DIRECTORY_BLOCK;
 
-      #if 0
-      next->ex.granules.t3 = slot >> 6;
-      next->ex.granules.t2 = slot >> 14;
-      next->ex.granules.t1 = slot >> 22;
-      #else
       next->ex.granules.t3 = DIRECTORY_BLOCK >> 6;
       next->ex.granules.t2 = DIRECTORY_BLOCK >> 14;
       next->ex.granules.t1 = DIRECTORY_BLOCK >> 22;
-      #endif
-
-      #if 0
-      labelv.label1.ex.granules = next->label1.ex.granules;
-      #endif
 
       vremainder = slot - vpointer - 1;
       vremainder = DIRECTORY_BLOCK - 1 - vpointer;
 
-      #if 1
       labelv.space.write_point.t3 = vpointer;
       labelv.space.write_point.t2 = vpointer >>  8;
       labelv.space.write_point.t1 = vpointer >> 16;
@@ -448,15 +450,6 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       labelv.space.remainder.t3 = vremainder;
       labelv.space.remainder.t2 = vremainder >>  8;
       labelv.space.remainder.t1 = vremainder >> 16;
-      #else
-      next->write_point.t3 = vpointer;
-      next->write_point.t2 = vpointer >>  8;
-      next->write_point.t1 = vpointer >> 16;
-
-      next->remainder.t3 = vremainder;
-      next->remainder.t2 = vremainder >>  8;
-      next->remainder.t1 = vremainder >> 16;
-      #endif
 
       byword = vremainder - 1;
 
@@ -485,11 +478,6 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       indexp = ((msw *) &labelv) + DIRECTORY_BLOCK - 1;
       *indexp = eopage;
 
-      #if 0
-      labelv.label1.write_point = next->label1.write_point;
-      labelv.label1.remainder   = next->label1.remainder;
-      #endif
-
       lseek(f, (off_t) dstart_position, SEEK_SET);
       write(f, &labelv, DIRECTORY_BLOCK * 3);
       lseek(f, (off_t) 0, SEEK_END);
@@ -501,18 +489,23 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       else
       {
          if (status < 3) strcpy(path, argument);
+         #ifdef DOS
+         f2 = open(path, O_RDONLY | O_BINARY, 0444);
+         #else
          f2 = open(path,     O_RDONLY, 0444);
+         #endif
 
          if (f2 < 0) printf("input file E %d\n", errno);
          else
          {
             p64 = lseek(f2, (off_t) 0, SEEK_END);
-            if ((long long) p64 < 0) printf("end E %d\n", errno);
+
+            if (p64 < 0) printf("end E %d\n", errno);
             else
             {
-               status = lseek(f2, (off_t) 0, SEEK_SET);
+               zero_position = lseek(f2, (off_t) 0, SEEK_SET);
 
-               if (status < 0) printf("start E %d\n", errno);
+               if (zero_position < 0) printf("start E %d\n", errno);
                else
                {
                   new->ex.rfw.t1 = 'F';
@@ -707,7 +700,11 @@ int main(int argc, char *argv[])
 
    if (arguments)
    {
+      #ifdef DOS
+      f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0777);
+      #else
       f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC, 0777);
+      #endif
 
       if (f < 0) printf("file at argument 1 cannot be written %d\n", errno);
       else
