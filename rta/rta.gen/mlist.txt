@@ -3002,170 +3002,163 @@ Note: ../t77.4/networks.msm Line 86: external drivers
   :                            218 
   :                            219 .	    A	    B	    6	    7
   :                            220 .	_________________________________
-  :                            221 .	| socket|   0	|address:port	|
+  :                            221 .	| socket|   0	|  address:port	|
   :                            222 .	|_______|_______|_______________|
   :                            223 
-  :                            224 .	note the kernel vector bank is read and
+  :                            224 .	the kernel vector bank is read and
   :                            225 .	written with internal interrupts
   :                            226 
   :                            227 .		ii	READ_XVECTOR
   :                            228 .		ii	WRITE_XVECTOR
   :                            229 
   :                            230 .	because this routine is available
-  :                            231 .	both to kernel tasks which share
-  :                            232 .	the kernel vector bank, and unkernel
-  :                            233 .	tasks which have their own vector
+  :                            231 .	to threads of IP process which has
+  :                            232 .	kernel vector bank, and application
+  :                            233 .	processes which have their own vector
   :                            234 .	bank
   :                            235 
-  :                            236 .	the internal ISRs switch to the
-  :                            237 .	kernel vector bank
+  :                            236 .	thos ISRs switch to the kernel
+  :                            237 .	vector bank
   :                            238 
   :                            239 .		on	see$2
   :                            240 
   :                            241 .	return from any ISR restores all PSR
   :                            242 .	flags to what they were on II
   :                            243 
-  :                            244 .	the kernel task which mostly calls here
-  :                            245 .	is the IP task in this bank,
-  :                            246 .	because some application server protocols
-  :                            247 .	are in this task
-  :                            248 
-  :                            249 .	otherwise the callers are application
-  :                            250 .	tasks
-  :                            251 
-  :                            252 network_bind
-00:00207A C70010              +253 	ds	d$save
-00:00207B 750052              +254 	ii	READ_HANDLE$
-00:00207C E60084              +255 	jna	network_bind_x
-  :                            256 
-00:00207D 680004              +257 	anu	(IPPROTO_UDP*/16)
-00:00207E D80C77              +257 
-00:00207F CE0085              +258 	jzb	bind_udp
-00:002080 680004              +259 	anu	(IPPROTO_TCP*/16)
-00:002081 D80C78              +259 
-00:002082 CE0087              +260 	jzb	bind_tcp
+  :                            244 
+  :                            245 network_bind
+00:00207A C70010              +246 	ds	d$save
+00:00207B 750052              +247 	ii	READ_HANDLE$
+00:00207C E60084              +248 	jna	network_bind_x
+  :                            249 
+00:00207D 680004              +250 	anu	(IPPROTO_UDP*/16)
+00:00207E D80C77              +250 
+00:00207F CE0085              +251 	jzb	bind_udp
+00:002080 680004              +252 	anu	(IPPROTO_TCP*/16)
+00:002081 D80C78              +252 
+00:002082 CE0087              +253 	jzb	bind_tcp
+  :                            254 
+00:002083 65FFFE              +255 	la, xi	-2	. protocol unknown
+  :                            256 			. or socket already bound
+  :                            257 			. (lower 16 bits nonzero)
+  :                            258 
+  :                            259 network_bind_x
+00:002084 3D0000              +260 	fret	0
   :                            261 
-00:002083 65FFFE              +262 	la, xi	-2	. protocol unknown
-  :                            263 			. or socket already bound
-  :                            264 			. (lower 16 bits nonzero)
-  :                            265 
-  :                            266 network_bind_x
-00:002084 3D0000              +267 	fret	0
-  :                            268 
-  :                            269 bind_udp
-00:002085 552100              +270 	lx, xi	usockb(1)
-00:002086 B60088              +271 	j	protocol_bind
-  :                            272 bind_tcp
-00:002087 552180              +273 	lx, xi	tsockb(1)
-  :                            274 protocol_bind
-00:002088 200012              +275 	sa	d$save2
-00:002089 600007              +276 	la	7
-00:00208A A00C79              +277 	and	(65535)
-00:00208B 200008              +278 	sa	8
-00:00208C D60090              +279 	jnza	selected_bind
-00:00208D 600007              +280         la	7
-00:00208E 950400              +281 	or, xi	1024
-00:00208F 200007              +282 	sa	7
-  :                            283 selected_bind
-00:002090 6D5E00              +284 	lb, xi	BSOCKET*/9
-00:002091 160009              +285 	dsr	9
-00:002092 A5007F              +286 	and, xi	127
+  :                            262 bind_udp
+00:002085 552100              +263 	lx, xi	usockb(1)
+00:002086 B60088              +264 	j	protocol_bind
+  :                            265 bind_tcp
+00:002087 552180              +266 	lx, xi	tsockb(1)
+  :                            267 protocol_bind
+00:002088 200012              +268 	sa	d$save2
+00:002089 600007              +269 	la	7
+00:00208A A00C79              +270 	and	(65535)
+00:00208B 200008              +271 	sa	8
+00:00208C D60090              +272 	jnza	selected_bind
+00:00208D 600007              +273         la	7
+00:00208E 950400              +274 	or, xi	1024
+00:00208F 200007              +275 	sa	7
+  :                            276 selected_bind
+00:002090 6D5E00              +277 	lb, xi	BSOCKET*/9
+00:002091 160009              +278 	dsr	9
+00:002092 A5007F              +279 	and, xi	127
+  :                            280 
+00:002093 800004              +281 	ax	a
+00:002094 750053              +282 	ii	READ_XVECTOR$
+00:002095 4E000C              +283 	rbr	12
+00:002096 580005              +284 	ly	b
+  :                            285 
+00:002097 C600A6              +286 	jza	new_bind_bank
   :                            287 
-00:002093 800004              +288 	ax	a
-00:002094 750053              +289 	ii	READ_XVECTOR$
-00:002095 4E000C              +290 	rbr	12
-00:002096 580005              +291 	ly	b
-  :                            292 
-00:002097 C600A6              +293 	jza	new_bind_bank
-  :                            294 
-00:002098 34002F              +295 	sabr	BSOCKET
-00:002099 750056              +296 	ii	UHANDLE$
-00:00209A C7000A              +297 	ds	10		. return also the long
-  :                            298 				. virtual address of 
-  :                            299 				. the port control block
-  :                            300 
-00:00209B CFB000              +301 	dl	sbind:socket_address
-00:00209C 7C00BB              +302 	jdz	bind_clear_to_add
-  :                            303 
-00:00209D 700008              +304 	tz	8
-00:00209E B600A4              +305 	j	bind_e3
-  :                            306 
-00:00209F 170007              +307 	inc	7
-00:0020A0 600007              +308 	la	7
-00:0020A1 680007              +309 	lb	7
-00:0020A2 AD0800              +310 	andB,xi 2048
-00:0020A3 CE0090              +311 	jzb	selected_bind
-  :                            312 bind_e3
-00:0020A4 65FFFD              +313 	la, xi	-3	. port number already claimed
-00:0020A5 3D0000              +314 	fret	0
-  :                            315 
-  :                            316 new_bind_bank
-00:0020A6 651000              +317 	la, xi	4096
-00:0020A7 750043              +318 	ii	BANK$
-00:0020A8 D600AB              +319 	jnza	bind_bank_granted
+00:002098 34002F              +288 	sabr	BSOCKET
+00:002099 750056              +289 	ii	UHANDLE$
+00:00209A C7000A              +290 	ds	10		. return also the long
+  :                            291 				. virtual address of 
+  :                            292 				. the port control block
+  :                            293 
+00:00209B CFB000              +294 	dl	sbind:socket_address
+00:00209C 7C00BB              +295 	jdz	bind_clear_to_add
+  :                            296 
+00:00209D 700008              +297 	tz	8
+00:00209E B600A4              +298 	j	bind_e3
+  :                            299 
+00:00209F 170007              +300 	inc	7
+00:0020A0 600007              +301 	la	7
+00:0020A1 680007              +302 	lb	7
+00:0020A2 AD0800              +303 	andB,xi 2048
+00:0020A3 CE0090              +304 	jzb	selected_bind
+  :                            305 bind_e3
+00:0020A4 65FFFD              +306 	la, xi	-3	. port number already claimed
+00:0020A5 3D0000              +307 	fret	0
+  :                            308 
+  :                            309 new_bind_bank
+00:0020A6 651000              +310 	la, xi	4096
+00:0020A7 750043              +311 	ii	BANK$
+00:0020A8 D600AB              +312 	jnza	bind_bank_granted
+  :                            313 
+00:0020A9 65FFFC              +314 	la, xi	-4	. cannot resource the bind
+00:0020AA 3D0000              +315 	fret	0
+  :                            316 
+  :                            317 bind_bank_granted
+00:0020AB C7000A              +318 	ds	10	. save the long virtual address
+  :                            319 			. of the port control block
   :                            320 
-00:0020A9 65FFFC              +321 	la, xi	-4	. cannot resource the bind
-00:0020AA 3D0000              +322 	fret	0
-  :                            323 
-  :                            324 bind_bank_granted
-00:0020AB C7000A              +325 	ds	10	. save the long virtual address
-  :                            326 			. of the port control block
-  :                            327 
-00:0020AC 750054              +328 	ii	WRITE_XVECTOR$
-00:0020AD 34002F              +329 	sabr	BSOCKET
-00:0020AE 750056              +330 	ii	UHANDLE$
-  :                            331 
-00:0020AF 8F0004              +332 	qpush	a
-00:0020B0 160030              +333 	dsr	48
-00:0020B1 C70006              +334 	ds	6
-  :                            335 
-00:0020B2 500C7A              +336 	lx	(BSOCKET*/12)
-00:0020B3 4500FF              +337 	lr, xi	512/2-1		. initialise 2 8-word
-  :                            338 				. port blocks per loop
-  :                            339 bind_bank_prepare
-00:0020B4 47A000              +340 ?	$do	4,	qs	?*4-4, x
-00:0020B5 47A004              +340 
-00:0020B6 47A008              +340 
-00:0020B7 47A00C              +340 
-00:0020B8 850010              +341 	ax, xi	16
-00:0020B9 1E00B4              +342 	jdr	bind_bank_prepare
-  :                            343 
-00:0020BA 870004              +344 	qpop	a
-  :                            345 
-  :                            346 bind_clear_to_add
-00:0020BB CF0006              +347 	dl	6
-00:0020BC C7B000              +348 	ds	sbind:socket_address
-  :                            349 
-  :                            350 				. TCP bind, place a
-  :                            351 				. connections bank pointer
-  :                            352 				. in the port socket
-  :                            353 				. structure
+00:0020AC 750054              +321 	ii	WRITE_XVECTOR$
+00:0020AD 34002F              +322 	sabr	BSOCKET
+00:0020AE 750056              +323 	ii	UHANDLE$
+  :                            324 
+00:0020AF 8F0004              +325 	qpush	a
+00:0020B0 160030              +326 	dsr	48
+00:0020B1 C70006              +327 	ds	6
+  :                            328 
+00:0020B2 500C7A              +329 	lx	(BSOCKET*/12)
+00:0020B3 4500FF              +330 	lr, xi	512/2-1		. initialise 2 8-word
+  :                            331 				. port blocks per loop
+  :                            332 bind_bank_prepare
+00:0020B4 47A000              +333 ?	$do	4,	qs	?*4-4, x
+00:0020B5 47A004              +333 
+00:0020B6 47A008              +333 
+00:0020B7 47A00C              +333 
+00:0020B8 850010              +334 	ax, xi	16
+00:0020B9 1E00B4              +335 	jdr	bind_bank_prepare
+  :                            336 
+00:0020BA 870004              +337 	qpop	a
+  :                            338 
+  :                            339 bind_clear_to_add
+00:0020BB CF0006              +340 	dl	6
+00:0020BC C7B000              +341 	ds	sbind:socket_address
+  :                            342 
+  :                            343 				. TCP bind, place a
+  :                            344 				. connections bank pointer
+  :                            345 				. in the port socket
+  :                            346 				. structure
+  :                            347 
+00:0020BD 600012              +348 	la	d$save2
+00:0020BE D00C78              +349 	ana	(IPPROTO_TCP*/16)
+00:0020BF D600C5              +350 	jnza	bind_complete
+  :                            351 
+00:0020C0 552FFF              +352 	lx, xi	tcx_v4(1)
+00:0020C1 750053              +353 	ii	READ_XVECTOR$
   :                            354 
-00:0020BD 600012              +355 	la	d$save2
-00:0020BE D00C78              +356 	ana	(IPPROTO_TCP*/16)
-00:0020BF D600C5              +357 	jnza	bind_complete
+00:0020C2 C600C7              +355 	jza	bind_failed_cbank
+00:0020C3 20B005              +356 	sa	sbind:tcp:tbase
+00:0020C4 30B006              +357 	z	sbind:tcp:tbase+1
   :                            358 
-00:0020C0 552FFF              +359 	lx, xi	tcx_v4(1)
-00:0020C1 750053              +360 	ii	READ_XVECTOR$
-  :                            361 
-00:0020C2 C600C7              +362 	jza	bind_failed_cbank
-00:0020C3 20B005              +363 	sa	sbind:tcp:tbase
-00:0020C4 30B006              +364 	z	sbind:tcp:tbase+1
-  :                            365 
-  :                            366 bind_complete
-00:0020C5 650000              +367 	la, xi	0
-00:0020C6 3D0000              +368 	fret	0
+  :                            359 bind_complete
+00:0020C5 650000              +360 	la, xi	0
+00:0020C6 3D0000              +361 	fret	0
+  :                            362 
+  :                            363 bind_failed_cbank
+00:0020C7 30B001              +364 	z	sbind:socket_address+1
+00:0020C8 65FFED              +365 	la, xi	-19
+00:0020C9 3D0000              +366 	fret	0
+  :                            367 
+  :                            368 
   :                            369 
-  :                            370 bind_failed_cbank
-00:0020C7 30B001              +371 	z	sbind:socket_address+1
-00:0020C8 65FFED              +372 	la, xi	-19
-00:0020C9 3D0000              +373 	fret	0
-  :                            374 
-  :                            375 
-  :                            376 
-  :                            377 network_disengage
-00:0020CA 3D0000              +378 	fret	0
-  :                            379 
+  :                            370 network_disengage
+00:0020CA 3D0000              +371 	fret	0
+  :                            372 
   :                            61 	$list		7
   :                            62 
   :                            63: 	$include	i_f
