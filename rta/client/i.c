@@ -1,9 +1,21 @@
 #include <stdio.h>
 #include <string.h>
+
+#ifdef  DOS
+#include <fcntl.h>
+#include <errno.h>
+#include <winsock.h>
+#define detail_code WSAGetLastError()
+#define EAGAIN WSAEWOULDBLOCK
+#define EWOULDBLOCK WSAEWOULDBLOCK
+#define usleep(X) Sleep(X/500)
+#else
 #include <sys/fcntl.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#define detail_code errno
+#endif
 
 #include "../include.rta/argue.h"
 #include "../include.rta/address.h"
@@ -24,15 +36,30 @@ static struct sockaddr_in target = { 16, AF_INET, PORT(I_SERVICE) } ;
 static struct sockaddr_in local  = { 16, PF_INET, 0               } ;
 #endif
 
+#ifdef  DOS
+static struct sockaddr_in target = {     AF_INET, PORT(I_SERVICE) } ;
+
+static struct sockaddr_in local  = {     PF_INET, 0                } ;
+
+static WSADATA wsa;
+#endif
+
 
 int main(int argc, char *argv[])
 {
    unsigned char	 sdata[TEXT];
    unsigned char	 rdata[TEXT];
 
-   int			 s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
-   int			 f = fcntl(s, F_GETFL, 0);
-   int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
+   #ifdef DOS
+   int                   wnet = WSAStartup(MAKEWORD(1, 1), &wsa);
+   int                   s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   int                   f = 1;
+   int                   u = ioctlsocket(s, FIONBIO, &f);
+   #else
+   int                   s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   int                   f = fcntl(s, F_GETFL, 0);
+   int                   u = fcntl(s, F_SETFL, f | O_NONBLOCK);
+   #endif
 
    int			 x,
 			 y,
@@ -49,6 +76,16 @@ int main(int argc, char *argv[])
    FILE			*config = fopen("config.fp", "r");
 
    argue(argc, argv);
+
+   if (flag['v'-'a'])
+   {
+      #if DOS
+      printf("[wsa %d socket %d cntl %d:%d]\n", wnet, s, f, u);
+      if (wnet) printf("[wsadetail %d\n]", WSAGetLastError());
+      #else
+      printf("[socket %d cntl %d:%d]\n", s, f, u);
+      #endif
+   }
 
    if (config)
    {
@@ -71,6 +108,8 @@ int main(int argc, char *argv[])
              target.sin_addr.s_addr = *((long *) newnet[0]);
          }
       }
+
+      fclose(config);
    }
 
    for (x = 0; x < arguments; x++)
@@ -134,14 +173,14 @@ int main(int argc, char *argv[])
             x = recv(s, rdata, TEXT, 0);
             if (x < 0)
             {
-               if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+               if ((detail_code == EAGAIN) || (detail_code == EWOULDBLOCK))
                {
                   x = 0;
                   usleep(TWARP);
                }
                else
                {
-                  printf("RX state %d\n", errno);
+                  printf("RX state %d\n", detail_code);
                   break;
                }
             }
@@ -169,6 +208,10 @@ int main(int argc, char *argv[])
       }
    }
 
+   #ifdef DOS
+   closesocket(s);
+   #else
    close(s);
+   #endif
    return 0;
 }
