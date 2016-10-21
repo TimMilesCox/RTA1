@@ -68,12 +68,12 @@
 #ifdef INTEL
 #define	FRAME		0x0080
 #define	IP		0x0008
-#define LLHL		0x0200
+#define LLHL		0x0000
 #define TARGET_PORT     0x0012
 #else
 #define	FRAME		0x8000
 #define	IP		0x0800
-#define LLHL		0x0002
+#define LLHL		0x0000
 #define TARGET_PORT     0x1200
 #endif
 
@@ -649,12 +649,10 @@ int main(int argc, char *argv[])
 
          if (x)
          {
-            y = x + 2;
-
             #ifdef INTEL
-            rxdata->preamble.frame_length = (y << 8) | (y >> 8);
+            rxdata->preamble.frame_length = (x << 8) | (x >> 8);
             #else
-            rxdata->preamble.frame_length = y;
+            rxdata->preamble.frame_length = x;
             #endif
 
             rxdata->preamble.ll_hl = LLHL;
@@ -740,6 +738,7 @@ int main(int argc, char *argv[])
                }
             }
 
+            #if 0
             if ((flag['b'-'a']) && (rxdata->frame[9] == IPPROTO_UDP))
             {
                memcpy(txdata->frame, rxdata->frame, x);
@@ -749,7 +748,7 @@ int main(int argc, char *argv[])
                memcpy(txdata->frame + y + 2, rxdata->frame + y, 2);
                txdata->preamble.flag = FRAME;
             }
-
+            #endif
                
             if ((flag['v'-'a']) && (x))
             {

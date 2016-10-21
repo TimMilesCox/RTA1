@@ -53,6 +53,9 @@
 #include <sys/time.h>
 
 #ifdef  PCAP
+#define	PCAP_RX
+#undef	PCAP_TX
+#define	RULE_80
 #include <pcap/pcap.h>
 #define PCAP_BYTES      8192
 #define PCAP_MS         20
@@ -76,24 +79,38 @@
 #ifdef INTEL
 #define	FRAME		0x0080
 #define	IP		0x0008
-#define LLHL		0x0200
+#define LLHL		0x0000
 #define TARGET_PORT     0x0012
 #else
 #define	FRAME		0x8000
 #define	IP		0x0800
-#define LLHL		0x0002
+#define LLHL		0x0000
 #define TARGET_PORT     0x1200
 #endif
 
 #define	CONFIGURATION_MICROPROTOCOL 0x6969
 
-#ifdef	PCAP
+#ifdef	PCAP_RX
+#ifndef	PCAP_TX
+#if	defined(LINUX)
+static struct sockaddr_in	remote
+			= {     AF_INET              } ;
+#elif	defined(OSX)
 static struct sockaddr_in        remote
                         = { 16, AF_INET              } ;
+#elif	defined(DOS)
+static struct sockaddr_in	remote
+			= {     AF_INET              } ;
+#else
+static struct sockaddr_in	remote;
+#error	-DOSX or -DLINUX or /DDOS
+#endif
 
 static int			 one = 1;
+#endif
+#endif
 
-#else
+#ifdef	RULE_80
 #if	defined(LINUX)
 static struct sockaddr_in        target
                         = {     AF_INET, TARGET_PORT } ;
@@ -108,7 +125,8 @@ static WSADATA			 wsad;
 static struct sockaddr_in	 target;
 #error	-DOSX or -DLINUX or /DDOS
 #endif
-#endif	
+#endif
+
 
 static mm_netdevice     *netdata;
 
@@ -387,9 +405,11 @@ static void outputq(int s)
    {
       x = (q->frame[2] << 8) | q->frame[3];
 
-      #ifdef PCAP
-      #if 0
+      #if	defined(PCAP_TX)
       y = pcap_sendpacket((pcap_t *) s, q->frame, x);
+      #elif	defined(PCAP_RX)
+      y = send(s, q->frame, x, 0);
+      if (y < 0) printf("send error %d\n", errno);
       #else
       remote.sin_addr.s_addr = *((long *) ((char *) q->frame + 16)) ;
       if (flag['v'-'a'])
@@ -401,10 +421,6 @@ static void outputq(int s)
          printf("]\n");
       }
       y = sendto(s, q->frame, x, 0, (struct sockaddr *) &remote, 16);
-      if (y < 0) printf("send error %d\n", errno);
-      #endif
-      #else
-      y = send(s, q->frame, x, 0);
       if (y < 0) printf("send error %d\n", errno);
       #endif
 
@@ -573,8 +589,10 @@ int main(int argc, char *argv[])
    struct pcap_pkthdr	 descriptor;
    #endif
 
+   #ifdef RULE_80
    int			 s = socket(AF_INET, SOCK_RAW, IPPROTO_DIVERT);
    int			 j = (s < 0) ? errno : 0;
+   #endif
 
    int			 x,
 			 y,
@@ -609,11 +627,14 @@ int main(int argc, char *argv[])
 
    #endif
 
+   #if	defined(PCAP_RX) && defined(PCAP_TX)
+   #else
    if (s < 0) printf("socket error %d\n", j);
+   #endif
 
    argue(argc, argv);
 
-   #ifdef PCAP
+   #ifdef PCAP_RX
 
    for (x = 0; x < arguments; x++)
    {
@@ -650,8 +671,9 @@ int main(int argc, char *argv[])
    y = setsockopt(s, SOL_SOCKET, SO_DONTROUTE, &one, 4);
    printf("soco DNR %d %d\n", y, (y < 0) ? errno : 0);
 
-   #else
+   #endif
 
+   #if 0
    for (x = 0; x < arguments; x++)
    {
       y = sscanf(argument[0], "%hhd.%hhd.%hhd.%hhd/%hhd", &newnet[x][0],
@@ -666,13 +688,14 @@ int main(int argc, char *argv[])
                                                          newnet[x][3],
                                                         newmask[x]);
    }
+   #endif
 
+   #ifdef RULE_80
    y = fcntl(s, F_GETFL, 0);
    x = fcntl(s, F_SETFL, y | O_NONBLOCK);
 
    x = bind(s, (struct sockaddr *) &target, 16);
    printf("descriptor %d bind %d %x\n", s, x, y);
-
    #endif
 
    if (x < 0) printf("%d\n", errno);
@@ -707,8 +730,7 @@ int main(int argc, char *argv[])
          rxdata->preamble.frame_length = 9;
          #endif
 
-         #ifdef PCAP
-         #else
+         #ifndef PCAP_RX
          /*********************************************
 		revive this
 		you designed it and forgot to use it
@@ -750,7 +772,7 @@ int main(int argc, char *argv[])
 	 if (flag['p'-'a']) usleep(8000);
          if (halt_flag < 0) break;
 
-         #ifdef PCAP
+         #ifdef PCAP_RX
          for (y = 0; y < arguments; y++)
          {
             p = pcap_next(sandl[y], &descriptor);
@@ -770,11 +792,13 @@ int main(int argc, char *argv[])
 
                #define PCAP_RXDISPLAY
                #ifdef PCAP_RXDISPLAY
-               putchar('[');
-               while (x--) printf("%2.2x", *p++);
-               printf("]\n");
-               #else
-               p += x;
+               if (flag['v'-'a'])
+               {
+                  putchar('[');
+                  while (x--) printf("%2.2x", *p++);
+                  printf("]\n");
+               }
+               else p += x;
                #endif
 
                memcpy(rxdata->frame, p, dgraml);
@@ -793,29 +817,32 @@ int main(int argc, char *argv[])
             x = 0;
          }
 
-         #else
-         x = recv(s, rxdata->frame, MTU, 0);
+         #endif
 
-         if (x < 0)
+         #ifdef RULE_80
+         if (x == 0)
          {
-            if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+            x = recv(s, rxdata->frame, MTU, 0);
+
+            if (x < 0)
             {
-               outputq(s);
-               usleep(TWARP);
-               x = 0;
+               if ((errno == EAGAIN) || (errno == EWOULDBLOCK))
+               {
+                  outputq(s);
+                  usleep(TWARP);
+                  x = 0;
+               }
+               else break;
             }
-            else break;
          }
          #endif
 
          if (x)
          {
-            y = x + 2;
-
             #ifdef INTEL
-            rxdata->preamble.frame_length = (y << 8) | (y >> 8);
+            rxdata->preamble.frame_length = (x << 8) | (x >> 8);
             #else
-            rxdata->preamble.frame_length = y;
+            rxdata->preamble.frame_length = x;
             #endif
 
             rxdata->preamble.ll_hl = LLHL;
@@ -901,29 +928,17 @@ int main(int argc, char *argv[])
                }
             }
 
-            if ((flag['b'-'a']) && (rxdata->frame[9] == IPPROTO_UDP))
-            {
-               memcpy(txdata->frame, rxdata->frame, x);
-               memcpy(txdata->frame + 12, rxdata->frame + 16, 4);
-               memcpy(txdata->frame + 16, rxdata->frame + 12, 4);
-               memcpy(txdata->frame + y, rxdata->frame + y + 2, 2);
-               memcpy(txdata->frame + y + 2, rxdata->frame + y, 2);
-               txdata->preamble.flag = FRAME;
-            }
-
-               
             if ((flag['v'-'a']) && (x))
             {
                p = rxdata->frame;
 
-               #if 1
-               y = ((*p) & 15) << 2;
+               y = ((*p) & 15) << 2;		/* IP header length		*/
                dgraml = (p[2] << 8) | p[3];
 
                proto = p[9];
 
                x -= dgraml;
-               if (x < 0) dgraml += x;
+               if (x < 0) dgraml += x;		/* if packet < datagram length ! */
 
                dgraml -= y;
                if (dgraml < 0) y += dgraml;
@@ -995,7 +1010,6 @@ int main(int argc, char *argv[])
 
                   putchar('\n');
                }
-               #endif
 
                if (x > 0)
                {
@@ -1015,17 +1029,21 @@ int main(int argc, char *argv[])
       }
    }
 
+   #ifdef RULE_80
    if (x < 0) printf("xfinal1 %d E %d\n", x, errno);
+   #endif
 
-   #ifdef PCAP
+   #if 	defined(PCAP_RX) || defined(PCAP_TX)
    for (x = 0; x < arguments; x++)
    {
       if (sandl[x]) pcap_close(sandl[x]);
    } 
    #endif
 
+   #ifdef RULE_80
    x = close(s);
    if (x < 0) printf("xfinal2 %d E %d\n", x, errno);
+   #endif
    return 0;
 }
 
