@@ -135,6 +135,8 @@ static mm_netbuffer	*txdata;
 static int		 alert_pid;
 static int		 halt_flag;
 
+static pcap_t               *sandl[PCAP_HANDLES];
+static int                   ll_hl[PCAP_HANDLES];
 
 /**********************************************
 
@@ -335,7 +337,7 @@ static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addre
    return carry ^ 65535;
 }
 
-#define REVERSE(h) (h >> 8) | (h << 8)
+#define REVERSE(h) ((h >> 8) & 255) | ((h & 255) << 8)
 
 display(int x, mm_netbuffer *p)
 {
@@ -383,7 +385,7 @@ static void oversee(mm_netbuffer *p, mm_netbuffer *q)
    printf("]\n");
 }
 
-static void outputq(int s)
+static void outputq()
 {
    mm_netbuffer		*q = txdata;
 
@@ -400,25 +402,34 @@ static void outputq(int s)
    char			 pbuffer[24];
    int			 k, symbol;
 
-   char			 adhoc[2000] = { 2, 0, 0, 0 } ;
+   unsigned short	 interface,
+                         tx_bytes;
 
+   pcap_t		*s;
 
    while (tag = q->preamble.flag & FRAME)
    {
       x = (q->frame[2] << 8) | q->frame[3];
 
       #if	defined(PCAP_TX)
-      #if	1
-      putchar('*');
-      memcpy(adhoc + 4, q->frame, x);
-      y = pcap_sendpacket((pcap_t *) s, adhoc, x + 4);
-      #else	defined(PCAP_TX)
-      y = pcap_sendpacket((pcap_t *) s, q->frame, x);
-      #endif
-      #elif	defined(PCAP_RX)
-      y = send(s, q->frame, x, 0);
-      if (y < 0) printf("send error %d\n", errno);
+   
+      #ifdef INTEL
+      interface = REVERSE(q->preamble.interface);
+      tx_bytes = REVERSE(q->preamble.frame_length);
       #else
+      interface = q->preamble.interface;
+      tx_bytes = q->preamble.frame_length;
+      #endif
+
+      if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
+
+      x = tx_bytes;
+      s = sandl[0];
+       
+      y = pcap_sendpacket(s, q->frame, x);
+
+      #else
+
       remote.sin_addr.s_addr = *((long *) ((char *) q->frame + 16)) ;
       if (flag['v'-'a'])
       {
@@ -430,6 +441,7 @@ static void outputq(int s)
       }
       y = sendto(s, q->frame, x, 0, (struct sockaddr *) &remote, 16);
       if (y < 0) printf("send error %d\n", errno);
+
       #endif
 
       if (flag['v'-'a'])
@@ -537,8 +549,6 @@ static void outputq(int s)
 int main(int argc, char *argv[])
 {
    #ifdef PCAP
-   pcap_t		*sandl[PCAP_HANDLES];
-   int			 ll_hl[PCAP_HANDLES];
    struct bpf_program	 bpf_p;
    struct pcap_pkthdr	 descriptor;
    #endif
@@ -767,7 +777,7 @@ int main(int argc, char *argv[])
          else
          {
             #if 1
-            outputq((int) sandl[0]);
+            outputq();
             #else
             outputq(s);
             #endif

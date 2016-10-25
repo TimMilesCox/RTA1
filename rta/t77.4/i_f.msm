@@ -307,7 +307,7 @@ i_f_last +	interface(1)
 ?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,	;
 						0, $rxtx_lo			;
 										;
-					net_address(2),2040-4,firewall_relay,	;
+					net_address(2),2024-4,firewall_relay,	;
 					$initial_ift1, $rxtx_ift1,,,,, 00:012:01c:00:00:5
 
 $(66::,x)
@@ -356,7 +356,15 @@ test_if	tz	this_if:flags
 i_f_leave
 	lret	0
 
-q2ifoq	lk	(63*/18:s)
+						. i_f should be x->
+						. acw should be a->
+q2ifoq	tz	this_if:write_llh		. link layer header to write?
+	call	this_if:write_llh
+	lcal	q2ifreel			. either no llh or it was OK immediately
+	lret	0				. if ARP has queued it
+						. then ARP calls q2ifree on resolution
+q2ifreel la	8				. recover the descriptor
+q2ifree	lk	(63*/18:s)
 	mta	(A$BUFFB*/18:s)
 	j	q2ifoq1
 	LOCK	this_if:lock_cell_q2
@@ -425,11 +433,12 @@ if_osendq
         ly      1, a
         la      0, a
 
+        jza	if_oblank
         push    a
         popA    TX_DATAGRAML
 
         lcal    tx_nocheck
-
+if_oblank
         pop     a
         pop     b
         aa, xi  2
@@ -502,33 +511,53 @@ if_osentq
 
 	$endif
 
-ifw_dlt_null
-	lx	descriptor:frame
+					. axw in fp
+ifw_llh_space				. bytes size of link header in a
+	lb	TX_FRAME		. prepare the llh space / descriptor
 	push	-6,,xi
-	pop	nframe:stack_index, x
-	dl	(02000, 0:d)
-	ds	nframe, x
-	la	4,,xi
-	lb	x
-	ds	nframe:frame_axw(1)
-	fret	0
+	pop	nframe:stack_index, b
+	ds	nframe:frame_axw(1),b
+	lret	0
+
+ifw_dlt_null
+	la, xi	4
+	lcal	ifw_llh_space
+	la, xi	0200
+	sa	0, b
+	z	1, b
+	fret	0			. resolved, because nothing to resolve
 
 ifw_dlt_loop
-	lx	descriptor:frame
-	push	-6,,xi
-	pop	nframe:stack_index, x
-	dl	(0, 2d)
-	ds	nframe, x
-	la	4,,xi
-	lb	x
-	ds	nframe:frame_axw(1)
-	fret	0
+	la, xi	4
+	lcal	ifw_llh_space
+	la, xi	2
+	z	0, b
+	sa	1, b
+	fret	0			. resolved, because nothing to resolve
 
-ifw_dlt_e10mb
-	lx	descriptor:frame
-	push	-6,,xi
-	pop	nframe:stack_index, x
-	la	14,,xi
-	lb	x
-	ds	nframe:frame_axw(1)
-	fret	0
+ifw_dlt_e10mb $tree
+	la, xi	14
+	lcal	ifw_llh_space
+
+	push	this_if:physa+2
+	dpush	this_if:physa
+	pop	nframe:llh:ethernet:from, b
+	pop	nframe:llh:ethernet:from+1, b
+	pop	nframe:llh:ethernet:from+2, b
+	sb	7
+	lb	TX_DATAGRAM
+	dl	dgram:ipdest
+	call	(arp_resolve)
+	tz	6
+	j	resolved
+	jdz	unresolved
+resolved
+	ds	*7
+	dl	6
+	sa	2, b
+	fret	0			. resolved
+
+unresolved				. ARP has queued it
+	fret	1
+	$root
+
