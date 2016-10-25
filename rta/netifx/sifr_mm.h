@@ -58,7 +58,8 @@
 typedef	struct { unsigned short			    flag,
 					    frame_length,
 						   ll_hl,
-					 protocol_family; } mm_descriptor;
+					       interface,
+						protocol; } mm_descriptor;
 
 typedef struct { mm_descriptor			preamble;
 		 unsigned char	frame[DEVICE_PAGE - FPL]; } mm_netbuffer;

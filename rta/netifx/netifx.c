@@ -307,12 +307,12 @@ display(int x, mm_netbuffer *p)
    printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", REVERSE(p->preamble.flag),
                                          REVERSE(p->preamble.frame_length), 
                                          REVERSE(p->preamble.ll_hl),
-                                         REVERSE(p->preamble.protocol_family));
+                                         REVERSE(p->preamble.protocol));
    #else
    printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", p->preamble.flag,
                                          p->preamble.frame_length, 
                                          p->preamble.ll_hl,
-                                         p->preamble.protocol_family);
+                                         p->preamble.protocol);
    #endif
 }
 
@@ -362,6 +362,9 @@ static void outputq(int s)
 
    while (tag = q->preamble.flag & FRAME)
    {
+      printf("%p[", txdata);
+      for (x = 0; x < 20; x++) printf("%2.2x", *(((unsigned char *) q) + x));
+      printf("]\n");
       x = (q->frame[2] << 8) | q->frame[3];
       y = send(s, q->frame, x, 0);
 
@@ -466,61 +469,6 @@ static void outputq(int s)
    txdata = q;
 }
 
-#ifdef SIGALERT
-      else
-      {
-         /***************************************************
-
-		this micro-protocol at initialisation
-		passes back the pid of the RTA1 emulation
-		in the first OUTPUT frame descriptor of
-		the device
-
-		the signal stub in the emulator increments
-		the emulated I/O port NET_ATTENTION_COUNT
-		if SIGALERT is switched on
-
-		this should help the emulated machine
-		decide if the emulator host should have
-		a cooling-off rest which is implemented
-		as the instruction
-
-			emulator_cool	MICROSECONDS
-
-		and prototypes a power-save instruction
-
-		emulated and real RTA machines might
-		alternatively allow other tasks than IP
-		to run at that point
-
-		this message will arrive at emulator
-		startup before any transmission frames
-
-		the processing pointer txdata must not
-		be advanced
-
-		the descriptor preamble fields must be
-		cleared
-
-	 ***************************************************/
-
-         if (tag & OUT_OF_BAND_TARGET_PROTOCOL)
-         {
-            alert_pid = *((int *) &q->preamble.ll_hl);
-            q->preamble.flag = 0;
-            q->preamble.frame_length = 0;
-            q->preamble.ll_hl = 0;
-            q->preamble.protocol_family = 0;
-
-	    printf("[S->%d]\n", alert_pid);
-         }
-      }
-   }
-
-   txdata = q;
-}
-#endif
-
 int main(int argc, char *argv[])
 {
    int			 s = socket(AF_INET, SOCK_RAW, IPPROTO_DIVERT);
@@ -535,9 +483,6 @@ int main(int argc, char *argv[])
 
    unsigned short	 psum, csum;
 
-   unsigned char	 newnet[ARGUMENTS][4];
-   unsigned char	 newmask[4];
-
    unsigned char	 showrow[16];
    unsigned char	*p;
 
@@ -550,19 +495,52 @@ int main(int argc, char *argv[])
 
    argue(argc, argv);
 
+   x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
+   printf("shared core handle %d code %d size %d\n", x, errno,
+           DEVICE_PAGE * DEVICE_PAGES);
+
+   if (x < 0) return 0;
+
+   netdata = shmat(x, NULL, 0);
+   printf("shared core based @ %p code %d\n", netdata, errno);
+
+   rxdata = netdata->i;
+   txdata = netdata->o;
+
+   rxdata->preamble.flag = 0;
+   txdata->preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) rxdata[x].preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) txdata[x].preamble.flag = 0;
+
    for (x = 0; x < arguments; x++)
    {
-      y = sscanf(argument[0], "%hhd.%hhd.%hhd.%hhd/%hhd", &newnet[x][0],
-                                                          &newnet[x][1],
-                                                          &newnet[x][2],
-                                                          &newnet[x][3],
-                                                         &newmask[x]);
+      rxdata->frame[0] = 0;
+      rxdata->frame[1] = 0;
 
-      printf("target address %d is %d.%d.%d.%d/%d\n", x, newnet[x][0],
-                                                         newnet[x][1], 
-                                                         newnet[x][2],
-                                                         newnet[x][3],
-                                                        newmask[x]);
+      sscanf(argument[x], "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 2,
+                                                      rxdata->frame + 3,
+                                                      rxdata->frame + 4,
+                                                      rxdata->frame + 5,
+                                                      rxdata->frame + 6);
+
+      rxdata->frame[7] = 0;
+      rxdata->preamble.frame_length = 8;
+      rxdata->preamble.ll_hl = LLHL;
+
+      #ifdef INTEL
+      rxdata->preamble.interface = REVERSE(x);
+      #else
+      rxdata->preamble.interface = x;
+      #endif
+
+      rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+
+      rxdata->preamble.flag = FRAME;
+      rxdata++;
    }
 
    y = fcntl(s, F_GETFL, 0);
@@ -573,48 +551,6 @@ int main(int argc, char *argv[])
    if (x < 0) printf("%d\n", errno);
    else
    {
-      x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
-      printf("shared core handle %d code %d size %d\n", x, errno,
-              DEVICE_PAGE * DEVICE_PAGES);
-
-      if (x < 0) return 0;
-
-      netdata = shmat(x, NULL, 0);
-      printf("shared core based @ %p code %d\n", netdata, errno);
-
-      rxdata = netdata->i;
-      txdata = netdata->o;
-
-      rxdata->preamble.flag = 0;
-      txdata->preamble.flag = 0;
-
-      x = DEVICE_PAGES/2;
-      while (x--) rxdata[x].preamble.flag = 0;
-
-      x = DEVICE_PAGES/2;
-      while (x--) txdata[x].preamble.flag = 0;
-
-      for (x = 0; x < arguments; x++)
-      {
-         #ifdef INTEL
-         rxdata->preamble.frame_length = 0x0900;
-         #else
-         rxdata->preamble.frame_length = 9;
-         #endif
-
-         rxdata->frame[0] = newnet[x][0];
-         rxdata->frame[1] = newnet[x][1];
-         rxdata->frame[2] = newnet[x][2];
-	 rxdata->frame[3] = newnet[x][3];
-	 rxdata->frame[5] = newmask[x];
-
-         rxdata->preamble.ll_hl = LLHL;
-         rxdata->preamble.protocol_family = CONFIGURATION_MICROPROTOCOL;
-
-         rxdata->preamble.flag = FRAME;
-         rxdata++;
-      }
-
       #ifdef ASYNC
 
       x = pthread_attr_init(&asyncb);
@@ -656,17 +592,10 @@ int main(int argc, char *argv[])
             #endif
 
             rxdata->preamble.ll_hl = LLHL;
-            rxdata->preamble.protocol_family = IP;
+            rxdata->preamble.interface = 0;
+            rxdata->preamble.protocol = IP;
 
             rxdata->preamble.flag = FRAME;
-
-            #ifdef SIGALERT
-            if (alert_pid)
-            {
-               if (flag['w'-'a']) printf("[S %d]", alert_pid);
-               if (kill(alert_pid, SIGUSR1) < 0) printf("[SKE %d]", errno);
-            }
-            #endif
 
             if (flag['z'-'a'])
             {

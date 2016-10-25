@@ -54,8 +54,8 @@
 
 #ifdef  PCAP
 #define	PCAP_RX
-#undef	PCAP_TX
-#define	RULE_80
+#define	PCAP_TX
+#undef	RULE_80
 #include <pcap/pcap.h>
 #define PCAP_BYTES      8192
 #define PCAP_MS         20
@@ -348,12 +348,12 @@ display(int x, mm_netbuffer *p)
    printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", REVERSE(p->preamble.flag),
                                          REVERSE(p->preamble.frame_length), 
                                          REVERSE(p->preamble.ll_hl),
-                                         REVERSE(p->preamble.protocol_family));
+                                         REVERSE(p->preamble.protocol));
    #else
    printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", p->preamble.flag,
                                          p->preamble.frame_length, 
                                          p->preamble.ll_hl,
-                                         p->preamble.protocol_family);
+                                         p->preamble.protocol);
    #endif
 }
 
@@ -400,13 +400,21 @@ static void outputq(int s)
    char			 pbuffer[24];
    int			 k, symbol;
 
+   char			 adhoc[2000] = { 2, 0, 0, 0 } ;
+
 
    while (tag = q->preamble.flag & FRAME)
    {
       x = (q->frame[2] << 8) | q->frame[3];
 
       #if	defined(PCAP_TX)
+      #if	1
+      putchar('*');
+      memcpy(adhoc + 4, q->frame, x);
+      y = pcap_sendpacket((pcap_t *) s, adhoc, x + 4);
+      #else	defined(PCAP_TX)
       y = pcap_sendpacket((pcap_t *) s, q->frame, x);
+      #endif
       #elif	defined(PCAP_RX)
       y = send(s, q->frame, x, 0);
       if (y < 0) printf("send error %d\n", errno);
@@ -525,60 +533,6 @@ static void outputq(int s)
    txdata = q;
 }
 
-#ifdef SIGALERT
-      else
-      {
-         /***************************************************
-
-		this micro-protocol at initialisation
-		passes back the pid of the RTA1 emulation
-		in the first OUTPUT frame descriptor of
-		the device
-
-		the signal stub in the emulator increments
-		the emulated I/O port NET_ATTENTION_COUNT
-		if SIGALERT is switched on
-
-		this should help the emulated machine
-		decide if the emulator host should have
-		a cooling-off rest which is implemented
-		as the instruction
-
-			emulator_cool	MICROSECONDS
-
-		and prototypes a power-save instruction
-
-		emulated and real RTA machines might
-		alternatively allow other tasks than IP
-		to run at that point
-
-		this message will arrive at emulator
-		startup before any transmission frames
-
-		the processing pointer txdata must not
-		be advanced
-
-		the descriptor preamble fields must be
-		cleared
-
-	 ***************************************************/
-
-         if (tag & OUT_OF_BAND_TARGET_PROTOCOL)
-         {
-            alert_pid = *((int *) &q->preamble.ll_hl);
-            q->preamble.flag = 0;
-            q->preamble.frame_length = 0;
-            q->preamble.ll_hl = 0;
-            q->preamble.protocol_family = 0;
-
-	    printf("[S->%d]\n", alert_pid);
-         }
-      }
-   }
-
-   txdata = q;
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -589,7 +543,7 @@ int main(int argc, char *argv[])
    struct pcap_pkthdr	 descriptor;
    #endif
 
-   #ifdef RULE_80
+   #ifndef PCAP_TX
    int			 s = socket(AF_INET, SOCK_RAW, IPPROTO_DIVERT);
    int			 j = (s < 0) ? errno : 0;
    #endif
@@ -598,6 +552,8 @@ int main(int argc, char *argv[])
 			 y,
 			 dgraml,
 			 proto,
+			 textl,
+			 physa_octets,
 			 symbol;
 
    mm_netbuffer         *rxdata;
@@ -609,11 +565,11 @@ int main(int argc, char *argv[])
    unsigned char	 device_string[48],
 			 network_string[48],
 			 rule_string[240],
+                         rule2[36],
+                         report[12],
 			 diagnostic_string[240];
    #else
 
-   unsigned char	 newnet[ARGUMENTS][4];
-   unsigned char	 newmask[4];
 
    #endif
 
@@ -636,14 +592,46 @@ int main(int argc, char *argv[])
 
    #ifdef PCAP_RX
 
+   x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
+   printf("shared core handle %d code %d size %d\n", x, errno,
+           DEVICE_PAGE * DEVICE_PAGES);
+
+   if (x < 0) return 0;
+
+   netdata = shmat(x, NULL, 0);
+   printf("shared core based @ %p code %d\n", netdata, errno);
+
+   rxdata = netdata->i;
+   txdata = netdata->o;
+
+   rxdata->preamble.flag = 0;
+   txdata->preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) rxdata[x].preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) txdata[x].preamble.flag = 0;
+
    for (x = 0; x < arguments; x++)
    {
-      y = sscanf(argument[x], "%[^:]:%[^:\r\n ]", device_string, network_string);
+      y = sscanf(argument[x], "%[^:]:%[^:+\r\n]+%s", device_string, network_string, rule2);
       sandl[x] = pcap_open_live(device_string, PCAP_BYTES, 0, PCAP_MS, diagnostic_string);
 
       if (sandl[x])
       {
-         sprintf(rule_string, "dst host %s", network_string);
+         textl = sprintf(rule_string, "dst host %s", network_string);
+
+         if (y > 2)
+         {
+            strcpy(report, "8080");
+            y = sscanf(rule2, "%[^:\r\n]:%s", network_string, report);
+            textl += sprintf(rule_string + textl, 
+                             " or ( tcp dst port %s and dst host %s )", report, network_string);
+         }
+
+         if (flag['v'-'a']) printf("[%s]\n", rule_string);
+
          y = pcap_compile(sandl[x], &bpf_p, rule_string, 0, NETMASK32);
          if (y < 0) printf("filter compile %s failed %s %s\n", device_string, rule_string, diagnostic_string);
          y = pcap_setfilter(sandl[x], &bpf_p);
@@ -656,39 +644,57 @@ int main(int argc, char *argv[])
             case DLT_NULL:
             case DLT_LOOP:
                ll_hl[x] = 4;
+               physa_octets = 0;
+
                break;
+
             case DLT_EN10MB:
             case DLT_IEEE802:
                ll_hl[x] = 14;
+               physa_octets = 6;
                break;
+
             default:
                ll_hl[x] = 14;
          }
+
+         rxdata->frame[0] = y;
+         rxdata->frame[1] = ll_hl[x];
+
+         rxdata->frame[6] = 32;
+
+         sscanf(network_string, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 2,
+                                                            rxdata->frame + 3, 
+                                                            rxdata->frame + 4,
+                                                            rxdata->frame + 5,
+                                                            rxdata->frame + 6);
+
+         rxdata->frame[7] = physa_octets;
+         rxdata->preamble.frame_length = 8 + physa_octets;
+         rxdata->preamble.ll_hl = LLHL;
+
+         #ifdef INTEL
+         rxdata->preamble.interface = REVERSE(x);
+         #else
+         rxdata->preamble.interface = x;
+         #endif
+
+         rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+
+         rxdata->preamble.flag = FRAME;
+         rxdata++;
       }
       else printf("pcap handle %d not live %s %s\n", x, device_string, diagnostic_string);
    }
 
+
+   #ifndef PCAP_TX
    y = setsockopt(s, SOL_SOCKET, SO_DONTROUTE, &one, 4);
    printf("soco DNR %d %d\n", y, (y < 0) ? errno : 0);
+   #endif
 
    #endif
 
-   #if 0
-   for (x = 0; x < arguments; x++)
-   {
-      y = sscanf(argument[0], "%hhd.%hhd.%hhd.%hhd/%hhd", &newnet[x][0],
-                                                          &newnet[x][1],
-                                                          &newnet[x][2],
-                                                          &newnet[x][3],
-                                                         &newmask[x]);
-
-      printf("target address %d is %d.%d.%d.%d/%d\n", x, newnet[x][0],
-                                                         newnet[x][1], 
-                                                         newnet[x][2],
-                                                         newnet[x][3],
-                                                        newmask[x]);
-   }
-   #endif
 
    #ifdef RULE_80
    y = fcntl(s, F_GETFL, 0);
@@ -701,58 +707,6 @@ int main(int argc, char *argv[])
    if (x < 0) printf("%d\n", errno);
    else
    {
-      x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
-      printf("shared core handle %d code %d size %d\n", x, errno,
-              DEVICE_PAGE * DEVICE_PAGES);
-
-      if (x < 0) return 0;
-
-      netdata = shmat(x, NULL, 0);
-      printf("shared core based @ %p code %d\n", netdata, errno);
-
-      rxdata = netdata->i;
-      txdata = netdata->o;
-
-      rxdata->preamble.flag = 0;
-      txdata->preamble.flag = 0;
-
-      x = DEVICE_PAGES/2;
-      while (x--) rxdata[x].preamble.flag = 0;
-
-      x = DEVICE_PAGES/2;
-      while (x--) txdata[x].preamble.flag = 0;
-
-      for (x = 0; x < arguments; x++)
-      {
-         #ifdef INTEL
-         rxdata->preamble.frame_length = 0x0900;
-         #else
-         rxdata->preamble.frame_length = 9;
-         #endif
-
-         #ifndef PCAP_RX
-         /*********************************************
-		revive this
-		you designed it and forgot to use it
-		it's network address config over
-		the shared buffer
-
-		or move ahead to zero-conf case PCAP
-         *********************************************/
-         rxdata->frame[0] = newnet[x][0];
-         rxdata->frame[1] = newnet[x][1];
-         rxdata->frame[2] = newnet[x][2];
-	 rxdata->frame[3] = newnet[x][3];
-	 rxdata->frame[5] = newmask[x];
-         #endif
-
-         rxdata->preamble.ll_hl = LLHL;
-         rxdata->preamble.protocol_family = CONFIGURATION_MICROPROTOCOL;
-
-         rxdata->preamble.flag = FRAME;
-         rxdata++;
-      }
-
       #ifdef ASYNC
 
       x = pthread_attr_init(&asyncb);
@@ -812,7 +766,11 @@ int main(int argc, char *argv[])
          }
          else
          {
+            #if 1
+            outputq((int) sandl[0]);
+            #else
             outputq(s);
+            #endif
             usleep(TWARP);
             x = 0;
          }
@@ -846,17 +804,15 @@ int main(int argc, char *argv[])
             #endif
 
             rxdata->preamble.ll_hl = LLHL;
-            rxdata->preamble.protocol_family = IP;
+            #ifdef INTEL
+            rxdata->preamble.interface = REVERSE(y);
+            #else
+            rxdata->preamble.interface = y;
+            #endif
+            rxdata->preamble.protocol = IP;
 
             rxdata->preamble.flag = FRAME;
 
-            #ifdef SIGALERT
-            if (alert_pid)
-            {
-               if (flag['w'-'a']) printf("[S %d]", alert_pid);
-               if (kill(alert_pid, SIGUSR1) < 0) printf("[SKE %d]", errno);
-            }
-            #endif
 
             if (flag['z'-'a'])
             {
