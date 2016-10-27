@@ -358,13 +358,15 @@ i_f_leave
 
 						. i_f should be x->
 						. acw should be a->
-q2ifoq	tz	this_if:write_llh		. link layer header to write?
-	call	this_if:write_llh
-	lcal	q2ifreel			. either no llh or it was OK immediately
-	lret	0				. if ARP has queued it
+q2ifoq	tz	this_if:arp_resolve
+	call	this_if:arp_resolve
+	lcal	q2ifreel			. either no ARP or it was OK immediately
+	lret	0				. if ARP has queued it pending resolution
 						. then ARP calls q2ifree on resolution
 q2ifreel la	8				. recover the descriptor
-q2ifree	lk	(63*/18:s)
+q2ifree	tz	this_if:write_llh		. link layer header to write?
+	call	this_if:write_llh
+	lk	(63*/18:s)
 	mta	(A$BUFFB*/18:s)
 	j	q2ifoq1
 	LOCK	this_if:lock_cell_q2
@@ -520,22 +522,32 @@ ifw_llh_space				. bytes size of link header in a
 	lret	0
 
 ifw_dlt_null
+	push	a
+	lb	descriptor:frame, a
 	la, xi	4
 	lcal	ifw_llh_space
 	la, xi	0200
 	sa	0, b
 	z	1, b
-	fret	0			. resolved, because nothing to resolve
+	pop	a
+	fret	0
 
 ifw_dlt_loop
+	push	a
+	lb	descriptor:frame, a
 	la, xi	4
 	lcal	ifw_llh_space
 	la, xi	2
 	z	0, b
 	sa	1, b
-	fret	0			. resolved, because nothing to resolve
+	pop	a
+	fret	0
 
-ifw_dlt_e10mb $tree
+
+ifw_dlt_e10mb			. generic handling already has
+				. the resolved destination at the frame start
+	push	a		. and the protocol at word 6
+	lb	descriptor:frame, a
 	la, xi	14
 	lcal	ifw_llh_space
 
@@ -544,20 +556,7 @@ ifw_dlt_e10mb $tree
 	pop	nframe:llh:ethernet:from, b
 	pop	nframe:llh:ethernet:from+1, b
 	pop	nframe:llh:ethernet:from+2, b
-	sb	7
-	lb	TX_DATAGRAM
-	dl	dgram:ipdest
-	call	(arp_resolve)
-	tz	6
-	j	resolved
-	jdz	unresolved
-resolved
-	ds	*7
-	dl	6
-	sa	2, b
-	fret	0			. resolved
+	pop	a
+	fret	0
 
-unresolved				. ARP has queued it
-	fret	1
-	$root
 

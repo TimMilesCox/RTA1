@@ -37,18 +37,224 @@
 .
 .
 
-$(1)
-ARP_STORE $equ	50
+$(3)
+ARP_STORE $set	50
 arp_hash
 	$do	arp_store(ARP_STORE),	0
 ?	$do	ARP_STORE,arp_line(?)	arp_cache
 
-arp_used	+	arp_line(1)
+arp_next	+	arp_line(1)
 arp_free	+	0
 
-$(0)
-xarp	lret	0
-arp_rx	lret	0
+$(66::,x)
+ifaddr	netv4
 
-arp_rem_physa
+$(67::,y)
+arp_row	arp_cache
+ARP_CACHE_WORDS	$set	$
+
+$(67::,y)
+arp_msg	arp_dgram
+ARP_MSG_WORDS	$set	$
+
+$(0)
+
+xarp
 	fret	0
+
+arp_rx
+	fret	0
+
+resolve
+	qpush	8
+	qpush	a
+	qpush	r
+i_f		$equf	2, sp		. still in x as well so far
+NET_ADDR	$set	6
+LL_H		$set	TX_FRAME
+CHAIN_HEAD	$set	10
+BLANK		$set	9		. spare slot pointer
+AXW		$set	8		. it was where we are called from
+
+					. find the hash chain
+	la	TX_FRAME
+	z	*TX_FRAME		. not found anything yet
+	dl	nframe:next_hop, a
+	ds	NET_ADDR
+	andB	arp_store(ARP_STORE)-1,,xi
+	ly	arp_hash,,xi
+	ay	b
+	sy	CHAIN_HEAD
+	z	BLANK
+	
+forward	la	arp_row:next
+	jza	end_chain
+	ly	a
+	dl	arp_row:tpa
+	jdz	spare
+	dan	NET_ADDR
+	jdz	hit
+	j	forward
+
+spare	tnz	BLANK			. 1st spare in chain is best
+	sy	BLANK
+	j	forward
+	
+hit	dl	arp_row:tha
+	tnz	arp_row:tha+2
+	jdz	queue_for_response	. a request is already outstanding
+
+	ds	*TX_FRAME
+	la	arp_row:tha+2
+	lb	TX_FRAME
+	sa	2, b
+	j	return
+	
+end_chain
+	la	BLANK
+	jnza	acquired
+	lcal	take_one
+	tz	y
+	j	new_CHAIN_HEAD
+
+	.	abandon the datagram send
+
+	la	AXW			. descriptor
+	lx	tx_buffers
+	tp	descriptor:bytes, a	. not if it's TCP
+	lcal	sell1
+	lret	0
+
+new_CHAIN_HEAD
+	la	CHAIN_HEAD
+	sa	arp_row:next
+	sy	0, a
+
+acquired
+	ly	a
+	z	arp_row:tha
+	z	arp_row:tha+1
+	z	arp_row:tha+2
+	dl	NET_ADDR
+	ds	arp_row:tpa
+
+	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
+				i_f,,int		;
+				0,,xi			;
+				NET_ADDR,,long
+
+	la	AXW	. descriptor
+queue_for_response
+	ly	arp_row:oq,,i
+	tp	descriptor:bytes, a
+	lcal	q2	. not if it's TCP	
+
+
+return	qpop	r
+	qpop	a
+	qpop	8
+	tz	*TX_FRAME
+	fret	0		. go for it
+	fret	1		. it's been queued, ARP will send it
+				. or it's had to be abandoned
+
+take_one			. if the heap used up?
+	ly	arp_next
+	lr	arp_line(ARP_STORE)+ARP_CACHE_WORDS,,xi
+	jyge	search_BLANK
+	lr	ARP_CACHE_WORDS, y, i
+	sr	arp_next
+
+	lret	0
+
+search_BLANK	. look for a timed-out line
+	lr	arp_store(ARP_STORE)-1,,xi
+pick_chain
+	ly	arp_hash,,xi	. ultimate hash chain head
+	ay	r
+search_chain
+	lk	y		. previous
+	la	arp_row:next
+	jza	search_around
+	dl	arp_row:tpa
+	jdz	found
+	j	search_chain
+search_around
+	jdr	pick_chain	. next hash chain head
+	ly	0,,xi
+	lret	0
+
+found	push	arp_row:next	. take it from the cache chain
+	pop	*k		. previous->next = next
+	lret	0
+
+phy_target1	$equf	arp_msg:tha
+phy_target2	$equf	nframe:llh:generic:address, y
+phy_sourcex	$equf	0, x
+
+xmit	$head_far	 params(operation,	int	  ;
+				i_fp,		int	  ;
+				ha_pointer,	int	  ;
+				NET_ADDR,	long	) ;
+							  ;
+			scalars(caller_xy,	long, x	  ;
+				caller_fp,	int, fp	)
+
+	la	ROUTING_HEADER+ARP_MSG_WORDS,,xi
+	lx	tx_buffers
+	lcal	buy1
+	jza	xmitx
+	sa	fp
+
+	ly	descriptor:dgram
+
+	dl	(HTYPE, PROTOCOL_SUITE:d)	. hardware space, protocol set
+	ds	arp_msg:htype
+
+	la	(HLEN, PLEN)
+	lb	operation
+	ds	arp_msg:hl_pl			. address lengths, type of request
+
+	lx	i_fp
+
+	wphysa	arp_msg:sha this_if:physa
+
+	lx	this_if:address_list
+	dl	ifaddr:net
+	ds	arp_msg:spa
+
+	dl	NET_ADDR
+	ds	arp_msg:tpa
+
+	lx	ha_pointer			. bespoke physa to
+	tnz	x
+	lx, xi	(0h)				. don't know = 0
+
+	wphysa	phy_target1 phy_sourcex
+						. arp dgram is built
+						. now the link layer header
+
+	ly	descriptor:frame
+	lx	ha_pointer			. bespoke physa to
+	tnz	x
+	lx, xi	(00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF:h) . don't know = broadcast
+
+	wphysa	phy_target2 phy_sourcex
+
+	lb	LINK_PROTOCOL,,xi
+	sb	nframe:llh:generic:protocol, y
+	z	nframe:frame_axw(2), y	. stop there being any
+	z	nframe:frame_axw(3), y	. more parts of this frame
+	lx	i_f
+	sy	TX_FRAME
+	call	this_if:write_llh	. format generic parameters		
+					. to ll header for this i/f
+
+	la	fp
+	lcal	q2ifoq1
+
+xmitx	pop	fp
+	pop	x
+	pop	y
+	fret	0
+
