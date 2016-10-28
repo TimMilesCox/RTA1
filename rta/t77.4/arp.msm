@@ -38,7 +38,7 @@
 .
 
 $(3)
-ARP_STORE $set	50
+
 arp_hash
 	$do	arp_store(ARP_STORE),	0
 ?	$do	ARP_STORE,arp_line(?)	arp_cache
@@ -59,7 +59,8 @@ ARP_MSG_WORDS	$set	$
 
 $(0)
 
-xarp
+xarp	qpush	r
+xarpx	qpop	r
 	fret	0
 
 arp_rx
@@ -197,8 +198,8 @@ xmit	$head_far	 params(operation,	int	  ;
 				ha_pointer,	int	  ;
 				NET_ADDR,	long	) ;
 							  ;
-			scalars(caller_xy,	long, x	  ;
-				caller_fp,	int, fp	)
+			scalars(caller_rkxy,	float, r  ;
+				caller_fp,	int,  fp)
 
 	la	ROUTING_HEADER+ARP_MSG_WORDS,,xi
 	lx	tx_buffers
@@ -206,7 +207,15 @@ xmit	$head_far	 params(operation,	int	  ;
 	jza	xmitx
 	sa	fp
 
-	ly	descriptor:dgram
+	ly	descriptor:frame
+	lb	ROUTING_HEADER,y,i
+	sb	descriptor:dgram
+	la	ARP_MSG_WORDS,,xi
+	ds	nframe:frame_axw(2), y
+	z	nframe:frame_axw(3), y		. no third buffer needed
+
+	sy	6				. save the frame pointer
+	ly	b				. dgram pointer
 
 	dl	(HTYPE, PROTOCOL_SUITE:d)	. hardware space, protocol set
 	ds	arp_msg:htype
@@ -226,25 +235,24 @@ xmit	$head_far	 params(operation,	int	  ;
 	dl	NET_ADDR
 	ds	arp_msg:tpa
 
-	lx	ha_pointer			. bespoke physa to
+	lx	ha_pointer			. bespoke physa destination?
 	tnz	x
-	lx, xi	(0h)				. don't know = 0
+	lx, xi	(0o)				. don't know = 0
 
 	wphysa	phy_target1 phy_sourcex
 						. arp dgram is built
 						. now the link layer header
 
-	ly	descriptor:frame
-	lx	ha_pointer			. bespoke physa to
+	ly	6				. recover the frame pointer
+	lx	ha_pointer			. bespoke physa destination?
 	tnz	x
-	lx, xi	(00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF:h) . don't know = broadcast
-
+	lx, xi	(00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF:o)
+						. don't know = broadcast
+						. most i/f use 3 of these 8 words !
 	wphysa	phy_target2 phy_sourcex
 
 	lb	LINK_PROTOCOL,,xi
 	sb	nframe:llh:generic:protocol, y
-	z	nframe:frame_axw(2), y	. stop there being any
-	z	nframe:frame_axw(3), y	. more parts of this frame
 	lx	i_f
 	sy	TX_FRAME
 	call	this_if:write_llh	. format generic parameters		
@@ -254,7 +262,6 @@ xmit	$head_far	 params(operation,	int	  ;
 	lcal	q2ifoq1
 
 xmitx	pop	fp
-	pop	x
-	pop	y
+	qpop	r
 	fret	0
 
