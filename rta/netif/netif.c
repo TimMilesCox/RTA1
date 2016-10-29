@@ -392,6 +392,7 @@ static void outputq()
    int			 x,
 			 tag,
 			 iphl,
+                         bytes,
 			 y;
 
    unsigned short	 psum, csum;
@@ -403,6 +404,7 @@ static void outputq()
    int			 k, symbol;
 
    unsigned short	 interface,
+			 llhl,
                          tx_bytes;
 
    pcap_t		*s;
@@ -415,9 +417,11 @@ static void outputq()
    
       #ifdef INTEL
       interface = REVERSE(q->preamble.interface);
+      llhl = REVERSE(q->preamble.ll_hl);
       tx_bytes = REVERSE(q->preamble.frame_length);
       #else
       interface = q->preamble.interface;
+      llhl = q->preamble.ll_hl;
       tx_bytes = q->preamble.frame_length;
       #endif
 
@@ -488,19 +492,29 @@ static void outputq()
             {
                y = 0;
                k = 0;
+               bytes = 0;
                pbuffer[20] = 0;
+
+               putchar('[');
+               while (y < llhl) printf("%2.2x", q->frame[y++]);
+               printf("]\n");
 
                while  (y < x)
                {
-                  if (k == 0) printf("%4.4x  ", y);
+                  if (k == 0) printf("%4.4x  ", bytes);
                   symbol = (unsigned char) q->frame[y];
                   printf("%2.2x", symbol);
                   if (symbol < ' ') symbol = '.';
                   if (symbol > 126) symbol = '.';
                   pbuffer[k] = symbol;
                   y++;
-                  k = y % 20;
-                  if (k == 0) printf("    %s\n", pbuffer); 
+                  k++;
+                  if (k == 20)
+                  {
+                     k = 0;
+                     bytes += 20;
+                     printf("    %s\n", pbuffer);
+                  }
                }
 
                if (k)

@@ -46,8 +46,8 @@ icmpq	dq
 
 $(0)
 
-icmp
-	lret	0
+. icmp
+.	lret	0
 
 icmp_buy_msg
 	lb, xi	04500
@@ -55,16 +55,19 @@ icmp_buy_msg_optional
 	push	a
 	lcal	ip_buy_datagram
 	pop	b
-	jza	ipv4_drop
+	jza	icmp_noreply
 	sb	descriptor:bytes, a
 	lb, xi	IP_DEFAULT_TTL++IPPROTO_ICMP
 	lx	TX_DATAGRAM
 	sb	dgram:ttl_protocol, x
+	lret	1
+icmp_noreply
 	lret	0
 
 icmp_buy_response
 	la	descriptor:bytes
 	lcal	icmp_buy_msg
+	j	icmp_noresponse
 
 	lx	descriptor:dgram
 	dpush	dgram:ipsource, x
@@ -86,7 +89,8 @@ icmp_buy_response
 	pop	x
 	ly	descriptor:apdata, x
 	sa	ping:h:checksum, y
-
+	lret	1
+icmp_noresponse
 	lret	0
 
 icmp_rx	ly	TP_HEADER
@@ -95,7 +99,7 @@ icmp_rx	ly	TP_HEADER
 	MIB_ICOUNT48	icmpInMsgs:i
 
 	dl	ping:h:type_code, y
-	z	ping:h:type_code
+	sa	ping:h:type_code
 	sb	CHECKSUM
 	z	ping:h:checksum
 
@@ -118,14 +122,24 @@ icmp_rx	ly	TP_HEADER
 	lx	descriptor:uproto
 	ana	CHECKSUM
 	jnza	ipv4_drop
+	la	fp
+	ly	icmpq,,xi
+	lcal	q2
+	j	ipv4_rxz
 
-	la	6
+icmp	la	icmpq.head
+	jza	icmpx
+	sa	fp
+	ly	descriptor:uproto, a
+	
+	la	ping:h:type_code, y
 	anu, xi	0800
-	jnzb	icmp_rx_routinfo
+	jnzb	icmp_rx_routinfo?
 
 	MIB_ICOUNT48	icmpInEchos:i
-
+	z	ping:h:type_code, y	. the value of echo response
 	lcal	icmp_buy_response
+	j	icmp_drop		. no output buffer
 
 	MIB_ICOUNT48	icmpInEchoReps:i
 
@@ -135,15 +149,27 @@ icmp_rx	ly	TP_HEADER
 	MIB_ICOUNT48	icmpOutMsgs:i
 
 	call	(ipsend)
-	j	ipv4_drop
+	j	icmp_drop
 
-icmp_rx_routinfo
-	j	ipv4_drop
+icmp_rx_routinfo?
+			. for receiving redirects
+icmp_drop
+	ly	icmpq,,xi
+	lcal	readq
+	lx	rx_buffers
+	lcal	sell1
 
-icmp_noproto
-	j	ipv4_drop
+icmpx	lret	0
 
-icmp_nosocket
+
+icmp_noproto		. jumped at from ipv4_rx
+			. should queue the problem
+			. into icmpq, and then...
+	j	ipv4_drop
+	
+
+icmp_nosocket		. called from udp
+			. should send DU[PORT]
 	lret	0
 
 	$if	RX_FRAGMENTS
