@@ -256,37 +256,61 @@ readqz	lret	0
 
         $if      QSIMULTANEOUS
 
-.	these use the i_f index word as a next pointer
-.	instead of the next pointer at the front of the
-.	descriptor
-
-.	this is so that TCP segments awaiting ACK
+.	descriptors are short-term on two chains
+.	so that TCP segments awaiting ACK
 .	can be on the interface queue and the
 .	connection's ACK wait queue at the same time
 
-.	the bytes count in the descriptor has
-.	bit 23 on to instruct the interface not
-.	to drop the buffer after it is sent
+.	TCP uses chain link descriptor:next and so does
+.	almost all the t77.4 protocol suite
 
-.	in the case of high volume banks where a
-.	collection of TCP connections shares a
-.	switched output bank at B80000 for segments
-.	awaiting first window then ACK, separate
-.	from the fixed transmit buffers at F00000
+.	interface queues use chain link descriptor:ifql
 
-.	where the two owners of the buffer are
-.	the socket and the interface, it is the
-.	interface which uses the next_bdi pointer
-.	in the descriptor
+.	ifql is a reuse of descriptor:readpoint which
+.	which points TCP past consumed / duplicate
+.	payload in incoming segments
 
-.	when actions are carried out on the socket
-.	its transmit buffer bank at B80000 is always
-.	based. This is only an issue of high volume
-.	transaction connections which are intended to
-.	exist in very large numbers and therefore
-.	cannot keep all their transmitted segments
-.	in the fixed  megaword at F00000 until remote
-.	ACK arrives from the network
+.	in high-volume space where certain TCP ports
+.	have private buffer pools [HVBANK], the buffer
+.	and its descriptor are in the same bank
+
+.	the descriptor is always located by a chain
+.	head or previous descriptor pointing forward
+.	to it
+
+.	in the private buffer bank arrangement TCP
+.	inbound segment descriptors are located with
+.	the pointer previous:sobdi.previous:next
+
+.	descriptor:sobdi is part of a next pointer
+.	and does not concern the buffer of the descriptor
+
+.	sobdi is a reuse of apdata, which points to
+.	the trailing edge of tcp segment header /
+.	leading edge of tcp segment payload. apdata
+.	is only needed during consumption and
+.	construction of datagrams, and in high-volume
+.	private buffer arrangements is replaced
+.	during input and output by sobdi, which is
+.	the bank base of the socket's private buffer 
+.	pool
+
+.	during operations within TCP the bank containing
+.	the segment is in address space whenever the socket
+.	is in address space	
+
+.	high-volume private buffer pools are only used
+.	in some TCP traffic which is expected to be of
+.	extreme volume or confidential. The private buffer
+.	arrangement enables millions of transmitted segments
+.	awaiting remote acknowledgement to remain buffered
+
+.	interface device drivers drop transmitted datagrams
+.	from protocols which do not resend
+
+.	TCP flags bit 23 of descriptor:bytes and interface
+.	drivers do not drop those buffers after transmission
+
 
 q2if	tz	queue:head
 	j	q2ifz
@@ -310,63 +334,82 @@ rqifz	lret	0
 
 	$if	HVBANK
 
+.	these macros work in A$BUFFB which is TCP outgoing
+.	segments private buffer window, and cannot be used
+.	to manage any other memory window 
+
+.	the descriptor + buffer returned at hvreadifq are
+.	placed in memory window A$BUFFB
+
+.	the descriptor + buffer queued by q2ifhv are not
+.	afterwards guaranteed in the address space, but
+.	their long address is still in a:b
+
 q2ifhv	tz	1, y
 	j	q2ifhv_tail
-	ds	hvqueue:head, y
-	ds	hvqueue:tail, y
-	z	descriptor:i_f, b
+	ds	hvqueue:head 
+	ds	hvqueue:tail
 	lret	0
 q2ifhv_tail
 	dpush	a
-	dl	hvqueue:tail, y
-	sabr	A$BUFFB
-	la	1, sp
-	sa	descriptor:i_f, b
-	pop	a
-	sa	descriptor:next_bdi, b
-	pop	b
-	ds	hvqueue:tail, y
-	sabr	A$BUFFB
-	z	descriptor:i_f, b
+	dpush	a
+	dl	hvqueue:tail		. get qtail word offset pointer
+	sabr	A$BUFFB			. get *qtail in address space
+	pop	descriptor:sobdi, b	. write new qtail bank pointer
+	pop	descriptor:ifql,b	. write new qtail word offset pointer
+	pop	a			. take 2nd copy descriptor pointer
+	pop	b			. from the internal stack
+	ds	hvqueue:tail
 	lret	0
 
 hvreadqif
-	dl	hvqueue:head, y
-	jzb	hvreadqifz
-	sabr	A$BUFFB
-	push	descriptor:next_bdi, b
-	push	descriptor:i_f, b
+	dl	hvqueue:head
+	jzb	hvreadqifz		. queue empty
+	sabr	A$BUFFB			. first descriptor into address space
+	push	descriptor:sobdi, b	. next pointer to queue head
+	push	descriptor:ifql, b
 	pop	1, y
 	pop	0, y
 hvreadqifz
 	lret	0
 
-.	these use the next pointer like readq and q2
-.	and are used in upper protocols
+.	these macros use descriptor:next pointer like readq
+.	and q2, and are used in upper protocols
+
+.	descriptor:sobdi is the containing bank pointer of
+.	the descriptor + buffer at descriptor:next
+
+.	these macros work in A$BUFFA which is TCP incoming
+.	segments private buffer window, and cannot be used
+.	to manage any other memory window
+
+.	the descriptor + buffer returned from hvreadq are
+.	based in window A$BUFFA
+
+.	the descriptor + buffer queued by q2hv are not
+.	afterwards guaranteed in the address space
+.	but their long address is still in a:b
 
 q2hv	tz	1, y
 	j	q2hv_tail
 	ds	hvqueue:head, y
 	ds	hvqueue:tail, y
-	z	descriptor:next, b
 	lret	0
 q2hv_tail
 	dpush	a
+	dpush	a
 	dl	hvqueue:tail, y
-	sabr	A$BUFFB
-	la	1, sp
-	sa	descriptor:next, b
+	sabr	A$BUFFA
+	pop	descriptor:sobdi, b
+	pop	descriptor:next, b
 	pop	a
-	sa	descriptor:next_bdi, b
 	pop	b
 	ds	hvqueue:tail, y
-	sabr	A$BUFFB
-	z	descriptor:next, b
 	lret	0
 
 hvreadq	dl	hvqueue:head, y
 	jzb	hvreadqifz
-	sabr	A$BUFFB
+	sabr	A$BUFFA
 	push	descriptor:next_bdi, b
 	push	descriptor:next, b
 	pop	1, y

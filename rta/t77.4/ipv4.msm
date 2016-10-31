@@ -42,6 +42,7 @@ HEADER_LONGWORDS $equ	d$save1	. 17 used in receive
 TP_HEADER	$equ	d$save2	. 18 used in receive and transmit
 I_F_IDX		$equ	d$save3	. 19 used in receive
 
+I_F_P		$equ	8	. used in receive
 TX_AXW		$equ	8	. used in transmit
 TX_FRAME	$equ	9	. used in receive and transmit
 
@@ -68,6 +69,9 @@ dgram	datagram
 $(70::,fp)
 descriptor acw
 
+$(66::,x)
+ifaddr  netv4
+
 $(66::, x)
 ro	route
 
@@ -80,17 +84,19 @@ route_list +	route_(5)
 route_free +	route_(6)
 route_(1)	route   0.0.0.0    0.0.0.0         192.168.1.1 2:RELAY_ROUTE 0
 route_(2)	route	127.0.0.0  255.0.0.0       127.0.0.1   1 route_(1)
-route_(3)	route	172.29.0.0 255.255.240.0   172.29.7.7  2 route_(2)
+route_(3)	route	172.29.0.0 255.255.240.0   172.29.7.7  2:RELAY_ROUTE route_(2)
 route_(4)	route	172.29.7.7 255.255.255.255 172.29.7.6  2:RELAY_ROUTE route_(3)
 route_(5)	route	127.0.0.1  255.255.255.255 127.0.0.2   1 route_(4)
 ?	$do	ROUTES-5,;
 route_(?+5)	route	0.0.0.0    0.0.0.0         0.0.0.0     0 route_(?+6)
 
+net_alexical +	net_address(1)
 net_afree +	net_address(3)
 net_address(1)	netv4	127.0.0.1  255.0.0.0     127.255.255.255 1 0 net_address(2)
-net_address(2)	netv4	172.29.7.7 255.255.240.0 127.29.15.255   2 0 0
-?	$do	NET_ADDRESSES-2,;
-net_address(?+2) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
+net_address(2)	netv4	172.29.7.6 255.255.240.0 127.29.15.255	 2 net_address(3) net_address(3)
+net_address(3)	netv4	172.29.7.7 255.255.240.0 127.29.15.255   2 0 0
+?	$do	NET_ADDRESSES-3,;
+net_address(?+3) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
 
 ipv4_fragments_pending	+	0	. this is incremented by fragment store
 					. and set to the number remaining on fragment timer
@@ -385,23 +391,17 @@ ipv4_rxsum
 	xorB	dgram:checksum
 	jnzb	ipv4_rxz
 
-	z	8	. prevent local storage of a
-			. fragment destined for forwarding
+	dl	dgram:ipdest
+	lx	I_F_P		. get the interface pointer back
+	lcal	ipv4_forus?
+	j	ipv4_yesforus
+	tz	ipForwarding.i
+	lcal	ipv4_forward	. drops or forwards
+	j	ipv4_rxz	. no more action
+	
+ipv4_yesforus
 
-			. at this point we should decide
-			.	is it for us?
-			.	if not do we drop or forward?
-			.	ipForwarding in MIB-II
-
-			. not an issue for the emulated machine
-			. with feed from the firewall
-
-			. if we are forwarding and it's for
-			. another host, jump to ipv4_nofragment
-			. because we don't care how many
-			. fragments we forward
-
-	$if	HVBANKRX
+	$if	HVBANK
 	lcal	ip_alternate_rxbank?
 	tz	x
 	j	ipv4_rxbuffer_rq	. skip asking about fragments
@@ -569,6 +569,8 @@ ipv4_rxz
 	lret	0
 
 ip_buy_datagram
+	lx	tx_buffers
+ip_buy_datagram_alternate	. buying in a private bank (large volume TCP)
 	push	b
 	sbr	7	. version / header L / TOS word
 	andB,xi	30	. number of words in header
@@ -578,7 +580,7 @@ ip_buy_datagram
 			. + routing header
 	aa	b	. number of words in buffer
 
-	lx	tx_buffers
+.	lx	tx_buffers
 
 	lcal	buy1
 	pop	b
@@ -617,4 +619,73 @@ net_free_txbx
 	lx	(A$BUFFB*/18:s)
 	mta	x
 	j	net_free_txb
-	j	sell1	
+	j	sell1
+
+ipv4_forus?
+	lcal	ipv4_address_this_if?
+	lret	0	. yes for us
+	tz	ipForwarding.i
+	lcal	ipv4_address_this_host?
+	lret	1	. not for us
+	lret	0	. yes for is
+		
+
+ipv4_forus!
+	lret	0	. = yesforus
+			. ipForwarding and an address
+			. on our interfaces? 
+			. also queue it inward
+
+ipv4_address_this_if?
+	ds	6
+	lx	this_if:address_list
+ipv4_address_test
+	dl	ifaddr:net
+	dan	6
+	jdz	ipv4_address_hit
+	lx	ifaddr:next
+	tz	x
+	j	ipv4_address_test
+	lret	1	. not for us
+ipv4_address_hit
+	lret	0	. yes for us
+
+ipv4_address_this_host?
+	lx	net_alexical
+ipv4_test_in_list
+	dl	ifaddr:net
+	dan	6
+	jdz	ipv4_list_hit
+	lx	ifaddr:lexical
+	tz	x
+	j	ipv4_test_in_list
+	lret	0	. not for us
+ipv4_list_hit
+	lret	1	. yes for us
+	
+
+
+ipv4_forward		. we only get here if it's not
+			. an address anywhere on this host
+			. and ipForwarding is on
+
+                        . first route the destination
+                        . don't route anything out 
+                        . on the interface it came in
+                        . that behaviour is loopy
+
+			. fine we haven't assigned it
+			. to input space
+
+			. assign it to output space
+			. instead
+        
+.	la	dgram:bytes
+.	aa, xi	1	. # octets to # octet pairs
+.	sar	1
+.	lx	tx_buffers
+.	lcal	buy1
+.	jza	ipv4_xforward
+ipv4_xforward
+	lret	0
+
