@@ -248,7 +248,7 @@ int main(int argc, char *argv[])
 
       if (f < 0)
       {
-         printf("rom image file not available\n");
+         printf("rom image file not available %d\n", errno);
          return 0;
       }
 

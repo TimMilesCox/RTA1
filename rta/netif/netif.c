@@ -71,7 +71,12 @@
 
 #include "../include.rta/argue.h"
 #include "../netifx/sifr_mm.h"
+#include "../netifx/ifconfig.h"
 #include "../rta.run/settings.h"
+#include "../include.rta/address.h"
+#include "physa.h"
+
+#define	FORWARD(X)	PORT(X) & 65535
 
 #define	MTU		16384
 #define	TWARP		3300
@@ -337,8 +342,6 @@ static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addre
    return carry ^ 65535;
 }
 
-#define REVERSE(h) ((h >> 8) & 255) | ((h & 255) << 8)
-
 display(int x, mm_netbuffer *p)
 {
    if (x > (DEVICE_PAGES/2-1)) x = 0;
@@ -346,17 +349,10 @@ display(int x, mm_netbuffer *p)
 
    p += x;
 
-   #ifdef INTEL
-   printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", REVERSE(p->preamble.flag),
-                                         REVERSE(p->preamble.frame_length), 
-                                         REVERSE(p->preamble.ll_hl),
-                                         REVERSE(p->preamble.protocol));
-   #else
-   printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", p->preamble.flag,
-                                         p->preamble.frame_length, 
-                                         p->preamble.ll_hl,
-                                         p->preamble.protocol);
-   #endif
+   printf("%4.4hx:%4.4hx:%4.4hx:%4.4hx", FORWARD(p->preamble.flag),
+                                         FORWARD(p->preamble.frame_length), 
+                                         FORWARD(p->preamble.ll_hl),
+                                         FORWARD(p->preamble.protocol));
 }
 
 #define RADIX_MASK (DEVICE_PAGES/2-1)
@@ -383,6 +379,33 @@ static void oversee(mm_netbuffer *p, mm_netbuffer *q)
    printf("] %d+1 [", x);
    display(x + 1, p);
    printf("]\n");
+}
+
+static void ipqi(unsigned char		*param,
+                 struct pcap_pkthdr	*data,
+                 unsigned char		*pointer)
+{
+   mm_netbuffer		*p = (mm_netbuffer *) param;
+   unsigned char	*q = pointer;
+
+   int			 x = data->len;
+   int			 y = p->preamble.ll_hl;
+   unsigned short	 proto = IP;
+
+   if (y == 14) proto = *((unsigned short *) ((unsigned char *) q + 12));
+   p->preamble.protocol = proto;
+
+   printf("[%d (%p/%p)]\n", x, p->frame, pointer);
+   p->preamble.frame_length = PORT(x);
+
+   if (y)
+   {
+      printf("llh rx[");
+      while (y--) printf("%2.2x", *q++);
+      printf("]\n");
+   }
+
+   memcpy(p->frame, q, x);
 }
 
 static void outputq()
@@ -415,20 +438,14 @@ static void outputq()
 
       #if	defined(PCAP_TX)
    
-      #ifdef INTEL
-      interface = REVERSE(q->preamble.interface);
-      llhl = REVERSE(q->preamble.ll_hl);
-      tx_bytes = REVERSE(q->preamble.frame_length);
-      #else
-      interface = q->preamble.interface;
-      llhl = q->preamble.ll_hl;
-      tx_bytes = q->preamble.frame_length;
-      #endif
+      interface = PORT(q->preamble.interface);
+      llhl = PORT(q->preamble.ll_hl);
+      tx_bytes = PORT(q->preamble.frame_length);
 
       if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
 
       x = tx_bytes;
-      s = sandl[0];
+      s = sandl[interface];
        
       y = pcap_sendpacket(s, q->frame, x);
 
@@ -574,7 +591,10 @@ int main(int argc, char *argv[])
 
    int			 x,
 			 y,
+			 s,
+			 dflags,
 			 dgraml,
+			 frames,
 			 proto,
 			 textl,
 			 physa_octets,
@@ -640,11 +660,11 @@ int main(int argc, char *argv[])
    for (x = 0; x < arguments; x++)
    {
       y = sscanf(argument[x], "%[^:]:%[^:+\r\n]+%s", device_string, network_string, rule2);
-      sandl[x] = pcap_open_live(device_string, PCAP_BYTES, 0, PCAP_MS, diagnostic_string);
+      sandl[x] = pcap_open_live(device_string, PCAP_BYTES, 1, PCAP_MS, diagnostic_string);
 
       if (sandl[x])
       {
-         textl = sprintf(rule_string, "dst host %s", network_string);
+         textl = sprintf(rule_string, "dst host %s or arp", network_string);
 
          if (y > 2)
          {
@@ -657,6 +677,21 @@ int main(int argc, char *argv[])
          if (flag['v'-'a']) printf("[%s]\n", rule_string);
 
          y = pcap_compile(sandl[x], &bpf_p, rule_string, 0, NETMASK32);
+
+         if (uflag['S'-'A'])
+         {
+            printf("[%x %p]\n", bpf_p.bf_len, bpf_p.bf_insns);
+            p = (unsigned char *) bpf_p.bf_insns;
+
+            for (y = 0; y < bpf_p.bf_len; y++)
+            {
+               printf("%2.2x%2.2x:%2.2x:%2.2x:%2.2x%2.2x%2.2x%2.2x ",
+               *p, p[1], p[2], p[3], p[4], p[5], p[6], p[7]);
+
+               p += 8;
+            }
+         } 
+
          if (y < 0) printf("filter compile %s failed %s %s\n", device_string, rule_string, diagnostic_string);
          y = pcap_setfilter(sandl[x], &bpf_p);
          if (y < 0) printf("filter load %s failed %s\n", device_string, diagnostic_string);
@@ -685,28 +720,56 @@ int main(int argc, char *argv[])
          rxdata->frame[0] = y;
          rxdata->frame[1] = ll_hl[x];
 
-         rxdata->frame[6] = 32;
+         rxdata->frame[2] = 0;
+         if (x) rxdata->frame[3] = 2;
+         else   rxdata->frame[3] = 0;
 
-         sscanf(network_string, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 2,
-                                                            rxdata->frame + 3, 
-                                                            rxdata->frame + 4,
-                                                            rxdata->frame + 5,
-                                                            rxdata->frame + 6);
+         rxdata->frame[8] = 32;
 
-         rxdata->frame[7] = physa_octets;
-         rxdata->preamble.frame_length = 8 + physa_octets;
+         sscanf(network_string, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 4,
+                                                            rxdata->frame + 5, 
+                                                            rxdata->frame + 6,
+                                                            rxdata->frame + 7,
+                                                            rxdata->frame + 8);
+
+         rxdata->frame[9] = physa_octets;
+         rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
          rxdata->preamble.ll_hl = LLHL;
 
-         #ifdef INTEL
-         rxdata->preamble.interface = REVERSE(x);
-         #else
-         rxdata->preamble.interface = x;
-         #endif
+         rxdata->preamble.interface = PORT(x);
 
          rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
 
+         if (physa_octets)
+         {
+            p = physa(device_string);
+            if (p)
+            {
+               putchar('[');
+               for (y = 0; y < physa_octets; y++)
+               {
+                  symbol = *p++;
+                  rxdata->frame[y + 10] = symbol;
+                  printf("%2.2x", symbol);
+               }
+               printf("]\n");
+            }
+         }
+
          rxdata->preamble.flag = FRAME;
          rxdata++;
+
+         #if 1
+         s = pcap_get_selectable_fd(sandl[x]);
+         dflags = fcntl(s, F_GETFL, 0);
+         y = fcntl(s, F_SETFL, dflags | O_NONBLOCK);
+         printf("[%d D %d %x]\n", y, s, dflags);
+         #else
+         y = pcap_setnonblock(sandl[x], flag['b'-'a'], diagnostic_string);
+         printf("%d snb %d %s\n", x, y, diagnostic_string);
+         y = pcap_getnonblock(sandl[x], diagnostic_string);
+         printf("%d gnb %d %s\n", x, y, diagnostic_string);
+         #endif
       }
       else printf("pcap handle %d not live %s %s\n", x, device_string, diagnostic_string);
    }
@@ -753,14 +816,32 @@ int main(int argc, char *argv[])
          #ifdef PCAP_RX
          for (y = 0; y < arguments; y++)
          {
+            x = ll_hl[y];
+            #ifdef OLDWAYS
             p = pcap_next(sandl[y], &descriptor);
+            #else
+            rxdata->preamble.ll_hl = x;
+            frames = pcap_dispatch(sandl[y], 1, ipqi, (unsigned char *) rxdata);
+
+            p = NULL;
+
+            if (frames)
+            {
+               if (flag['v'-'a']) printf("[%d]\n", frames);
+               if (frames < 0) printf("E %s\n", pcap_geterr(sandl[y]));
+               else p = rxdata->frame;
+            }
+            #endif
 
             if (p)
             {
-               x = ll_hl[y];
-
+               #ifdef OLDWAYS
                dgraml = descriptor.len;
-               printf("[rx %d]\n", dgraml);
+               #else
+               dgraml = FORWARD(rxdata->preamble.frame_length);
+               #endif
+
+               printf("[%d rx %d/%d %4.4x]\n", y, x, dgraml, FORWARD(rxdata->preamble.protocol));
 
                #ifdef PCAP_BOUNCE
                pcap_sendpacket(sandl[0], p, dgraml);
@@ -768,7 +849,7 @@ int main(int argc, char *argv[])
 
                dgraml -= x;
 
-               #define PCAP_RXDISPLAY
+               #undef PCAP_RXDISPLAY
                #ifdef PCAP_RXDISPLAY
                if (flag['v'-'a'])
                {
@@ -779,7 +860,9 @@ int main(int argc, char *argv[])
                else p += x;
                #endif
 
+               #ifdef OLDWAYS
                memcpy(rxdata->frame, p, dgraml);
+               #endif
                x = dgraml;
                break;
             }
@@ -821,19 +904,18 @@ int main(int argc, char *argv[])
 
          if (x)
          {
-            #ifdef INTEL
-            rxdata->preamble.frame_length = (x << 8) | (x >> 8);
+            #ifdef OLDWAYS
+            rxdata->preamble.frame_length = PORT(x);
             #else
-            rxdata->preamble.frame_length = x;
+            printf("D[%d]\n", x);
             #endif
 
             rxdata->preamble.ll_hl = LLHL;
-            #ifdef INTEL
-            rxdata->preamble.interface = REVERSE(y);
-            #else
-            rxdata->preamble.interface = y;
+            rxdata->preamble.interface = PORT(y);
+
+            #ifdef OLDWAYS
+            rxdata->preamble.protocol = incoming_protocol;
             #endif
-            rxdata->preamble.protocol = IP;
 
             rxdata->preamble.flag = FRAME;
 
@@ -923,6 +1005,8 @@ int main(int argc, char *argv[])
                dgraml -= y;
                if (dgraml < 0) y += dgraml;
 
+            printf("h[%d]\n", y);
+            printf("d[%d]\n", dgraml);
                while (y--) printf("%2.2x", *p++);
                putchar('\n');
 

@@ -10,6 +10,7 @@
 	$include	t77.4/dq.def
 	$include	t77.4/i_f.def
 	$include	t77.4/ll.def
+	$include	t77.4/lockfree.def
 	$path
 
 	
@@ -31,6 +32,7 @@ $(0::DRIVERS_BANK1)
 "$rxtx_lo"*	$vector		rxtx_softwareloopback
 "$rxtx_ift1"*	$vector		ift1_rxtx
 "$initial_ift1"* $vector	start_ift1
+"$qo2_relay"*	$vector		output_relay
 
 	$do	64-$,	fret	0
 
@@ -39,6 +41,74 @@ $(0::DRIVERS_BANK1)
 	$include	xrelay
 	$list
 
+if_detachq1                     . take the whole queue somewhere else
+        LOCK    this_if:lock_cell_q1
+        dl      this_if:oq
+        z       this_if:oq:head
+        FREE    this_if:lock_cell_q1
+        lret    0
+
+if_qcat1
+	LOCK	this_if:lock_cell_q1
+	tz	this_if:oq.head
+	j	if_qcat1_append
+	ds	this_if:oq
+	j	if_qcat1x
+if_qcat1_append
+	ly	this_if:oq:tail
+	sb	this_if:oq:tail
+	sa	descriptor:ifql, y
+if_qcat1x
+	FREE	this_if:lock_cell_q1
+	lret	0
+
+	$if	HVBANK
+if_detachq2
+        LOCK    this_if:lock_cell_q2
+	ql	this_if:hvoq
+	z	this_if:hvoq:head+1
+        FREE    this_if:lock_cell_q2
+        lret    0
+
+if_qcat2
+	LOCK	this_if:lock_cell_q2
+	tz	this_if:hvoq:head+1
+	j	if_qcat2_append
+	qs	this_if:hvoq
+	j	if_qcat2x
+if_qcat2_append
+	dpush	a
+	dl	this_if:hvoq:tail
+	sabr	TX$BANKB
+	pop	descriptor:sobdi, b
+	pop	descriptor:ifql, b
+	dl	6
+	ds	this_if:hvoq:tail
+if_qcat2x
+	FREE	this_if:lock_cell_q2
+	lret	0
+	$endif
+
+
+
+output_relay
+	push	x		. sending i/f
+	lcal	if_detachq1
+	jza	noq1
+	lx	this_if:flags	. relaying i/f
+	lcal	if_qcat1
+noq1
+	$if	HVBANK
+	lcal	if_detachq2
+	jzb	noq2
+	lx	0, sp		. back to sending i/f
+	lx	this_if:flags
+	lcal	if_qcat2
+noq2
+	$endif
+
+	pop	x		. back to sending i/f
+	fret	0
 
 	$do	$<256,$(0:256)
 	$do	$zenith>4096,	$flag	driver bank literal table partly invisible

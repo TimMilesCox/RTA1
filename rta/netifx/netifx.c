@@ -60,7 +60,9 @@
 
 #include "../include.rta/argue.h"
 #include "sifr_mm.h"
+#include "ifconfig.h"
 #include "../rta.run/settings.h"
+#include "../include.rta/address.h"
 
 #define	MTU		16384
 #define	TWARP		3300
@@ -518,17 +520,22 @@ int main(int argc, char *argv[])
 
    for (x = 0; x < arguments; x++)
    {
-      rxdata->frame[0] = 0;
-      rxdata->frame[1] = 0;
+      IFCONFIG_P->ifclass = 0;
+      IFCONFIG_P->ll_hl = 0;
+      IFCONFIG_P->oqif[0] = 0;
 
-      sscanf(argument[x], "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 2,
-                                                      rxdata->frame + 3,
-                                                      rxdata->frame + 4,
-                                                      rxdata->frame + 5,
-                                                      rxdata->frame + 6);
+      IFCONFIG_P->oqif[1] = 0;
+      if (x) IFCONFIG_P->oqif[1] = 2;
 
-      rxdata->frame[7] = 0;
-      rxdata->preamble.frame_length = 8;
+      sscanf(argument[x], "%hhd.%hhd.%hhd.%hhd/%hhd", IFCONFIG_P->neta,
+                                                      IFCONFIG_P->neta + 1,
+                                                      IFCONFIG_P->neta + 2,
+                                                      IFCONFIG_P->neta + 3,
+                                                     &IFCONFIG_P->masklog);
+
+      IFCONFIG_P->physaol = 0;
+
+      rxdata->preamble.frame_length = PORT(sizeof(i_f_string));
       rxdata->preamble.ll_hl = LLHL;
 
       #ifdef INTEL

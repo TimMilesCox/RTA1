@@ -80,23 +80,26 @@ nframe	netframe
 
 $(1)
 
-route_list +	route_(5)
-route_free +	route_(6)
-route_(1)	route   0.0.0.0    0.0.0.0         192.168.1.1 2:RELAY_ROUTE 0
-route_(2)	route	127.0.0.0  255.0.0.0       127.0.0.1   1 route_(1)
-route_(3)	route	172.29.0.0 255.255.240.0   172.29.7.7  2:RELAY_ROUTE route_(2)
-route_(4)	route	172.29.7.7 255.255.255.255 172.29.7.6  2:RELAY_ROUTE route_(3)
-route_(5)	route	127.0.0.1  255.255.255.255 127.0.0.2   1 route_(4)
+route_list +	route_(4)
+route_free +	route_(7)
+route_(1)	route   0.0.0.0    0.0.0.0         192.168.0.1 IFGW:RELAY_ROUTE 0
+route_(2)	route	127.0.0.0  255.0.0.0       127.0.0.1   1    route_(1)
+route_(3)	route	172.16.0.0 255.240.0.0     172.29.7.7  IFGW route_(2)
+route_(4)	route	172.29.7.6 255.255.255.255 172.29.7.6  2    route_(5)
+route_(5)	route	192.168.0.0 255.255.255.0  172.29.7.9  IFGW route_(3)
+
 ?	$do	ROUTES-5,;
 route_(?+5)	route	0.0.0.0    0.0.0.0         0.0.0.0     0 route_(?+6)
 
 net_alexical +	net_address(1)
 net_afree +	net_address(3)
-net_address(1)	netv4	127.0.0.1  255.0.0.0     127.255.255.255 1 0 net_address(2)
-net_address(2)	netv4	172.29.7.6 255.255.240.0 127.29.15.255	 2 net_address(3) net_address(3)
-net_address(3)	netv4	172.29.7.7 255.255.240.0 127.29.15.255   2 0 0
-?	$do	NET_ADDRESSES-3,;
-net_address(?+3) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
+net_address(1)	netv4	127.0.0.1  255.0.0.0     127.255.255.255 1 0 net_address(5)
+net_address(5)	netv4	172.29.7.6 255.255.240.0 172.29.15.255	 2 0 net_address(2)
+net_address(2)	netv4	172.29.7.7 255.255.255.255 172.29.15.255 2 net_address(5) net_address(3)
+net_address(3)	netv4	172.29.7.8 255.255.255.255 172.29.15.255 3 0 net_address(4)
+net_address(4)	netv4	172.29.7.9 255.255.255.255 172.29.15.255 4 0 0
+?	$do	NET_ADDRESSES-5,;
+net_address(?+5) netv4	0.0.0.0    0.0.0.0       0.0.0.0         0 net_address(?+3)
 
 ipv4_fragments_pending	+	0	. this is incremented by fragment store
 					. and set to the number remaining on fragment timer
@@ -624,7 +627,7 @@ net_free_txbx
 ipv4_forus?
 	lcal	ipv4_address_this_if?
 	lret	0	. yes for us
-	tz	ipForwarding.i
+	tz	ipForwarding:i
 	lcal	ipv4_address_this_host?
 	lret	1	. not for us
 	lret	0	. yes for is
@@ -640,9 +643,13 @@ ipv4_address_this_if?
 	ds	6
 	lx	this_if:address_list
 ipv4_address_test
+	la	ifaddr:i_f
+	aa, xi	-1
+	jza	ipv4_next	. not an external i/f
 	dl	ifaddr:net
 	dan	6
 	jdz	ipv4_address_hit
+ipv4_next
 	lx	ifaddr:next
 	tz	x
 	j	ipv4_address_test
@@ -653,9 +660,13 @@ ipv4_address_hit
 ipv4_address_this_host?
 	lx	net_alexical
 ipv4_test_in_list
+	la	ifaddr:i_f
+	aa, xi	-1
+	jza	ipv4_nex	. not an external i/f
 	dl	ifaddr:net
 	dan	6
 	jdz	ipv4_list_hit
+ipv4_nex
 	lx	ifaddr:lexical
 	tz	x
 	j	ipv4_test_in_list
@@ -673,6 +684,10 @@ ipv4_forward		. we only get here if it's not
                         . don't route anything out 
                         . on the interface it came in
                         . that behaviour is loopy
+
+			. also do not forward stuff
+			. to your own loopback address
+			. or any alias which it has
 
 			. fine we haven't assigned it
 			. to input space

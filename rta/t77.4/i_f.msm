@@ -302,17 +302,26 @@ i_f_pointer_array	. who wants to go multiplying subscripts?
 	+	1
 ?	$do	INTERFACES,ifxpointer(?)	+	interface(?)
 
+"$if2p"*	$equ	ifxpointer(2)		. 1st external interface pointer
+						. exported for self-configuring
+						. device drivers
+
 i_f_last +	interface(1)
 
 ?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,	;
 						0, $rxtx_lo			;
 										;
 					net_address(2),2024-4,firewall_relay,	;
-					$initial_ift1, $rxtx_ift1,,,,, 00:012:01c:00:00:5
+					$initial_ift1, $rxtx_ift1,,,,, 00:012:01c:00:00:5	;
+												;
+					net_address(3), 1500, firewall_relay, 0, $qo2_relay	;
+												;
+					net_address(4), 1500, firewall_relay, 0, $qo2_relay
+										
 
 $(66::,x)
 this_if	i_f
-
+IF_WORDS
 
 $(0)
 
@@ -340,6 +349,15 @@ locate_interfaces_next_device
 	aa, xi	-64
 	jnc	locate_interfaces_again
 
+	lr	interface(IFGW)+IF_WORDS,,xi	. if there is routing to here
+	jxge	thats_enough_interfaces		. add a logical interface
+	ax	-IF_WORDS,,xi			. to service the traffic
+	push	x
+	lx	interface(IFGW),,xi
+	pop	this_if:flags
+	push	IFGW,,xi
+	pop	i_f_pointer_array
+
 thats_enough_interfaces
 	sx	i_f_last
 	push	i_f_pointer_array
@@ -366,6 +384,9 @@ q2ifoq	tz	this_if:arp_resolve
 q2ifreel la	8				. recover the descriptor
 q2ifree	tz	this_if:write_llh		. link layer header to write?
 	call	this_if:write_llh
+
+	push	this_if:id
+	pop	descriptor:i_f, a
 
 	$if	HVBANK
 	lk	(63*/18:s)
