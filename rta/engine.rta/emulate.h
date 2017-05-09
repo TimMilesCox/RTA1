@@ -317,6 +317,7 @@ typedef struct { unsigned short flags,		 banks;
 #define BSTREAM16R 32
 #define	BSTREAM16W 16
 
+#define	FLOATING_RESIDUE 8
 #define CARRY	1
 
 #define	ADP	1	/* automatic data page */

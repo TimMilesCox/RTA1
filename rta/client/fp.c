@@ -124,6 +124,9 @@ int main(int argc, char *argv[])
 
    if (flag['v'-'a']) printf("[%8.8X > %8.8X]\n", local.sin_addr.s_addr,
                                                   target.sin_addr.s_addr);
+
+   if (uflag['U'-'A']) target.sin_port = PORT(FP_SERVICE_192);
+
    x = bind(s, (struct sockaddr *) &local, 16);
    y = connect(s, (struct sockaddr *) &target, 16);
 

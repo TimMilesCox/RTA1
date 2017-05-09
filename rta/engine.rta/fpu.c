@@ -47,6 +47,9 @@
 #include "rw.h"
 #include "fpu.h"
 
+#define	GUARD_BITS	_register[128+19]
+			/*	default 0x00C00000	*/
+
 #define	GUARD_BITS	0x00C00000
 #undef	TRACE
 
