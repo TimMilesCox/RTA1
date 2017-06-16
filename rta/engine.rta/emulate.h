@@ -283,6 +283,11 @@ typedef struct { unsigned short flags,		 banks;
 #define fp	_register[iselect | FP]
 #define sp	_register[iselect | SP]
 
+#define scalea		_register[iselect | 8]
+#define mantissa1a	_register[iselect | 9]
+#define mantissa2a	_register[iselect | 10]
+#define mantissa3a 	_register[iselect | 11]
+
 
 /**********************************************************************
 

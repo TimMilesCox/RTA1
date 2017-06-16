@@ -49,12 +49,13 @@
 
 #define	GUARD_BITS	_register[128+19]
 			/*	default 0x00C00000	*/
-
-#define	GUARD_BITS	0x00C00000
 #undef	TRACE
 
+extern int			 psr;
 extern int			 iselect;
 extern int			 _register[256];
+
+extern char			 flag[];
 
 /******************************************************************
 
@@ -147,6 +148,34 @@ static int addcarry(int startvalue, int words,
    return carry;
 }
 
+/*************************************************************
+	normalise, round and store residue result
+	in registers 8:9:10:11
+*************************************************************/
+
+static void store_minor_result(int signs, int characteristic, int result[])
+{
+   int		 normalising_count = 0;
+
+
+   characteristic -= 72;
+
+   while (normalising_count < 72)
+   {
+      if ((result[0] ^ signs) & 0x00800000) break;
+      sleft(signs, 3, result);
+      normalising_count++;
+   }
+
+   if (normalising_count < 72) characteristic -= normalising_count;
+   else                        characteristic = 0;
+
+   characteristic &= 0x007FFFFF;
+   scalea  = characteristic ^ signs;
+   mantissa1a = result[0];
+   mantissa2a = result[1];
+   mantissa3a = result[2];
+}
 
 /************************************************************
 
@@ -171,7 +200,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
 {
    /*****************************************************
 
-	bias is now garaunteed 0..+72
+	bias is now guaranteed 0..+72
 
 	bit string right[] must be shifted right that much
 
@@ -205,11 +234,30 @@ static int add_bias(int bias, int left[], int biased_addend[])
    int			 signs = left[0];
    int			 to = 0;
    int			 from = 2;
+   int			 mantissa_words = 3;
+   int			 inverse = 3;
+   int			 downscale = -71;
 
-   int			 right[7];
+   int			 right[8];
 
+   if (psr & FLOATING_RESIDUE)
+   {
+      mantissa_words = 6;
+      left[7] = left[4];
+      left[6] = signs;
+      left[5] = signs;
+      left[4] = signs;
+      biased_addend[7] = carry;
+      biased_addend[6] = carry;
+      biased_addend[5] = carry;
 
-   if (bias > 80) return 0;
+      inverse = 6;
+      downscale = -143;
+      if (bias > 160) return 0;
+
+      /* an unchanged double result has been formatted */
+   }
+   else if (bias > 80) return 0;
 
 
    while (to < word_offset) right[to++] = carry;
@@ -220,7 +268,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
       carry |= transition >> bits_offset;
       carry &= 0x00FFFFFF;
       right[to] = carry;
-      if (to > 3) break;
+      if (to > mantissa_words) break;
       to++;
       carry = transition;
       transition = biased_addend[from++];
@@ -228,10 +276,10 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
    /**********************************************************
 
-	carry now contains the same value as word 4 of
+	carry now contains the same value as word 4 or 7 of
 	the biased string
 
-	subscript [to] contains the value 4
+	subscript [to] contains the value 4 or 7
 
 	the add to target string left[] now takes place
 
@@ -263,6 +311,24 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
       carry = signs;
       if (!carry) carry = 1;
+
+      while (inverse)
+      {
+        /***************************************************
+		invert [6:5:4] and always 3:2:1
+        ***************************************************/
+
+         carry += left[inverse];
+         left[inverse] = carry & 0x00FFFFFF;
+         carry >>= 24;
+         inverse--;
+         carry += signs;
+      }
+
+      /*******************************************************
+      FIXME why are signs added to carry every time except 1st?
+      this is the code from before double result was stored
+
       carry += left[3];
       left[3] = carry & 0x00FFFFFF;
       carry >>= 24;
@@ -273,6 +339,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
       carry += left[1];
       carry += signs;
       left[1] = carry & 0x00FFFFFF;
+      *******************************************************/
    }
 
    if ((left[0] ^ signs) & 1)
@@ -284,7 +351,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
       *******************************************************/
 
-      sright(signs, 4, left);
+      sright(signs, mantissa_words + 1, left);
       scale = 1;
    }
    else
@@ -298,9 +365,9 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
          ****************************************************/
 
-         sleft(signs, 4, left);
+         sleft(signs, mantissa_words + 1, left);
          scale--;
-         if (scale < -71) break;
+         if (scale < downscale) break;
       }
    }
 
@@ -324,8 +391,8 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
 static void ones_add(int ea, int direction)
 {
-   int		 normalised_addend[5];
-   int		 biased_addend[5];
+   int		 normalised_addend[8];
+   int		 biased_addend[8];
 
    int		 magnitude_characteristic_difference;
 
@@ -428,6 +495,9 @@ static void ones_add(int ea, int direction)
          b         = normalised_addend[1];
          mantissa2 = normalised_addend[2];
          mantissa3 = normalised_addend[3];
+
+         if (psr & FLOATING_RESIDUE)
+         store_minor_result(normalised_addend[0], characteristic, normalised_addend + 4);
       }
       else
       {
@@ -446,19 +516,35 @@ static void ones_add(int ea, int direction)
          b         = biased_addend[1];
          mantissa2 = biased_addend[2];
          mantissa3 = biased_addend[3];
+
+         if (psr & FLOATING_RESIDUE)
+         {
+            scalea = signs_right;
+            mantissa1a = signs_right;
+            mantissa2a = signs_right;
+            mantissa3a = signs_right;
+         }
       }
       #ifdef TRACE
       printf("%6.6X:%6.6X:%6.6X:%6.6X\n", a, b, mantissa2, mantissa3);
       #endif
    }
-
-   /*******************************************************************
+   else if (psr & FLOATING_RESIDUE)
+   {
+      /*******************************************************************
 
 	do nothing at all if starboard operand is not normalised
+        unless store minor result is opted
 	unnormalised numbers are zero
 	so the portside operand in accumulator A:B:6:7 is not changed
 
-   *******************************************************************/
+      *******************************************************************/
+
+      scalea = signs;
+      mantissa1a = signs;
+      mantissa2a = signs;
+      mantissa3a = signs;
+   }
 }
 
 
@@ -474,19 +560,19 @@ void fan(int ea)
 
 void fm(int ea)
 {
-   static int	 around[4] = { 0, 0, 0, GUARD_BITS } ;
+   int		 around[8] = { 0, 0, 0, GUARD_BITS, 0, 0, 0, GUARD_BITS} ;
 
-   int		 result[7] = { 0, 0, 0, 0, 0, 0, 0 } ;
-   int		 addend[7] = { a, b, mantissa2, mantissa3, 0, 0, 0 } ;
+   int		 result[8] = { 0, 0, 0, 0, 0, 0, 0, 0 } ;
+   int		 addend[8] = { a, b, mantissa2, mantissa3, 0, 0, 0, 0 } ;
 
    int		 multiplier[4] = { 0, 0, 0, 0 } ;
 
-   int		 index1, index2, shift, characteristic;
+   int		 index1, index2, shift, characteristic, signs;
+   int		 add_words = (psr & FLOATING_RESIDUE) ? 7 : 3;
 
 
    burst_read4(multiplier, ea);
 
- 
    if (addend[0] & 0x00800000)
    {
       result[0] ^= 0x00FFFFFF;
@@ -494,6 +580,14 @@ void fm(int ea)
       addend[1] ^= 0x00FFFFFF;
       addend[2] ^= 0x00FFFFFF;
       addend[3] ^= 0x00FFFFFF;
+
+      if (psr & FLOATING_RESIDUE)
+      {
+         addend[4] ^= 0x00FFFFFF;
+         addend[5] ^= 0x00FFFFFF;
+         addend[6] ^= 0x00FFFFFF;
+         addend[7] ^= 0x00FFFFFF;
+      }
    }
 
    if (multiplier[0] & 0x00800000)
@@ -533,10 +627,12 @@ void fm(int ea)
 		Then the characteristic will be decremented
 		and the mantissa normalised with a 1-position shift
 
+		each add is a 168-bit add
+
            **********************************************************/
 
-            sright(0, 6, &addend[1]);
-            if (shift & 0x00800000) add(6, &result[1], &addend[1]);
+            sright(0, 7, &addend[1]);
+            if (shift & 0x00800000) add(7, &result[1], &addend[1]);
             shift <<= 1;
          }
       }
@@ -567,9 +663,11 @@ void fm(int ea)
 
          ***********************************************************/
 
-         sleft(0, 4, &result[1]);
+         sleft(0, add_words + 1, &result[1]);
          characteristic--;
       }
+
+      characteristic &= 0x007FFFFF;
 
       /**************************************************************
 		because of the conditional shift left just above
@@ -577,9 +675,10 @@ void fm(int ea)
 		bits, so they are added afterwards
       **************************************************************/
 
-      shift = add(4, result + 1, around);
+      if (psr & FLOATING_RESIDUE) around[3] = 0;
+      shift = add(add_words + 1, result + 1, around);
       characteristic += shift;			/*      1 or 0     */ 
-      if (shift) sright(shift, 3, result + 1); 
+      if (shift) sright(shift, add_words, result + 1); 
 
       if (characteristic & 0xFF800000)
       {
@@ -601,6 +700,15 @@ void fm(int ea)
       result[1] ^= result[0];
       result[2] ^= result[0];
       result[3] ^= result[0];
+
+      if (psr & FLOATING_RESIDUE)
+      {
+         signs = result[0];
+         result[4] ^= result[0];
+         result[5] ^= result[0];
+         result[6] ^= result[0];
+      }
+
       result[0] ^= characteristic;
    }
 
@@ -608,27 +716,53 @@ void fm(int ea)
    b = result[1];
    mantissa2 = result[2];
    mantissa3 = result[3];
+
+   if (psr & FLOATING_RESIDUE)
+   store_minor_result(signs, characteristic, result + 4);
 }
 
 #if 1
 void fd(int ea)
 {
-   int		 remainder[7] = { a, b, mantissa2, mantissa3,
-                                  GUARD_BITS, 0, 0 } ;
+   int		 remainder[8] = { a, b, mantissa2, mantissa3,
+                                GUARD_BITS, 0, 0, GUARD_BITS } ;
 
-   int		 divisor[7]   = { 0, 0, 0, 0,
-				  0x00FFFFFF, 0x00FFFFFF, 0x00FFFFFF } ;
+   int		 divisor[8]   = { 0, 0, 0, 0,
+				  0x00FFFFFF, 0x00FFFFFF,
+                                  0x00FFFFFF, 0x00FFFFFF } ;
 
-   int		 lookaside[6];
+   int		 lookaside[7];
 
-   int		 reciprocal[4] = { 0, 0, 0, 0 } ;
+   int		 reciprocal[8] = { 0, 0, 0, 0, 0, 0, 0, 0 } ;
 
    int		 signs = 0,
 		 signs1 = 0,
 		 beats = 72,
+                 mantissa_words = 3,
                  carry;
 
    burst_read4(divisor, ea);
+
+   if ((divisor[0] ^ divisor[1]) & 0x00800000)
+   {
+   }
+   else
+   {
+      a = 0x00FFFFFF;
+      b = 0x00FFFFFF;
+      mantissa2 = 0x00FFFFFF;
+      mantissa3 = 0x00FFFFFF;
+
+      if (psr & FLOATING_RESIDUE)
+      {
+         scalea = 0x00FFFFFF;
+         mantissa1a = 0x00FFFFFF;
+         mantissa2a = 0x00FFFFFF;
+         mantissa3a = 0x00FFFFFF;
+      }
+
+      return;
+   }
 
    if (divisor[0] & 0x00800000) signs = 0x00FFFFFF;
    else
@@ -649,9 +783,16 @@ void fd(int ea)
 
    signs1 ^= signs;
 
+   if (psr & FLOATING_RESIDUE)
+   {
+      beats = 144;
+      remainder[4] = 0;
+      mantissa_words = 6;
+   }
+
    while(beats--)
    {
-      carry = addcarry(1, 6, remainder + 1, divisor + 1, lookaside);
+      carry = addcarry(1, 7, remainder + 1, divisor + 1, lookaside);
 
       if (carry)
       {
@@ -659,15 +800,16 @@ void fd(int ea)
          remainder[2] = lookaside[1];
          remainder[3] = lookaside[2];
 
-         #if 0
-         remainder[4] = lookaside[3];
-         remainder[5] = lookaside[4];
-         remainder[6] = lookaside[5];
-         #endif
+         if (psr & FLOATING_RESIDUE)
+         {
+            remainder[4] = lookaside[3];
+            remainder[5] = lookaside[4];
+            remainder[6] = lookaside[5];
+         }
       }
 
-      sleft(carry, 3, reciprocal + 1);
-      sright(1, 6, divisor + 1);
+      sleft(carry, mantissa_words, reciprocal + 1);
+      sright(1, 7, divisor + 1);
    }
 
    reciprocal[0] = remainder[0] - divisor[0] + 0x00400001;
@@ -678,18 +820,31 @@ void fd(int ea)
    else
    {
       beats = 72;
+
+      if (psr & FLOATING_RESIDUE) beats = 144;
+
       while (beats--)
       {
-         sleft(0, 3, reciprocal + 1);
+         sleft(0, mantissa_words, reciprocal + 1);
          reciprocal[0]--;
          if (reciprocal[1] & 0x00800000) break;
       }
    }
 
+   reciprocal[0] &= 0x007FFFFF;
+
    a = reciprocal[0] ^ signs1;
    b = reciprocal[1] ^ signs1;
    mantissa2 = reciprocal[2] ^ signs1;
    mantissa3 = reciprocal[3] ^ signs1;
+
+   if (psr & FLOATING_RESIDUE)
+   {
+      reciprocal[4] ^= signs1;
+      reciprocal[5] ^= signs1;
+      reciprocal[6] ^= signs1;
+      store_minor_result(signs1, reciprocal[0], reciprocal + 4);
+   }
 }
 #else
 void fd(int ea)

@@ -174,6 +174,16 @@ static void statement()
    }
 
    printf("\n   ");
+
+   index2 = 8;
+
+   while (index2--)
+   {
+      printf(" %6.6x", _register[index++]);
+   }
+
+   printf("\n   ");
+
    index2 = 8;
 
    while (index2--)
@@ -248,7 +258,7 @@ int main(int argc, char *argv[])
 
       if (f < 0)
       {
-         printf("rom image file not available %d\n", errno);
+         printf("rom image file not available\n");
          return 0;
       }
 
