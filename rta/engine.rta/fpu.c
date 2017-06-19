@@ -67,15 +67,15 @@ extern char			 flag[];
 
 static void sright(int insert_bit, int words, int data[])
 {
-   int			 carry = insert_bit & 1,
+   int			 carry = insert_bit,
 			 index = 0;
 
    while (index < words)
    {
+      carry &= 1;
       carry <<= 24;
       carry |= data[index];
       data[index] = carry >> 1;
-      carry &= 1;
       index++;
    }
 }
@@ -95,7 +95,7 @@ static void sleft(int insert_bit, int words, int data[])
 
 static int add(int words, int to[], int from[])
 {
-   int		 carry = 0;
+   unsigned int	 carry = 0;
    int		 index = words;
 
    while (index--)
@@ -562,7 +562,7 @@ void fm(int ea)
 {
    int		 around[8] = { 0, 0, 0, GUARD_BITS, 0, 0, 0, GUARD_BITS} ;
 
-   int		 result[8] = { 0, 0, 0, 0, 0, 0, 0, 0 } ;
+   int		 result[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 } ;
    int		 addend[8] = { a, b, mantissa2, mantissa3, 0, 0, 0, 0 } ;
 
    int		 multiplier[4] = { 0, 0, 0, 0 } ;
@@ -598,6 +598,9 @@ void fm(int ea)
       multiplier[2] ^= 0x00FFFFFF;
       multiplier[3] ^= 0x00FFFFFF;
    }
+
+   signs = result[0];
+   characteristic = 0;
 
    /************************************************************
 
@@ -663,7 +666,7 @@ void fm(int ea)
 
          ***********************************************************/
 
-         sleft(0, add_words + 1, &result[1]);
+         sleft(0, add_words, result + 1);
          characteristic--;
       }
 

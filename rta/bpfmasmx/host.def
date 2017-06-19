@@ -1,0 +1,62 @@
+
+
+f	$func
+PROTO*	$name
+tcp	$equ	6
+udp	$equ	11
+icmp	$equ	17
+	$return	f(1, 1:3)
+	$end
+
+f	$func
+PORT*	$name
+	$return	f(1, 1:2)
+	$end
+
+f	$func
+HOST*	$name
+	$sterm	'.'	$set	0
+?	$do	f(1, 1:),HOST	$set	HOST*/8++f(1, 1:?)
+	$sterm	':'
+	$return	HOST
+	$end
+
+
+p	$proc	*
+dest*	$name
+
+host	$set	HOST(p(1, 1))
+port	$set	PORT(p(1, 1))
+proto	$set	PROTO(p(1, 1))
+
+	$if	(host^=0)**(port=0)
+	l	ip_dest
+	j	host,,p(2, 1)
+	$elseif	(host^=0)**(port^=0)
+	$do	proto=0,proto $set IPPROTO_TCP	. test for default protocol 
+	l	ip_dest
+	j	host, next
+	l,b	ip_protocol
+	j	proto, next
+	lx,b++qmsl ip_v_hl			. load mask & shift HL quartet
+	l,h++x	dgram+tcp_dest_port		. so [iphl] + dgram offset + 2
+	j	port,,p(2, 1)	
+	$elseif	(host^=0)**(port=0)**(proto^=0)
+	l	ip_dest
+	j	host, next
+	l,b	ip_protocol
+	j	proto,,p(2, 1)
+	$elseif	(host=0)**(port^=0)
+	$do	proto=0,proto $set IPPROTO_TCP	. test for default protocol
+	l,b	ip_protocol
+	j	proto, next
+	lx,b++qmsl ip_v_hl			. load mask & shift HL quartet
+	l,h++x	dgram+tcp_dest_port		. so [iphl] + dgram offset + 2
+	j	port,,p(2, 1)
+	$elseif	(host=0)**(port=0)**(proto^=0)
+	l,b	ip_protocol
+	j	proto,,p(2, 1)
+	$endif
+next
+	$end
+
