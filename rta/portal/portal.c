@@ -36,13 +36,22 @@ static int write_program(int iftype, int offset,
    bytes = sprintf(text, "\t$include ../bpfmasmx/dgram.def\n");
    write(f, text, bytes);
 
+   #ifdef INTEL
    bytes = sprintf(text, "INTEL\t$set\t%d\n", INTEL);
+   #else
+   bytes = sprintf(text, "INTEL\t$set\t%d\n", 0);
+   #endif
+
    write(f, text, bytes);
 
    switch (iftype)
    {
       case DLT_NULL:
+         #ifdef INTEL
          bytes = sprintf(text, "\tl\t0\n\tj\tAF_INET_INVERSE,no\n");
+         #else
+         bytes = sprintf(text, "\tl\t0\n\tj\tAF_INET,no\n");
+         #endif
          break;
 
       case DLT_EN10MB:

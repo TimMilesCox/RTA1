@@ -44,7 +44,12 @@ static int write_program(int iftype, int offset, unsigned char *p,
    bytes = sprintf(text, "\t$include ../bpfmasmx/dgram.def\n");
    write(f, text, bytes);
 
+   #ifdef INTEL
    bytes = sprintf(text, "INTEL\t$set\t%d\n", INTEL);
+   #else
+   bytes = sprintf(text, "INTEL\t$set\t%d\n", 0);
+   #endif
+
    write(f, text, bytes);
 
    if (iftype) bytes = sprintf(text, "\tl,h\tdgram-2\n"
