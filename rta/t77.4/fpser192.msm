@@ -41,67 +41,6 @@ heavy	$head_near	 params(mzand,int mzier,int)
 	qs	4, x
 	$ret
 
-DEAVY	$set	0
-	$if	DEAVY
-
-
-deavy	$head_near	 params(dividendp,	int	;
-				divisorp,	int	)
-
-	lx	dividendp
-	ly	divisorp
-
-dividend $equf	0, x
-divisoru $equf	0, y
-
-	qpush	4, y
-
-	la	divisoru
-	dsa	24
-	anb	0, sp
-	xorB	a
-.	ab	-72,,xi
-	ab	(0400000)
-	xorB	a
-	sb	0, sp
-
-	ql	dividend
-	on	fp$r
-	fd	divisoru
-	qpush	a
-	qpush	a
-
-divisorl $equf	8, sp
-
-	ql	dividend+4
-	off	fp$r
-	fd	divisoru
-	fa	$residue
-	qs	4, sp
-
-	ql	dividend
-	on	fp$r
-	fd	divisorl
-	qs	dividend
-	off	fp$r
-	ql	dividend+4
-	fd	divisorl
-	fa	$residue
-	qs	dividend+4
-
-	qpop	a
-	on	fp$r
-	fa	dividend
-	qs	dividend
-	off	fp$r
-	qpop	a
-	fa	dividend+4
-	fa	$residue
-	qs	dividend+4
-	qpop	0, sp
-	$ret
-
-	$endif
 
 fp_server	$head_far	scalars(response_axw,	int	;		
 					operator,	int	;
@@ -218,7 +157,44 @@ fp_multiply
 	jdr	fp_multiply
 	j	fp_edit
 
+
+.	the other 3 functions process two 192-bit inputs
+
+.	but 192-bit divide must test 
+.	whether the divisor is represented in 1 or 2 floating numbers
+
+.	a 96-bit number sounds big
+.	but if the divisor exponent is < 0 or > 31 decimal equivalent
+.	then the 2nd divisor floating number is nonzero
+.	for now deliver an indicative result in this case
+.	by rounding both dividend and divisor to 96 bits
+.	(adding their major and minor parts) and delivering a 96-bit quotient
+
+.	if the divisor is only one floating number (minor part is zero)
+.	deliver a 192-bit quotient from a 192-bit dividend 
+
 fp_divide
+	dl	right+4
+	xor	b		. divisor longer than 96 bits?
+	jpa	fp_divide_again	. no, the minor divisor number is not normalised
+	ql	left		. yes, the minor divisor number is normalised
+	fa	left+4		. no possibility of sensible 192-bit quotient
+	qs	left		. round the dividend to 96 bits
+	dsa	48		. clear minor dividend
+	ds	left+4
+	ds	left+6
+	ql	right		. round the divisor to 96 bits
+	fa	right+4
+	qs	right
+	ql	left
+
+fp_short_divide			. calculate a 96-bit quotient
+	fd	right
+	jdr	fp_short_divide
+	qs	left
+	j	fp_edit
+
+fp_divide_again			. can do 192-bit dividend & quotient with 96-bit divisor
 	ql	left
 	on	fp$r
 	fd	right
@@ -228,7 +204,7 @@ fp_divide
 	fd	right
 	fa	$residue
 	qs	left+4
-	jdr	fp_divide
+	jdr	fp_divide_again
 
 	j	fp_edit
 
