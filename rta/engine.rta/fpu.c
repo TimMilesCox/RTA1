@@ -581,6 +581,7 @@ void fm(int ea)
       addend[2] ^= 0x00FFFFFF;
       addend[3] ^= 0x00FFFFFF;
 
+      #if 0
       if (psr & FLOATING_RESIDUE)
       {
          addend[4] ^= 0x00FFFFFF;
@@ -588,6 +589,7 @@ void fm(int ea)
          addend[6] ^= 0x00FFFFFF;
          addend[7] ^= 0x00FFFFFF;
       }
+      #endif
    }
 
    if (multiplier[0] & 0x00800000)
@@ -713,6 +715,19 @@ void fm(int ea)
       }
 
       result[0] ^= characteristic;
+   }
+   else
+   {
+      result[1] = signs;
+      result[2] = signs;
+      result[3] = signs;
+
+      if (psr & FLOATING_RESIDUE)
+      {
+         result[4] = signs;
+         result[5] = signs;
+         result[6] = signs;
+      }
    }
 
    a = result[0];
