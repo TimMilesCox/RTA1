@@ -1,0 +1,91 @@
+
+	$if	$FINESSE
+	.	called from character to float scan routine
+
+	.	making this adjustment in fixed point
+	.	sometimes avoids rounding floating values
+	.	which are in 72-bit integer range
+
+
+.	floating scan -revising the value of a small field
+.	of numbers which high-speed scan has interpreted
+.	as the first digits of a slightly longer field
+
+.	up to 21 decimal numerals are scanned in frames of 6
+
+.	adjustment doing division by multiplying reciprocal
+.	change the above $if from 0 to 1 to use this	
+
+.	this surprisingly works for all the benchmark numbers
+.	in fpscript.txt
+
+.	and for all integers from 0 to 99999 in adjust.txt
+
+.	adjust.txt feeds all 100000 adjustable numbers to
+.	UDP floating client fp
+
+.		fp -QR < adjust.txt > yoursample.txt
+.		diff -w --brief -s adjusted.txt yoursample.txt
+
+.	-R option on fp retries any lost UDP response. Previous
+.	experience was average 1 lost datagram in 100000
+
+.	-Q option on FP prints nothing but the answers, which may
+.	then be compared with the expected answers in adjusted.txt
+
+.	library high speed scan expects groups of six numerals
+.	If a frame is less than six a divide is needed somewhere
+
+.	subtracting the non-arrived numerals from the decimal
+.	exponent before conversion to binary exponent is not
+.	precise for every integer
+
+.	it's necessary that every value in 72-bit unsigned
+.	integer range (up to the maximim value of 21 decimal
+.	numerals at least) is accurately represented in floating
+.	format
+
+.	so scan path $FINESSE effects a conditional fixed point
+.	divide of the last scanned 6-numeral-group if it contained
+.	< 6 numerals
+
+.	the surprising part is, this multiply by approximate
+.	reciprocals is giving accurate results for benchmark
+.	values
+
+.	turned off for checkin to select instead the path with
+.	a divide instruction, because that isn't much more
+.	expensive, and benchmarking is still going on
+
+.	this isn't executed if no columns are missing. The
+.	first value 1 isn't the reciprocal of anything
+
+diminish6
+	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+	sa	b
+	lret	0
+
+	$endif
+
+	$do	$<256,$(0:256)
+table_add
+	ab	units, a
+	ab	tens, a
+	ab	hundreds, a
+	ab	thousands, a
+	ab	ten_thousands, a
+	ab	hundred_thousands, a
+
+units
+?	$do	10,	+	?*1-1
+tens
+?	$do	10,	+	?*10-10
+hundreds
+?	$do	10,	+	?*100-100
+thousands
+?	$do	10,	+	?*1000-1000
+ten_thousands
+?	$do	10,	+	?*10000-10000
+hundred_thousands
+?	$do	10,	+	?*100000-100000
+
