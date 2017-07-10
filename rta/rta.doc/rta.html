@@ -54,7 +54,8 @@ SNMP, HTTP and ICMP interact with other computers
 
 <h3>1.1 Overview</h3>
 <p>
-RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic
+RTA1 is a 24-bit word-addressing architecture with 24- 48- and 96-bit arithmetic.<br>
+For unusual requirements RTA1 can calculate 192-bit floating values
 
 <p>
 The addressable storage location is the 24-bit computer word. Instructions are one computer word in size 
@@ -803,11 +804,11 @@ The Processor State Register is saved on interrupts
 <p>
 The layout of the Processor State Register is
 <pre>
-		23             18   16     14           8   7   6   5   4           0
+		23             18   16     14           8   7   6   5   4   3       0
 		_______________________________________________________________________
-		| I | 0 0 0 0 | i i i | 0 | see$          | H | R | R | W | 0 0 0 | C |
-		|   |         |       |   | 1 2 3 4 5 6 7 |   | Z |16 |16 |       |   |
-		|___|_________|_______|___|_______________|___|___|___|___|_______|___|
+		| I | 0 0 0 0 | i i i | 0 | see$          | H | R | R | W | F 0 0 | C |
+		|   |         |       |   | 1 2 3 4 5 6 7 |   | Z |16 |16 | P     |   |
+		|___|_________|_______|___|_______________|___|___|___|___|_R_____|___|
 
 </pre>
 The PSR flags shown as 0 are not currently used
@@ -886,6 +887,13 @@ which writes a stream of bits or bytes from the arithmetic registers. Bits shift
 <b>WDATA</b> are stored at 16 bits per data word when <b>b$stream16w</b> = 1.
 This allows efficient handling with network data and with 16-bit peripherals.
 If <b>b$stream16w</b> = 0 successive <b>wsr</b> instructions compose 24 bits for each storage write.
+
+<p>
+Flag 3 <b>fp$r</b> is used for teaming pairs of floating numbers to calculate 192-bit values.
+When <b>fp$r</b> is asserted floating instructions store a minor result in registers
+8..11. If the entire result is contained in the major result in registers a:b:mantissa2:mantiss3 then
+the minor result is zero. The minor result is used in further floating operations on pairs of 96-bit
+floating numbers for 192-bit values
 
 <p>
 Flag 0 <b>carry$</b> is set or cleared by this subset of the fixed point instructions
@@ -1072,7 +1080,7 @@ is reloaded and all flags are restored
 		|_______________________________|					|_______________________________|
 	18	|				|	scratch			146	|				|
 		|_______________________________|					|_______________________________|
-	19	|				|	scratch			147	|				|
+	19	|				|     < scratch	| rounding >	147	|	fp$guard		|
 		|_______________________________|					|_______________________________|
 	20	|	   RDATAC		|	bitstream counter read	148	|	REALTIME$_CLOCK		|
 		|_______________________________|					|_______________________________|
@@ -3910,7 +3918,7 @@ immediate operand
 				_________________________________________________________
 				|							|
 				|	jump to EA if the 48 bits of			|
-				|	Arithmetic Registers a and b are all 0		|
+				|	arithmetic registers a and b are all 0		|
 				|_______________________________________________________|
 
 
@@ -4498,7 +4506,7 @@ immediate operand
 
 				_________________________________________________________
 				|							|
-				|	shift the 48-bit integer in Arithmetic Registers|
+				|	shift the 48-bit integer in arithmetic registers|
 				|	a and b rightward for EA bit positions		|
 				|	replace the values in the vacated high-order	|
 				|	bit positions with 0				|
@@ -4586,7 +4594,7 @@ immediate operand
 
 				_________________________________________________________
 				|							|
-				|	shift the 48-bit integer in Arithmetic Registers|
+				|	shift the 48-bit integer in arithmetic registers|
 				|	a and b leftward for EA bit positions		|
 				|	replace the values in the vacated low-order	|
 				|	bit positions with 0				|
@@ -4849,7 +4857,7 @@ immediate operand
 	______________________	___
 				_________________________________________________________
 				|							|
-				|	shift the 48-bit integer in Arithmetic Registers|
+				|	shift the 48-bit integer in arithmetic registers|
 				|	a and b algebraically rightwards for EA bit	|
 				|	positions. write the original value of bit 47	|
 				|	to the vacated high order bit positions		|
@@ -5365,7 +5373,7 @@ operate without lock in the register stack and with lock in storage.
 
 				_________________________________________________________
 				|							|
-				|	store four Arithmetic Registers			|
+				|	store four arithmetic registers			|
 				|	a b mantissa2 mantissa3				|
 				|							|
 				|	Register a is stored at register / storage EA	|
@@ -5399,7 +5407,7 @@ operate without lock in the register stack and with lock in storage.
 
 				_________________________________________________________
 				|							|
-				|	load four Arithmetic Registers			|
+				|	load four arithmetic registers			|
 				|	a b mantissa2 mantissa3				|
 				|							|
 				|	register / storage at EA   loads to Register a	|
@@ -5441,8 +5449,8 @@ operate without lock in the register stack and with lock in storage.
 	|																|
 	|			The binary point is between the normalising bit 71 and the characteristic field in bits 94..72 		|
 	|																|
-	|			An integer value is obtained by hauling the mantissa upwards through the binary point			|
-	|			for the shift distance by which the characteristic exceeds the midpoint value of 400000 hexadecimal	|
+	|			An integer value is obtained by hauling the mantissa upwards through the binary point by the number	|
+	|			of shift positions with which the characteristic exceeds the midpoint value of 400000 hexadecimal	|
 	|																|
 	|			The midpointed 23-bit characteristic covers the range of decimal exponents -1262611 to +1262611		|
 	|																|
@@ -5465,6 +5473,13 @@ operate without lock in the register stack and with lock in storage.
 	|																|
 	|			All unnormalised numbers have the algebraic value of zero						|
 	|																|
+	|			Rounding is determined by the pattern of high-order bits in register <b>fp$guard</b> at address 147		|
+	|			(hex 93). <b>fp$guard</b> can only be written by interrupt code. Prototype kernel smaragd7 assigns a	 	|
+	|			default value C00000 hex to <b>fp$guard</b> for every thread. <b>fp$guard</b> value is part of thread			|
+	|			context and each thread may change its value with the system call					|
+	|																|
+	|					la	(<i>NEW_PATTERN</i>)									|
+	|					ii	FP_GUARD$									|
 	|																|
 	|																|
 	|																|
@@ -5477,6 +5492,39 @@ operate without lock in the register stack and with lock in storage.
 	|			|s|    characteristic	|				mantissa				|	|
 	|			|_|_____________________|_______________________________________________________________________|	|
 	|																|
+	|																|
+	|																|
+	|_______________________________________________________________________________________________________________________________|
+	|																|
+	|																|
+	|																|
+	|			192-bit floating values											|
+	|			_______________________											|
+	|																|
+	|																|
+	|			PSR Flag <b>fp$r</b> signals floating instructions to store a minor result in registers 8..11			|
+	|			giving this overall format in the eight registers a:b:mantissa2:mantissa3::8:9:10:11			|
+	|																|
+	|																|
+	|			95 94			 71								       0	|
+	|			_________________________________________________________________________________________________	|
+	|	major result	|s|	characteristic	|				mantissa				|	|
+	|			|_|_____________________|_______________________________________________________________________|	|
+	|	minor result	|s|	characteristic	|				mantissa				|	|
+	|			|_|_____________________|_______________________________________________________________________|	|
+	|																|
+	|																|
+	|			The minor characteristic (exponent) is the major characteristic minus 72				|
+	|			minus the normalising count of the minor mantissa							|
+	|																|
+	|			If the minor mantissa cannot be normalised because it is either positive zero or negative zero then 	|
+	|			the minor result characteristic is all signs and the algebraic value of the minor result is zero	|
+	|																|
+	|			The minor mantissa is used in further operations to determine the low-order part 			|
+	|			of 192-bit floating values										|
+	|																|
+	|			If a minor result is stored in registers 8..11 in compliance with <b>fp$r</b> then rounding per		|
+	|			guard pattern register <b>fp$guard</b> takes place on the minor result and not the major result		|
 	|																|
 	|_______________________________________________________________________________________________________________________________|
 
@@ -5641,7 +5689,7 @@ operate without lock in the register stack and with lock in storage.
 				|	add the four-word floating-point number		|
 				|	in registers / storage at EA			|
 				|	to the four-word floating-point number		|
-				|	in Arithmetic Registers a b mantissa2 mantissa3	|
+				|	in arithmetic registers a b mantissa2 mantissa3	|
 				|							|
 				|	Register a contains sign and characteristic bits|
 				|	95..72 of one addend and of the sum		|
@@ -5675,7 +5723,15 @@ operate without lock in the register stack and with lock in storage.
 
 
 
-
+	operation sequence	ql	first_addend
+	192-bit values		on	fp$r
+				fa	second_addend
+				qs	sum
+				off	fp$r
+				ql	first_addend+4
+				fa	$residue
+				fa	second_addend+4
+				qs	sum+4
 
 
 
@@ -5687,7 +5743,7 @@ operate without lock in the register stack and with lock in storage.
 				|	add the ones complement of the four-word	|
 				|	floating-point number in registers / storage	|
 				|	at EA to the four-word floating-point number	|
-				|	in Arithmetic Registers a b mantissa2 mantissa3	|
+				|	in arithmetic registers a b mantissa2 mantissa3	|
 				|							|
 				|	Register a contains sign and characteristic bits|
 				|	95..72 of the minuend and of the difference	|
@@ -5722,6 +5778,16 @@ operate without lock in the register stack and with lock in storage.
 
 
 
+	operation sequence	ql	minuend
+	192-bit values		on	fp$r
+				fan	subtrahend
+				qs	difference
+				off	fp$r
+				ql	minuend+4
+				fan	subtrahend+4
+				fa	$residue
+				qs	difference+4
+				
 
 
 
@@ -5732,7 +5798,7 @@ operate without lock in the register stack and with lock in storage.
 				_________________________________________________________
 				|							|
 				|	multiply the four-word floating-point number	|
-				|	in Arithmetic Registers a b mantissa2 mantissa3	|
+				|	in arithmetic registers a b mantissa2 mantissa3	|
 				|	by the four-word floating-point number in	|
 				|	registers / storage at EA			|
 				|							|
@@ -5767,6 +5833,21 @@ operate without lock in the register stack and with lock in storage.
 				|___________|_______|___________________________________|
 
 
+	operation sequence	ql	multiplicand
+	192-bit values		on	fp$r
+				fm	multiplier
+				off	fp$r
+				qs	product
+				ql	multiplicand+4
+				fm	multiplier
+				fa	$residue
+				qs	product+4
+
+				If the multiplier is represented in more than 96 bits, then the
+				192-bit multiplicand is also multiplied by the minor multiplier
+				and the two long products summed. Minor result <b>$residue</b> is
+				needed during both multiplication sequences and during the final
+				long addition
 
 
 
@@ -5778,7 +5859,7 @@ operate without lock in the register stack and with lock in storage.
 				_________________________________________________________
 				|							|
 				|	divide the four-word floating-point number	|
-				|	in Arithmetic Registers a b mantissa2 mantissa3	|
+				|	in arithmetic registers a b mantissa2 mantissa3	|
 				|	by the four-word floating-point number in	|
 				|	registers / storage at EA			|
 				|							|
@@ -5813,7 +5894,24 @@ operate without lock in the register stack and with lock in storage.
 				|___________|_______|___________________________________|
 
 
+	operation sequence	ql	dividend
+	192-bit values		on	fp$r
+				fd	divisor
+				off	fp$r
+				qs	quotient
+				ql	dividend+4
+				fd	divisor
+				fa	$residue
+				qs	quotient+4
 
+
+				If the divisor value is represented in more than 96 bits,
+				a quotient precise to 192 bits is obtained by multiplying
+				by the reciprocal of the divisor
+
+				Divisor values with an equivalent decimal exponent less than zero
+				or greater than 31 are represented in more than 96 bits
+ 
 
 
 
@@ -5919,7 +6017,16 @@ operate without lock in the register stack and with lock in storage.
 				|	or interrupt, return is to the instruction	|
 				|	after the execute instruction			|
 				|_______________________________________________________|
-				|	operand is the word at EA			|
+				|	operand is the storage word at EA		|
+				|							|
+				|	uniquely to execute instruction, addresses < 256|
+				|	do not resolve to registers but to constants at	|
+				|	at the front of current Bank 0			|
+				|							|
+				|	EA may point to any location in the address	|
+				|	space but may not select a device other than	|
+				|	system memory. Operand in another type of	|
+				|	storage device causes guard interrupt		|
 				|_______________________________________________________|
 
 
@@ -6157,7 +6264,7 @@ operate without lock in the register stack and with lock in storage.
 
 				_________________________________________________________
 				|							|
-				|	store Arithmetic Registers a and b		|
+				|	store arithmetic registers a and b		|
 				|	to two registers / storage words at EA		|
 				|							|
 				|	Register a is stored at EA			|
@@ -6191,7 +6298,7 @@ operate without lock in the register stack and with lock in storage.
 				_________________________________________________________
 				|							|
 				|	load two registers / storage words at EA	|
-				|	to Arithmetic Registers a and b			|
+				|	to arithmetic registers a and b			|
 				|							|
 				|	the word at EA is loaded to Register a		|
 				|	the word at EA+1 is loaded to Register b	|
@@ -6226,7 +6333,7 @@ operate without lock in the register stack and with lock in storage.
 				|							|
 				|	add the 48-bit integer in			|
 				|	the two registers / storage words at EA		|
-				|	to Arithmetic Registers a and b			|
+				|	to arithmetic registers a and b			|
 				|							|
 				|	the word at EA forms high-order bits 47..24	|
 				| 	of the addend					|
@@ -6264,7 +6371,7 @@ operate without lock in the register stack and with lock in storage.
 				|							|
 				|	add the 2s complement of the 48-bit integer in	|
 				|	the two registers / storage words at EA		|
-				|	to Arithmetic Registers a and b			|
+				|	to arithmetic registers a and b			|
 				|							|
 				|	the word at EA forms high-order bits 47..24	|
 				| 	of the subtrahend				|
@@ -6302,7 +6409,7 @@ operate without lock in the register stack and with lock in storage.
 				_________________________________________________________
 				|							|
 				|	load the two registers / storage words at EA	|
-				|	to Arithmetic Registers a and b			|
+				|	to arithmetic registers a and b			|
 				|							|
 				|	the word from EA is placed in Register a	|
 				|	the word form EA+1 is placed in Register b	|
