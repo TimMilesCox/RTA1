@@ -66,6 +66,10 @@ See also the licensing notice at the foot of this document
 		<li>Large Load and Store Instructions</li>
 		<li>Large Integer Arithmetic Instructions</li>
 		<li>Floating Arithmetic Instructions</li>
+			<ol>
+			<li>The 96-Bit Floating Point Model</li>
+			<li>192-Bit Floating Arithmetic</li>
+			</ol>
 		<li>Storage Modify Instructions</li>
 		<li>Shift Instructions</li>
 		<li>Bit Stream Instructions</li>
@@ -2032,6 +2036,7 @@ stored in register 6 mantissa2
 
 
 <h3>6.16: Floating Arithmetic Instructions</h3>
+<h4>6.16.1: The 96-Bit Floating Point Model</h4>
 
 <p>
 Floating numbers used in the four arithmetic function instructions have the 96-bit format
@@ -2146,6 +2151,124 @@ this 48-bit stored format
 </pre>
 Floating Push and Expand instruction <b>fpx</b> loads and expands compressed floating numbers to 96-bit compute format
 at the internal stack top
+
+<h4>6.16.2: 192-Bit Floating Arithmetic</h4>
+
+192-bit floating arithmetic uses the four-function 96-bit floating instructions <b>fa fan fm fd</b>
+described at <b>16.16.1: The 96-Bit Floating Point Model</b> 
+
+<p>
+Two 96-bit floating numbers are teamed to give an effective 144-bit mantissa. 
+This is effected when PSR flag <b>fp$r</b> is asserted. 96-bit floating instructions
+then store two floating results
+ 
+<p>
+The first result is stored in registers a:b:mantissa2:mantissa3 and is not rounded.
+The second result is rounded and stored in registers 8:9:10:11, and is nonzero if the total
+result does not fit in 96 bits. This minor result or residue is added to the next part
+of the sum. The exponent of the minor part is the major exponent minus 72 minus the
+normalising count of the minor mantissa
+<pre>
+
+	ql	first_addend
+	on	fp$r		. switch residue on in PSR
+	fa	second_addend	. generate a major and a minor sum
+	qs	sum
+	off	fp$r		. switch residue off
+	ql	first_addend+4
+	fa	second_addend+4	. add the second parts
+	fa	$residue	. add the minor sum of the first addition
+	qs	sum+4
+
+</pre>
+PSR flag <b>fp$r</b> and minor result <b>$residue</b> (registers 8..11) are used the same way with all four arithmetic operations
+<pre>
+
+	ql	minuend
+	on	fp$r		. switch residue on in PSR
+	fan	subtrahend	. generate a major and a minor difference
+	off	fp$r		. switch residue off
+	qs	difference
+	ql	minuend+4
+	fan	subtrahend+4	. find the difference between the second parts
+	fa	$residue	. add the minor difference from the major part
+	qs	difference+4
+
+
+	ql	multiplicand
+	on	fp$r		. switch residue on in PSR
+	fm	multiplier	. generate a major and a minor product
+	off	fp$r		. switch residue off
+	qs	product
+	ql	multiplicand+4
+	fm	multiplier	. multiply the second part
+	fa	$residue	. add the minor product of the first multiplication
+	qs	product+4
+
+
+	ql	dividend
+	on	fp$r		. switch residue on in PSR
+	fd	divisor		. generate a major and a minor quotient
+	off	fp$r		. switch residue off
+	qs	quotient
+	ql	dividend+4
+	fd	divisor		. divide the second part
+	fa	$residue	. add the minor quiotient from dividing the first part
+	qs	quotient+4
+
+</pre>
+If a multiplier is larger than 96 bits it is necessary to multiply by its major and
+minor parts and then sum the two 192-bit products. Minor result <b>$residue</b> is
+required during both multiply passes and the subsequent add of two 192-bit products
+
+<p>
+If a divisor is larger than 96 bits, a long multiply by the 192-bit reciprocal of the
+divisor is advised. A divisor <i>is</i> longer than 96 bits if the decimal exponent
+equivalent is less than zero or more than 31:
+
+<pre>
+
+
+        $ fp -U
+        remote application socket 3 bind state 0 F 2 NB 0 udconnect state 0
+        3.666666999999333333666666999999333333666666e1100000 / 3e-150000
+        send state 65
+        recv state 55/35 +1.222222333333111111222222333333111111222222e+1250000
+
+
+</pre>
+
+
+<p>
+When a series of operations is iterated on one 192-bit value a large number of times,
+any accumulation of rounding effects, and any accumulating discontinuity between major
+and minor numbers should be supressed. This is achieved with an intermittent
+super-normalisation of the value. Its major and minor parts are summed with <b>fp$r</b>
+asserted. The largest possible part of the total value is consequently stored in the
+major part in registers a:b:mantissa2:mantissa3. The resulting zero or nonzero minor
+part is stored in registers 8:9:10:11
+<pre>
+
+	  ql	minuend		. operation sequence
+	  on	fp$r
+	  fan	subtrahend
+	  qs	difference
+	  off	fp$r
+	  ql	minuend+4
+	  fan	subtrahend+4
+	  fa	$residue
+
+	on	fp$r		. super-normalise sequence
+	fa	difference
+	qs	difference
+	off	fp$r
+	ql	$residue
+
+	  qs	difference+4	. completion of operation sequence
+
+
+</pre>
+
 
 
 <h3>6.17: Storage Modify Instructions</h3>
