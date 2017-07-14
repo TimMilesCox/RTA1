@@ -335,7 +335,7 @@ tcp_tx_segments_acked?
 
 	dan	6
 	jdz	tcp_q4a_slip?
-	jpa	tcp_rx_in_range?	.	segment trailing edge
+	jpa	tcp_promote_resends	.	segment trailing edge
 					.	> remote ACK
 tcp_q4a_slip?
 	la	0, y
@@ -366,12 +366,19 @@ tcp_free_from_pool
 
 	la	oqhead
 	jnza	tcp_tx_segments_acked?
+	j	tcp_rx_in_range?
 
 	.	2:1	send waiting segments as
 	.		as remote window allows
 
 	
         .       3 4 5 6         accept the input segment or not
+
+tcp_promote_resends		. queue resends in front of new sends
+	lx	connection
+	la	DAYCLOCK$	. c'est l'heure
+	sa	transmission:timer(2)
+
 tcp_rx_in_range?
 				. finally time to calculate the
 				. header length, payload address
@@ -1399,7 +1406,6 @@ tcp_send_on_window_next
 	
 	ab	a			. segment minus header
 					. = payload
-
 	la, xi	0
 	dsl	16
 	ds	6
@@ -1408,9 +1414,9 @@ tcp_send_on_window_next
 	dl	transfer:seq, y
 
 	sbl	8
-	dsl	8
+	dsl	8	. sequence
 
-	da	6			. sequence + payload
+	da	6	. sequence + payload
 	ds	6
 
 .	maybe cache the sum of remote window + remote ack
@@ -1419,7 +1425,7 @@ tcp_send_on_window_next
 .	so this sum would not be done here
 
 
-	dl	8
+	dl	8	. remote ack plus remote window
 
 	dan	6
 	jna	tcp_sent_enough
@@ -1457,7 +1463,6 @@ tcp_sent_enough
 	pop	x	. $$frame was exactly 1 word
 	pop	a	. count of transmissions
 	lret	0
-
 
 
 tcp_xmit 
@@ -1994,7 +1999,6 @@ tcp_textline_release
 	lcal	net_free
 	pop	x
 	fret	0
-
 
 TPORTCHAIN* $func
 BITS	$equ	TPORTCHAIN(1, 1)

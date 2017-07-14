@@ -84,7 +84,7 @@ Here is a part of a system image output from lstring with
 -b option
 
 
-	$ ../util.rta/fds24 srom
+	$ $RTA_BINARY/fds24 srom
 	00000000: 000001 49ffbe 000000 000000  "   I        "
 	00000004: b60040 00000b d9fa7c 000000  "  @     |   "
 	00000008: 000040 5500fc 10008f 10008e  "  @U        "
@@ -129,14 +129,14 @@ You can see this in the assembly listing
 
 Here's how the image start looks after the next step
 
-	../util.rta/slab srom srom.rom 28 -k
+	$RTA_BINARY/slab srom srom.rom 28 -k
 
 No descriptors, just a picture of memory. We read eight
 words from zero, then tell fds24 to scan from word 64, and
 finally display the constant at word 256
 
 
-	$ ../util.rta/fds24 srom.rom
+	$ $RTA_BINARY/fds24 srom.rom
 	00000000: b60040 000000 000000 000000  "  @         "64
 	00000040: 5500fc 10008f 10008e 04007c  "U          |"
 	00000044: 200087 680084 dd0001 de0049  "   h       I"
@@ -178,8 +178,7 @@ RTA1 to read. That's how emulated RTA1 runs web server about itself
 
 	util.rta/fsformat fsimages/rand7 < fsload
 
-Here is fsload, a command list for fsformat. There is no indentation
-in the command list, that's just for here
+Here is fsload, a file and directory list for fsformat
 
 
 	volume remington
@@ -191,16 +190,26 @@ in the command list, that's just for here
 	.
 	tree free$tree$
 	.
+	tree etc
+	file network.txt etc.rta/network.txt
+	.
+	tree dmsa
+	tree schema1
+	.
+	tree schema2
+	.
+	.
 	tree web
 	file index.html rta.doc/index.html
-	file rta.html rta.doc/rta.html
+	file rta.html rta.doc/rta.txt
 	file smaragd7.html rta.doc/smaragd7.txt
 	file language.html rta.doc/language.txt
-	file rtadef.html rta.doc/rtadef.txt
-	file masmx.html ../masmx.7r2/work.txt
+	file masmx7r3.html rta.doc/masmx7r3.txt
 	file connect.html rta.doc/connect.txt
+	file q_a.html rta.doc/q_a.txt
 	file footnote.html rta.doc/footnote.txt
-	file gnu_gpl.html rta.doc/gnu_gpl.txt
+	file gnu_gpl.html rta.doc/gnu_gpl.html
+	file file4000.html rta.doc/file4000.txt
 	.
 	.
 
@@ -218,13 +227,12 @@ If you forget a . anywhere, you get unintended nesting
 If a tree command follows another tree before any .
 the second tree is inside the earlier one
 
-file has two arguments, the name inside the RTA1 file
-system, and the PC file to get the data from
+If file has two arguments, the first is the name in
+the RTA1 file system, and the the second PC file to
+load
 
-the main point is the files in web/ where RTA1's
-http server looks for documents
-
-There is a reason for free$tree$ which is explained later
+The FS initial purpose is directory web/ where RTA1's
+http server looks for RTA1 documents
 
 The file system architecture loaded here is offered
 as generic for any underlying sort of filestore
@@ -237,6 +245,15 @@ is for the RTA1 filestore arrays known as "devices",
 in reality a memory parallel to and outside of executable
 space. That actual driver is discussed a little later
 
+fs24 file system has a maximum extent size of 262144 words
+
+Analagous executable-space resident core file systems
+are similarly organised, but with a maximum extent size
+of 4096 words. Core-resident files are visible to linkers
+and do need a directory search or open. They are read-only
+and constructed with utility 4kformat instead of fsformat
+
+
 
 The Generic FS Architecture
 ___________________________
@@ -248,34 +265,43 @@ The granule pointers used in internal descriptors are
 48 bits in size, and therefore the architecture imposes
 a limit of 16384 terawords per filesystem device
 
-That's from 48 bits of granule-ID and 6 bits of word-offset
-totalling 54 bits of file space address in the device
+48 bits of granule-ID and 6 bits of word-offset
+total 54 bits of file space address in the device
 
-Here is a view of the FS image built with the fsformat text above
+FS image built with the fsformat text fsload listed above
+is viewed below
 
-A volume label points to the next assignable granule in the device,
-and shows the next writable word in block 1 of the top directory,
-the number of remaining writable words in the block, and finally
-its own name, "remington"
+Page descriptors record free space in a directory block
+and point forward to the start granule of the next block
+
+Directory block size is 16 granules or 1024 words,
+but may be any number of granules
+
+A volume label points to the next assignable granule
+in the device and contains the volume name
 
 Directory descriptors point to the granule address
-of their own directory first block, and show the
-directory block size in granules, the next writable
-word of the directory block (= words written so far),
-remaining writable words of the directory block, and
-the directory name
+of their first directory block, and show its size
+in granules and the directory name
 
 File descriptors include a first extent descriptor,
 a count of octets written in the file, and the
-filename
+filename.
 
-There are plenty of other things you can add to a
-file descriptor, but they can be added a lot later
+The file extent descriptor contains extent
+start granule, size in granules, and a next extent
+descriptor granule and word offset
 
-The extent descriptor shows the extent starting granule
-address, and the extent size in granules  The extent
-descriptor contains finally the granule-ID and word-offset
-of the next extent descriptor
+Directory entries are of variable size with a type
+flag and data words count in the first word 
+
+'P' is directory block space description and forward
+pointer, 'L' link, 'V' volume, 'D' directory,
+'F' file, 'X' extent, and 0x80 a space descriptor
+corresponding to the 'P' page control record 
+
+Names in ASCII are a variable number of data words
+at the end of descriptors
 
 link "." in each directory points to the granule-ID
 word-offset of the directory descriptor in the parent
@@ -287,185 +313,110 @@ its own parent directory
 
 "." and ".." in the top directory are different.
 
-"." in the top dirctory points to the volume label
+"." in the top directory points to the volume label
 and ".." doesn't
 
-	$ util.rta/fds24 fsimages/rand7
-	00000000: 4c0004 00000a 000000 000000  "L           "
-	00000004: 2e0000 4c0004 000000 ffffff  ".  L        "
-	00000008: ffffff 2e2e00 560008 0fefa9  "   .. V     "
-	0000000c: 000000 001057 00002c 0003d4  "     W  ,   "
-	00000010: 72656d 696e67 746f6e 440007  "remingtonD  "
-	00000014: 000010 000000 000010 00001d  "            "
-	00000018: 0003e3 626f6f 742400 440009  "   boot$ D  "
-	0000001c: 000010 000000 000040 00000a  "        @   "
-	00000020: 0003f6 667265 652474 726565  "   free$tree"
-	00000024: 240000 440006 000010 000000  "$  D        "
-	00000028: 000050 000088 000378 776562  "  P     xweb"
-	0000002c: 000000 000000 000000 000000  "            "
-	00000030: 000000 000000 000000 000000  "            "01400
-	00001400: 4c0004 000025 000000 000000  "L    %      "
-	00001404: 2e0000 4c0004 00000a 000000  ".  L        "
-	00001408: 000000 2e2e00 46000c 000011  "   .. F     "
-	0000140c: 000000 000060 000000 000000  "     `      "
-	00001410: 000000 000000 000cbb 696e64  "         ind"
-	00001414: 65782e 68746d 6c0000 46000b  "ex.html  F  "
-	00001418: 000387 000000 000071 000000  "        q   "
-	0000141c: 000000 000000 000000 02a51d  "            "
-	00001420: 727461 2e6874 6d6c00 46000d  "rta.html F  "
-	00001424: 000068 000000 0003f8 000000  "  h         "
-	00001428: 000000 000000 000000 004d4c  "          ML"
-	0000142c: 736d61 726167 64372e 68746d  "smaragd7.htm"
-	00001430: 6c0000 46000d 00004b 000000  "l  F    K   "
-	00001434: 000460 000000 000000 000000  "  `         "
-	00001438: 000000 0037a0 6c616e 677561  "    7 langua"
-	0000143c: 67652e 68746d 6c0000 46000c  "ge.html  F  "
-	00001440: 00002b 000000 0004ab 000000  "  +         "
-	00001444: 000000 000000 000000 001f94  "            "
-	00001448: 727461 646566 2e6874 6d6c00  "rtadef.html "
-	0000144c: 46000c 000ab4 000000 0004d6  "F           "
-	00001450: 000000 000000 000000 000000  "            "
-	00001454: 08068e 6d6173 6d782e 68746d  "   masmx.htm"
-	00001458: 6c0000 46000c 000001 000000  "l  F        "
-	0000145c: 000f8a 000000 000000 000000  "            "
-	00001460: 000000 0000a7 636f6e 6e6563  "      connec"
-	00001464: 742e68 746d6c 46000d 000020  "t.htmlF     "
-	00001468: 000000 000f8b 000000 000000  "            "
-	0000146c: 000000 000000 00176f 666f6f  "        ofoo"
-	00001470: 746e6f 74652e 68746d 6c0000  "tnote.html  "
-	00001474: 46000c 000055 000000 000fab  "F    U      "
-	00001478: 000000 000052 000001 000000  "     R      "
-	0000147c: 008054 676e75 5f6770 6c2e68  "  Tgnu_gpl.h"
-	00001480: 746d6c 580006 000057 000000  "tmlX    W   "
-	00001484: 001000 000000 000000 000000  "            "
-	00001488: 000000 000000 000000 000000  "            "
+	$ fds24 fsimages/rand7
+	000000000000: 500004 000034 0003cb 000000  "P    4      "
+	000000000004: 000000 4c0004 00000f 000000  "   L        "
+	000000000008: 000000 2e0000 4c0004 000000  "   .  L     "
+	00000000000c: ffffff ffffff 2e2e00 560006  "      .. V  "
+	000000000010: 000018 000000 000d04 72656d  "         rem"
+	000000000014: 696e67 746f6e 440005 000010  "ingtonD     "
+	000000000018: 000000 000010 626f6f 742400  "      boot$ "
+	00000000001c: 440007 000010 000000 000040  "D          @"
+	000000000020: 667265 652474 726565 240000  "free$tree$  "
+	000000000024: 440004 000010 000000 000050  "D          P"
+	000000000028: 657463 440005 000010 000000  "etcD        "
+	00000000002c: 000061 646d73 610000 440004  "  admsa  D  "
+	000000000030: 000010 000000 000091 776562  "         web"
+	000000000034: 8003ca 000000 000000 000000  "            "
+	000000000038: 000000 000000 000000 000000  "            "
+	00000000003c: 000000 000000 000000 000000  "            "
+	000000000040: 000000 000000 000000 000000  "            "02440
+	000000002440: 500004 000094 00036b 000000  "P       k   "
+	000000002444: 000000 4c0004 00002f 000000  "   L    /   "
+	000000002448: 000000 2e0000 4c0004 00000f  "   .  L     "
+	00000000244c: 000000 000000 2e2e00 46000c  "      .. F  "
+	000000002450: 000016 000000 0000a1 000000  "            "
+	000000002454: 000000 000000 000000 001027  "           '"
+	000000002458: 696e64 65782e 68746d 6c0000  "index.html  "
+	00000000245c: 46000b 00041d 000000 0000b7  "F           "
+	000000002460: 000000 000000 000000 000000  "            "
+	000000002464: 031555 727461 2e6874 6d6c00  "  Urta.html "
+	000000002468: 46000d 00016c 000000 0004d4  "F    l      "
+	00000000246c: 000000 000000 000000 000000  "            "
+	000000002470: 011062 736d61 726167 64372e  "  bsmaragd7."
+	000000002474: 68746d 6c0000 46000d 0000ce  "html  F     "
+	000000002478: 000000 000640 000000 000000  "     @      "
+	00000000247c: 000000 000000 009a30 6c616e  "        0lan"
+	000000002480: 677561 67652e 68746d 6c0000  "guage.html  "
+	000000002484: 46000d 000417 000000 00070e  "F           "
+	000000002488: 000000 000000 000000 000000  "            "
+	00000000248c: 03108f 6d6173 6d7837 72332e  "   masmx7r3."
+	000000002490: 68746d 6c0000 46000c 00006f  "html  F    o"
+	000000002494: 000000 000b25 000000 000000  "     %      "
+	000000002498: 000000 000000 005315 636f6e  "       S con"
+	00000000249c: 6e6563 742e68 746d6c 46000b  "nect.htmlF  "
+	0000000024a0: 000093 000000 000b94 000000  "            "
+	0000000024a4: 000000 000000 000000 006e25  "          n%"
+	0000000024a8: 715f61 2e6874 6d6c00 46000d  "q_a.html F  "
+	0000000024ac: 00001c 000000 000c27 000000  "        '   "
+	0000000024b0: 000000 000000 000000 001476  "           v"
+	0000000024b4: 666f6f 746e6f 74652e 68746d  "footnote.htm"
+	0000000024b8: 6c0000 46000c 0000ac 000000  "l  F        "
+	0000000024bc: 000c43 000000 000000 000000  "  C         "
+	0000000024c0: 000000 008054 676e75 5f6770  "     Tgnu_gp"
+	0000000024c4: 6c2e68 746d6c 46000d 000015  "l.htmlF     "
+	0000000024c8: 000000 000cef 000000 000000  "            ".
+	0000000024cc: 000000 000000 000fa0 66696c  "         fil"
+	0000000024d0: 653430 30302e 68746d 6c0000  "e4000.html  "
+	0000000024d4: 80036a 000000 000000 000000  "  j         "
+	
+	$
 
-	$ 
+FS24 File System Driver
+_______________________
 
-It's not the first objective of the RTA1 initiative to offer a
-file system architecture, but RTA1 might as well have one, and
-this one is giving necessary results to the web host service
-running in the emulated machine
+The file system is in a 24-bit peripheral memory outside system memory
+called a device array
 
-It could even be a very maintainable FS architecture
-because it can be updated without heavy reorganisations
-
-For example
-
-	How would you carry out a move ?
-
-		add a link in the new home to the descriptor
-		of the moved object. Silence the original
-		descriptor
-
-
-	Why?
-
-		the uplink ".." in each first-level subdirectory
-		of a moved directory is still correct like that
-
-		At the same time we've avoided having a file
-		system constructed with down and along pointers at
-		every branch
+RTA1 device arrays are a maximum of 16 Gigawords organised in 65536
+banks of 262144 words and may number 64 including system memory
 
 
-	How would you silence the moved descriptors?
+	architectural reminder
+	----------------------
 
-		Me, I'd change the type field in the header words
-		from 'F' to 'f' and from 'D' to 'd'
+	The relocation register is flagged big or not
 
-		(and 'L' to 'l' if you are moving a link) 
+	If not flagged big, the relocation register points to a 4K-word page
+	in system memory. There may be 4194304 executable pages or 16 gigawords
+	in system memory
 
-		Just a 1-bit OR, since I'm using UTF8 as the
-		character set
+	If the relocation register is flagged big, its six low-order bits select 
+	a device array instead of a page. sixteen bits select a bank of 262144
+	words. There may be 64 devices of 65536 banks, totalling a teraword
 
-		Then the directory searches will skip these
+	Executable space or system memory is device number zero.
 
+	The task can place system memory in its address windows in either 4K-word
+	or 256K-word pieces
 
-	How would you delete a file or even a tree?
+	The task can place 256K-word banks of devices 1..63 in its address windows
 
-		Move it to free$tree$. A light touch or what?
+	Devices 1..63 may be simple arrays or buffered peripherals, for example
+	network interface dual port buffers or video RAMs
 
-		If you remove a link which implements an earlier
-		move, you are removing the target file.
-
-		Copy the link to free$tree$. Unsilence the file
-		descriptor and silence the link which is the remove
-		target
-
-		If you remove a link which is only a link, in POSIX
-		you are only removing a link, so silence the link
-
-
-	How would you re-use the forest of structures and free
-	extents growing in free$tree$ ?
-
-		Principally when assigning a new extent first
-		hunt down a right-sized one in free$tree$
-		in preference to a new extent at the next-available
-		address from the volume label
-
-		Mark the file- or extent- descriptor as not
-		owning the granules any more
-
-		Don't take the granules from a silenced descriptor.
-		They are owned somewhere else
-
-		This happens if the file is moved out of a directory
-		and the directory is later removed. The move was
-		implemented with a link from the new owner
-
-		When no descriptor in the directory block owns
-		any granules any longer, the directory block can
-		go on a free list, to be preferred to new directory
-		blocks
-
-
-
-The Underlying FS24 File System Driver
-______________________________________
-
-A call to RTA1 file I/O necessarily goes to the FS24 file system driver
-because RTA1 has no other file system driver yet
-
-This driver organises a file system in a 24-bit memory array outside
-system memory called a device
-
-RTA1 devices are, in the initial model, a maximum of 16 Gigawords
-organised in 65536 banks of 262144 words
-
-The organisation of arrays into one executable space and 63 other device
-arrays goes back to the compact layout of the relocation registers
-
-The relocation register is flagged big or not
-
-If not flagged big, the relocation register points to one of 4194304 pages
-of 4K-words in system memory
-
-If the relocation register is flagged big, 6 address bits select a device
-instead of a page. The relocation register selects one of 65536 banks of
-262144 words in any of 64 devices, totalling a teraword
-
-Executable space or system memory is device number zero.
-
-The task can place system memory in its address windows in either 4K-word
-or 256K-word pieces
-
-The task can place 256K-word banks of devices 1..63 in its address windows
-
-Devices 1..63 may be simple arrays or buffered peripherals, for example
-network interface dual port buffers or video RAMs
 
 The emulated RTA1 has a 24-bit filestore at device number one. It's loaded
-at emulator start with a file system image like rand7 which we have just
-examined
+at emulator start with a file system image like the example rand7 above 
 
-devices can be placed in a task address window in banks of 262144 words.
+device arrays can be placed in a task address window in banks of 262144 words.
 File extents don't straddle banks on this sort of file system. An extent
 fits in one address space window, starting and stopping somewhere in the window
 
-You can see a big document right at the end, gnu_gpl.html, is in two extents.
-That doesn't have an impact. RTA1 http server sends whole extents in one
+RTA1 http server sends whole extents in one
 socket send each. TCP does the rest
 
 FS24 has approximately three calls in its service. They don't have a POSIX layer yet

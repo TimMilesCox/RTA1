@@ -55,82 +55,84 @@ the default in the build scripts
 
 You need to have the real external network interfaces talking to the
 RTA1 network device buffer first of all
-<pre>
-
-	cd rta/netifx
-
-	./runL
-
-</pre>
-The script sets up firewall divert rules which catch traffic addressed to
-the RTA1 from outside, then runs a program netifx
 
 <p>
-172.29.7.7 is by default the divert address of RTA1 on the emulator
-host software loopback. The default divert address attached to
-The emulator host attaches 172.29.7.8 to wired Ethernet for diverting
-traffic to RTA1, and 172.29.7.9 to WiFi
-<p>
-ifconfig command on the emulator host adds an address for RTA1 to each
-interface. ipfw adds a firewall rule to divert traffic to the netifx
-process connecting emulated RTA1 to the physical interface
-<pre>
-
-        sudu ifconfig lo0 inet 172.29.7.7/32 alias
-        sudo ifconfig en0 inet 172.29.7.8/32 alias
-        sudo ifconfig en1 inet 172.29.7.9/32 alias
-
-
-        sudo ipfw add divert 4608 ip from any to 172.29.7.7 in
-        sudo ipfw add divert 4608 ip from any to 172.29.7.8 in
-        sudo ipfw add divert 4608 ip from any to 172.29.7.9 in
-</pre>
-These commands are slightly different for each Linux / Unix variant
-and different for MS Windows. Samples shown here are from the the
-scripts netifx/runL which starts the netifx process.
+Emulated RTA1 runs in a shell affording scrutiny and intervention
 
 <p>
-netifx owns the firewall divert socket which catches traffic meant for
-RTA1 and places it in a large ring of shared memory buffers which looks
-to the emulated RTA1 like one of its architectural device arrays
+An interface process is run in another shell and shares network
+traffic with RTA1 through shared memory
 
 <p>
-netifx also forwards RTA1's outbound network traffic from that buffer
-to real networks
+The shared buffer appears to emulated RTA1 as a device array, one of 63
+peripheral memories in RTA1 architecture
 
 <p>
-You can stop netifx by keying  <b>. </b>&lt;ENTER&gt; twice
+The interface process uses Berkely Packet Filter (BPF) kernel calls
+to receive and send. The materials for running this interface process
+are in directory <b>rta/portal</b>
 
 <p>
-You need to restart netifx before restarting the emulated RTA1
-if you have stopped that
+An earlier method used IPFW Divert Socket, but that is not available on
+any recent personal computer. Materials for running IPFW Divert are still
+delivered in directory <b>rta/netifx</b> and run on Mac PowerPC and x86
+up to Snow Leopard, <a href="#ipfw">see Appendix A</a>.
+But BPF-based <b>portal</b> also runs on
+those platforms and is intended for Linux and other platforms
 
 <p>
-There is a script
-<pre>
-
-	./rerunL
-
-</pre>
-which runs netifx without repeating the firewall rules. It does no harm
-however to duplicate the firewall rules
+Apple Computer did not have PCAP fully working on older platforms when it
+withdrew IPFW from newer platforms. so BPF-based <b>portal/osserv</b> has
+been devised for any platforms. This has the accidental advantage that
+<b>portal</b> constructs its own filter rules for BPF, and produces a far
+more efficient filter program than the PCAP "compiler"
 
 <p>
-If you are running on OSX and talking to emulated RTA1 from the
-same computer it's running on, you need the -z option for netifx
+Packet filtering does not remove any incoming frames from the kernel,
+so firewall rules must drop frames after they are copied via BPF for RTA1.
+No firewalls encountered so far have dropped any frames before BPF had them
 
 <p>
-This is because OSX puts wrong checksums on its own loopback
-interface and netifx must correct them before passing traffic to
-RTA1
+The actions of <b>portal/osserv</b> are
+	<ol>
+	<li>script portal/runL sets firewall rules to
+	drop RTA1 incoming traffic from the kernel</li>
 
-<p>
-In detail the wrong checksums are addresses + protocol + PDUsize
-without doing any more
+	<br>
+	<li>binary osserv binds real-interface:net-address[/mask][:port]
+	combinations to RTA1 according to command line arguments</li>
 
-<p>
-Other netifx options are about how much trace you like to see
-in the shell where netifx is running
+        <br>
+	<li>osserv ascertains interface types and determines physical
+	address, address size and whether ARP is used</li>
+
+        <br>
+	<li>osserv writes a macro-assembly source file and build
+	script for the filter program of each interface and starts
+	a process to assemble filter pseudo-instructions, in reality
+	64-bit binary-encoded rules. osserv awaits the completion
+	of each filter program build process</li>
+
+        <br>
+	<li>osserv specifies filter programs, notification timing
+	and non-block action to BPF</li>
+
+        <br>
+	<li>osserv initialises the buffer shared with emulated RTA1
+	and uses it to transmit network configuration PDUs to RTA1</li>
+
+        <br>
+	<li>RTA1 receives configuration tuples as its first traffic</li>
+
+	<br>
+	<li>ifconfig is separately called on the emulator host to add
+	RTA1 network addresses to emulator host interfaces</li>
+
+        <br>
+	<li>osserv submits received traffic to RTA1 and transmits traffic
+	from RTA1</b>
+	</ol>
+
 
 
 <h3>Starting the Emulated RTA1 Machine</h3>
@@ -691,6 +693,86 @@ The address for <b>m</b> is either, for example
 
 <p>
 <b>.</b> will exit the emulator
+
+<a	name="ipfw"/>
+<h2>Appendix A: Alternative IPFW Datagram Divert Service</h2>
+
+<pre>
+
+	cd rta/netifx
+
+	./runL
+
+</pre>
+The script sets up firewall divert rules which catch traffic addressed to
+the RTA1 from outside, then runs a program netifx
+
+<p>
+172.29.7.7 is by default the divert address of RTA1 on the emulator
+host software loopback. The default divert address attached to
+The emulator host attaches 172.29.7.8 to wired Ethernet for diverting
+traffic to RTA1, and 172.29.7.9 to WiFi
+<p>
+ifconfig command on the emulator host adds an address for RTA1 to each
+interface. ipfw adds a firewall rule to divert traffic to the netifx
+process connecting emulated RTA1 to the physical interface
+<pre>
+
+        sudu ifconfig lo0 inet 172.29.7.7/32 alias
+        sudo ifconfig en0 inet 172.29.7.8/32 alias
+        sudo ifconfig en1 inet 172.29.7.9/32 alias
+
+
+        sudo ipfw add divert 4608 ip from any to 172.29.7.7 in
+        sudo ipfw add divert 4608 ip from any to 172.29.7.8 in
+        sudo ipfw add divert 4608 ip from any to 172.29.7.9 in
+</pre>
+These commands are slightly different for each Linux / Unix variant
+and different for MS Windows. Samples shown here are from the the
+scripts netifx/runL which starts the netifx process.
+
+<p>
+netifx owns the firewall divert socket which catches traffic meant for
+RTA1 and places it in a large ring of shared memory buffers which looks
+to the emulated RTA1 like one of its architectural device arrays
+
+<p>
+netifx also forwards RTA1's outbound network traffic from that buffer
+to real networks
+
+<p>
+You can stop netifx by keying  <b>. </b>&lt;ENTER&gt; twice
+
+<p>
+You need to restart netifx before restarting the emulated RTA1
+if you have stopped that
+
+<p>
+There is a script
+<pre>
+
+	./rerunL
+
+</pre>
+which runs netifx without repeating the firewall rules. It does no harm
+however to duplicate the firewall rules
+
+<p>
+If you are running on OSX and talking to emulated RTA1 from the
+same computer it's running on, you need the -z option for netifx
+
+<p>
+This is because OSX puts wrong checksums on its own loopback
+interface and netifx must correct them before passing traffic to
+RTA1
+
+<p>
+In detail the wrong checksums are addresses + protocol + PDUsize
+without doing any more
+
+<p>
+Other netifx options are about how much trace you like to see
+in the shell where netifx is running
 
 <i>
 <pre>
