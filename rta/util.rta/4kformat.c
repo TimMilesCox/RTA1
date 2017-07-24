@@ -387,6 +387,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    tree			 labelv;
 
    int			 slot = 64 - (gpointer & 63);
+   int			 voffset;
    int			 status;
 
    long                  slab;
@@ -627,8 +628,17 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                      vpointer = *displacement;
                      *displacement = vpointer + 7;
 
-                     new->ex.next_offset.t3 = vpointer & 63;
-                     vpointer >>= 6;
+                     voffset = vpointer & 1023;
+
+                     if (voffset > DIRECTORY_BLOCK - 7)
+                     {
+                        printf("directory extension not yet feasible\n");
+                        return 0;
+                     }
+
+                     new->ex.next_offset.t3 = voffset;
+                     new->ex.next_offset.t2 = voffset >> 8;
+                     vpointer >>= 10;
                      apointer = dstart_granule + vpointer;
 
                      new->ex.next.octet[5] = apointer;
@@ -663,16 +673,25 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                         vpointer = *displacement;
                         *displacement = vpointer + 7;
 
-                        new->ex.next_offset.t3 = vpointer & 63;
-                        vpointer >>= 6;
+                        voffset = vpointer & 1023;
+
+                        if (voffset > DIRECTORY_BLOCK - 7)
+                        {
+                           printf("directory extension not yet feasible\n");
+                           return 0;
+                        }
+
+                        extra->next_offset.t3 = voffset;
+                        extra->next_offset.t2 = voffset >> 8;
+                        vpointer >>= 10;
                         apointer = dstart_granule + vpointer;
 
-                        new->ex.next.octet[5] = apointer;
-                        new->ex.next.octet[4] = apointer >>  8;
-                        new->ex.next.octet[3] = apointer >> 16;
-                        new->ex.next.octet[2] = apointer >> 24;
-                        new->ex.next.octet[1] = apointer >> 32;
-                        new->ex.next.octet[0] = apointer >> 40;
+                        extra->next.octet[5] = apointer;
+                        extra->next.octet[4] = apointer >>  8;
+                        extra->next.octet[3] = apointer >> 16;
+                        extra->next.octet[2] = apointer >> 24;
+                        extra->next.octet[1] = apointer >> 32;
+                        extra->next.octet[0] = apointer >> 40;
                      }
 
                      gpointer += PAGE/GRANULE;

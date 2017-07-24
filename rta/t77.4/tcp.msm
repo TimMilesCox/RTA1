@@ -375,9 +375,12 @@ tcp_free_from_pool
         .       3 4 5 6         accept the input segment or not
 
 tcp_promote_resends		. queue resends in front of new sends
+	$if	1
 	lx	connection
-	la	DAYCLOCK$	. c'est l'heure
+	la	DAYCLOCK$
+.	la	TCP_RESEND_EDGE, a, i
 	sa	transmission:timer(2)
+	$endif
 
 tcp_rx_in_range?
 				. finally time to calculate the
@@ -788,6 +791,8 @@ tcp4_established!
 tcp4_synreceived?
 	anu, xi	TCP_SYNRECEIVED
 	jnza	tcp4_state?
+
+	lcal	tcp_send_on_window
 
 	la	DAYCLOCK$
 	ana	transmission:timer(2)
@@ -1428,7 +1433,7 @@ tcp_send_on_window_next
 	dl	8	. remote ack plus remote window
 
 	dan	6
-	jna	tcp_sent_enough
+	jna	tcp_sent_possible
 
 
 	lcal	tcp_read_txq	. remove atomically from queue
@@ -1457,8 +1462,16 @@ tcp_ackq_started
 
 	j	tcp_send_on_window_next
 
+tcp_sent_possible
+	$if	0
+			. I have traffic and no window
+	la	1, sp	. reasonable if I have sent any segments
+	jnza	tcp_sent_all
+	lcal	tcp_send_ack	. or try to
+	lr	0	. nop, send_ack skips on succesful return
+	$endif
 tcp_sent_all
-tcp_sent_enough
+.tcp_sent_enough
 			. the connection pointer is now at the stack top
 	pop	x	. $$frame was exactly 1 word
 	pop	a	. count of transmissions
@@ -1747,8 +1760,8 @@ tcp_startbufferk		. caller may instead specify
 	push, xi   0
 	push, xi   0		. ACK
 
-	tp	k
-	lcal	tcp_frontofqsequence
+.	tp	k
+.	lcal	tcp_frontofqsequence
 	dl	transmission:sequence_ackx, x
 	dsr	8
 	sbr	8
@@ -1841,13 +1854,16 @@ tcp_nostart
 	lx	y
 	lret	0		. did not
 
+	$if	0
 tcp_frontofqsequence
 	la	transmission:q4window:head
 	jza	tcp_newtraffic_sequence
+	la	descriptor:uproto, a
 	dl	transfer:seq, a
 	lret	3
 tcp_newtraffic_sequence
 	lret	0
+	$endif
 
 tcp_send_options
 	push	x		. the connection

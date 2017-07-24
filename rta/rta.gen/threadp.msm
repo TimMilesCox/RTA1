@@ -6,37 +6,40 @@ replicate_abt
 ?	$do	32/4,	qpop		ABT+?*4-4
 	lret		0
 
-thread	la		b
-	jna		no_new_thread
+thread	la		b		. priority of new thread
+	jna		no_new_thread	. you can't
 	aa, xi		-PRIORITIES
-	jc		no_new_thread
+	jc		no_new_thread	. you still can't
+					. OK maybe you can
+	on		see$1		. see calling TCB
 
-	on		see$1
-
-	la, xi		4096
+	la, xi		4096		. assign new TCB
 	lcal		bank
-	jza		no_new_thread
+	jza		no_new_thread	. you can't
 
 	lcal		tdescriptor
-	j		no_new_thread_descriptor
+	j		no_new_thread_descriptor	. you can't
 
 	.		the new thread is now a certainty
 
-	z		0, b
-
-	push		b_x
-	push		B1_P
-	push		THREADS
+	z		0, b		. forward pointer
+					. of new TCB
+	lr		WALKUP		. TCB of initial thread
+					. unless the initial thread is calling
+	push		b_x		. new TCB descriptor pointer
+	push		B1_P		. calling thread B1 list pointer
+	push		NEXT_THREAD	. next of caller, base pointer
 
 	inB		65
-	outA		65
+	sa		NEXT_THREAD	. new TCB base pointer next of calling thread
+	outA		65		. new thread TCB
 
-	pop		NEXT_THREAD
-	pop		B1_P
-	pop		BANK_CHAIN
+	pop		NEXT_THREAD	. old next of caller is next of new
+	pop		B1_P		. b1 list pointer from calling thread
+	pop		BANK_CHAIN	. only storage block of new thread
 
-	z		2, x
-	sa		3, x
+	z		2, x		. construct thread descriptor
+	sa		3, x		. with TCB
 	sx		TDESCRIPTOR
 
 	lcal		replicate_abt
@@ -45,24 +48,24 @@ thread	la		b
 
 	dpush		a_x
 
-	lb		a
-	la		2, fp
+	lb		a		. thread transfer address from application a
+	la		2, fp		. calling thread B0
 
 	ds		UPACKET+2
 	la, xi		0
-	lb		1, fp		. copy input PSR
+	lb		1, fp		. calling thread PSR
 	andB, xi	080
-	ds		UPACKET
+	ds		UPACKET		. thread switch packet complete
 
 	la, xi		128
-	sa		RSAVE+sp
+	sa		RSAVE+sp	. new thread internal stack pointer
 
 	ts		switch_lock_cell
 	j		$-1
 	
 	lb		b		. priority in 
 	sbl		2		. application register b
-	ab, xi		stem(1)
+	ab, xi		stem(1)		. thread descriptor into switch list
 
 	la		3, b		. trailing uplink
 	sx		0, a		. new is last->next
@@ -74,16 +77,16 @@ thread	la		b
 	pop		a_x
 	pop		b_x
 
-	lx		6
+	lx		6		. from application mantissa2
 	sx		RSAVE+a		. parameter for thread
-	lx		7	
+	lx		7		. from application mantissa3
 	sx		RSAVE+fp	. external stack pointer if needed
 
-	z		THREADS
-	sb		WALKUP
-
+	sb		WALKUP		. caller TCB
+	tz		r_x		. but if caller was not initial thread
+	sr		WALKUP		. initial thread TCB
+					. initial thread owns all threads
 	outB		65
-	sa		THREADS
 	
 	ir		0
 

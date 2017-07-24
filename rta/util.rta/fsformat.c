@@ -324,6 +324,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    tree			 labelv;
 
    int			 slot = 4096 - (gpointer & 4095);
+   int			 voffset;
    int			 status;
 
    long                  slab;
@@ -561,11 +562,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if ((p32) || (slab))
                   {
+                     printf("%s extent %d granules %llx\n", argument, slot, gpointer - slot);
                      vpointer = *displacement;
                      *displacement = vpointer + 7;
 
-                     new->ex.next_offset.t3 = vpointer & 63;
-                     vpointer >>= 6;
+                     voffset = vpointer & 1023;
+                     new->ex.next_offset.t3 = voffset;
+                     new->ex.next_offset.t2 = voffset >> 8;
+                     new->ex.next_offset.t1 = 0;
+
+                     vpointer >>= 10;
                      apointer = dstart_granule + vpointer;
 
                      new->ex.next.octet[5] = apointer;
@@ -578,7 +584,8 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   while (p32--)
                   {
-                     printf("%s extent %d granules\n", argument, PAGE/GRANULE);
+                     printf("%llx:%x->", apointer, voffset);
+                     printf("%s extent %d granules %llx\n", argument, PAGE/GRANULE, gpointer);
                      extra->rfw = extrahead;
                  
                      extra->granules.t1 = (PAGE/GRANULE) >> 16;
@@ -600,16 +607,18 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                         vpointer = *displacement;
                         *displacement = vpointer + 7;
 
-                        new->ex.next_offset.t3 = vpointer & 63;
-                        vpointer >>= 6;
+                        voffset = vpointer & 1023;
+                        extra->next_offset.t3 = voffset;
+                        extra->next_offset.t2 = voffset >> 8;
+                        vpointer >>= 10;
                         apointer = dstart_granule + vpointer;
 
-                        new->ex.next.octet[5] = apointer;
-                        new->ex.next.octet[4] = apointer >>  8;
-                        new->ex.next.octet[3] = apointer >> 16;
-                        new->ex.next.octet[2] = apointer >> 24;
-                        new->ex.next.octet[1] = apointer >> 32;
-                        new->ex.next.octet[0] = apointer >> 40;
+                        extra->next.octet[5] = apointer;
+                        extra->next.octet[4] = apointer >>  8;
+                        extra->next.octet[3] = apointer >> 16;
+                        extra->next.octet[2] = apointer >> 24;
+                        extra->next.octet[1] = apointer >> 32;
+                        extra->next.octet[0] = apointer >> 40;
                      }
 
                      gpointer += PAGE/GRANULE;
@@ -618,7 +627,8 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if (slab)
                   {
-                     printf("%s extend %ld granules\n", argument, slab);
+                     printf("%llx:%x->", apointer, voffset);
+                     printf("%s extend %ld granules %llx\n", argument, slab, gpointer);
                      extra->rfw = extrahead;
 
                      extra->granules.t1 = slab >> 16;

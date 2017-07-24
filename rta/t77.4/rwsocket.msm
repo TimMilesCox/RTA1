@@ -308,19 +308,19 @@ tcp_release
 	andB,xi	TCP_FLAGS		. add header flags to the checksum
 	ab	transfer:checksum, a
 
-	lr	b
+	lr	b				. lodge checksum in r
 
 	lb	AP_DATA				. find the header length
 	anb	TP_HEADER			. again
 	sbl	1				. in bytes
 	push	descriptor:bytes		. calculate the total segment
 	ab	0, sp				. length, save payload length
-	la	TP_HEADER			. length
+	la	TP_HEADER			. save segment total for checksum
 	push	b				. for the checksum
 	orB	(0800000:s)			. and for the 
 	sb	descriptor:bytes		. descriptor
 
-	popA	r
+	popA	r				. add segment total to checksum
 	sr	transfer:checksum, a
 
 	pop	b				. retrieve the payload length
@@ -329,11 +329,26 @@ tcp_release
 	da	transmission:sequence_ackx	. update the sequence state
 	ds	transmission:sequence_ackx	. variable of the connection
 	
-	qpop	x
+	qpop	x			. retrieve	x = connection
+						.	y = write position
+						.	in segment buffer
+						.	a = 0 = no TCP_PSH
+						.	b = oustanding byte count
+.        lcal    looklie
 
 	jzb	tcp_add_x
 	jnb	tcp_add_x
-
+					. IP main thread itself never comes here
+					. sockets indicating TCP_PSH skip this YIELD
+	$if	0
+	push	b
+	dl	(10d)
+	ii	TWAIT$
+	pop	b
+	$else
+	ii	YIELD$			. let the remote socket and local TCP
+	$endif				. catch up with the connection state
+					. before taking a new segment
 tcp_add_segment
 	push	x
 	push	b
@@ -344,12 +359,10 @@ tcp_add_segment
 	j	tcp_add_nosegment
 	lcal	tcp_write_txq
 	lr, xi	0
-	push	a
-	la	TP_HEADER
+	lx	TP_HEADER
 	lb	6
 	ab	7
-	sb	transfer:checksum, a
-	pop	a
+	sb	transfer:checksum, x
 	pop	b
 	pop	x
 
@@ -359,8 +372,8 @@ tcp_add_segment
 tcp_add_nosegment
 	dl	(5d)
 	ii	TWAIT$			. don't call tcp_add from the ip main thread
-	pop	b
-	pop	x
+	pop	b			. oustanding count
+	pop	x			. connexion
 
         la      transmission:state
         aa, xi  -TCP_ESTABLISHED
@@ -369,15 +382,15 @@ tcp_add_nosegment
         jza     tcp_add_segment
 
         lb, xi  -6
-	pop	fp
+	pop	fp			. descriptor
 	pop	a
 	fret	0
 
 tcp_add_x
-	lcal	tcp_send_on_window
-	pop	fp
-	pop	a
-	tp	b
+.	lcal	tcp_send_on_window
+	pop	fp			. descriptor
+	pop	a			. output count
+	tp	b			. final count
 	lb, xi	0
 	ana	b
 	fret	0
@@ -1013,4 +1026,31 @@ socket_transmit_tcp?
 	orB, xi	05000++TCP_ACK
 	sb	SOCKET_CALL_FLAGS
 	j	tcp_add
+
+	$if	0
+looklie	dpush	a
+	lb	transmission:q4window:tail
+	jzb	nolooking
+	la	descriptor:uproto,b	. think of a minus number
+	ana	descriptor:apdata,b
+	sal	1
+	aa	descriptor:bytes,b
+	and	32767,,xi
+	dsr	24
+	push	x
+	lx	TP_HEADER
+	ab	transfer:seq+1, x
+	dsl	8
+	aa	transfer:seq, x
+	dsl	8
+	pop	x
+	dan	transmission:sequence_ackx, x
+	jdz	nolooking
+	ii	GUARD$
+nolooking
+	pop	a
+	pop	b
+	lret	0
+	$endif
+
 

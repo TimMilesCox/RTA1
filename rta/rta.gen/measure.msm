@@ -971,6 +971,37 @@ cannot_add_bank
 	lb, xi	-1
 	lret	0
 
+.	process initial thread directly owns any more threads
+.	even if threads start them
+.	they are all on one chain from process initial thread
+.	there is no hierarchy to walk on process exit
+
+.	individually exiting threads leave the chain
+.	before their TCB is pooled
+.	so that an exiting process does not try to stop
+.	threads which are not there via TCBs which are
+.	already re-used in some different way
+
+remove_thread
+	inA	65		. keep exiting TCB
+	push	a_x		. on the stack top as comparand
+	la	WALKUP		. chain starts with process thread
+	lb	NEXT_THREAD	. next from exiting thread
+	lk	-1,,xi
+
+retrieve_thread
+	outA	65
+	la	NEXT_THREAD
+	jza	remove_threadx	. it is not there
+	mta	0, sp		. is next the exiting thread?
+	j	retrieve_thread
+	sb	NEXT_THREAD	. point past the exit thread	
+	
+remove_threadx
+	pop	a_x		. retrieve the exiting TCB
+	outA	65		. base it again
+	lret	0		. continue the thread delete
+
 exit	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
 	la	TDESCRIPTOR
 	ts	banks_lock_cell
@@ -987,6 +1018,10 @@ intofreelist
 	sa	free_tdescriptor	
 freebanklock
 	z	banks_lock_cell
+
+	tz	WALKUP		. if this is not the initial thread
+	lcal	remove_thread	. take it out of the thread chain
+
 delete
 	la	BANK_CHAIN
 	jza	deleted
@@ -1280,7 +1315,6 @@ zero4vectors
 	sa	handles
 	z	free_handle
 
-	z	THREADS
 	z	NEXT_THREAD
 
 	la	(0C00000:s)

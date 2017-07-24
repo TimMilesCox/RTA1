@@ -52,10 +52,10 @@ http_bound -	1
 http_sla   -	1:d
 
 fs24_sla   -	1:d
-fs24_cursor -	1:d
+. fs24_cursor -	1:d
 
-http_file_octets
-	+	0:d
+. http_file_octets
+.	+	0:d
 
 http_formation1
 	"HTTP/1.1 200 OK":CR:LF:;
@@ -65,9 +65,9 @@ http_formation1_length $equ	$bits/$byte
 http_formation2
 	$do	8,	+	0
 
-http_transmission
+http_listening_transmission
 	+	0
-http_name_buffer
+. http_name_buffer
 	$res	84/3
 
 $(0)
@@ -117,7 +117,7 @@ http_bound?
 http_walk_q
 	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(HTTP_PORT))
 
-	sx	http_transmission
+	sx	http_listening_transmission
 
 
 http_walk
@@ -131,32 +131,47 @@ http_walk
 	mta	transmission:socket_address+1
 	j	http_walk
 
-	sx	http_transmission
+	sx	http_listening_transmission
 
 	la	transmission:state
 	aa, xi	-TCP_SYNRECEIVED
 	jnza	http_remote_close?
 	call	(xaccept)
+	ql	(http_request_thread,,,:q)
+	sx	6			. connection as parameter
+	ii	THREAD$
 	j	http_walk
 
 http_remote_close?
 	aa, xi	TCP_SYNRECEIVED-TCP_CLOSEWAIT
-	jnza	http_established?
-	call	(xdisco)
-	j	http_walk_q
-
-http_established?
-	aa, xi	TCP_CLOSEWAIT-TCP_ESTABLISHED
 	jnza	http_walk
+	call	(xdisco)
+	j	http_walk_q		. start at the list start
+					. after you have done this
+
+http_request_thread $head_near	scalars(http_thread_transmission, int, a	;
+					fs24_cursor,		long		;
+					http_file_octets,	long		;	
+					http_target_name, 	72//3		)
 
 
 http_next_request
-	la	transmission:receiveq:head
-	jza	http_walk
+	dl	http_sla
+	sabr	BSOCKET
+	dl	s:tcp:tbase
+	sabr	BSOCKET
 
-	lcal	http_get_what?
-	dl	fs24_sla
-	jza	http_drop_request
+	lx	http_thread_transmission
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jnza	http_thread_exit
+	la	transmission:receiveq:head
+	jza	http_wait
+
+	ly	http_target_name,,i
+	lcal	http_get_what
+	dl	fs24_sla		. fs descriptor from
+	jza	http_drop_request	. global initialisation
 
 	call	(fs_dsearch)
 	jnza	http_located
@@ -166,12 +181,13 @@ http_next_request
 
 	dl	fs24_sla
 	call	(fs_dsearch)
-	jza	http_drop_request
-
+	jza	http_drop_request	. if you can't find the default page
+					. something's wrong with the fs
 http_located
-	ds	fs24_cursor
+	ds	fs24_cursor		. fs_dsearch returned fs_lookup in b
+					. although it's typed as ,y
 
-	dpush	fs_lookup:quanta, b
+.	dpush	fs_lookup:quanta, b
 
 	push,xi	http_formation1
 	pop	q
@@ -180,12 +196,13 @@ http_located
 	push,xi	05010
 	pop	SOCKET_CALL_FLAGS
 
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 	
-	pop	a
-	pop	b
+
+	ly	fs24_cursor+1
+	dl	fs_lookup:quanta
 	ds	http_file_octets
 
 
@@ -202,7 +219,7 @@ http_located
 	push,xi	http_formation2
 	pop	q
 
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 
@@ -210,7 +227,7 @@ http_located
 	push,xi $1("":CR:LF:CR:LF)
 	pop	q
 	la, xi	$bits/$byte
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 
@@ -230,14 +247,14 @@ http_next_extent
 	jnc	http_final_extent
 	ds	http_file_octets
 	la	7
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 	j	http_next_extent
 
 http_final_extent
 	la	http_file_octets+1
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 
@@ -247,13 +264,15 @@ http_pushover
 	la, xi	2
 	push, xi	05018
 	pop		SOCKET_CALL_FLAGS
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 	call	(tcp_release_rxline)
-	lx	http_transmission
-	j	http_walk
-
+	lx	http_thread_transmission
+http_wait
+	dl	(750d)
+	ii	TWAIT$
+	j	http_next_request
 
 
 http_drop_request
@@ -266,7 +285,7 @@ http_drop_request
 		   "thank you so much":CR:LF:"</div></html>":CR:LF)
 
 	sb	q
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 
@@ -275,17 +294,18 @@ http_drop_request
 		"of course you understand, this is what I wish to say":CR:LF:;
 		"</div></html>":CR:LF)
 	sb	q
-	lx	http_transmission
+	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
 
 	call	(tcp_release_rxline)
-	lx	http_transmission
-	j	http_walk
+	lx	http_thread_transmission
 
 http_hangup
 	call	(xdisco)
-	j	http_walk
+http_thread_exit
+	$ret				.	thread end
+.	j	http_walk
 
 http_xserve
 	$if	HTTP_THREADED
@@ -295,7 +315,10 @@ http_xserve
 http_zserve
 	fret	0
 
-http_get_what?
+http_get_what				. y = caller's name buffer
+					. a = descriptor request message
+http_name_buffer $equf	0, y
+	push	y
 	push	descriptor:apdata, a
 	pop	q
 	z	RDATAC
@@ -317,9 +340,8 @@ http_get_what?
 	mtane	('?')
 	rsr	8
 
-	lr, xi	http_name_buffer+84/3
+	lr, i	http_name_buffer+72//3
 	and, xi 255
-	ly, xi	http_name_buffer
 
 	j	http_name_2nd_read
 
@@ -346,11 +368,9 @@ http_name3
 	ay, xi	1
 http_name1
 	la	y
-	ly, xi	http_name_buffer
-	ana	y
-	jza	http_get_default
+	ana	0, sp
 	lr	a
-	ly, xi	http_name_buffer
+	pop	y
 	lret	0
 
 	
@@ -368,6 +388,7 @@ http_name_x
 http_get_default
 	lr, xi	4
 	ly, xi	$1("index.html")
+	inc	sp
 
 .	lr, xi	3
 .	ly, xi	$1("rta.html")

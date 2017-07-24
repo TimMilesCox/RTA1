@@ -48,7 +48,6 @@ arp_hash
 arp_next	+	arp_line(1)
 arp_free	+	0
 
-atagent_rank	$res	arp_store(ARP_STORE)
 
 $(67::,y)
 arp_row	arp_cache
@@ -66,7 +65,8 @@ xarp_next
 	lcal	readq
 	jza	xarp_timers
 	sa	fp
-	lcal	glean_and_push		
+	lcal	glean_and_push
+
 	ly	descriptor:dgram
 	dl	arp_msg:spa
 	jdz	xarp_clear		. don't respond to ZeroConf
@@ -75,12 +75,14 @@ xarp_next
 	jnza	xarp_clear
 	lx	2, sp
 	lcal	search_and_indicate	. is this address here?
+
 xarp_clear
 	la	fp
 	lcal	net_free
 	j	xarp_next
 
 xarp_timers
+	$if	0
 	lr	arp_store(ARP_STORE)-1,,xi
 	lx	arp_hash,,xi
 xarp_walk
@@ -94,7 +96,10 @@ xarp_walk_chain
 	tz	y
 	j	xarp_walk_next
 	jdr	xarp_walk
+	$endif
 xarpx	qpop	r
+
+
 	fret	0
 
 arp_rx	dpush	x
@@ -129,6 +134,7 @@ arp_rxz	pop	x
 	fret	0
 	
 resolve	qpush	8
+	la	-1,,xi			. hasn't until it has
 	qpush	a
 	qpush	r
 
@@ -152,18 +158,21 @@ AXW		$set	8		. it was where we are called from
 	lcal	search_heap
 	tz	y
 	j	insert_construct_request . found a new cache row
+
+	$if	0
 	lcal	search_other_chains
 	tz	y
 	j	insert_construct_request . took a cache row from another # chain
+	$endif
 
 	la	AXW			. we can't even queue it
 	lx	tx_buffers
-	tp	descriptor:bytes, a	. don't drop TCP segments
+	tn	descriptor:bytes, a	. don't drop TCP segments
 	lcal	sell1
 	j	return
 
 insert_construct_request
-	$if	1
+	$if	0
 	lcal	in2order
 	$else
 	la	*CHAIN_HEAD		. read address of 1st in chain by pointer
@@ -175,6 +184,7 @@ construct_request
 	z	arp_row:tha
 	z	arp_row:tha+1
 	z	arp_row:tha+2
+
 	dl	NET_ADDR
 	ds	arp_row:tpa
 
@@ -190,22 +200,27 @@ construct_request
 				NET_ADDR,,long		;
 				dgram:ipsource,a,long
 
+	$if	1
+	la	AXW
+	lx	tx_buffers
+	tn	descriptor:bytes, a
+	lcal	sell1
+	$else
 	la	AXW	. descriptor
 	ly	arp_row:waitq,,i
-	tp	descriptor:bytes, a
+	tn	descriptor:bytes, a
 	lcal	q2	. not if it's TCP
+	$endif
 	j	return
 
 deliver	lx	TX_FRAME, sp
 	wphysa	0, x	arp_row:tha, y
+	z	4, sp	. now it has
 
 return	qpop	r
 	qpop	a
 	qpop	8
-	tz	*TX_FRAME
-	fret	0		. go for it
-	fret	1		. it's been queued, ARP will send it
-				. or it's had to be abandoned
+	fret	0
 
 
 phy_target1	$equf	arp_msg:tha
@@ -355,16 +370,19 @@ glean_and_push
 	tz	y
 	j	update		. found a spare row same # chain
 	lcal	search_heap
-	tz	y		. found a new row
-	j	insert_update
+
+	$if	0
+	j	insert_update		. found a new row
 	lcal	search_other_chains
 	tz	y
 	j	insert_update	. found a spare row in another # chain
+	$endif
+
 	jza	gleanx		. can't keep this information until
 				. a cache row times out
 
 insert_update
-	$if	1
+	$if	0
 	lcal	in2order
 	$else
 	la	*CHAIN_HEAD	. read address of 1st in chain by pointer
@@ -381,8 +399,10 @@ update	dl	NET_ADDR
 	la	descriptor:i_f
 	sa	arp_row:i_f
 
+	$if	0
 	tz	arp_row:waitq:head
 	lcal	pushq
+	$endif
 	
 gleanx	lret	0
 
@@ -407,6 +427,8 @@ respond_no
 	inc	sp
 	lret	0
 
+
+	$if	0
 time_test			. y -> ARP cache row for time test
 	qpush	r
 	dl	arp_row:tpa	. not in use
@@ -421,14 +443,16 @@ time_test			. y -> ARP cache row for time test
 
 	lx	arp_row:i_f
 	ax	i_f_pointer_array,,i
+	la	this_if:address_list, x
 
 				. advertise we would like a refresh
 				. and leave the timer overrunning
 
-	c	(ARP_XMIT)	ARP_REQUEST,,xi	;
-				0,x		;
-				0,,xi		;
-				6,,long
+	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
+				this_if:id, x		;
+				0,,xi			;
+				ifaddr:lexical,a,long	;
+				arp_row:tpa,,long
 	j	time_tex
 
 time_out			. response to request hasn't arrived
@@ -478,6 +502,7 @@ qout1	lcal	readq
 qoutx	pop	x
 	pop     y
 	lret	0
+	$endif
 
-	$include in2order
+.	$include in2order
 
