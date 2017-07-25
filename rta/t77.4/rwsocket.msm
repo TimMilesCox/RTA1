@@ -334,17 +334,12 @@ tcp_release
 						.	in segment buffer
 						.	a = 0 = no TCP_PSH
 						.	b = oustanding byte count
-.        lcal    looklie
-
 	jzb	tcp_add_x
 	jnb	tcp_add_x
 					. IP main thread itself never comes here
 					. sockets indicating TCP_PSH skip this YIELD
-	$if	0
-	push	b
-	dl	(10d)
-	ii	TWAIT$
-	pop	b
+	$if	1
+	lcal	tcp_shield_yield
 	$else
 	ii	YIELD$			. let the remote socket and local TCP
 	$endif				. catch up with the connection state
@@ -371,8 +366,14 @@ tcp_add_segment
 
 tcp_add_nosegment
 	dl	(5d)
+
+	$if	1
+	lcal	tcp_shield_wait
+	$else
 	ii	TWAIT$			. don't call tcp_add from the ip main thread
-	pop	b			. oustanding count
+	$endif
+
+	pop	b			. outstanding count
 	pop	x			. connexion
 
         la      transmission:state
@@ -1027,30 +1028,17 @@ socket_transmit_tcp?
 	sb	SOCKET_CALL_FLAGS
 	j	tcp_add
 
-	$if	0
-looklie	dpush	a
-	lb	transmission:q4window:tail
-	jzb	nolooking
-	la	descriptor:uproto,b	. think of a minus number
-	ana	descriptor:apdata,b
-	sal	1
-	aa	descriptor:bytes,b
-	and	32767,,xi
-	dsr	24
-	push	x
-	lx	TP_HEADER
-	ab	transfer:seq+1, x
-	dsl	8
-	aa	transfer:seq, x
-	dsl	8
-	pop	x
-	dan	transmission:sequence_ackx, x
-	jdz	nolooking
-	ii	GUARD$
-nolooking
-	pop	a
-	pop	b
+tcp_shield_yield
+	dpush	MSS
+	ii	YIELD$
+	pop	MSS
+	pop	SOCKET_CALL_FLAGS
 	lret	0
-	$endif
 
+tcp_shield_wait
+	dpush	MSS
+	ii	TWAIT$
+	pop	MSS
+	pop	SOCKET_CALL_FLAGS
+	lret	0
 
