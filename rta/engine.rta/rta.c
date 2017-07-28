@@ -50,6 +50,10 @@
 #include "sr.h"
 #include "ii.h"
 
+#ifdef	EDGE
+#include "../rta.run/idisplay.h"
+#endif
+
 extern system_memory		 memory;
 #define ROM_PAGE		 &memory.p4k[0].w[0];
 
@@ -777,9 +781,19 @@ void execute(word instruction)
 
                *************************************************/
 
+
+               #ifdef EDGE
+               if (psr & 32768) stacktop4();
+               #endif
+
                _p = &_register[sp];
                burst_write4(_p, ea);
                sp += 4;
+
+               #ifdef EDGE
+               if (psr & 32768) stored4(ea);
+               #endif
+
                break;
 
             case QPUSH:
@@ -950,6 +964,11 @@ void execute(word instruction)
                *************************************************/
 
                burst_read2(&a, ea);
+
+               #ifdef EDGE
+               if (psr & 32768) q4readout();
+               #endif
+
                break;
 
             case DA:

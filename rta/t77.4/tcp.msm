@@ -311,10 +311,10 @@ tcp_no2ndsyn
 
 tcp_established
 tcp_closewait
+tcp_tx_segments_acked?
 	la	transmission:q4ack:head
 	jza	tcp_rx_in_range?
 
-tcp_tx_segments_acked?
 	lb	descriptor:uproto, a	.	negative header length
 	ly	a
 	la	b			.	keep the segment pointer
@@ -330,23 +330,18 @@ tcp_tx_segments_acked?
 
 	dl	transfer:seq, a
 	sbl	8			.	00FFFF FFFF00
+
+	on	-32768
 	da	8
 	dsl	8			.	FFFFFF FF0000
 
 	dan	6
+	off	-32768
+
 	jdz	tcp_q4a_slip?
 	jpa	tcp_promote_resends	.	segment trailing edge
 					.	> remote ACK
 tcp_q4a_slip?
-	la	0, y
-
-	n	3, y
-
-	sa	transmission:q4ack:head
-
-	sa	oqhead
-
-	la	y
 
 	$if	HVBANK
 	lb	*(BSOCKET*/18++tlist:hvbuffer:s)
@@ -360,13 +355,9 @@ tcp_q4a_slip?
 tcp_free_from_pool
 	$endif
 
-	lcal	net_free_txb
-
-	lx	connection
-
-	la	oqhead
-	jnza	tcp_tx_segments_acked?
-	j	tcp_rx_in_range?
+	ly	transmission:q4ack,,i
+	lcal	net_free_txdatagram
+	j	tcp_tx_segments_acked?
 
 	.	2:1	send waiting segments as
 	.		as remote window allows
@@ -737,55 +728,21 @@ tcp4_service_next_connection
 	jnzb	tcp4_synreceived?
 
 tcp4_established!
-	lcal	tcp_send_on_window
+.	lcal	tcp_send_on_window
 
 	la	transmission:q4ack:head
-	jza	tcp4_globaltime?
+	jza	tcp4_new_traffic?	. (tcp4_globaltime?)
 
 
 	la	DAYCLOCK$
 	ana	transmission:timer(2)
-	jna	tcp4_globaltime?	. the top bit of the result
+	jna	tcp4_new_traffic?	. (tcp4_globaltime?)
+					. the top bit of the result
 					. is reliable
+	lcal	tcp4_retransmit1
 
-	la	DAYCLOCK$
-	aa, xi	TCP_TIMER2
-	sa	transmission:timer(2)
-
-	la	transmission:q4ack:head
-
-	push	x
-	push	a
-	lb	descriptor:uproto, a
-	sb	TP_HEADER
-
-	la	transfer:ack, b		. subtract the old +ack+window
-	aa	transfer:ack+1, b	. by adding them to the -checksum
-	aa	transfer:window, b
-	aa	transfer:checksum, b
-
-	dsr	16
-	sbr	8
-	aa	b
-
-	xor	(00FFFF)
-
-	lb	TP_HEADER
-	sa	transfer:checksum, b
-
-	lcal	tcp_award_window
-	dl	transmission:ack_window
-	dsr	8
-	sbr	8
-	ds	10
-
-	lcal	tcp_xmit
-
-	pop	a
-	pop	x
-
-	MIB_ICOUNT48	tcpRetransSegs:i
-
+tcp4_new_traffic?
+	lcal	tcp_send_on_window
 	j	tcp4_globaltime?
 
 tcp4_synreceived?
@@ -853,6 +810,47 @@ tcp4_free_block
 	lx	b
 	j	tcp4_located_next_connection
 
+tcp4_retransmit1
+	la	DAYCLOCK$
+	aa, xi	TCP_TIMER2
+	sa	transmission:timer(2)
+
+	la	transmission:q4ack:head
+
+	push	x
+	push	a
+	lb	descriptor:uproto, a
+	sb	TP_HEADER
+
+	la	transfer:ack, b		. subtract the old +ack+window
+	aa	transfer:ack+1, b	. by adding them to the -checksum
+	aa	transfer:window, b
+	aa	transfer:checksum, b
+
+	dsr	16
+	sbr	8
+	aa	b
+
+	xor	(00FFFF)
+
+	lb	TP_HEADER
+	sa	transfer:checksum, b
+
+	lcal	tcp_award_window
+	dl	transmission:ack_window
+	dsr	8
+	sbr	8
+	ds	10
+
+	lcal	tcp_xmit
+
+	pop	a
+	pop	x
+
+	MIB_ICOUNT48	tcpRetransSegs:i
+
+	lret	0
+
 tcp_free_rxtx $head_near	scalars(xy, long, x)
 	ly, i	transmission:receiveq
 	lcal	tcp_freerxq
@@ -900,7 +898,7 @@ tcp4_located_next_connection
 	pop	x
 	ax, xi	1
 
-	$do	tlist:chain()<32,	flag	connections bank insufficient chain head space
+	$do	tlist:chain()<32,	$flag	connections bank insufficient chain head space
 	lr	(BSOCKET*/12++tlist:chain(32)+1)
 	jxge	tcp4_list_processed
 	j	tcp4_process_list
@@ -1002,13 +1000,16 @@ tcp_connection_made
 	dsl	16
 	ds	transmission:sequence_ackx
 	lcal	tcp_restart_timer1
+
+	dsr	48
 	z	transmission:tsq
-	z	transmission:receiveq:head
-	z	transmission:deferq:head
-	z	transmission:q4window:head
-	z	transmission:q4ack:head
-	la, xi	262144*4*2/170
-	sa	transmission:ack_window+1
+	ds	transmission:receiveq:head
+	ds	transmission:deferq:head
+	ds	transmission:q4window:head
+	ds	transmission:q4ack:head
+
+	lb, xi	4096
+	ds	transmission:ack_window
 	lret	1
 
 tcp_no_new_connection
@@ -1636,13 +1637,7 @@ tcp_send_ack
 tcp_sendq
 	la, xi	05000++TCP_ACK
 tcp_sendq2
-	lk, xi	-1		. use the sequence for actual
-				. transmission (from the front
-				. of q4window), not the
-				. advance traffic sequence
-				. (from the transmission bloc)
-
-	lcal	tcp_startbufferk
+	lcal	tcp_startbuffer
 	lret	0		. not obtained
 
 
@@ -1707,13 +1702,6 @@ tcp_sendq2
 
 
 tcp_startbuffer
-	lk, xi	0		. advanced traffic sequence
-				. from the transmission bloc
-
-tcp_startbufferk		. caller may instead specify
-				. actual externalised sequence
-				. from the front of q4window
-
 	push	x		. connection block
 	push	a		. header length / flags
 	push	b		. address of options program
@@ -1743,25 +1731,13 @@ tcp_startbufferk		. caller may instead specify
 	qpush	transmission:socket_address, x
 	qpop	8
 
-.	dl	transmission:ack_window, x
-.	sb	6
-.	andB	(00FFFF)
-.	push	b		. window
-
 	push, xi   0		. window
 	
 	push	7		. header format word
 
-.	lb	6
-.	dsr	8
-.	sbr	8
-.	dpush	a		. ACK
-
 	push, xi   0
 	push, xi   0		. ACK
 
-.	tp	k
-.	lcal	tcp_frontofqsequence
 	dl	transmission:sequence_ackx, x
 	dsr	8
 	sbr	8
@@ -1784,7 +1760,7 @@ tcp_startbufferk		. caller may instead specify
 
 	da	transfer:sourcep, sp
 	da	transfer:seq, sp
-.	da	transfer:ack, sp	. later
+.	da	transfer:ack, sp	. zero just now
 	da	transfer:hl_code, sp
 
 	push	6		. options list
@@ -1853,17 +1829,6 @@ tcp_sendno_options
 tcp_nostart
 	lx	y
 	lret	0		. did not
-
-	$if	0
-tcp_frontofqsequence
-	la	transmission:q4window:head
-	jza	tcp_newtraffic_sequence
-	la	descriptor:uproto, a
-	dl	transfer:seq, a
-	lret	3
-tcp_newtraffic_sequence
-	lret	0
-	$endif
 
 tcp_send_options
 	push	x		. the connection
@@ -2004,6 +1969,7 @@ tcp_read_txq
 	j	$-1
 	ly, i	transmission:q4window
 	lcal	readq
+	z	0, a
 	z	transmission:tsq
 	sim	0, sp
 	inc	sp

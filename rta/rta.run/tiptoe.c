@@ -52,6 +52,7 @@
 #include "../engine.rta/emulate.h"
 #include "../engine.rta/ii.h"
 #include "../engine.fs/device24.h"
+#include "idisplay.h"
 
 #define	ASYNC
 

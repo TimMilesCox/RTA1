@@ -43,49 +43,141 @@ RECORD_MARK_FLAG  $equ d$save
 NON_BLOCKING	  $equ SOCKET_CALL_FLAGS
 
 
-sendbytepair* $proc
-	rsr	16
-	sa	?-1, y
-	ab	a
-	$end
 
-w2buffer
-	push	a
-	sar	5
-	lr	a
-	j	send32bytes?
-send32bytes!
-?	$do	16,	sendbytepair
+socket_receive	$head_far	 params(sorx,	int	;
+					rxbuf,	int	;
+					rxbytes,int	;
+					rxflags,int)
+
+	la	sorx
+	ii	READ_SOCKET$
+	jna	receive_socket_x
+	lk	(255*/16:s)
+	mta	(IPPROTO_UDP*/16)
+	j	socket_receive_tcp?
+	and, xi	511
+	sal	3
+	lx	(BSOCKET*/12)
+	ax	a
 	la	b
-	dsr	16
+	sabr	BSOCKET
+	la	rxbuf
+	sa	p
+	off	b$stream16w
+	z	WDATAC
+	dl	rxbytes
+	sb	SOCKET_CALL_FLAGS
+	j	udgram_read
+
+socket_receive_tcp?
+	mta	(TCP_TCB*/16)
+	j	receive_socket_protocol_wrong
+	and, xi	0FF8
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	la	rxbuf
+	sa	p
+.	off	b$stream16w		. those are done in tcp_read
+.	z	WDATAC
+	dl	rxbytes
+	andB	MSG_NONBLOCK,,xi	. for TCP receive,
+	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
+
+	lb	transmission:state
+	ab, xi	-TCP_ESTABLISHED
+	jzb	tcp_read
+
+	.	something like a remote close has happened
+	.	or you tried to receive before it was established
+
+	la	SOCKET_CALL_FLAGS	. blocking
+	jza	receive_socket_x	. report no data
+
+	la, i	TCP_ESTABLISHED, b	. non_blocking
+	xor, xi	-1			. ^state
+
+	fret	0
+
+receive_socket_protocol_wrong
+transmit_socket_protocol_wrong
+	lx, xi	-22			. more minus than a negative state
+
+transmit_socket_x
+receive_socket_x
+	fret	0
+
+
+socket_send	$head_far	 params(sotx,	int	;
+					txbuf,	int	;
+					txbytes,int	;
+					txflags,int)
+
+	la	sotx
+	ii	READ_SOCKET$
+	jna	transmit_socket_x
+	lk	(255*/16:s)
+	mta	(IPPROTO_UDP*/16:s)
+	j	socket_transmit_tcp?
+	and, xi	511
+	sal	3
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	la	txbuf
+	sa	q
+	dl	txbytes
+	sb	SOCKET_CALL_FLAGS
+	push	x
+	call	(udp_txbuffer)
+	pop	y
+	jza	socket_udp_fail5
+	lx	a
+	ql	0, y		. addresses from connected socket
+	push	b
+	ly	descriptor:dgram, x
+	dsr	8
 	sbr	8
-	ab	a
-	ay, xi	16
-send32bytes?
-	jdr	send32bytes!
-
-	la	0, sp
-	and, xi	31
-	sar	1
-	lr	a
-	j	send2bytes?
-send2bytes!
-?	$do	1,	sendbytepair
-	ay, xi	1
-send2bytes?
-	jdr	send2bytes!
-
+	ds	dgram:ipsource, y
+	dl	6
+	dsr	8
+	sbr	8
+	ds	dgram:ipdest, y
+	ly	descriptor:uproto, x
 	pop	a
-	jao	send1byte
-	la	b
-	lret	0
+	lb	7
+	dsl	8
+	sar	8
+	sbr	8
+	ds	uugram:sourcep, y
+	la	txbytes
+	sa	descriptor:bytes, x
+	ly	descriptor:apdata, x
+	lcal	udgram_write
+	la	SOCKET_CALL_FLAGS
+	and	(UDP_NO_CHECKSUM:s)
+	jza	udp_txaw
+	j	udp_txaw_nocheck
+socket_udp_fail5
+	la, xi	-5
+	fret	0
 
-send1byte
-	rsr	8
-	sal	8
-	sa	0, y
-	aa	b
-	lret	0
+socket_transmit_tcp?
+	mta	(TCP_TCB*/16:s)
+	j	transmit_socket_protocol_wrong
+	and, xi	0FF8
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	la	txbuf
+	sa	q
+	dl	txbytes
+	andB	 0FFF,,xi
+	orB, xi	05000++TCP_ACK
+	sb	SOCKET_CALL_FLAGS
 
 
 .	for write to socket buffer
@@ -148,7 +240,6 @@ tcp_add2
 
 	jc	tcp_add_part		. leave the whole oustanding
 					. request on the stack top
-
 	la	0, sp			. the amount in this transfer
 					. = outstanding request
 
@@ -283,8 +374,8 @@ tcp_add_part
 				. byte count
 tcp_add_words
 	lcal	w2buffer	. target address in y
-				. byte count in a
-				. checksum so far in b
+				. byte count passed to w2buffer in a
+				. checksum returned in a
 
 				. input stream in q / RDATA / RDATAC
 	lb	TP_HEADER
@@ -292,13 +383,13 @@ tcp_add_words
 
 	la	SOCKET_CALL_FLAGS	. is this a push segment?
 	and, xi	TCP_PSH		. so send it
-	pop	b
-	jnza	tcp_release
-	jnb	tcp_add_x
-
+	pop	b		. outstanding byte count
+	jnza	tcp_release	. TCP_PSH, send the segment
+	jnb	tcp_add_x	. request complete but segment not filled
+				. b 0+ segment is filled to MSS
 tcp_release
 
-	qpush	x
+	qpush	x			. connection.write_pointer.TCP_PSH.outstanding count 0+
 					. segments accumulate on principle
 	la	TP_HEADER		. so read the segment format word
 	lb	SOCKET_CALL_FLAGS	. as it NOW IS
@@ -338,8 +429,11 @@ tcp_release
 	jnb	tcp_add_x
 					. IP main thread itself never comes here
 					. sockets indicating TCP_PSH skip this YIELD
-	$if	1
-	lcal	tcp_shield_yield
+	$if	0
+	push	a
+	dl	(2d)
+	ii	TWAIT$			. may make this conditional for bad LANs
+	pop	a
 	$else
 	ii	YIELD$			. let the remote socket and local TCP
 	$endif				. catch up with the connection state
@@ -350,8 +444,15 @@ tcp_add_segment
 	lr	MSS
 	la	SOCKET_CALL_FLAGS
 	and	(TCP_HL)		. dont get the flags into the checksum
-	lcal	tcp_startbuffer		. yet
+					. yet
+	$if	1
+	lcal	tcp_shield_buffer
+	$else
+	lcal	tcp_startbuffer
+	$endif
 	j	tcp_add_nosegment
+
+	z	descriptor:bytes, a	. do this before it's even on that queue
 	lcal	tcp_write_txq
 	lr, xi	0
 	lx	TP_HEADER
@@ -361,17 +462,13 @@ tcp_add_segment
 	pop	b
 	pop	x
 
-	z	descriptor:bytes, a
 	j	tcp_add2
 
 tcp_add_nosegment
+	push	a
 	dl	(5d)
-
-	$if	1
-	lcal	tcp_shield_wait
-	$else
 	ii	TWAIT$			. don't call tcp_add from the ip main thread
-	$endif
+	pop	a
 
 	pop	b			. outstanding count
 	pop	x			. connexion
@@ -395,6 +492,61 @@ tcp_add_x
 	lb, xi	0
 	ana	b
 	fret	0
+
+tcp_shield_buffer
+	dpush	MSS
+	lcal	tcp_startbuffer
+	sr	0
+	pop	MSS
+	pop	SOCKET_CALL_FLAGS
+	jza	tcp_nobuffer_shield
+	lret	1
+tcp_nobuffer_shield
+	lret	0
+
+sendbytepair* $proc
+	rsr	16
+	sa	?-1, y
+	ab	a
+	$end
+
+w2buffer
+	push	a
+	sar	5
+	lr	a
+	j	send32bytes?
+send32bytes!
+?	$do	16,	sendbytepair
+	la	b
+	dsr	16
+	sbr	8
+	ab	a
+	ay, xi	16
+send32bytes?
+	jdr	send32bytes!
+
+	la	0, sp
+	and, xi	31
+	sar	1
+	lr	a
+	j	send2bytes?
+send2bytes!
+?	$do	1,	sendbytepair
+	ay, xi	1
+send2bytes?
+	jdr	send2bytes!
+
+	pop	a
+	jao	send1byte
+	la	b
+	lret	0
+
+send1byte
+	rsr	8
+	sal	8
+	sa	0, y
+	aa	b
+	lret	0
 
 
 rbufferq* $proc
@@ -848,71 +1000,6 @@ udgram_readx
 	fret	0
 
 
-socket_receive	$head_far	 params(sorx,	int	;
-					rxbuf,	int	;
-					rxbytes,int	;
-					rxflags,int)
-
-	la	sorx
-	ii	READ_SOCKET$
-	jna	receive_socket_x
-	lk	(255*/16:s)
-	mta	(IPPROTO_UDP*/16)
-	j	socket_receive_tcp?
-	and, xi	511
-	sal	3
-	lx	(BSOCKET*/12)
-	ax	a
-	la	b
-	sabr	BSOCKET
-	la	rxbuf
-	sa	p
-	off	b$stream16w
-	z	WDATAC
-	dl	rxbytes
-	sb	SOCKET_CALL_FLAGS
-	j	udgram_read
-
-socket_receive_tcp?
-	mta	(TCP_TCB*/16)
-	j	receive_socket_protocol_wrong
-	and, xi	0FF8
-	lx	(BSOCKET*/12)
-	ax	a
-	la	b
-	sabr	BSOCKET
-	la	rxbuf
-	sa	p
-.	off	b$stream16w		. those are done in tcp_read
-.	z	WDATAC
-	dl	rxbytes
-	andB	MSG_NONBLOCK,,xi	. for TCP receive,
-	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
-
-	lb	transmission:state
-	ab, xi	-TCP_ESTABLISHED
-	jzb	tcp_read
-
-	.	something like a remote close has happened
-	.	or you tried to receive before it was established
-
-	la	SOCKET_CALL_FLAGS	. blocking
-	jza	receive_socket_x	. report no data
-
-	la, i	TCP_ESTABLISHED, b	. non_blocking
-	xor, xi	-1			. ^state
-
-	fret	0
-
-receive_socket_protocol_wrong
-transmit_socket_protocol_wrong
-	lx, xi	-22			. more minus than a negative state
-
-transmit_socket_x
-receive_socket_x
-	fret	0
-
-
 wpair_nocheck* $proc
 	rsr	16
 	sa	?-1, y
@@ -955,90 +1042,5 @@ w2nocheckpair?
 	sa	0, y
 w2nocheckbyte
 
-	lret	0
-
-
-socket_send	$head_far	 params(sotx,	int	;
-					txbuf,	int	;
-					txbytes,int	;
-					txflags,int)
-
-	la	sotx
-	ii	READ_SOCKET$
-	jna	transmit_socket_x
-	lk	(255*/16:s)
-	mta	(IPPROTO_UDP*/16:s)
-	j	socket_transmit_tcp?
-	and, xi	511
-	sal	3
-	lx	(BSOCKET*/12)
-	ax	a
-	la	b
-	sabr	BSOCKET
-	la	txbuf
-	sa	q
-	dl	txbytes
-	sb	SOCKET_CALL_FLAGS
-	push	x
-	call	(udp_txbuffer)
-	pop	y
-	jza	socket_udp_fail5
-	lx	a
-	ql	0, y		. addresses from connected socket
-	push	b
-	ly	descriptor:dgram, x
-	dsr	8
-	sbr	8
-	ds	dgram:ipsource, y
-	dl	6
-	dsr	8
-	sbr	8
-	ds	dgram:ipdest, y
-	ly	descriptor:uproto, x
-	pop	a
-	lb	7
-	dsl	8
-	sar	8
-	sbr	8
-	ds	uugram:sourcep, y
-	la	txbytes
-	sa	descriptor:bytes, x
-	ly	descriptor:apdata, x
-	lcal	udgram_write
-	la	SOCKET_CALL_FLAGS
-	and	(UDP_NO_CHECKSUM:s)
-	jza	udp_txaw
-	j	udp_txaw_nocheck
-socket_udp_fail5
-	la, xi	-5
-	fret	0
-
-socket_transmit_tcp?
-	mta	(TCP_TCB*/16:s)
-	j	transmit_socket_protocol_wrong
-	and, xi	0FF8
-	lx	(BSOCKET*/12)
-	ax	a
-	la	b
-	sabr	BSOCKET
-	la	txbuf
-	sa	q
-	dl	txbytes
-	orB, xi	05000++TCP_ACK
-	sb	SOCKET_CALL_FLAGS
-	j	tcp_add
-
-tcp_shield_yield
-	dpush	MSS
-	ii	YIELD$
-	pop	MSS
-	pop	SOCKET_CALL_FLAGS
-	lret	0
-
-tcp_shield_wait
-	dpush	MSS
-	ii	TWAIT$
-	pop	MSS
-	pop	SOCKET_CALL_FLAGS
 	lret	0
 

@@ -129,6 +129,7 @@ static void outputq()
 
    unsigned short        psum, csum;
 
+   unsigned char	*dgram;
    unsigned char        *ipayload;
    unsigned short       *wpayload;
 
@@ -137,7 +138,8 @@ static void outputq()
 
    unsigned short        interface,
                          llhl,
-                         tx_bytes;
+                         tx_bytes,
+			 dgraml;
 
    int			 fdes;
    unsigned char	*p;
@@ -157,7 +159,10 @@ static void outputq()
             llhl = 14;
       }
 
+      dgram = q->frame + llhl;
+
       tx_bytes = PORT(q->preamble.frame_length);
+      dgraml = tx_bytes - llhl;
 
       if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
 
@@ -194,15 +199,15 @@ static void outputq()
 
          if (flag['u'-'a'])
          {
-            iphl = (*p << 2) & 60;
-            ipayload = p + iphl;
+            iphl = (*dgram << 2) & 60;
+            ipayload = dgram + iphl;
             wpayload = (unsigned short *) ipayload;
 
-            switch(q->frame[9])
+            switch(dgram[9])
             {
                case IPPROTO_UDP:
                   psum = wpayload[3];
-                  csum = udp_checksum(x - iphl, ipayload, p + 12);
+                  csum = udp_checksum(dgraml - iphl, ipayload, dgram + 12);
 
                   #ifdef INTEL
                   csum = (csum>>8)|(csum<<8);
@@ -213,7 +218,7 @@ static void outputq()
                   break;
                case IPPROTO_TCP:
                   psum = wpayload[8];
-                  csum = tcp_checksum(x - iphl, ipayload, p + 12);
+                  csum = tcp_checksum(dgraml - iphl, ipayload, dgram + 12);
 
                   #ifdef INTEL
                   csum = (csum>>8)|(csum<<8);

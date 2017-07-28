@@ -41,10 +41,14 @@
 **********************************************************************/
 
 
-
+#include <stdio.h>
 #include "emulate.h"
 #include "rw.h"
 #include "alu.h"
+
+#ifdef	EDGE
+#include "../rta.run/idisplay.h"
+#endif
 
 extern int	 iselect;
 extern int	 _register[];
@@ -225,6 +229,11 @@ void  da(int ea)	/*	double add		*/
    int		 carry;
 
    burst_read2(operand, ea);
+
+   #ifdef EDGE
+   if (psr & 32768) b4double(operand[0], operand[1]);
+   #endif
+ 
    carry = operand[1] + b;
    b = carry & 0x00FFFFFF;
    carry >>= 24;
@@ -234,6 +243,10 @@ void  da(int ea)	/*	double add		*/
    carry >>= 24;
    psr &= 0x00FFFFFE;
    psr |= carry;
+
+   #ifdef EDGE
+   if (psr & 32768) q4double();
+   #endif
 }
 
 void dan(int ea)	/*	double add negative	*/
@@ -242,6 +255,11 @@ void dan(int ea)	/*	double add negative	*/
    int		 carry = 1;
 
    burst_read2(operand, ea);
+
+   #ifdef EDGE
+   if (psr & 32768) b4double(operand[0], operand[1]);
+   #endif
+ 
    operand[0] ^= 0x00FFFFFF;
    operand[1] ^= 0x00FFFFFF;
 
@@ -255,6 +273,10 @@ void dan(int ea)	/*	double add negative	*/
    carry >>= 24;
    psr &= 0x00FFFFFE;
    psr |= carry;
+
+   #ifdef EDGE
+   if (psr & 32768) q4double();
+   #endif
 }
 
 void dlsc(int ea)	/* double load shift and count	*/
