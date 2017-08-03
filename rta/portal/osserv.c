@@ -197,7 +197,7 @@ static void outputq()
          printf("TX %d\n", y);
          if (y < 0) printf("%d\n", errno);
 
-         if (flag['u'-'a'])
+         if ((x) && (flag['u'-'a']))
          {
             iphl = (*dgram << 2) & 60;
             ipayload = dgram + iphl;

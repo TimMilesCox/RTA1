@@ -6,7 +6,7 @@ replicate_abt
 ?	$do	32/4,	qpop		ABT+?*4-4
 	lret		0
 
-thread	la		b		. priority of new thread
+thread	la		b		. priority of new thread, application b
 	jna		no_new_thread	. you can't
 	aa, xi		-PRIORITIES
 	jc		no_new_thread	. you still can't
@@ -30,7 +30,7 @@ thread	la		b		. priority of new thread
 	push		B1_P		. calling thread B1 list pointer
 	push		NEXT_THREAD	. next of caller, base pointer
 
-	inB		65
+	inB		65		. calling thread TCB
 	sa		NEXT_THREAD	. new TCB base pointer next of calling thread
 	outA		65		. new thread TCB
 
@@ -46,7 +46,7 @@ thread	la		b		. priority of new thread
 
 	z		ULIMIT
 
-	dpush		a_x
+	dpush		a_x		. new and calling TCBs
 
 	lb		a		. thread transfer address from application a
 	la		2, fp		. calling thread B0
@@ -74,8 +74,8 @@ thread	la		b		. priority of new thread
 
 	z		switch_lock_cell
 
-	pop		a_x
-	pop		b_x
+	pop		a_x		. new TCB
+	pop		b_x		. calling TCB
 
 	lx		6		. from application mantissa2
 	sx		RSAVE+a		. parameter for thread
@@ -86,13 +86,14 @@ thread	la		b		. priority of new thread
 	tz		r_x		. but if caller was not initial thread
 	sr		WALKUP		. initial thread TCB
 					. initial thread owns all threads
-	outB		65
-	
-	ir		0
+	outB		65		. caller TCB
+	sa		a		. result TCB ID in caller a
+	ir		0		. return to caller
 
 no_new_thread_descriptor
-	la		b
-	lcal		bank_free
+	la		b_x		. descriptor TCB bank, not used
+	lcal		bank_free	. because thread descriptor not assigned
 
 no_new_thread
+	z		a		. result no TCB ID in caller a
 	ir		0
