@@ -86,6 +86,7 @@ masmx -kw nawmuch.msm ..\test.rta\nawmuch
 masmx -kw newtotal.msm ..\test.rta\newtotal
 masmx -kw once.msm ..\test.rta\once
 masmx -kw onetime.msm ..\test.rta\onetime
+masmx -kw oper8.msm ..\test.rta\oper8
 masmx -kw oreally.msm ..\test.rta\oreally
 masmx -kw oreilly.msm ..\test.rta\oreilly
 masmx -kw overlap.msm ..\test.rta\overlap

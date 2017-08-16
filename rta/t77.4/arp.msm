@@ -82,7 +82,6 @@ xarp_clear
 	j	xarp_next
 
 xarp_timers
-	$if	0
 	lr	arp_store(ARP_STORE)-1,,xi
 	lx	arp_hash,,xi
 xarp_walk
@@ -96,7 +95,6 @@ xarp_walk_chain
 	tz	y
 	j	xarp_walk_next
 	jdr	xarp_walk
-	$endif
 xarpx	qpop	r
 
 
@@ -160,22 +158,12 @@ AXW		$set	8		. it was where we are called from
 	tz	y
 	j	insert_construct_request . found a new cache row
 
-	$if	0
-	lcal	search_other_chains
-	tz	y
-	j	insert_construct_request . took a cache row from another # chain
-	$endif
-
 	j	return
 
 insert_construct_request
-	$if	0
-	lcal	in2order
-	$else
 	la	*CHAIN_HEAD		. read address of 1st in chain by pointer
 	sa	arp_row:next		. write next of new 1st
 	sy	*CHAIN_HEAD		. write chain head location by pointer
-	$endif
 
 construct_request
 	z	arp_row:tha
@@ -323,27 +311,6 @@ search_heap				. is the heap used up?
 eoheap	ly	0,,xi
 	lret	0
 
-search_other_chains		. look for a timed-out line
-	lr	arp_store(ARP_STORE)-1,,xi
-pick_chain
-	ly	arp_hash,,xi	. ultimate hash chain head
-	ay	r
-search_chain
-	lk	y		. previous
-	la	arp_row:next
-	ly	a
-	jza	search_around
-	dl	arp_row:tpa
-	jdz	found
-	j	search_chain
-search_around
-	jdr	pick_chain	. next hash chain head
-	lret	0		. return with none
-
-found	push	arp_row:next	. take it from the cache chain
-	pop	*k		. previous->next = next
-	lret	0
-
 glean_and_push
 	lx	descriptor:dgram
 	dl	arp_msg:spa, x
@@ -358,24 +325,13 @@ glean_and_push
 	j	update		. found a spare row same # chain
 	lcal	search_heap
 
-	$if	0
-	j	insert_update		. found a new row
-	lcal	search_other_chains
-	tz	y
-	j	insert_update	. found a spare row in another # chain
-	$endif
-
 	jza	gleanx		. can't keep this information until
 				. a cache row times out
 
 insert_update
-	$if	0
-	lcal	in2order
-	$else
 	la	*CHAIN_HEAD	. read address of 1st in chain by pointer
 	sa	arp_row:next	. make that next of new 1st
 	sy	*CHAIN_HEAD	. write new 1st to chain head by pointer
-	$endif
 
 update	dl	NET_ADDR
 	ds	arp_row:tpa
@@ -386,11 +342,6 @@ update	dl	NET_ADDR
 	la	descriptor:i_f
 	sa	arp_row:i_f
 
-	$if	0
-	tz	arp_row:waitq:head
-	lcal	pushq
-	$endif
-	
 gleanx	lret	0
 
 search_and_indicate		. process a request from outside
@@ -415,7 +366,6 @@ respond_no
 	lret	0
 
 
-	$if	0
 time_test			. y -> ARP cache row for time test
 	qpush	r
 	dl	arp_row:tpa	. not in use
@@ -425,71 +375,24 @@ time_test			. y -> ARP cache row for time test
 	la	arp_row:refresh
 	ana	DAYCLOCK$	. 24 bits is enough for this timer
 	jpa	time_tex
-	ana	(ARP_MARGIN)
-	jna	time_out
+
+	la	DAYCLOCK$	. restart the refresh timer
+	aa	(ARP_REFRESH)	. before register y gets re-used
+	sa	arp_row:refresh
 
 	lx	arp_row:i_f
 	ax	i_f_pointer_array,,i
 	la	this_if:address_list, x
 
 				. advertise we would like a refresh
-				. and leave the timer overrunning
+				. and restart the timer
 
 	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
 				this_if:id, x		;
 				0,,xi			;
 				ifaddr:lexical,a,long	;
 				arp_row:tpa,,long
-	j	time_tex
-
-time_out			. response to request hasn't arrived
-				. within ARP_MARGIN. Free the cache row
-time_out_dgram
-	tz	arp_row:waitq.head
-	lcal	drop_queued_dgrams
-
-	z	arp_row:tpa
-	z	arp_row:tpa+1	. this declares the cache line free
-
 time_tex
 	qpop	r
 	lret	0
-
-drop_queued_dgrams
-	push	y		. save the cache row address
-	ly	arp_row:waitq,,i
-	lcal	mtoq
-	pop	y
-	lret	0
-
-pushq	push	y		. save the cache row address
-	lcal	qout
-	pop	y
-	lret	0
-
-mtoq	push	y		. save the queue head pointer
-mtoq1	lcal	readq
-	jza	mtoqx
-	lx	tx_buffers
-	lcal	sell1
-	ly	0, sp		. sell1 certainly uses y
-	j	mtoq1
-mtoqx	pop	y
-	lret	0
-
-				. all waiting dgrams must go on the
-				. interface which resolved physa
-qout	dpush	x		. save interface /qhead pointers
-qout1	lcal	readq
-	jza	qoutx
-        lcal    q2ifree
-	lx	0, sp
-	ly	1, sp
-	j	qout1
-qoutx	pop	x
-	pop     y
-	lret	0
-	$endif
-
-.	$include in2order
 
