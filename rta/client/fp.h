@@ -1,5 +1,5 @@
 
-#define	TEXT		160
+#define	TEXTL		160
 
 #define	FP_SERVICE	128
 #define	I_SERVICE	129
