@@ -1,0 +1,2347 @@
+MASMX 7r3A
+3/aqui16.msm
+*EOF*
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is a free processor architecture specification.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    Scripts and utility programs for constructing RTA1 target
+  :                            23 .    executable software are free software
+  :                            24 .
+  :                            25 .    You can redistribute it and/or modify RTA1
+  :                            26 .    under the terms of the GNU General Public License as published by
+  :                            27 .    the Free Software Foundation, either version 3 of the License, or
+  :                            28 .    (at your option) any later version.
+  :                            29 .
+  :                            30 .    RTA1 is distributed in the hope that it will be useful,
+  :                            31 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            32 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            33 .    GNU General Public License for more details.
+  :                            34 .
+  :                            35 .    You should have received a copy of the GNU General Public License
+  :                            36 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            37 .
+  :                            38 .
+  :                            39 
+  :                            40: 	$include	../def/rta.def
+  :                            41: 	$include	binary.def
+  :                            42 
+  :                            43 .	equates to export routine versions for vector
+  :                            44 
+  :                            45 AQUIFORM_NET16	$equ	1
+  :                            46 COUNTED_STREAM	$equ	1
+  :                            47: 	$include	register.def
+  :                            48: 	$include	aquiform.def
+  :                            49 
+  :                            50 HORIZONTAL_TAB $equ 9   . the code does not know this library
+  :                            51                         . is 8-bit ASCII
+  :                            52                         . only this wrapper knows that
+  :                            53 
+  :                            54 CR	$equ	13
+  :                            55 LF	$equ	10
+  :                            56 
+  :                            57 	$list		2
+  :                            58 
+  :                            59: 	$include	aquiform
+  :                            1 .
+  :                            2 .    Copyright Tim Cox, 2012
+  :                            3 .    TimMilesCox@gmx.ch
+  :                            4 .
+  :                            5 .    This file is instruction code for the freeware processor architecture
+  :                            6 .
+  :                            7 .                RTA1
+  :                            8 .
+  :                            9 .    RTA1 is a free processor architecture specification.
+  :                            10 .
+  :                            11 .    The executable emulation of RTA1 is free software.
+  :                            12 .
+  :                            13 .    This instruction code for the target RTA1 architecture is free software
+  :                            14 .
+  :                            15 .    Software programs delivered with this software to connect the
+  :                            16 .    emulated RTA1 with real network interfaces in the emulator host
+  :                            17 .    are free software
+  :                            18 .
+  :                            19 .    Scripts and programs delivered with this software for running
+  :                            20 .    on other computers and interacting with the RTA1 are free software
+  :                            21 .
+  :                            22 .    Scripts and utility programs for constructing RTA1 target
+  :                            23 .    executable software are free software
+  :                            24 .
+  :                            25 .    You can redistribute it and/or modify RTA1
+  :                            26 .    under the terms of the GNU General Public License as published by
+  :                            27 .    the Free Software Foundation, either version 3 of the License, or
+  :                            28 .    (at your option) any later version.
+  :                            29 .
+  :                            30 .    RTA1 is distributed in the hope that it will be useful,
+  :                            31 .    but WITHOUT ANY WARRANTY; without even the implied warranty of
+  :                            32 .    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+  :                            33 .    GNU General Public License for more details.
+  :                            34 .
+  :                            35 .    You should have received a copy of the GNU General Public License
+  :                            36 .    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+  :                            37 .
+  :                            38 .
+  :                            39 
+  :                            40 
+  :                            41 	$if	AQUIFORM_NET16
+  :                            42 AQUIFORM_BITS $set	16
+  :                            43 	$else
+  :                            44 AQUIFORM_BITS $set	24
+  :                            45 	$endif
+  :                            46 
+  :                            47 
+  :                            48 $(0:*1)
+  :                            49 
+  :                            50 repoussez	. LAST_BYTE_READ has not been consumed
+  :                            51 		. it is the byte that tripped end of token
+  :                            52 
+  :                            53 		. this is part of some scan functions
+  :                            54 		. where encountering out of range values
+  :                            55 		. indicates the end of a token
+  :                            56 
+  :                            57 		. LAST_BYTE_READ is pushed back into RDATA
+  :                            58 		. so that the next scan primitive routine
+  :                            59 		. retrieves it on READ_BYTE
+  :                            60 
+  :                            61 		. COUNTED_STREAM is the text scan inside
+  :                            62 		. a field which has a known size instead
+  :                            63 		. of an expected null terminator
+  :                            64 
+  :                            65 		. for example a user datagram or XDR field
+  :                            66 		. or any fixed field conversion from text
+  :                            67 
+00:000000 600013              +68 	la	LAST_BYTE_READ
+00:000001 680015              +69 	lb	RDATA
+00:000002 160008              +70 	dsr	$byte
+00:000003 600014              +71 	la	RDATAC
+00:000004 C50008              +72 	aa, xi	$byte
+00:000005 C70014              +73 	ds	RDATAC
+  :                            74 
+  :                            75 	$if	AQUIFORM_BITS///$byte
+  :                            76 	aa, xi	-24			. size that straddles words
+  :                            77 	jnc	repousse_in_range	. < 24 is OK
+  :                            78 	jc	repousse_in_range	. = 24 is OK
+  :                            79 	sa	RDATAC
+  :                            80 	dec	q
+  :                            81 repousse_in_range
+  :                            82 	$endif
+  :                            83 
+  :                            84 	$if	COUNTED_STREAM
+00:000006 170010              +85 	inc	BYTES
+  :                            86 	$endif
+  :                            87 
+00:000007 350000              +88 	lret	0
+  :                            89 
+  :                            90 read_stream_start
+00:000008 200010              +91 	READ_STREAM_START
+00:000009 28000D              +91 
+00:00000A 300014              +91 
+00:00000B 050060              +92 	READ_START
+00:00000C 3D0000              +93 	fret	0
+  :                            94 
+00:00000D 050060              +95 fscan	READ_START
+00:00000E 600010              +96 fscans	READ_BYTE
+(+00)0f
+00:00000F C60012              +96 
+00:000010 1F0010              +96 
+00:000011 150008              +96 
+00:000012 200013              +96 
+00:000013 680004              +97 	anu, xi	' '
+00:000014 DD0020              +97 
+(+00)0f
+00:000015 CE000E              +98 	jzb	fscans
+00:000016 300011              +99 	z	SIGNS
+00:000017 300012              +100 	z	SCALE
+00:000018 300012              +101 	z	SCALE_TRIPPED
+00:000019 300009              +102 	z	TRIPLE
+00:00001A 30000A              +103 	z	TRIPLE+1
+00:00001B 30000B              +104 	z	TRIPLE+2
+  :                            105 
+00:00001C 680004              +106 	anu, xi	'-'
+00:00001D DD002D              +106 
+(+00)0f
+00:00001E DE0021              +107 	jnzb	plus?
+00:00001F 0F0011              +108 	n	SIGNS
+(+00)0f
+00:000020 B60024              +109 	j	read_number_string
+00:000021 680004              +110 plus?	anu, xi	'+'
+00:000022 DD002B              +110 
+(+00)0f
+00:000023 DE0029              +111 	jnzb	first_digit
+  :                            112 read_number_string
+00:000024 600010              +113 	READ_BYTE
+(+00)0f
+00:000025 C60028              +113 
+00:000026 1F0010              +113 
+00:000027 150008              +113 
+00:000028 200013              +113 
+  :                            114 first_digit
+00:000029 6D0000              +115 	lb, xi	0
+00:00002A 550006              +116 	lx, xi	6
+(+00)0f
+00:00002B 3E008B              +117 	lcal	read5
+  :                            118 
+00:00002C 450006              +119 	lr, xi	6
+(+00)0f
+00:00002D F60071              +120 	jxge	adjust_scale_no6	. got no digits
+  :                            121 					. result registers are zero
+  :                            122 	$if	$FINESSE
+00:00002E 700002              +123 	tz	x
+[+0000]0f
+00:00002F 3E0000              +124 	lcal	diminish6
+  :                            125 	$endif
+  :                            126 
+00:000030 28000B              +127 	sb	11
+  :                            128 
+00:000031 700002              +129 	tz	x
+(+00)0f
+00:000032 B60071              +130 	j	adjust_scale
+(+00)0f
+00:000033 3E0084              +131 	lcal	read6
+(+00)0f
+00:000034 F60071              +132 	jxge	adjust_scale_no6	. got no more digits
+  :                            133 					. got 1 to 6 digits
+  :                            134 	$if	$FINESSE
+00:000035 700002              +135 	tz	x
+[+0000]0f
+00:000036 3E0000              +136 	lcal	diminish6
+  :                            137 	$endif
+  :                            138 
+00:000037 280007              +139 	sb	7
+00:000038 300006              +140 	z	6
+00:000039 68000B              +141 	lb	11
+  :                            142 
+  :                            143 	$if	$FINESSE
+(+00)0c
+00:00003A E8A3F9              +144 	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+  :                            145 	$else
+  :                            146 	mf	(1000000)
+  :                            147 	$endif
+  :                            148 
+00:00003B D70006              +149 	da	6
+00:00003C C7000A              +150 	ds	10
+  :                            151 
+00:00003D 700002              +152 	tz	x
+(+00)0f
+00:00003E B60071              +153 	j	adjust_scale
+(+00)0f
+00:00003F 3E0084              +154 	lcal	read6
+(+00)0f
+00:000040 F60071              +155 	jxge	adjust_scale_no6	. got no more digits
+  :                            156 					. got 1 to 6 digits
+  :                            157 	$if	$FINESSE
+00:000041 700002              +158 	tz	x
+[+0000]0f
+00:000042 3E0000              +159 	lcal	diminish6
+  :                            160 	$endif
+  :                            161 
+00:000043 280007              +162 	sb	7
+00:000044 68000B              +163 	lb	11
+  :                            164 
+  :                            165 	$if	$FINESSE
+(+00)0c
+00:000045 E8A3F9              +166 	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+  :                            167 	$else
+  :                            168 	mf	(1000000)
+  :                            169 	$endif
+  :                            170 
+00:000046 D70006              +171 	da	6
+00:000047 28000B              +172 	sb	11
+00:000048 200007              +173 	sa	7
+00:000049 B70006              +174 	sc	6
+00:00004A 68000A              +175 	lb	10
+  :                            176 
+  :                            177 	$if	$FINESSE
+(+00)0c
+00:00004B E8A3F9              +178 	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+  :                            179 	$else
+  :                            180 	mf	(1000000)
+  :                            181 	$endif
+  :                            182 
+00:00004C D70006              +183 	da	6
+00:00004D C70009              +184 	ds	9
+  :                            185 
+00:00004E 700002              +186 	tz	x
+(+00)0f
+00:00004F B60071              +187 	j	adjust_scale		. last frame < 6 digits
+  :                            188 
+00:000050 550003              +189 	lx, xi	3
+(+00)0f
+00:000051 3E0085              +190 	lcal	read3
+00:000052 450003              +191 	lr, xi	3
+(+00)0f
+00:000053 F60071              +192 	jxge	adjust_scale_no3	. got no more digits
+  :                            193 
+  :                            194 	$if	$FINESSE
+00:000054 700002              +195 	tz	x
+[+0000]0f
+00:000055 3E0000              +196 	lcal	diminish6
+  :                            197 	$endif
+  :                            198 
+00:000056 280007              +199 	sb	7			. got 1 2 or 3 digits
+00:000057 300006              +200 	z	6
+  :                            201 
+00:000058 68000B              +202 	lb	11
+  :                            203 
+  :                            204 	$if	$FINESSE
+(+00)0c
+00:000059 E8A3FF              +205 	mf	(1000, 100, 10t), x
+  :                            206 	$else
+  :                            207 	mf, xi	1000
+  :                            208 	$endif
+  :                            209 
+00:00005A D70006              +210 	da	6
+00:00005B 28000B              +211 	sb	11
+00:00005C 200007              +212 	sa	7
+00:00005D B70006              +213 	sc	6
+00:00005E 68000A              +214 	lb	10
+  :                            215 
+  :                            216 	$if	$FINESSE
+(+00)0c
+00:00005F E8A3FF              +217 	mf	(1000, 100, 10t), x
+  :                            218 	$else
+  :                            219 	mf, xi	1000
+  :                            220 	$endif
+  :                            221 
+00:000060 D70006              +222 	da	6
+00:000061 28000A              +223 	sb	10
+00:000062 200007              +224 	sa	7
+00:000063 680009              +225 	lb	9
+  :                            226 
+  :                            227 	$if	$FINESSE
+(+00)0c
+00:000064 E8A3FF              +228 	mf	(1000, 100, 10t), x
+  :                            229 	$else
+  :                            230 	mf, xi	1000
+  :                            231 	$endif
+  :                            232 
+00:000065 C80007              +233 	ab	7
+00:000066 280009              +234 	sb	9
+  :                            235 
+00:000067 700002              +236 	tz	x
+(+00)0f
+00:000068 B60071              +237 	j	adjust_scale		. last frame < 3 digits
+  :                            238 
+00:000069 600013              +239 	la	LAST_BYTE_READ
+  :                            240 	$if	'e'^='E'
+00:00006A 680004              +241 	anu, xi	'e'
+00:00006B DD0065              +241 
+(+00)0f
+00:00006C CE0071              +242 	jzb	adjust_scale		. it was not 3 digits
+  :                            243 	$endif
+00:00006D 680004              +244 	anu, xi	'E'
+00:00006E DD0045              +244 
+(+00)0f
+00:00006F CE0071              +245 	jzb	adjust_scale
+  :                            246 
+  :                            247 
+(+00)0f
+00:000070 3E009B              +248 	lcal	skate		. 21 digit columns is enough
+  :                            249 				. just weigh the rest of them
+  :                            250 
+  :                            251 adjust_scale
+  :                            252 	$if	$FINESSE=0
+  :                            253 	lb	SCALE
+  :                            254 	anb	x
+  :                            255 	sb	SCALE
+  :                            256 	$endif
+  :                            257 
+  :                            258 adjust_scale_no3
+  :                            259 adjust_scale_no6
+  :                            260 	
+(+00)0f
+00:000071 FF0402              +261 	call	(u72tofloat)
+00:000072 600013              +262 	la	LAST_BYTE_READ
+  :                            263 
+  :                            264 	$if	'e'^='E'
+00:000073 680004              +265 	anu, xi	'e'
+00:000074 DD0065              +265 
+(+00)0f
+00:000075 CE007B              +266 	jzb	e_string_scan
+  :                            267 	$endif
+  :                            268 
+00:000076 680004              +269 	anu, xi	'E'
+00:000077 DD0045              +269 
+(+00)0f
+00:000078 CE007B              +270 	jzb	e_string_scan
+  :                            271 
+00:000079 6D0000              +272 	lb, xi	0
+(+00)0f
+00:00007A B6007C              +273 	j	e_string_noscan
+  :                            274 
+  :                            275 e_string_scan
+(+00)0f
+00:00007B 3E00B0              +276 	lcal	e_string
+  :                            277 e_string_noscan
+00:00007C C80012              +278 	ab	SCALE
+00:00007D 780012              +279 	tp	SCALE		. it's 1s complement
+00:00007E CD0001              +280 	ab, xi	1		. because it's shared with SCALE_TRIPPED
+  :                            281 
+(+00)0f
+00:00007F CE0082              +282 	jzb	noscale
+(+00)0f
+00:000080 FF0403              +283 	call	(floating_scale)
+00:000081 470008              +284 	qs	8
+  :                            285 noscale
+  :                            286 
+  :                            287 .	lcal	repoussez	. unconsume the byte
+  :                            288 				. which ended the scan
+  :                            289 .				. should not need this
+00:000082 4F0008              +290 	ql	8
+00:000083 3D0000              +291 	fret	0
+  :                            292 
+  :                            293 
+00:000084 550006              +294 read6	lx, xi	6		. start the order of number *100000
+00:000085 6D0000              +295 read3	lb, xi	0		. and the sum at zero
+00:000086 600010              +296 read1	READ_BYTE
+(+00)0f
+00:000087 C6008A              +296 
+00:000088 1F0010              +296 
+00:000089 150008              +296 
+00:00008A 200013              +296 
+00:00008B C5FFC6              +297 read5	aa, xi	-'0'-10		. > symbol '9' in the data code
+  :                            298 				. of this assembly?
+(+00)0f
+00:00008C 7E009A              +299 	jc	over		. if so, it is not a digit
+00:00008D C5000A              +300 	aa, xi	10		. if not, is it under '0'?
+(+00)0f
+00:00008E 5E0096              +301 	jnc	under		. then it is not a digit either
+00:00008F 85FFFF              +302 	ax, xi	-1		. count down and address the value list
+[+0003]0c
+00:000090 97A000              +303 	ex	table_add, x	. add
+00:000091 780012              +304 	tp	SCALE_TRIPPED	. if in fraction, reduce scale
+00:000092 1F0012              +305 	dec	SCALE		. as order of mantissa increases
+00:000093 700002              +306 	tz	x		. last column in six?
+(+00)0f
+00:000094 B60086              +307 	j	read1
+00:000095 350000              +308 	lret	0
+  :                            309 
+  :                            310 	$if	'.'>'9'		. is point > digits in the data code
+  :                            311 				. of this assembly?
+  :                            312 over
+  :                            313 	aa, xi	'0'+10-'.'	. if so we might have a point
+  :                            314 	jnza	out		. otherwise the number string is concluded
+  :                            315 	n	SCALE_TRIPPED	. switch on fraction
+  :                            316 	j	read1		. carry on
+  :                            317 under
+  :                            318 out	lret	0
+  :                            319 	$endif
+  :                            320 
+  :                            321 	$if	'.'<'0'		. is point < digits in the data code
+  :                            322 under				. of this assembly?
+00:000096 C50002              +323 	aa, xi	'0'-'.'		. if so we might have a point
+(+00)0f
+00:000097 D6009A              +324 	jnza	out		. otherwise conclude the number string
+00:000098 0F0012              +325 	n	SCALE_TRIPPED	. switch on fraction
+(+00)0f
+00:000099 B60086              +326 	j	read1		. carry on
+  :                            327 over
+00:00009A 350000              +328 out	lret	0
+  :                            329 	$endif
+  :                            330 
+  :                            331 				. this routine slides over any
+  :                            332 				. digits in the number string after
+  :                            333 				. the first 21. Integer digits cause
+  :                            334 				. the exponent to go up
+  :                            335 
+00:00009B 600010              +336 skate	READ_BYTE		. read extra digits, increment scale
+(+00)0f
+00:00009C C6009F              +336 
+00:00009D 1F0010              +336 
+00:00009E 150008              +336 
+00:00009F 200013              +336 
+  :                            337 				. if this is still the integer part
+  :                            338 
+00:0000A0 680004              +339 	anu, xi	'0'+10		. is this byte > '9'
+00:0000A1 DD003A              +339 
+(+00)0f
+00:0000A2 7E00AF              +340 	jc	skate_over	. it's not a digit in this case
+00:0000A3 680004              +341 	anu, xi	'0'		. is it < '0'
+00:0000A4 DD0030              +341 
+(+00)0f
+00:0000A5 5E00AA              +342 	jnc	skate_under	. then it's not a digit either
+00:0000A6 780012              +343 	tp	SCALE_TRIPPED	. it's a digit. Are we integer or fraction?
+(+00)0f
+00:0000A7 B6009B              +344 	j	skate		. we're in the fraction drop the extra digit
+00:0000A8 170012              +345 	inc	SCALE		. we're in the integer, up the decimal scale
+(+00)0f
+00:0000A9 B6009B              +346 	j	skate		. and then drop the digit
+  :                            347 
+  :                            348 	$if	'.'>'9'		. is point > than the digits
+  :                            349 				. in the data code of this assembly?
+  :                            350 skate_over
+  :                            351 	anu, xi	'.'		. then it might be a decimal point
+  :                            352 	jnzb	skate_away	. but if not the string is concluded
+  :                            353 	n	SCALE_TRIPPED	. turn on the fraction
+  :                            354 	j	skate		. and carry on
+  :                            355 skate_under
+  :                            356 skate_away
+  :                            357 	lret	0
+  :                            358 	$endif
+  :                            359 
+  :                            360 	$if	'.'<'0'		. is point < than the digits in the
+  :                            361 				. data code of this assembly?
+  :                            362 skate_under			
+00:0000AA 680004              +363 	anu, xi	'.'		. if so this might be a point
+00:0000AB DD002E              +363 
+(+00)0f
+00:0000AC DE00AF              +364 	jnzb	skate_away	. if not conclude the string
+00:0000AD 0F0012              +365 	n	SCALE_TRIPPED	. switch on fraction
+(+00)0f
+00:0000AE B6009B              +366 	j	skate		. and carry on
+  :                            367 skate_over
+  :                            368 skate_away
+  :                            369 .	sa	LAST_BYTE_READ
+00:0000AF 350000              +370 	lret	0
+  :                            371 	$endif
+  :                            372 
+  :                            373 e_string
+00:0000B0 600010              +374 	READ_BYTE
+(+00)0f
+00:0000B1 C600B4              +374 
+00:0000B2 1F0010              +374 
+00:0000B3 150008              +374 
+00:0000B4 200013              +374 
+00:0000B5 6D0000              +375 	lb, xi	0
+00:0000B6 C5FFD5              +376 	aa, xi	-'+'
+(+00)0f
+00:0000B7 C600C0              +377 	jza	free_ip
+00:0000B8 C5FFFE              +378 	aa, xi	'+'-'-'
+(+00)0f
+00:0000B9 C600BC              +379 	jza	free_in
+00:0000BA C5FFF3              +380 	aa, xi	'-'-'0'-10
+(+00)0f
+00:0000BB B600C6              +381 	j	free_iq
+  :                            382 
+  :                            383 free_in
+(+00)0f
+00:0000BC 3E00C0              +384 	lcal	free_ip
+00:0000BD 0F0005              +385 	n	b
+00:0000BE 170005              +386 	inc	b
+00:0000BF 350000              +387 	lret	0
+  :                            388 
+00:0000C0 600010              +389 free_ip	READ_BYTE
+(+00)0f
+00:0000C1 C600C4              +389 
+00:0000C2 1F0010              +389 
+00:0000C3 150008              +389 
+00:0000C4 200013              +389 
+  :                            390 
+00:0000C5 C5FFC6              +391 	aa, xi	-'0'-10
+(+00)0f
+00:0000C6 7E00CE              +392 free_iq	jc	free_ix
+00:0000C7 C5000A              +393 	aa, xi	10
+(+00)0f
+00:0000C8 5E00CE              +394 free_ia	jnc	free_ix
+00:0000C9 2E0001              +395 	sbl	1
+00:0000CA C00005              +396 	aa	b
+00:0000CB 2E0002              +397 	sbl	2
+00:0000CC C80004              +398 	ab	a
+(+00)0f
+00:0000CD B600C0              +399 	j	free_ip
+00:0000CE 350000              +400 free_ix	lret	0
+  :                            401 
+  :                            402 
+00:0000CF 050060              +403 symbol	READ_START
+00:0000D0 600013              +404 	la	LAST_BYTE_READ
+(+00)0f
+00:0000D1 B600D7              +405 	j	blank_symbol?
+  :                            406 
+  :                            407 next_symbol
+00:0000D2 600010              +408 	READ_BYTE
+(+00)0f
+00:0000D3 C600D6              +408 
+00:0000D4 1F0010              +408 
+00:0000D5 150008              +408 
+00:0000D6 200013              +408 
+  :                            409 blank_symbol?
+00:0000D7 680004              +410 	anu, xi	' '
+00:0000D8 DD0020              +410 
+(+00)0f
+00:0000D9 CE00D2              +411 	jzb	next_symbol
+00:0000DA 680004              +412 	anu, xi	HORIZONTAL_TAB
+00:0000DB DD0009              +412 
+(+00)0f
+00:0000DC CE00D2              +413 	jzb	next_symbol
+00:0000DD 3D0000              +414 	fret	0
+  :                            415 
+  :                            416 fedit_start
+00:0000DE 050010              +417 	WRITE_START
+00:0000DF 470008              +418 	qs	8
+00:0000E0 65002B              +419 	la, xi	'+'
+00:0000E1 780008              +420 	tn	8
+(+00)0f
+00:0000E2 B600E4              +420 
+(+00)0f
+00:0000E3 B600E9              +421 	j	write_sign
+00:0000E4 0F0008              +422 	n	8
+00:0000E5 0F0009              +423 	n	9
+00:0000E6 0F000A              +424 	n	10
+00:0000E7 0F000B              +425 	n	11
+00:0000E8 65002D              +426 	la, xi	'-'
+  :                            427 write_sign
+00:0000E9 260010              +428 	WRITE_BYTE
+00:0000EA 1D0008              +428 
+00:0000EB 170010              +428 
+00:0000EC 350000              +429 	lret	0
+  :                            430 
+(+00)0f
+00:0000ED 3E00DE              +431 fediti	lcal	fedit_start
+(+00)0f
+00:0000EE FF0404              +432 	call	(scale_integrate)
+(+00)0f
+00:0000EF B600F5              +433 	j	fedit1
+  :                            434 
+(+00)0f
+00:0000F0 3E01C7              +435 	lcal	iedit72_u
+00:0000F1 300012              +436 	z	SCALE
+00:0000F2 68000B              +437 	lb	11
+(+00)0f
+00:0000F3 B6010B              +438 	j	fedit_fraction
+  :                            439 
+(+00)0f
+00:0000F4 3E00DE              +440 fedit	lcal	fedit_start
+00:0000F5 4F0008              +441 fedit1	ql	8
+(+00)0f
+00:0000F6 FF0405              +442 	call	(scale_out)
+00:0000F7 600008              +443 	la	8
+00:0000F8 A5000F              +444 	and, xi	15
+00:0000F9 500004              +445 	lx	a
+00:0000FA 650000              +446 	la, xi	0
+00:0000FB 680009              +447 	lb	9
+00:0000FC 36A000              +448 	dsl	0, x
+  :                            449 
+00:0000FD F80004              +450 	push	a
+  :                            451 
+00:0000FE 60000A              +452 	la	10
+00:0000FF 0EA000              +453 	sbr	0, x
+00:000100 76A000              +454 	drl	0, x
+00:000101 280009              +455 	sb	9
+  :                            456 
+00:000102 68000B              +457 	lb	11
+00:000103 06A000              +458 	sar	0, x
+00:000104 36A000              +459 	dsl	0, x
+00:000105 C7000A              +460 	ds	10
+  :                            461 
+00:000106 380004              +462 	pop	a
+  :                            463 
+00:000107 950030              +464 	or, xi	'0'
+00:000108 260010              +465 	WRITE_BYTE
+00:000109 1D0008              +465 
+00:00010A 170010              +465 
+  :                            466 
+  :                            467 fedit_fraction
+00:00010B 65002E              +468 	la, xi	'.'
+00:00010C 260010              +469 	WRITE_BYTE
+00:00010D 1D0008              +469 
+00:00010E 170010              +469 
+  :                            470 
+(+00)0f
+00:00010F FF0406              +471 	call	(fraction3)
+  :                            472 	
+[+0007]0c
+00:000110 60C000              +473 	la	table, a
+00:000111 1D0010              +474 	WRITE3_BYTES
+00:000112 1D0008              +474 
+00:000113 FD0003              +474 
+00:000114 2F0010              +474 
+  :                            475 
+(+00)0f
+00:000115 FF0407              +476 	call	(fraction6)
+  :                            477 
+00:000116 70000B              +478 	tz	11
+(+00)0f
+00:000117 B6011D              +479 	j	edit18
+00:000118 70000A              +480 	tz	10
+(+00)0f
+00:000119 B60124              +481 	j	edit12
+00:00011A 700009              +482 	tz	9
+(+00)0f
+00:00011B B60129              +483 	j	edit6
+(+00)0f
+00:00011C B6012B              +484 	j	edit_scale?
+  :                            485 
+00:00011D 600009              +486 edit18	la	9
+(+00)0f
+00:00011E 3E0135              +487 	lcal	allsix
+00:00011F 60000A              +488 	la	10
+(+00)0f
+00:000120 3E0135              +489 	lcal	allsix
+00:000121 60000B              +490 	la	11
+(+00)0f
+00:000122 3E0142              +491 	lcal	up2six
+(+00)0f
+00:000123 B6012B              +492 	j	edit_scale?
+  :                            493 
+00:000124 600009              +494 edit12	la	9
+(+00)0f
+00:000125 3E0135              +495 	lcal	allsix
+00:000126 60000A              +496 	la	10
+(+00)0f
+00:000127 3E0142              +497 	lcal	up2six
+(+00)0f
+00:000128 B6012B              +498 	j	edit_scale?
+  :                            499 
+00:000129 600009              +500 edit6	la	9
+(+00)0f
+00:00012A 3E0142              +501 	lcal	up2six
+  :                            502 edit_scale?
+00:00012B 700012              +503 	tz	SCALE
+(+00)0f
+00:00012C 3E012E              +504 	lcal	edit_scale
+00:00012D 3D0000              +505 	fret	0
+  :                            506 
+  :                            507 edit_scale
+00:00012E 650065              +508 	la	'e',,xi
+00:00012F 260010              +509 	WRITE_BYTE
+00:000130 1D0008              +509 
+00:000131 170010              +509 
+00:000132 680012              +510 	lb	SCALE
+(+00)0f
+00:000133 3E0150              +511 	lcal	ffi
+00:000134 350000              +512 	lret	0
+  :                            513 
+00:000135 160018              +514 allsix	dsr	24
+00:000136 F503E8              +515 	d, xi	1000
+[+0007]0c
+00:000137 60C000              +516 	la	table, a
+00:000138 1D0010              +517 	WRITE3_BYTES
+00:000139 1D0008              +517 
+00:00013A FD0003              +517 
+00:00013B 2F0010              +517 
+[+0007]0c
+00:00013C 60D000              +518 	la	table, b
+00:00013D 1D0010              +519 	WRITE3_BYTES
+00:00013E 1D0008              +519 
+00:00013F FD0003              +519 
+00:000140 2F0010              +519 
+00:000141 350000              +520 	lret	0
+  :                            521 
+00:000142 160018              +522 up2six	dsr	24
+00:000143 F503E8              +523 	d, xi	1000
+[+0007]0c
+00:000144 60C000              +524 	la	table, a
+00:000145 1D0010              +525 	WRITE3_BYTES
+00:000146 1D0008              +525 
+00:000147 FD0003              +525 
+00:000148 2F0010              +525 
+(+00)0f
+00:000149 CE014F              +526 	jzb	only3
+[+0007]0c
+00:00014A 60D000              +527 	la	table, b
+00:00014B 1D0010              +528 	WRITE3_BYTES
+00:00014C 1D0008              +528 
+00:00014D FD0003              +528 
+00:00014E 2F0010              +528 
+00:00014F 350000              +529 only3	lret	0
+  :                            530 
+  :                            531 
+  :                            532 .	this is a fast translate which prints triplets
+  :                            533 .	of digits and is only used for floating exponents
+  :                            534 .	and so has sign handling as well
+  :                            535 
+00:000150 65002B              +536 ffi	la, xi	'+'
+(+00)0f
+00:000151 AE0155              +537 	jpb	ffi1
+00:000152 65002D              +538 	la, xi	'-'
+00:000153 0F0005              +539 	n	b
+00:000154 CD0001              +540 	ab, xi	1
+00:000155 260010              +541 ffi1	WRITE_BYTE
+00:000156 1D0008              +541 
+00:000157 170010              +541 
+(+00)0f
+00:000158 F00408              +542 	d	(1000000)
+(+00)0f
+00:000159 C6016A              +543 	jza	ffi6
+00:00015A 950030              +544 	or, xi	'0'
+00:00015B 260010              +545 	WRITE_BYTE
+00:00015C 1D0008              +545 
+00:00015D 170010              +545 
+00:00015E F503E8              +546 	d, xi	1000
+[+0007]0c
+00:00015F 60C000              +547 ffi6a	la	table, a
+00:000160 1D0010              +548 	WRITE3_BYTES
+00:000161 1D0008              +548 
+00:000162 FD0003              +548 
+00:000163 2F0010              +548 
+[+0007]0c
+00:000164 60D000              +549 ffi3	la	table, b
+00:000165 1D0010              +550 	WRITE3_BYTES
+00:000166 1D0008              +550 
+00:000167 FD0003              +550 
+00:000168 2F0010              +550 
+00:000169 350000              +551 	lret	0
+00:00016A F503E8              +552 ffi6	d, xi	1000
+(+00)0f
+00:00016B D6015F              +553 	jnza	ffi6a
+(+00)0f
+00:00016C B60164              +554 	j	ffi3
+  :                            555 
+  :                            556 .	these are genteel column-oriented translates
+  :                            557 .	so far they have only been needed unsigned
+  :                            558 .	not much trouble however to push sign-handling
+  :                            559 .	onto the start of them
+  :                            560 
+  :                            561 
+(+00)0f
+00:00016D A60174              +562 iedit	jpa	ieditp
+00:00016E 160018              +563 	dsr	24
+(+00)0f
+00:00016F 600409              +564 	la	('-'*/$word-$byte:s)
+00:000170 050010              +565 	WRITE_START
+00:000171 1D0008              +566 	WRITE_UBYTE
+00:000172 170010              +566 
+00:000173 D00005              +567 	ana	b
+(+00)0f
+00:000174 3E01B2              +568 ieditp	lcal	iedit_u
+00:000175 3D0000              +569 	fret	0
+  :                            570 
+00:000176 050010              +571 iedits	WRITE_START
+00:000177 200005              +572 	sa	b
+(+00)0f
+00:000178 60040A              +573 	la	('+'*/$word-$byte:s)
+(+00)0f
+00:000179 AE017D              +574 	jpb	ieditsp
+(+00)0f
+00:00017A 600409              +575 	la	('-'*/$word-$byte:s)
+00:00017B 0F0005              +576 	n	b
+00:00017C CD0001              +577 	ab, xi	1
+00:00017D 1D0008              +578 ieditsp	WRITE_UBYTE
+00:00017E 170010              +578 
+00:00017F 600005              +579 	la	b
+(+00)0f
+00:000180 3E01B2              +580 	lcal	iedit_u
+00:000181 3D0000              +581 	fret	0
+  :                            582 
+(+00)0f
+00:000182 3E01B2              +583 ieditu	lcal	iedit_u
+00:000183 3D0000              +584 	fret	0
+  :                            585 
+(+00)0f
+00:000184 A6018C              +586 iedit48	jpa     iedit48p
+00:000185 C70006              +587         ds	6
+(+00)0f
+00:000186 600409              +588         la      ('-'*/$word-$byte:s)
+00:000187 050010              +589         WRITE_START
+00:000188 1D0008              +590         WRITE_UBYTE
+00:000189 170010              +590 
+00:00018A 6D0000              +591         lb, xi	0
+00:00018B DF0006              +592 	dan	6
+  :                            593 iedit48p
+(+00)0f
+00:00018C 3E01B8              +594 	lcal    iedit48_u
+00:00018D 3D0000              +595         fret    0
+  :                            596 
+  :                            597 iedit48s
+00:00018E 050010              +598 	WRITE_START
+00:00018F C70006              +599         ds	6
+(+00)0f
+00:000190 A60197              +600 	jpa	iedit48sp
+(+00)0f
+00:000191 600409              +601         la      ('-'*/$word-$byte:s)
+00:000192 1D0008              +602         WRITE_UBYTE
+00:000193 170010              +602 
+00:000194 160030              +603 	dsr	48
+00:000195 DF0006              +604 	dan	6
+(+00)0f
+00:000196 B6019B              +605 	j	iedit48si
+  :                            606 iedit48sp
+(+00)0f
+00:000197 60040A              +607 	la	('+'*/$word-$byte:s)
+00:000198 1D0008              +608 	WRITE_UBYTE
+00:000199 170010              +608 
+00:00019A CF0006              +609         dl	6
+  :                            610 iedit48si
+(+00)0f
+00:00019B 3E01B8              +611         lcal    iedit48_u
+00:00019C 3D0000              +612         fret    0
+  :                            613 
+  :                            614 iedit48u
+(+00)0f
+00:00019D 3E01B8              +615 	lcal	iedit48_u
+00:00019E 3D0000              +616 	fret	0
+  :                            617 
+(+00)0f
+00:00019F A601A5              +618 iedit72	jpa     iedit72p
+00:0001A0 050010              +619 	WRITE_START
+(+00)0f
+00:0001A1 600409              +620 	la	('-'*/$word-$byte:s)
+00:0001A2 1D0008              +621 	WRITE_UBYTE
+00:0001A3 170010              +621 
+(+00)0f
+00:0001A4 FF040B              +622 	call	(n72comp2)
+  :                            623 iedit72p
+(+00)0f
+00:0001A5 3E01C7              +624 	lcal    iedit72_u
+00:0001A6 3D0000              +625         fret    0
+  :                            626 
+  :                            627 iedit72s
+00:0001A7 050010              +628 	WRITE_START
+(+00)0f
+00:0001A8 60040A              +629         la      ('+'*/$word-$byte:s)
+(+00)0f
+00:0001A9 AE01AC              +630         jpb     iedit72sp
+(+00)0f
+00:0001AA FF040B              +631 	call	(n72comp2)
+(+00)0f
+00:0001AB 600409              +632         la      ('-'*/$word-$byte:s)
+00:0001AC 1D0008              +633 iedit72sp WRITE_UBYTE
+00:0001AD 170010              +633 
+(+00)0f
+00:0001AE 3E01C7              +634         lcal    iedit72_u
+00:0001AF 3D0000              +635         fret    0
+  :                            636 
+  :                            637 iedit72u
+(+00)0f
+00:0001B0 3E01C7              +638 	lcal	iedit72_u
+00:0001B1 3D0000              +639 	fret	0
+  :                            640 
+  :                            641 
+00:0001B2 050010              +642 iedit_u	WRITE_START
+  :                            643 
+00:0001B3 160018              +644 	dsr	24
+(+00)0f
+00:0001B4 F00408              +645 	d	(1000000)
+00:0001B5 9F0004              +646 	dpush	a
+00:0001B6 450001              +647 	lr, xi	2-1
+(+00)0f
+00:0001B7 B601E2              +648 	j	izeditugo
+  :                            649 
+  :                            650 iedit48_u
+00:0001B8 050010              +651 	WRITE_START
+00:0001B9 280009              +652 	sb	9		. it may be unsigned all 48 bits
+00:0001BA 160018              +653 	dsr	24		. divide it as positive
+(+00)0f
+00:0001BB F00408              +654 	d	(1000000)
+00:0001BC 200008              +655 	sa	8		. 1st quotient upper
+00:0001BD 600005              +656 	la	b
+00:0001BE 680009              +657 	lb	9		. dividend 2nd word
+(+00)0f
+00:0001BF F00408              +658 	d	(1000000)
+00:0001C0 F80005              +659 	push	b		. 1st remainder	
+00:0001C1 200005              +660 	sa	b		. 1st quotient lower
+00:0001C2 600008              +661 	la	8		. 1st quotient upper
+(+00)0f
+00:0001C3 F00408              +662 	d	(1000000)
+00:0001C4 9F0004              +663 	dpush	a
+  :                            664 
+00:0001C5 450002              +665 	lr, xi	3-1
+(+00)0f
+00:0001C6 B601E2              +666 	j	izeditugo
+  :                            667 
+  :                            668 
+  :                            669 iedit72_u
+00:0001C7 050010              +670 	WRITE_START
+  :                            671 				. you can't start with 1st word in a
+  :                            672 				. because this is unsigned positive
+  :                            673 				. maybe all of 72 bits
+00:0001C8 650000              +674 	la, xi	0
+00:0001C9 F80006              +675 	push	6		. you don't need the ms quotient word
+  :                            676 				. but you get it
+  :                            677 
+(+00)0f
+00:0001CA F00408              +678 	d	(1000000)	. 
+00:0001CB F80004              +679 	push	a		. first quotient word
+00:0001CC 600005              +680 	la	b
+00:0001CD 68F001              +681 	lb	1, sp		. 2nd input word
+(+00)0f
+00:0001CE F00408              +682 	d	(1000000)
+00:0001CF F80004              +683 	push	a		. second quotient word
+00:0001D0 600005              +684 	la	b
+00:0001D1 680007              +685 	lb	7		. 3nd input word
+(+00)0f
+00:0001D2 F00408              +686 	d	(1000000)
+00:0001D3 F80004              +687 	push	a		. 3rd quotient word
+00:0001D4 28F003              +688 	sb	3, sp		. lowest remainder word
+  :                            689 
+00:0001D5 60F002              +690 	la	2, sp		. first quotient ms word
+00:0001D6 68F001              +691 	lb	1, sp		. and 2nd word
+(+00)0f
+00:0001D7 F00408              +692 	d	(1000000)
+00:0001D8 20F001              +693 	sa	1, sp
+00:0001D9 600005              +694 	la	b
+00:0001DA 68F000              +695 	lb	0, sp		. first quotient ls word
+(+00)0f
+00:0001DB F00408              +696 	d	(1000000)
+00:0001DC 28F002              +697 	sb	2, sp		. second lowest remainder word
+00:0001DD 680004              +698 	lb	a
+00:0001DE 60F001              +699 	la	1, sp
+(+00)0f
+00:0001DF F00408              +700 	d	(1000000)
+00:0001E0 C7F000              +701 	ds	0, sp
+  :                            702 
+00:0001E1 450003              +703 	lr, xi	4-1
+  :                            704 
+  :                            705 izeditugo
+00:0001E2 300007              +706 	z	7		. significance off
+  :                            707 izeditugo_next
+00:0001E3 380005              +708 	pop	b
+00:0001E4 780007              +709 	tp	7
+(+00)0f
+00:0001E5 B601EA              +710 	j	izeditudo
+(+00)0f
+00:0001E6 CE01EB              +711 	jzb	izeditudont
+00:0001E7 0F0007              +712 	n	7
+(+00)0f
+00:0001E8 3E01F3              +713 	lcal	izedit6
+(+00)0f
+00:0001E9 B601EB              +714 	j	izeditudid
+  :                            715 izeditudo
+(+00)0f
+00:0001EA 3E0215              +716 	lcal	iprint6
+  :                            717 izeditudont
+  :                            718 izeditudid
+(+00)0f
+00:0001EB 1E01E3              +719 	jdr	izeditugo_next
+  :                            720 	
+00:0001EC 700007              +721 	tz	7		. significance on?
+(+00)0f
+00:0001ED B601F2              +722 	j	izexit
+  :                            723 
+00:0001EE 650030              +724 	la, xi	'0'
+00:0001EF 260010              +725 	WRITE_BYTE
+00:0001F0 1D0008              +725 
+00:0001F1 170010              +725 
+  :                            726 
+00:0001F2 350000              +727 izexit	lret	0
+  :                            728 
+  :                            729 
+  :                            730 
+00:0001F3 650000              +731 izedit6	la, xi	0
+00:0001F4 F503E8              +732 	d, xi	1000
+(+00)0f
+00:0001F5 C601FD              +733 	jza	izeditu
+(+00)0f
+00:0001F6 3E01FE              +734 	lcal	izedit3
+[+0007]0c
+00:0001F7 60D000              +735 	la	table, b
+00:0001F8 1D0010              +736 	WRITE3_BYTES
+00:0001F9 1D0008              +736 
+00:0001FA FD0003              +736 
+00:0001FB 2F0010              +736 
+00:0001FC 350000              +737 	lret	0
+  :                            738 
+  :                            739 izeditq* $proc
+  :                            740 	sal	$byte
+  :                            741 	mta	('0'*/$word-$byte)
+  :                            742 	j	iz3out($word/$byte-?)
+  :                            743 	$end
+  :                            744 
+  :                            745 izeditp* $proc
+  :                            746 	WRITE_BYTES	?
+  :                            747 	lret
+  :                            748 	$end
+  :                            749 
+00:0001FD 600005              +750 izeditu	la	b
+[+0007]0c
+00:0001FE 60C000              +751 izedit3	la	table, a
+(+00)0f
+00:0001FF 48040C              +752 	lk	(-1*/16)
+(+00)0f
+00:000200 AF040D              +753 	mta	('0'*/16:s)
+(+00)0f
+00:000201 B60210              +754 	j	iz3out($word/$byte)
+  :                            755 
+00:000202 260008              +756 ?	$do	$word/$byte-1,	izeditq
+(+00)0f
+00:000203 AF040D              +756 
+(+00)0f
+00:000204 B6020C              +756 
+00:000205 260008              +756 
+(+00)0f
+00:000206 AF040D              +756 
+(+00)0f
+00:000207 B60208              +756 
+  :                            757 
+00:000208 1D0008              +758 ?	$do	$word/$byte,iz3out(?)	izeditp
+00:000209 FD0001              +758 
+00:00020A 2F0010              +758 
+00:00020B 350000              +758 
+00:00020C 1D0010              +758 
+00:00020D FD0002              +758 
+00:00020E 2F0010              +758 
+00:00020F 350000              +758 
+00:000210 1D0010              +758 
+00:000211 1D0008              +758 
+00:000212 FD0003              +758 
+00:000213 2F0010              +758 
+00:000214 350000              +758 
+  :                            759 	
+  :                            760 	.	fear not, there is an lret instruction
+  :                            761 	.	in izeditp macro
+  :                            762 
+00:000215 650000              +763 iprint6	la, xi	0
+00:000216 F503E8              +764 	d, xi	1000
+[+0007]0c
+00:000217 60C000              +765 	la	table, a
+00:000218 1D0010              +766 	WRITE3_BYTES
+00:000219 1D0008              +766 
+00:00021A FD0003              +766 
+00:00021B 2F0010              +766 
+[+0007]0c
+00:00021C 60D000              +767 	la	table, b
+00:00021D 1D0010              +768 	WRITE3_BYTES
+00:00021E 1D0008              +768 
+00:00021F FD0003              +768 
+00:000220 2F0010              +768 
+00:000221 350000              +769 	lret	0
+  :                            770 
+  :                            771 iscan_skip
+00:000222 050060              +772 	READ_START
+00:000223 600010              +773 iscanf	READ_BYTE
+(+00)0f
+00:000224 C60227              +773 
+00:000225 1F0010              +773 
+00:000226 150008              +773 
+00:000227 200013              +773 
+  :                            774 
+00:000228 C5FFE0              +775 	aa, xi	-' '
+(+00)0f
+00:000229 C60223              +776 	jza	iscanf
+00:00022A C50017              +777 	aa, xi	' '-HORIZONTAL_TAB
+(+00)0f
+00:00022B C60223              +778 	jza	iscanf
+  :                            779 
+00:00022C C5FFDE              +780 	aa, xi	HORIZONTAL_TAB-'+'
+(+00)0f
+00:00022D C60237              +781 	jza	iscanlsp
+00:00022E C5FFFE              +782 	aa, xi	'+'-'-'
+(+00)0f
+00:00022F C6023A              +783 	jza	iscanlsm
+00:000230 C5FFF3              +784 	aa, xi	'-'-'0'-10
+(+00)0f
+00:000231 7E023D              +785 	jc	iscanx1
+00:000232 C5000A              +786 	aa, xi	10
+(+00)0f
+00:000233 5E023D              +787 	jnc	iscanx1
+  :                            788 
+00:000234 6D0000              +789 	lb, xi	0
+(+00)0f
+00:000235 3E00C8              +790 	lcal	free_ia
+00:000236 3D0001              +791 	fret	1
+  :                            792 
+  :                            793 iscanlsp
+00:000237 6D0000              +794 	lb, xi	0
+(+00)0f
+00:000238 3E00C0              +795 	lcal	free_ip
+00:000239 3D0001              +796 	fret	1
+  :                            797 iscanlsm
+00:00023A 6D0000              +798 	lb, xi	0
+(+00)0f
+00:00023B 3E00BC              +799 	lcal	free_in
+00:00023C 3D0001              +800 	fret	1
+  :                            801 
+00:00023D 3D0000              +802 iscanx1	fret	0
+  :                            803 
+00:00023E 550006              +804 quix	lx, xi	6
+00:00023F 6D0000              +805 	lb, xi	0
+00:000240 600010              +806 quil	READ_BYTE
+(+00)0f
+00:000241 C60244              +806 
+00:000242 1F0010              +806 
+00:000243 150008              +806 
+00:000244 200013              +806 
+00:000245 C5FFC6              +807 quiv	aa, xi	-'0'-10
+(+00)0f
+00:000246 7E024D              +808 	jc	quit
+00:000247 C5000A              +809 	aa, xi	10
+(+00)0f
+00:000248 5E024D              +810 	jnc	quit
+00:000249 85FFFF              +811 	ax, xi	-1
+[+0003]0c
+00:00024A 97A000              +812 	ex	table_add, x
+00:00024B 700002              +813 	tz	x
+(+00)0f
+00:00024C B60240              +814 	j	quil
+00:00024D 350000              +815 quit	lret	0
+  :                            816 
+  :                            817 
+00:00024E 6D0000              +818 bi	lb, xi	0
+  :                            819 bi_sense
+00:00024F 600010              +820 	READ_BYTE
+(+00)0f
+00:000250 C60253              +820 
+00:000251 1F0010              +820 
+00:000252 150008              +820 
+00:000253 200013              +820 
+00:000254 C5FFE0              +821 	aa, xi	-' '
+(+00)0f
+00:000255 C6024F              +822 	jza	bi_sense
+00:000256 C5FFF5              +823 	aa, xi	' '-'+'
+(+00)0f
+00:000257 C6025D              +824 	jza	bi_plus
+00:000258 C52B2D              +825 	aa, xi	'+-'-'
+(+00)0f
+00:000259 C6025F              +826 	jza	bi_minus
+00:00025A C5FFF3              +827 	aa, xi	'-'-'0'-10
+(+00)0f
+00:00025B 3E00C6              +828 	lcal	free_iq
+00:00025C 3D0000              +829 	fret	0
+(+00)0f
+00:00025D 3E00C0              +830 bi_plus	lcal	free_ip
+00:00025E 3D0000              +831 	fret	0
+  :                            832 bi_minus
+(+00)0f
+00:00025F 3E00BC              +833 	lcal	free_in
+00:000260 3D0000              +834 	fret	0
+  :                            835 
+00:000261 300006              +836 bdi	z	6
+00:000262 300007              +837 	z	7
+00:000263 300008              +838 	z	8
+  :                            839 bdi_sense
+00:000264 600010              +840 	READ_BYTE
+(+00)0f
+00:000265 C60268              +840 
+00:000266 1F0010              +840 
+00:000267 150008              +840 
+00:000268 200013              +840 
+00:000269 C5FFE0              +841 	aa, xi	-' '
+(+00)0f
+00:00026A C60264              +842 	jza	bdi_sense
+  :                            843 
+00:00026B 450006              +844 	lr, xi	6
+00:00026C 6D0000              +845 	lb, xi	0
+00:00026D 550006              +846 	lx, xi	6
+  :                            847 
+00:00026E C5FFF5              +848 	aa, xi	' '-'+'
+(+00)0f
+00:00026F C60275              +849 	jza	bdi_rp
+00:000270 C5FFFE              +850 	aa, xi	'+'-'-'
+(+00)0f
+00:000271 C60277              +851 	jza	bdi_rn
+00:000272 C5002D              +852 	aa, xi	'-'
+(+00)0f
+00:000273 3E0281              +853 	lcal	bdi_rp1		. this should be a numeral
+00:000274 3D0000              +854 	fret	0
+  :                            855 
+(+00)0f
+00:000275 3E027C              +856 bdi_rp	lcal	bdi_rp0
+00:000276 3D0000              +857 	fret	0
+  :                            858 
+(+00)0f
+00:000277 3E027C              +859 bdi_rn	lcal	bdi_rp0
+00:000278 C70006              +860 	ds	6
+00:000279 160030              +861 	dsr	48
+00:00027A DF0006              +862 	dan	6
+00:00027B 3D0000              +863 	fret	0
+  :                            864 
+00:00027C 600010              +865 bdi_rp0	READ_BYTE		. read the 1st numeral
+(+00)0f
+00:00027D C60280              +865 
+00:00027E 1F0010              +865 
+00:00027F 150008              +865 
+00:000280 200013              +865 
+(+00)0f
+00:000281 3E0245              +866 bdi_rp1	lcal	quiv		. interpret up to 6 numerals
+(+00)0f
+00:000282 F602A6              +867 	jxge	bdi_z		. not a single one
+00:000283 700002              +868 	tz	x
+(+00)0f
+00:000284 B60296              +869 	j	bdi_qx		. up to 5
+00:000285 280007              +870 	sb	7
+(+00)0f
+00:000286 3E023E              +871 bdi_r6	lcal	quix		. read up to 6 more numerals
+(+00)0f
+00:000287 F602A6              +872 	jxge	bdi_z		. not a single one
+00:000288 700002              +873 	tz	x
+(+00)0f
+00:000289 B6029A              +874 	j	bdi_x		.
+00:00028A 280009              +875 	sb	9
+00:00028B 680007              +876 	lb	7
+(+00)0f
+00:00028C E80408              +877 	mf	(1000000)
+00:00028D F80006              +878 	push	6
+00:00028E C70006              +879 	ds	6
+00:00028F 380005              +880 	pop	b
+(+00)0f
+00:000290 E80408              +881 	mf	(1000000)
+00:000291 360018              +882 	dsl	24
+00:000292 D70006              +883 	da	6
+00:000293 D70008              +884 	da	8
+00:000294 C70006              +885 	ds	6
+(+00)0f
+00:000295 B60286              +886 	j	bdi_r6
+  :                            887 
+(+00)0c
+00:000296 E8A40E              +888 bdi_qx	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+00:000297 160018              +889 	dsr	24
+00:000298 C70006              +890 	ds	6
+00:000299 350000              +891 	lret	0
+  :                            892 
+(+00)0c
+00:00029A E8A40E              +893 bdi_x	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+00:00029B 200009              +894 	sa	9
+00:00029C 680007              +895 	lb	7
+(+00)0c
+00:00029D E8A3F9              +896 	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+00:00029E F80006              +897 	push	6
+00:00029F C70006              +898 	ds	6
+00:0002A0 380005              +899 	pop	b
+(+00)0c
+00:0002A1 E8A3F9              +900 	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+00:0002A2 360018              +901 	dsl	24
+00:0002A3 D70006              +902 	da	6
+00:0002A4 D70008              +903 	da	8
+00:0002A5 C70006              +904 	ds	6
+00:0002A6 CF0006              +905 bdi_z	dl	6
+00:0002A7 350000              +906 	lret	0
+  :                            907 
+00:0002A8 300008              +908 bti	z	8
+00:0002A9 300009              +909 	z	9
+00:0002AA 30000A              +910 	z	10
+00:0002AB 30000B              +911 	z	11
+  :                            912 bti_sense
+00:0002AC 600010              +913 	READ_BYTE
+(+00)0f
+00:0002AD C602B0              +913 
+00:0002AE 1F0010              +913 
+00:0002AF 150008              +913 
+00:0002B0 200013              +913 
+00:0002B1 C5FFE0              +914 	aa, xi	-' '
+(+00)0f
+00:0002B2 C602AC              +915 	jza	bti_sense
+  :                            916 
+00:0002B3 450006              +917 	lr, xi	6
+00:0002B4 550006              +918 	lx, xi	6
+00:0002B5 6D0000              +919 	lb, xi	0
+  :                            920 
+00:0002B6 C5FFF5              +921 	aa, xi	' '-'+'
+(+00)0f
+00:0002B7 C602BD              +922 	jza	bti_rp
+00:0002B8 C5FFFE              +923 	aa, xi	'+'-'-'
+(+00)0f
+00:0002B9 C602BF              +924 	jza	bti_rn
+00:0002BA C5002D              +925 	aa, xi	'-'
+(+00)0f
+00:0002BB 3E02CC              +926 	lcal	bti_rp1
+00:0002BC 3D0000              +927 	fret	0
+  :                            928 
+(+00)0f
+00:0002BD 3E02C7              +929 bti_rp	lcal	bti_rp0
+00:0002BE 3D0000              +930 	fret	0
+  :                            931 
+(+00)0f
+00:0002BF 3E02C7              +932 bti_rn	lcal	bti_rp0
+00:0002C0 160018              +933 	dsr	24
+00:0002C1 DF000A              +934 	dan	10
+00:0002C2 C70006              +935 	ds	6
+00:0002C3 B70005              +936 	sc	b
+00:0002C4 CDFFFF              +937 	ab, xi	-1
+00:0002C5 D80009              +938 	anb	9
+00:0002C6 3D0000              +939 	fret	0
+  :                            940 
+00:0002C7 600010              +941 bti_rp0	READ_BYTE
+(+00)0f
+00:0002C8 C602CB              +941 
+00:0002C9 1F0010              +941 
+00:0002CA 150008              +941 
+00:0002CB 200013              +941 
+(+00)0f
+00:0002CC 3E0245              +942 bti_rp1	lcal	quiv
+(+00)0f
+00:0002CD F602FD              +943 	jxge	bti_z
+00:0002CE 700002              +944 	tz	x
+(+00)0f
+00:0002CF B602E7              +945 	j	bti_qx
+00:0002D0 28000B              +946 	sb	11
+(+00)0f
+00:0002D1 3E023E              +947 bti_r6	lcal	quix
+(+00)0f
+00:0002D2 F602FD              +948 	jxge	bti_z
+00:0002D3 700002              +949 	tz	x
+(+00)0f
+00:0002D4 B602EB              +950 	j	bti_x
+00:0002D5 280007              +951 	sb	7
+00:0002D6 300006              +952 	z	6
+00:0002D7 68000B              +953 	lb	11
+(+00)0f
+00:0002D8 E80408              +954 	mf	(1000000)
+00:0002D9 D70006              +955 	da	6
+00:0002DA 28000B              +956 	sb	11
+00:0002DB 200007              +957 	sa	7
+00:0002DC B70006              +958 	sc	6
+00:0002DD 68000A              +959 	lb	10
+(+00)0f
+00:0002DE E80408              +960 	mf	(1000000)
+00:0002DF D70006              +961 	da	6
+00:0002E0 28000A              +962 	sb	10
+00:0002E1 200007              +963 	sa	7
+00:0002E2 680009              +964 	lb	9
+(+00)0f
+00:0002E3 E80408              +965 	mf	(1000000)
+00:0002E4 C80007              +966 	ab	7
+00:0002E5 280009              +967 	sb	9
+(+00)0f
+00:0002E6 B602D1              +968 	j	bti_r6
+  :                            969 
+(+00)0c
+00:0002E7 E8A40E              +970 bti_qx	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+00:0002E8 20000B              +971 	sa	11
+00:0002E9 4F0008              +972 	ql	8
+00:0002EA 350000              +973 	lret	0
+  :                            974 
+(+00)0c
+00:0002EB E8A40E              +975 bti_x	mf	(1, R10, R100, R1000, R10000, R100000:h), x
+00:0002EC 200007              +976 	sa	7
+00:0002ED 300006              +977 	z	6
+00:0002EE 68000B              +978 	lb	11
+(+00)0c
+00:0002EF E8A3F9              +979 	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+00:0002F0 D70006              +980 	da	6
+00:0002F1 28000B              +981 	sb	11
+00:0002F2 200007              +982 	sa	7
+00:0002F3 B70006              +983 	sc	6
+00:0002F4 68000A              +984 	lb	10
+(+00)0c
+00:0002F5 E8A3F9              +985 	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+00:0002F6 D70006              +986 	da	6
+00:0002F7 28000A              +987 	sb	10
+00:0002F8 200007              +988 	sa	7
+00:0002F9 680009              +989 	lb	9
+(+00)0c
+00:0002FA E8A3F9              +990 	mf	(1000000, 100000, 10000, 1000, 100, 10:h), x
+00:0002FB C80007              +991 	ab	7
+00:0002FC 280009              +992 	sb	9
+00:0002FD 4F0008              +993 bti_z	ql	8
+00:0002FE 350000              +994 	lret	0
+  :                            995 
+  :                            60: 	$include	lib192
+  :                            1: 	$include	../language/stack.def
+  :                            2 
+  :                            3 fp192	$tree
+(+00)0f
+00:0002FF 5F0414              +4 fscan	fpx	(0.0d)
+00:000300 8FF000              +5 		qpush	0, sp
+  :                            6 
+  :                            7 major		$equf	0, sp
+  :                            8 mantissa	$equf	major+2
+  :                            9 minor		$equf	major+4
+  :                            10 
+00:000301 050060              +11 	READ_START
+  :                            12 fscans
+00:000302 600010              +13 	READ_BYTE
+(+00)0f
+00:000303 C60306              +13 
+00:000304 1F0010              +13 
+00:000305 150008              +13 
+00:000306 200013              +13 
+00:000307 680004              +14 	anu, xi	' '
+00:000308 DD0020              +14 
+(+00)0f
+00:000309 CE0302              +15 	jzb	fscans
+  :                            16 
+00:00030A 300011              +17 	z	SIGNS
+00:00030B 300012              +18 	z	SCALE
+00:00030C 300012              +19 	z	SCALE_TRIPPED
+  :                            20 
+00:00030D 680004              +21 	anu, xi	'-'
+00:00030E DD002D              +21 
+(+00)0f
+00:00030F DE0312              +22 	jnzb	plus?
+00:000310 0F0011              +23 	n	SIGNS
+(+00)0f
+00:000311 B60315              +24 	j	read_number_string
+  :                            25 
+  :                            26 plus?
+00:000312 680004              +27 	anu, xi	'+'
+00:000313 DD002B              +27 
+(+00)0f
+00:000314 DE031A              +28 	jnzb	first_digit
+  :                            29 
+  :                            30 read_number_string
+00:000315 600010              +31 	READ_BYTE
+(+00)0f
+00:000316 C60319              +31 
+00:000317 1F0010              +31 
+00:000318 150008              +31 
+00:000319 200013              +31 
+  :                            32 first_digit		. first of possible 43 digits read
+  :                            33 
+00:00031A C5FFC6              +34 	aa, xi	-'0'-10
+(+00)0f
+00:00031B 7E0398              +35 	jc	adjust_nothing
+00:00031C C5000A              +36 	aa, xi	10
+(+00)0f
+00:00031D 5E0398              +37 	jnc	adjust_nothing
+  :                            38 
+00:00031E 20F007              +39 	sa	mantissa+5
+  :                            40 			. there may now be 7 * 6 more digits
+  :                            41 
+00:00031F 450006              +42 	lr	6,,xi
+  :                            43 
+(+00)0f
+00:000320 3E0084              +44 	lcal	read6
+(+00)0f
+00:000321 F60374              +45 	jxge	scale_mantissa
+00:000322 700002              +46 	tz	x
+[+0000]0f
+00:000323 3E0000              +47 	lcal	diminish6
+00:000324 280007              +48 	sb	7
+00:000325 68F007              +49 	lb	mantissa+5
+(+00)0c
+00:000326 E8A3F9              +50 	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+00:000327 C80007              +51 	ab	7)
+00:000328 28F007              +52 	sb	mantissa+5	. 10 million fits in there
+00:000329 700002              +53 	tz	x
+(+00)0f
+00:00032A B60374              +54 	j	scale_mantissa
+  :                            55 
+(+00)0f
+00:00032B 3E0084              +56 	lcal	read6
+(+00)0f
+00:00032C F60374              +57 	jxge	scale_mantissa
+00:00032D 700002              +58 	tz	x
+[+0000]0f
+00:00032E 3E0000              +59 	lcal	diminish6
+00:00032F 280007              +60 	sb	7
+00:000330 300006              +61 	z	6
+00:000331 68F007              +62 	lb	mantissa+5
+(+00)0c
+00:000332 E8A3F9              +63 	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+00:000333 D70006              +64 	da	6
+00:000334 C7F006              +65 	ds	mantissa+4	. now more than 16 million
+00:000335 700002              +66 	tz	x
+(+00)0f
+00:000336 B60374              +67 	j	scale_mantissa
+  :                            68 
+(+00)0f
+00:000337 3E0084              +69 	lcal	read6
+(+00)0f
+00:000338 F60374              +70 	jxge	scale_mantissa
+00:000339 700002              +71 	tz	x
+[+0000]0f
+00:00033A 3E0000              +72 	lcal	diminish6
+                                	c	(madd144)	(1000000, 100000, 10000, 1000, 100, 10h), x	;
+                                		mantissa+3,,i	;
+00:00033B FCF007              +75 		mantissa+5,,i
+00:00033C FCF006              +75 
+(+00)0c
+00:00033D F8A3F9              +75 
+00:00033E FCF003              +75 
+(+00)0f
+00:00033F FF0416              +75 
+00:000340 38000F              +75 
+00:000341 700002              +76 	tz	x
+(+00)0f
+00:000342 B60374              +77 	j	scale_mantissa
+  :                            78 
+(+00)0f
+00:000343 3E0084              +79         lcal    read6
+(+00)0f
+00:000344 F60374              +80         jxge    scale_mantissa
+00:000345 700002              +81         tz      x
+[+0000]0f
+00:000346 3E0000              +82         lcal    diminish6
+                                        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                                                mantissa+2,,i      ;
+00:000347 FCF007              +85                 mantissa+5,,i
+00:000348 FCF005              +85 
+(+00)0c
+00:000349 F8A3F9              +85 
+00:00034A FCF003              +85 
+(+00)0f
+00:00034B FF0416              +85 
+00:00034C 38000F              +85 
+00:00034D 700002              +86         tz      x
+(+00)0f
+00:00034E B60374              +87         j       scale_mantissa
+  :                            88 
+(+00)0f
+00:00034F 3E0084              +89         lcal    read6
+(+00)0f
+00:000350 F60374              +90         jxge    scale_mantissa
+00:000351 700002              +91         tz      x
+[+0000]0f
+00:000352 3E0000              +92         lcal    diminish6
+                                        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                                                mantissa+1,,i      ;
+00:000353 FCF007              +95                 mantissa+5,,i
+00:000354 FCF004              +95 
+(+00)0c
+00:000355 F8A3F9              +95 
+00:000356 FCF003              +95 
+(+00)0f
+00:000357 FF0416              +95 
+00:000358 38000F              +95 
+00:000359 700002              +96         tz      x
+(+00)0f
+00:00035A B60374              +97         j       scale_mantissa
+  :                            98 
+(+00)0f
+00:00035B 3E0084              +99         lcal    read6
+(+00)0f
+00:00035C F60374              +100         jxge    scale_mantissa
+00:00035D 700002              +101         tz      x
+[+0000]0f
+00:00035E 3E0000              +102         lcal    diminish6
+                                        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                                                mantissa,,i        ;
+00:00035F FCF007              +105                 mantissa+5,,i
+00:000360 FCF003              +105 
+(+00)0c
+00:000361 F8A3F9              +105 
+00:000362 FCF003              +105 
+(+00)0f
+00:000363 FF0416              +105 
+00:000364 38000F              +105 
+00:000365 700002              +106         tz      x
+(+00)0f
+00:000366 B60374              +107         j       scale_mantissa
+  :                            108 
+(+00)0f
+00:000367 3E0084              +109         lcal    read6
+(+00)0f
+00:000368 F60374              +110         jxge    scale_mantissa
+00:000369 700002              +111         tz      x
+[+0000]0f
+00:00036A 3E0000              +112         lcal    diminish6
+                                        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                                                mantissa,,i        ;
+00:00036B FCF007              +115                 mantissa+5,,i
+00:00036C FCF003              +115 
+(+00)0c
+00:00036D F8A3F9              +115 
+00:00036E FCF003              +115 
+(+00)0f
+00:00036F FF0416              +115 
+00:000370 38000F              +115 
+00:000371 700002              +116 	tz	x
+(+00)0f
+00:000372 B60374              +117 	j	scale_mantissa
+(+00)0f
+00:000373 3E009B              +118 	lcal	skate
+  :                            119 
+  :                            120 scale_mantissa
+00:000374 60F002              +121 	la	mantissa
+00:000375 200009              +122 	sa	TRIPLE
+00:000376 CFF003              +123 	dl	mantissa+1
+00:000377 C7000A              +124 	ds	TRIPLE+1
+(+00)0f
+00:000378 FF0402              +125 	call	(u72tofloat)
+(+00)0f
+00:000379 3E039B              +126 	lcal	a72magnitude
+00:00037A 200008              +127 	sa	QUAD
+00:00037B 4F0008              +128 	ql	QUAD
+00:00037C 47F000              +129 	qs	major
+  :                            130 
+00:00037D 60F005              +131 	la	mantissa+3
+00:00037E 200009              +132 	sa	TRIPLE
+00:00037F CFF006              +133 	dl	mantissa+4
+00:000380 C7000A              +134 	ds	TRIPLE+1
+(+00)0f
+00:000381 FF0402              +135 	call	(u72tofloat)
+00:000382 200008              +136 	sa	QUAD
+00:000383 4F0008              +137 	ql	QUAD
+  :                            138 
+00:000384 050008              +139 	on	fp$r
+00:000385 67F000              +140 	fa	major		. get as much as possible into major
+00:000386 47F000              +141 	qs	major
+00:000387 4F0008              +142 	ql	QUAD
+00:000388 47F004              +143 	qs	minor
+  :                            144 
+00:000389 600013              +145         la      LAST_BYTE_READ
+  :                            146 
+  :                            147         $if     'e'^='E'
+00:00038A 680004              +148         anu, xi 'e'
+00:00038B DD0065              +148 
+(+00)0f
+00:00038C CE0392              +149         jzb     e_string_scan
+  :                            150         $endif
+  :                            151 
+00:00038D 680004              +152         anu, xi 'E'
+00:00038E DD0045              +152 
+(+00)0f
+00:00038F CE0392              +153         jzb     e_string_scan
+  :                            154 
+00:000390 6D0000              +155         lb, xi  0
+(+00)0f
+00:000391 B60393              +156         j       e_string_noscan
+  :                            157 
+  :                            158 e_string_scan
+(+00)0f
+00:000392 3E00B0              +159         lcal    e_string
+  :                            160 e_string_noscan
+00:000393 C80012              +161         ab      SCALE
+00:000394 780012              +162         tp      SCALE           . it's 1s complement
+00:000395 CD0001              +163         ab, xi  1               . because it's shared with SCALE_TRIPPED
+  :                            164 
+(+00)0f
+00:000396 CE0398              +165         jzb     noscale
+(+00)0f
+00:000397 FF0417              +166         call    (floating_scale192)
+  :                            167 
+  :                            168 adjust_nothing
+00:000398 870004              +169 noscale	qpop	a
+00:000399 870008              +170 	qpop	8
+00:00039A 3D0000              +171 	fret	0
+  :                            172 
+  :                            173 a72magnitude
+(+00)0f
+00:00039B E6039E              +174 	jna	a72negativemagnitude
+00:00039C C50048              +175 	aa	72,,xi
+00:00039D 350000              +176 	lret	0
+  :                            177 a72negativemagnitude
+00:00039E C5FFB8              +178 	aa	-72,,xi
+00:00039F 350000              +179 	lret	0
+  :                            180 
+  :                            181 	$root
+  :                            61: 	$include	fedit192
+  :                            1 fedit192 $tree
+  :                            2 
+  :                            3 fedit_start
+00:0003A0 050010              +4 	WRITE_START	. a is on stack top
+00:0003A1 65002B              +5 	la	'+',,xi
+00:0003A2 78F001              +6 	tn	1, sp	. 0, sp is lcal return address
+(+00)0f
+00:0003A3 B603A5              +6 
+(+00)0f
+00:0003A4 B603AE              +7 	j	write_sign
+00:0003A5 0FF001              +8 	n	1, sp
+00:0003A6 0F0005              +9 	n	b
+00:0003A7 0F0006              +10 	n	6
+00:0003A8 0F0007              +11 	n	7
+00:0003A9 0F0008              +12 	n	8
+00:0003AA 0F0009              +13 	n	9
+00:0003AB 0F000A              +14 	n	10
+00:0003AC 0F000B              +15 	n	11
+00:0003AD 65002D              +16 	la	'-',,xi
+  :                            17 write_sign
+00:0003AE 260010              +18 	WRITE_BYTE
+00:0003AF 1D0008              +18 
+00:0003B0 170010              +18 
+00:0003B1 350000              +19 	lret	0
+  :                            20 
+00:0003B2 F80004              +21 fedit	push	a
+00:0003B3 600008              +22 	la	8
+00:0003B4 B00009              +23 	xor	9
+(+00)0f
+00:0003B5 E603B8              +24 	jna	fedito	. $residue is normalised
+  :                            25 
+00:0003B6 380004              +26 	pop	a	. $residue is not normalised
+(+00)0f
+00:0003B7 B600ED              +27 	j	fediti	. edit a 4-word float
+  :                            28 			. zero $residue has no
+  :                            29 			. exponent for alignment 
+  :                            30 
+(+00)0f
+00:0003B8 3E03A0              +31 fedito	lcal	fedit_start
+00:0003B9 380004              +32 	pop	a
+  :                            33 
+(+00)0f
+00:0003BA FF0418              +34 	call	(scale_out192)
+  :                            35 
+(+00)0f
+00:0003BB FF0419              +36 	call	(align192)
+  :                            37 
+00:0003BC 950030              +38 	or	'0',,xi
+00:0003BD 260010              +39 	WRITE_BYTE
+00:0003BE 1D0008              +39 
+00:0003BF 170010              +39 
+00:0003C0 65002E              +40 	la	'.',,xi
+00:0003C1 260010              +41 	WRITE_BYTE
+00:0003C2 1D0008              +41 
+00:0003C3 170010              +41 
+  :                            42 
+(+00)0f
+00:0003C4 FF041A              +43 	call	(fraction6_7)
+  :                            44 
+00:0003C5 60A000              +45 display	la	0, x
+(+00)0f
+00:0003C6 F603CC              +46 	jxge	display_last
+00:0003C7 F80006              +47 	push	6
+(+00)0f
+00:0003C8 3E0135              +48 	lcal	allsix
+00:0003C9 380006              +49 	pop	6
+00:0003CA 850001              +50 	ax	1,,xi
+(+00)0f
+00:0003CB B603C5              +51 	j	display
+  :                            52 display_last
+(+00)0f
+00:0003CC 3E0142              +53 	lcal	up2six
+  :                            54 
+00:0003CD 700012              +55 	tz	SCALE
+(+00)0f
+00:0003CE 3E012E              +56 	lcal	edit_scale
+00:0003CF 3D0000              +57 	fret	0
+  :                            58 
+  :                            59 	$root
+  :                            62: 	$include	token
+  :                            1 
+  :                            2 .	retrieve a maximum # text columns in aligned words
+  :                            3 .	from a scanned array of free column format
+  :                            4 .	maximim columns is in a
+  :                            5 .	start receive buffer is in b and stays there
+  :                            6 .	a returns the # words stored at *b
+  :                            7 .	b$stream16w must be off
+  :                            8 
+(+00)0f
+00:0003D0 C603E7              +9 token	jza	tokenz		. nane
+00:0003D1 400004              +10 	lr	a
+00:0003D2 4D00FF              +11 	lk, xi	+(1*/$byte)-1	
+00:0003D3 300016              +12 	z	WDATAC
+00:0003D4 0D0010              +13 	off	b$stream16w
+00:0003D5 28000C              +14 	sb	p
+00:0003D6 1F0000              +15 	dec	r
+  :                            16 
+  :                            17 token_search
+(+00)0f
+00:0003D7 3E03E8              +18 	lcal	tcolumn
+(+00)0f
+00:0003D8 B603D7              +19 	j	token_search
+(+00)0f
+00:0003D9 AF041B              +20 	mta	(0)
+(+00)0f
+00:0003DA B603E1              +21 	j	token_store
+(+00)0f
+00:0003DB B603E4              +22 	j	token_total
+  :                            23 
+  :                            24 token_read
+(+00)0f
+00:0003DC 3E03E8              +25 	lcal	tcolumn
+(+00)0f
+00:0003DD B603E4              +26 	j	token_total
+(+00)0f
+00:0003DE AF041B              +27 	mtane	(0)
+(+00)0f
+00:0003DF B603E1              +27 
+(+00)0f
+00:0003E0 B603E4              +28 	j	token_total
+  :                            29 
+  :                            30 token_store
+00:0003E1 260010              +31 	sal	$word-$byte
+00:0003E2 1D0008              +32 	wsr	$byte
+(+00)0f
+00:0003E3 1E03DC              +33 	jdr	token_read
+  :                            34 
+  :                            35 token_total
+00:0003E4 1D0010              +36 	wsr	$word-$byte
+00:0003E5 60000C              +37 	la	p		. words written result
+00:0003E6 D00005              +38 	ana	b		. p - starting p
+00:0003E7 3D0000              +39 tokenz	fret	0
+  :                            40 
+00:0003E8 600010              +41 tcolumn	READ_BYTE
+(+00)0f
+00:0003E9 C603EC              +41 
+00:0003EA 1F0010              +41 
+00:0003EB 150008              +41 
+00:0003EC 200013              +41 
+(+00)0f
+00:0003ED AF041C              +42 	mtane	(' ')
+(+00)0f
+00:0003EE B603F0              +42 
+00:0003EF 350000              +43 	lret	0
+(+00)0f
+00:0003F0 AF041D              +44 	mtane	(CR)
+(+00)0f
+00:0003F1 B603F3              +44 
+00:0003F2 350000              +45 	lret	0
+(+00)0f
+00:0003F3 AF041E              +46 	mtane	(LF)
+(+00)0f
+00:0003F4 B603F6              +46 
+00:0003F5 350000              +47 	lret	0
+(+00)0f
+00:0003F6 AF041F              +48 	mta	(HORIZONTAL_TAB)
+00:0003F7 350001              +49 	lret	1
+00:0003F8 350000              +50 	lret	0
+  :                            63 
+  :                            64 read_stream_start_net16* $equ read_stream_start
+  :                            65 
+  :                            66 fscan_net16*	$equ	fscan
+  :                            67 fedit_net16*	$equ	fedit
+  :                            68 ifedit_net16*	$equ	fediti
+  :                            69 symbol_net16*	$equ	symbol
+  :                            70 fscan192_net16*	$equ	fp192:fscan
+  :                            71 fedit192_net16*	$equ	fedit192:fedit
+  :                            72 
+  :                            73 ieditu_net16*	$equ	ieditu
+  :                            74 iedit_net16*	$equ	iedit
+  :                            75 iedits_net16*	$equ	iedits
+  :                            76 
+  :                            77 iedit48uascii_net16*	$equ	iedit48u
+  :                            78 iedit48s_net16*		$equ	iedit48s
+  :                            79 iedit48_net16*		$equ	iedit48
+  :                            80 
+  :                            81 iscan_skip_net16*	$equ	iscan_skip
+  :                            82 
+  :                            83 iedit72uascii_net16*	$equ	iedit72u
+  :                            84 iedit72s_net16*		$equ	iedit72s
+  :                            85 iedit72_net16*		$equ	iedit72
+  :                            86 
+  :                            87 iscan_net16*		$equ	bi
+  :                            88 iscan48_net16*		$equ	bdi
+  :                            89 iscan72_net16*		$equ	bti
+  :                            90 token_net16*		$equ	token
+  :                            91 
+*EOF*
+00:0003f9+0F42400186A00027100003E800006400000A
+00:0003ff+0003E800006400000A
+00:000402+[0001]18:000000
+00:000403+[0002]18:000000
+00:000404+[0004]18:000000
+00:000405+[0005]18:000000
+00:000406+[0006]18:000000
+00:000407+[0008]18:000000
+00:000408+0F4240
+00:000409+2D0000
+00:00040a+2B0000
+00:00040b+[0009]18:000000
+00:00040c+FF0000
+00:00040d+300000
+00:00040e+00000119999A028F5D00418A00068E0000A8
+00:000414+000000000000
+00:000416+[000A]18:000000
+00:000417+[000B]18:000000
+00:000418+[000C]18:000000
+00:000419+[000D]18:000000
+00:00041a+[000E]18:000000
+00:00041b+000000
+00:00041c+000020
+00:00041d+00000D
+00:00041e+00000A
+00:00041f+000009
+r=000000
+k=000001
+x=000002
+y=000003
+a=000004
+b=000005
+p=00000C
+q=00000D
+fp=00000E
+sp=00000F
+mantissa2=000006
+mantissa3=000007
+$residue=000008
+d$save=000010
+d$save1=000011
+d$save2=000012
+d$save3=000013
+RDATAC=000014
+RDATA=000015
+WDATAC=000016
+WDATA=000017
+r_x=000080
+k_x=000081
+x_x=000082
+y_x=000083
+a_x=000084
+b_x=000085
+p_x=00008C
+q_x=00008D
+fp_x=00008E
+sp_x=00008F
+x$save=000090
+x$save1=000091
+x$save2=000092
+fp$guard=000093
+w0=000000
+t1=000001
+t2=000002
+t3=000003
+i=000004
+xi=000005
+h1=000002
+h2=000003
+i$=.5.3.1.15
+i$x=.5.3.1.3.12
+i$i=.5.3.1.2.13
+i$a=.5.3.16
+sr=:N129:P:0:000000
+sk=:N129:P:0:000001
+sx=:N129:P:0:000002
+sy=:N129:P:0:000003
+sa=:N129:P:0:000004
+sb=:N129:P:0:000005
+z=:N129:P:0:000006
+pop=:N129:P:0:000007
+lr=:N129:P:0:000008
+lk=:N129:P:0:000009
+lx=:N129:P:0:00000A
+ly=:N129:P:0:00000B
+la=:N129:P:0:00000C
+lb=:N129:P:0:00000D
+tz=:N129:P:0:00000E
+tp=:N129:P:0:00000F
+ax=:N129:P:0:000010
+ay=:N129:P:0:000011
+or=:N129:P:0:000012
+orB=:N129:P:0:000013
+and=:N129:P:0:000014
+andB=:N129:P:0:000015
+xor=:N129:P:0:000016
+xorB=:N129:P:0:000017
+aa=:N129:P:0:000018
+ab=:N129:P:0:000019
+ana=:N129:P:0:00001A
+anb=:N129:P:0:00001B
+m=:N129:P:0:00001C
+mf=:N129:P:0:00001D
+d=:N129:P:0:00001E
+push=:N129:P:0:00001F
+inA=:N129:P:0:000000
+inB=:N129:P:0:000001
+outA=:N129:P:0:000002
+outB=:N129:P:0:000003
+reload=:N129:P:0:000004
+emulator_cool=:N129:P:0:000005
+sabr=:N129:P:0:000006
+jdz=:N129:P:0:00000F
+see$1=004000
+see$2=002000
+see$3=001000
+see$4=000800
+see$5=000400
+see$6=000200
+see$7=000100
+half$w=000080
+b$streamZR=000040
+b$stream16r=000020
+b$stream16w=000010
+fp$r=000008
+carry$=000001
+see$all=007F00
+see$allbut=:N65:F:0:000000
+on=:N129:P:0:000000
+off=:N129:P:0:000001
+rsr=:N129:P:0:000002
+wsr=:N129:P:0:000003
+lret=:N129:P:0:000006
+fret=:N129:P:0:000007
+ii=:N129:P:0:00000E
+ir=:N129:P:0:00000F
+sar=:N129:P:0:000000
+sbr=:N129:P:0:000001
+dsr=:N129:P:0:000002
+jdr=:N129:P:0:000003
+sal=:N129:P:0:000004
+sbl=:N129:P:0:000005
+dsl=:N129:P:0:000006
+lcal=:N129:P:0:000007
+rar=:N129:P:0:000008
+rbr=:N129:P:0:000009
+drr=:N129:P:0:00000A
+jnc=:N129:P:0:00000B
+ral=:N129:P:0:00000C
+rbl=:N129:P:0:00000D
+drl=:N129:P:0:00000E
+jc=:N129:P:0:00000F
+saa=:N129:P:0:000010
+sba=:N129:P:0:000011
+dsa=:N129:P:0:000012
+jao=:N129:P:0:000013
+jpa=:N129:P:0:000014
+jpb=:N129:P:0:000015
+j=:N129:P:0:000016
+jpo=:N129:P:0:000017
+jza=:N129:P:0:000018
+jzb=:N129:P:0:000019
+jnza=:N129:P:0:00001A
+jnzb=:N129:P:0:00001B
+jna=:N129:P:0:00001C
+jnb=:N129:P:0:00001D
+jxge=:N129:P:0:00001E
+jyge=:N129:P:0:00001F
+ts=:N129:P:0:000000
+n=:N129:P:0:000001
+inc=:N129:P:0:000002
+dec=:N129:P:0:000003
+sim=:N129:P:0:000004
+popA=:N129:P:0:000005
+src=:N129:P:0:000006
+slc=:N129:P:0:000007
+qs=:N129:P:0:000008
+ql=:N129:P:0:000009
+fpp=:N129:P:0:00000A
+fpx=:N129:P:0:00000B
+fa=:N129:P:0:00000C
+fan=:N129:P:0:00000D
+fm=:N129:P:0:00000E
+fd=:N129:P:0:00000F
+qpop=:N129:P:0:000010
+qpush=:N129:P:0:000011
+ex=:N129:P:0:000012
+dpush=:N129:P:0:000013
+lsc=:N129:P:0:000014
+mta=:N129:P:0:000015
+sc=:N129:P:0:000016
+mlb=:N129:P:0:000017
+ds=:N129:P:0:000018
+dl=:N129:P:0:000019
+da=:N129:P:0:00001A
+dan=:N129:P:0:00001B
+dlsc=:N129:P:0:00001C
+go=:N129:P:0:00001E
+call=:N129:P:0:00001F
+$address13=:N65:F:0:000000
+$address15=:N65:F:0:000000
+$address12=:N65:F:0:000000
+$index=:N65:F:0:000000
+$bank_address=:N65:F:0:000000
+tnz=:P1:0:00000B
+tn=:P1:0:00000C
+mtane=:P1:0:00000D
+jae=:P1:0:00000E
+jpe=:P1:0:00000F
+jxl=:P1:0:000010
+jyl=:P1:0:000011
+anu=:P1:0:000012
+anuba=:P1:0:000013
+tanu=:P1:0:000014
+tanuba=:P1:0:000015
+$checkline=:N129:P:0:000000
+R10=19999A
+R100=028F5D
+R1000=00418A
+R10000=00068E
+R100000=0000A8
+AQUIFORM_NET16=000001
+COUNTED_STREAM=000001
+LAST_BYTE_READ=000013
+BYTES=000010
+QUAD=000008
+TRIPLE=000009
+SIGNS=000011
+SCALE_TRIPPED=000012
+SCALE=000012
+$FINESSE=000001
+$$EOS_FLAG=000000
+READ_STREAM_START=:P1:0:000017
+READ_START=:P1:0:000018
+RBYTE=:P1:0:000019
+READ_BYTE=:P3:0:00001A
+WRITE_START=:P1:0:00001B
+WRITE_OBYTE=:P1:0:00001C
+WRITE_BYTE=:P1:0:00001D
+WRITE_UPPER_BYTE=:P1:0:00001E
+WRITE_UBYTE=:N129:P:0:000000
+WRITE3_BYTES=:P1:0:00001F
+WRITE_BYTES=:P1:0:000020
+HORIZONTAL_TAB=000009
+CR=00000D
+LF=00000A
+AQUIFORM_BITS=000010
+repoussez=$00:000000
+read_stream_start=$00:000008
+fscan=$00:00000D
+fscans=$00:00000E
+plus?=$00:000021
+read_number_string=$00:000024
+first_digit=$00:000029
+adjust_scale=$00:000071
+adjust_scale_no3=$00:000071
+adjust_scale_no6=$00:000071
+e_string_scan=$00:00007B
+e_string_noscan=$00:00007C
+noscale=$00:000082
+read6=$00:000084
+read3=$00:000085
+read1=$00:000086
+read5=$00:00008B
+under=$00:000096
+over=$00:00009A
+out=$00:00009A
+skate=$00:00009B
+skate_under=$00:0000AA
+skate_over=$00:0000AF
+skate_away=$00:0000AF
+e_string=$00:0000B0
+free_in=$00:0000BC
+free_ip=$00:0000C0
+free_iq=$00:0000C6
+free_ia=$00:0000C8
+free_ix=$00:0000CE
+symbol=$00:0000CF
+next_symbol=$00:0000D2
+blank_symbol?=$00:0000D7
+fedit_start=$00:0000DE
+write_sign=$00:0000E9
+fediti=$00:0000ED
+fedit=$00:0000F4
+fedit1=$00:0000F5
+fedit_fraction=$00:00010B
+edit18=$00:00011D
+edit12=$00:000124
+edit6=$00:000129
+edit_scale?=$00:00012B
+edit_scale=$00:00012E
+allsix=$00:000135
+up2six=$00:000142
+only3=$00:00014F
+ffi=$00:000150
+ffi1=$00:000155
+ffi6a=$00:00015F
+ffi3=$00:000164
+ffi6=$00:00016A
+iedit=$00:00016D
+ieditp=$00:000174
+iedits=$00:000176
+ieditsp=$00:00017D
+ieditu=$00:000182
+iedit48=$00:000184
+iedit48p=$00:00018C
+iedit48s=$00:00018E
+iedit48sp=$00:000197
+iedit48si=$00:00019B
+iedit48u=$00:00019D
+iedit72=$00:00019F
+iedit72p=$00:0001A5
+iedit72s=$00:0001A7
+iedit72sp=$00:0001AC
+iedit72u=$00:0001B0
+iedit_u=$00:0001B2
+iedit48_u=$00:0001B8
+iedit72_u=$00:0001C7
+izeditugo=$00:0001E2
+izeditugo_next=$00:0001E3
+izeditudo=$00:0001EA
+izeditudont=$00:0001EB
+izeditudid=$00:0001EB
+izexit=$00:0001F2
+izedit6=$00:0001F3
+izeditq=:P1:0:000021
+izeditp=:P1:0:000022
+izeditu=$00:0001FD
+izedit3=$00:0001FE
+?=000003
+iz3out(1)=$00:000208
+iz3out(2)=$00:00020C
+iz3out(3)=$00:000210
+iprint6=$00:000215
+iscan_skip=$00:000222
+iscanf=$00:000223
+iscanlsp=$00:000237
+iscanlsm=$00:00023A
+iscanx1=$00:00023D
+quix=$00:00023E
+quil=$00:000240
+quiv=$00:000245
+quit=$00:00024D
+bi=$00:00024E
+bi_sense=$00:00024F
+bi_plus=$00:00025D
+bi_minus=$00:00025F
+bdi=$00:000261
+bdi_sense=$00:000264
+bdi_rp=$00:000275
+bdi_rn=$00:000277
+bdi_rp0=$00:00027C
+bdi_rp1=$00:000281
+bdi_r6=$00:000286
+bdi_qx=$00:000296
+bdi_x=$00:00029A
+bdi_z=$00:0002A6
+bti=$00:0002A8
+bti_sense=$00:0002AC
+bti_rp=$00:0002BD
+bti_rn=$00:0002BF
+bti_rp0=$00:0002C7
+bti_rp1=$00:0002CC
+bti_r6=$00:0002D1
+bti_qx=$00:0002E7
+bti_x=$00:0002EB
+bti_z=$00:0002FD
+$head_far=:N131:P:0:000003
+$head_near=:N131:P:0:000002
+$ret=:P1:0:000024
+c=:N129:P:0:000001
+lc=:N129:P:0:000000
+$vector=:P1:0:000026
+SEGMENT_QL=:P1:0:000027
+PUSHBACK=:P1:0:000028
+$stack_macro_remarks=000000
+fp192=$00:0002FF
+fp192:fscan=$00:0002FF
+fp192:major=000000,00000F
+fp192:mantissa=000002,00000F
+fp192:minor=000004,00000F
+fp192:fscans=$00:000302
+fp192:plus?=$00:000312
+fp192:read_number_string=$00:000315
+fp192:first_digit=$00:00031A
+fp192:scale_mantissa=$00:000374
+fp192:e_string_scan=$00:000392
+fp192:e_string_noscan=$00:000393
+fp192:adjust_nothing=$00:000398
+fp192:noscale=$00:000398
+fp192:a72magnitude=$00:00039B
+fp192:a72negativemagnitude=$00:00039E
+fedit192=$00:0003A0
+fedit192:fedit_start=$00:0003A0
+fedit192:write_sign=$00:0003AE
+fedit192:fedit=$00:0003B2
+fedit192:fedito=$00:0003B8
+fedit192:display=$00:0003C5
+fedit192:display_last=$00:0003CC
+token=$00:0003D0
+token_search=$00:0003D7
+token_read=$00:0003DC
+token_store=$00:0003E1
+token_total=$00:0003E4
+tokenz=$00:0003E7
+tcolumn=$00:0003E8
+read_stream_start_net16+=$00:000008
+fscan_net16+=$00:00000D
+fedit_net16+=$00:0000F4
+ifedit_net16+=$00:0000ED
+symbol_net16+=$00:0000CF
+fscan192_net16+=$00:0002FF
+fedit192_net16+=$00:0003B2
+ieditu_net16+=$00:000182
+iedit_net16+=$00:00016D
+iedits_net16+=$00:000176
+iedit48uascii_net16+=$00:00019D
+iedit48s_net16+=$00:00018E
+iedit48_net16+=$00:000184
+iscan_skip_net16+=$00:000222
+iedit72uascii_net16+=$00:0001B0
+iedit72s_net16+=$00:0001A7
+iedit72_net16+=$00:00019F
+iscan_net16+=$00:00024E
+iscan48_net16+=$00:000261
+iscan72_net16+=$00:0002A8
+token_net16+=$00:0003D0
+diminish6
+u72tofloat
+floating_scale
+table_add
+scale_integrate
+scale_out
+fraction3
+table
+fraction6
+n72comp2
+madd144
+floating_scale192
+scale_out192
+align192
+fraction6_7
+token.msm=1<000005
+fedit192.msm=1<000005
+../language/stack.def=2<000006
+lib192.msm=1<000005
+aquiform.msm=1<000005
+aquiform.def=1<000005
+register.def=1<000005
+binary.def=1<000005
+../def/rta.def=1<000005
+aqui16.msm=0<000003
+:$(00):000000:000420 
+aqui16.msm: object code 10691 bytes: 0 errors: 15 undefined labels
