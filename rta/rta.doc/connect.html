@@ -72,7 +72,131 @@ The interface process uses Berkely Packet Filter (BPF) kernel calls
 to receive and send. The materials for running this interface process
 are in directory <b>rta/portal</b>
 
-<p>
+The following important updates have been made to emulated RTA1's network service
+
+<pre>
+
+
+	Some performance restrictions have been encountered
+	using low-cost home WiFi to transmit data in quantity
+	between RTA1 and other locally networked hosts
+
+	Excellent network performance has been regained by
+	transmitting over wired Ethernet instead
+
+        The WiFi products associated with problems appear to treat
+	intranet traffic as upload and drop hundreds of presumably
+	over-budget segments. At any rate packet loss is large.
+	RTA1 uses an aggressive TCP resend policy to maintain 
+	performance. Aggressive resends are be switched on via telnet
+
+                telnet -s 172.29.7.6 172.29.7.7
+                aggress
+
+        this command is a flipflop so repeating it turns aggressive
+        resends off again
+
+	This is not considered best practice but an emergency method
+
+	A performant network is present in the form of wired Ethernet
+	wherever WiFi is present
+
+	Address configuration has been rationalised in a way that allows
+	the RTA1 developer to choose from the available network media
+	methodically
+
+	Configuration is in the process scripts which launch interfaces
+	for emulated RTA1 called portal/runL and portal/rerunL, and in
+	the network configurations of PCs intended to communicate over LAN
+	with emulated RTA1
+
+	Any addresses can be used, but the developer must start somewhere
+	and routing within the emulated RTA1 machine must route the
+	configured addresses
+
+	Blocks of network addresses are used in the following way
+
+	Newly, RTA1 on wired Ethernet uses some of the addresses
+
+		172.29.7.8/26 to 172.29.7.62/26
+
+	and RTA1 on WiFi uses some of the addresses
+
+		172.29.7.66/24 to 172.29.7.253/24
+
+	A convention is used that emulated RTA1s on the local net
+	take addresses from the low end of these ranges and PCs
+	talking to RTA1s take addresses from the high end of these
+	ranges
+		
+        To be in the same wired ethernet subnet as RTA a PC has
+	typically an address around 172.29.7.60/26
+
+        This causes traffic for RTA1s which have addresses from
+	172.29.7.8/26 to go via wire
+
+	No LAN addresses used by emulated RTA1s are any longer
+	alias addresses of the emulator host's interfaces. The
+	emulated RTA1 is instead using ARP for real
+
+	The pair of addresses used to communicate over emulator
+	host loopback with emulated RTA1, 172.29.7.6 and 172.29.7.7,
+	are still aliases of emulator host software loopback.
+	Applications accessing emulated RTA1 from the emulator host
+	use 172.29.7.6 as their local address and 172.29.7.7 as
+	emulated RTA1's address
+
+	To be in the same WiFi subnet as RTA a PC has typically an
+	address around 172.29.7.230/24
+
+        This causes traffic for emulated RTAs which have adresses
+	from 172.29.7.66/24 to go via WiFi
+
+        RTA1 has a new routing table entry 172.19.7.0 255.255.255.192
+        which goes to the wired interface and is classed as local
+
+	The existing route 172.19.7.0 255.255.255.0 routes traffic
+	to WiFi. Routes with wider masks are of course searched first
+
+	RTA1 is now doing ARP for real and could do ZeroConf
+
+	Previously RTA emulator host kernel has known about RTA1's LAN
+	addresses and RTA1 has obtained some resolutions from the
+        emulator host's ARP traffic
+
+        The old method of using the emulator host as gateway is still
+        needed for Windows 10 PCs to talk over WiFi to RTA1, because
+	netsh cannot add an address 172.29.7.x to the WiFi interface
+	without breaking that interface's DHCP configuration. That
+	tends to lame the Windows computer as an internet participant
+
+	So instead of aliasing the client PCs WiFi interface into
+	RTA1's subnet
+
+		netsh interface ipv4 add address name="WiFi" 172.29.7.x/24
+
+	a host route is added to the client PC. The gateway is the emulator
+	host which is the last address on the following line
+
+		route add -p 172.29.6.y mask 255.255.255.255 192.168.x.x
+
+	You need to do this anyway if you want to talk to RTA1 from another network
+
+	This configuration restriction (inability to add an extra address
+	to the DHCP-configured interface) is confined to Windows. Linux and
+	Darwin (Apple OSX) do not have this restriction
+
+	It's only an assumption based on frequent practice that the Windows
+	Computer's daily traffic is carried on WiFi. If its window on the
+	world is wired Ethernet + DHCP and it's also desired to talk to an
+	emulated RTA1 on Ethernet, then the wired Ethernet interface similarly
+	may not be configured into RTA1's subnet and instead the emulator host's
+	Ethernet interface IP adress must be a routing gateway
+	
+        The performance on wire is highly satisfactory, as it always has
+	been on better WiFi LANs
+
+</pre>
 An earlier method used IPFW Divert Socket, but that is not available on
 any recent personal computer. Materials for running IPFW Divert are still
 delivered in directory <b>rta/netifx</b> and run on Mac PowerPC and x86
@@ -242,8 +366,11 @@ in the target *.rom image or to calibrate the performance of larger or
 smaller RTA1s under heavy network traffic, export RTA_MBANKS { 1|2|4|8|32|64 }
 
 <p>
-To construct an emulated machine with a different number of banks than the supplied emulated machines,
-export the required value and construct the machine from PWD <b>rta.run</b>, for example
+The RTA1 maximum 65536 banks is 16 gigawords but the emulation is a 32-bit program
+
+<p>
+To construct an emulated machine with a different number of banks than the seven supplied<br>
+sizes, export the required value and construct the machine from PWD <b>rta.run</b>, for example
 <pre>
 
 	export	RTA_MBANKS=12
@@ -252,15 +379,17 @@ export the required value and construct the machine from PWD <b>rta.run</b>, for
 				# and load file system image rand7	
 
 </pre>
-To construct an emulated machine smaller than 131072 RTA1 words, generate tiptoe0 with macro PAGES_IN_MEMORY
-in engine.rta/emulate.h changed from 32 to the required number of 4096-word pages
+To construct an emulated machine smaller than 131072 RTA1 words, generate tiptoe0<br>
+with macro PAGES_IN_MEMORY in engine.rta/emulate.h changed from 32 to the required number<p>
+of 4096-word pages
 <pre>
 
 #define	PAGES_IN_MEMORY	<i>pages</i>
 
 </pre>
-A machine smaller than 131072 words would either not run many daemons and threads, or would not be intended
-for smaragd7 kernel 
+The prototype smaragd7 kernel is not suitable for a machine significantly smaller than<br>
+131072 words and not may daemons daemons and threads would run. A machine of only a few<br>
+pages of 4096 words would be intended for a different style of system image
 
 <p>
 RTA1 emulation tiptoe1 takes a megabyte to run on the emulator host, a comparable memory size to an MS-DOS system of 1982. tiptoe64 takes 64 megabytes on the emulator host
@@ -665,8 +794,8 @@ The prompt symbol then changes back to >
 Enter will execute a single instruction
 
 <p>
-<b>g</b> <i>address></i> will set a breakpoint and run to it
-for example
+<b>g</b> <i>address></i> will set a breakpoint and run to it<br>
+The [page:] and address are in hex
 <pre>
 
         g6:3    # go until bank 24K word 3
@@ -674,10 +803,11 @@ for example
         g16a    # go until 16a of the current bank
 
 </pre>
-<b>m</b> <i>address</i> will display a line of system memory
+<b>m</b> <i>address</i> will display a line of system memory<br>
+The address is in hex. Each line each line return displays eight more storage words
 
 <p>
-<b>.</b> will stop doing that
+Key <b>.</b> to end the storage display
 
 <p>
 The address for <b>m</b> is either, for example
@@ -689,6 +819,13 @@ The address for <b>m</b> is either, for example
 
 
 </pre>
+
+<b>r</b> <i>register</i> displays registers.<br>
+Absolute register number is in decimal.<br>
+Each line return displays eight more registers.<br>
+Key <b>.</b> to end the register display
+
+<p>
 <b>b</b> will diplay the relocation register values
 
 <p>

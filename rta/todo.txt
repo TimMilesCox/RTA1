@@ -50,14 +50,20 @@ ________________________________
 	UPDATE to 1.5
 	_____________
 
-        first trials routing from client within same subnet
-        as RTA1
-        instead of naming emulator host as a gateway to RTA1
-        this is initially done on wired network and works very well
 
-        the WiFi currently in use treats intranet traffic as upload
-        and drops hundreds of segments, requiring RTA1 to use an
-        aggressive resend which can be switched on via telnet
+
+	Some performance restrictions have been encountered
+	using low-cost home WiFi to transmit data in quantity
+	between RTA1 and other locally networked hosts
+
+	Excellent network performance has been regained by
+	transmitting over wired Ethernet instead
+
+        The WiFi products associated with problems appear to treat
+	intranet traffic as upload and drop hundreds of presumably
+	over-budget segments. At any rate packet loss is large.
+	RTA1 uses an aggressive TCP resend policy to maintain 
+	performance. Aggressive resends are be switched on via telnet
 
                 telnet -s 172.29.7.6 172.29.7.7
                 aggress
@@ -65,33 +71,105 @@ ________________________________
         this command is a flipflop so repeating it turns aggressive
         resends off again
 
-        to be in the same wired interface subnet the client has an
-        address between 172.29.7.16 and 172.29.7.31 on its wired
-        ethernet interface. This causes traffic for RTA1s which have
-        addresses from 172.29.7.8 to 172.29.7.15 on emulator host
-        external interface to go via wire
+	This is not considered best practice but an emergency method
 
-        RTA1 addresses on WiFi will need to be moved out of this range
+	A performant network is present in the form of wired Ethernet
+	wherever WiFi is present
 
-        RTA1 has a new routing table entry 172.19.7.16 255.255.255.240
+	Address configuration has been rationalised in a way that allows
+	the RTA1 developer to choose from the available network media
+	methodically
+
+	Configuration is in the process scripts which launch interfaces
+	for emulated RTA1 called portal/runL and portal/rerunL, and in
+	the network configurations of PCs intended to communicate over LAN
+	with emulated RTA1
+
+	Any addresses can be used, but the developer must start somewhere
+	and routing within the emulated RTA1 machine must route the
+	configured addresses
+
+	Blocks of network addresses are used in the following way
+
+	Newly, RTA1 on wired Ethernet uses some of the addresses
+
+		172.29.7.8/26 to 172.29.7.62/26
+
+	and RTA1 on WiFi uses some of the addresses
+
+		172.29.7.66/24 to 172.29.7.253/24
+
+	A convention is used that emulated RTA1s on the local net
+	take addresses from the low end of these ranges and PCs
+	talking to RTA1s take addresses from the high end of these
+	ranges
+		
+        To be in the same wired ethernet subnet as RTA a PC has
+	typically an address around 172.29.7.60/26
+
+        This causes traffic for RTA1s which have addresses from
+	172.29.7.8/26 to go via wire
+
+	No LAN addresses used by emulated RTA1s are any longer
+	alias addresses of the emulator host's interfaces. The
+	emulated RTA1 is instead using ARP for real
+
+	The pair of addresses used to communicate over emulator
+	host loopback with emulated RTA1, 172.29.7.6 and 172.29.7.7,
+	are still aliases of emulator host software loopback.
+	Applications accessing emulated RTA1 from the emulator host
+	use 172.29.7.6 as their local address and 172.29.7.7 as
+	emulated RTA1's address
+
+	To be in the same WiFi subnet as RTA a PC has typically an
+	address around 172.29.7.230/24
+
+        This causes traffic for emulated RTAs which have adresses
+	from 172.29.7.66/24 to go via WiFi
+
+        RTA1 has a new routing table entry 172.19.7.0 255.255.255.192
         which goes to the wired interface and is classed as local
 
-        using same-subnet to route to RTA1 instead of emulator host
-        as gateway means RTA1 is doing more ARP for real and could
-        do ZeroConf. Up to now it has been largely snooping the
-        emulator host's ARP traffic into its own cache
+	The existing route 172.19.7.0 255.255.255.0 routes traffic
+	to WiFi. Routes with wider masks are of course searched first
 
-        The old method of using emulator host as gateway is still
-        available but is more exactly necessary for the older IPFW
-        datagram divert service which isolated RTA1 emulated machine
-        from ARP
+	RTA1 is now doing ARP for real and could do ZeroConf
 
-        Now that it has been realised that the available WiFI is
-        chaotic junk for developers, the performance on wire is
-        very satisfactory. The aggressive resends aren't needed
-        on cabled ethernet (or on a WiFi that's any good. Performance
-        has been normal and satisfactory on a better WiFi than the
-	one currently available).
+	Previously RTA emulator host kernel has known about RTA1's LAN
+	addresses and RTA1 has obtained some resolutions from the
+        emulator host's ARP traffic
+
+        The old method of using the emulator host as gateway is still
+        needed for Windows 10 PCs to talk over WiFi to RTA1, because
+	netsh cannot add an address 172.29.7.x to the WiFi interface
+	without breaking that interface's DHCP configuration. That
+	tends to lame the Windows computer as an internet participant
+
+	So instead of aliasing the client PCs WiFi interface into
+	RTA1's subnet
+
+		netsh interface ipv4 add address name="WiFi" 172.29.7.x/24
+
+	a host route is added to the client PC. The gateway is the emulator
+	host which is the last address on the following line
+
+		route add -p 172.29.6.y mask 255.255.255.255 192.168.x.x
+
+	You need to do this anyway if you want to talk to RTA1 from another network
+
+	This configuration restriction (inability to add an extra address
+	to the DHCP-configured interface) is confined to Windows. Linux and
+	Darwin (Apple OSX) do not have this restriction
+
+	It's only an assumption based on frequent practice that the Windows
+	Computer's daily traffic is carried on WiFi. If its window on the
+	world is wired Ethernet + DHCP and it's also desired to talk to an
+	emulated RTA1 on Ethernet, then the wired Ethernet interface similarly
+	may not be configured into RTA1's subnet and instead the emulator host's
+	Ethernet interface IP adress must be a routing gateway
+	
+        The performance on wire is highly satisfactory, as it always has
+	been on better WiFi LANs
 
 
 
