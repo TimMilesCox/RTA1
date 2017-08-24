@@ -11,6 +11,7 @@ static int write_program(int iftype, int offset,
 {
    unsigned char        host[HOSTS][72];
    unsigned char	text[72];
+   unsigned char	netaddress[36];
 
    int			 x,
 			 y,
@@ -69,7 +70,8 @@ static int write_program(int iftype, int offset,
 
    for (x = 0; x < y; x++)
    {
-      bytes = sprintf(text, "\tdest\t%s\tyes\n", host[x]);
+      sscanf(host[x], "%[^/:]", netaddress);
+      bytes = sprintf(text, "\tdest\t%s\tyes\n", netaddress);
       write(f, text, bytes);
    }
 
