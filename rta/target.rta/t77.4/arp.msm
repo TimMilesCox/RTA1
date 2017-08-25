@@ -147,6 +147,7 @@ AXW		$set	8		. it was where we are called from
 					. find the hash chain
 	la	TX_FRAME
 	dl	nframe:next_hop, a
+	lr	this_if:id		. the calling xmit routine has the I/F
 	lcal	find_in_cache
 	tz	y
 	j	deliver			. found in ARP cache
@@ -282,12 +283,16 @@ find_in_cache
 	ay	b
 	sy	CHAIN_HEAD
 	z	BLANK
+
+	lk	32767,,xi
 	
 forward	la	arp_row:next
 	ly	a
 	jza	miss
-	ly	a
-	dl	arp_row:tpa
+	la	arp_row:i_f		. no use resolving on the wrong network
+	mta	r			. with ideas like autoconf being used
+	j	forward			. and platforms all multihomed
+	dl	arp_row:tpa		
 	jdz	spare
 	dan	NET_ADDR
 	jdz	hit
@@ -314,6 +319,7 @@ glean_and_push
 	dl	arp_msg:spa, x
 	jdz	gleanx		. don't process ZeroConf as ARP
 	ds	NET_ADDR
+	lr	descriptor:i_f
 	lcal	find_in_cache
 	tz	y
 	j	update
