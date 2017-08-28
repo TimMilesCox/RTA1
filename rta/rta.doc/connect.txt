@@ -17,51 +17,87 @@ See also the licensing notice at the foot of this document
 
 </center>
 
-<h2>Emulator Binaries for your Platform</h2>
+<h2>Running and Building Emulated RTA1</h2>
 
-This READHOW is about running the emulated machine and building the
-emulated machine
-
-<p>
-You need to build the emulator binaries and utilities
-if you haven't either Intel OSX or PowerPC OSX
+<h3>Ready Emulation Images</h3>
 
 <p>
-The build directions are further down this page
+The binary path for RTA1 emulation and binary utilities is $RTA_BINARY,
+by default <b>/Users/YOU/rta/binary.rta/osx.x86</b>
 
 <p>
-The default binary path is <b>/Users/YOU/rta/binary.rta/osx.x86</b>
-
-<p>
-The emulator run scripts dynamically assign that value to
- <b>RTA_BINARY</b>
-
-<p>
-To run the supplied OSX PowerPC binaries, you can export
+If you have OSX PowerPC, your shell profile needs to change <b>$RTA_BINARY</b>
 <pre>
 
-	export RTA_BINARY=/Users/YOU/rta/binary.rta/osx.ppc
+	export	RTA_BINARY=<b>/Users/YOU/rta/binary.rta/osx.ppc</b>
 
 </pre>
-into your shell profile. 
+If you have a different platform from OSX you need to <a href="#build">build</a>
+ the emulator binary tiptoe and the network service binary osserv.<br>
+All other binary utilities and build tools are
+available on 32-bit Linux x86 and on Win32
+
+
+<h3>Running RTA1</h3>
+
+An emulator host process is run from a shell to provide network connectivity
+<pre>
+
+	cd	<a href="#osserv">rta/portal</a>
+	./runL	
+
+</pre>
+rta/portal/runL is a script which configures networks and runs binary osserv
 
 <p>
-It is important to key <b>export</b> and not just
-<b>RTA_BINARY=path</b> because <b>export</b> overrides
-the default in the build scripts
+Emulated RTA1 is run from another shell
+<pre>
 
-<h2>How to run the Emulated Machine</h2>
-<h3>Starting a Real Network Interface for the Emulated Machine</h3>
+	cd	<a href="#tiptoe">rta/rta.run</a>
+	./run	minimal rand7
+	g
 
-You need to have the real external network interfaces talking to the
-RTA1 network device buffer first of all
-
-<p>
-Emulated RTA1 runs in a shell affording scrutiny and intervention
+</pre>
+if no breakpoints are needed, command <b>g</b> leaves single step and emulated
+RTA1 is running
 
 <p>
-An interface process is run in another shell and shares network
-traffic with RTA1 through shared memory
+rta/rta.run/run is a script which executes the emulator binary <b>tiptoe</b>.<br>
+tiptoe loads in turn an RTA1 target system image, identified in this example as
+<pre>
+
+	rta/target.rta/rta.gen/minimal.rom
+
+</pre>
+Target system images in RTA1 code are generated in directory space
+<a href="#target">rta/target.rta/rta.gen</a><br>
+
+<p>
+second argument rand7 is a <a href="#fsimage">file system image</a>
+enabling emulated RTA1 to webhost its own documents.<br>
+
+<p>
+rta/portal/runL set the external network environment. A third shell is usually
+opened for network connectivity over the emulator host software loopback interface
+<pre>
+
+	cd rta/client
+	./prun
+
+</pre>
+rta/client/prun tests connectivity and sets default addresses which PC client program
+ <a href="#fp">fp</a> uses to operate the RTA1 96/192-bit floating point server
+
+<p>
+There are some <a href="#loopback">special addressing considerations</a> for running
+client applications including  browsers, fp, netSNMP, telnet, and echo protocol to RTA1
+over the software loopback interface of the emulator host
+
+<a	name="osserv"/>
+<h3>Running portal/osserv</h3>
+
+<p>
+osserv shares network traffic with RTA1 through shared memory
 
 <p>
 The shared buffer appears to emulated RTA1 as a device array, one of 63
@@ -77,31 +113,7 @@ The following important updates have been made to emulated RTA1's network servic
 <pre>
 
 
-	Some performance restrictions have been encountered
-	using low-cost home WiFi to transmit data in quantity
-	between RTA1 and other locally networked hosts
-
-	Excellent network performance has been regained by
-	transmitting over wired Ethernet instead
-
-        The WiFi products associated with problems appear to treat
-	intranet traffic as upload and drop hundreds of presumably
-	over-budget segments. At any rate packet loss is large.
-	RTA1 uses an aggressive TCP resend policy to maintain 
-	performance. Aggressive resends are be switched on via telnet
-
-                telnet -s 172.29.7.6 172.29.7.7
-                aggress
-
-        this command is a flipflop so repeating it turns aggressive
-        resends off again
-
-	This is not considered best practice but an emergency method
-
-	A performant network is present in the form of wired Ethernet
-	wherever WiFi is present
-
-	Address configuration has been rationalised in a way that allows
+	Address configuration is structured in a way that allows
 	the RTA1 developer to choose from the available network media
 	methodically
 
@@ -110,9 +122,16 @@ The following important updates have been made to emulated RTA1's network servic
 	the network configurations of PCs intended to communicate over LAN
 	with emulated RTA1
 
-	Any addresses can be used, but the developer must start somewhere
-	and routing within the emulated RTA1 machine must route the
-	configured addresses
+	Any network addresses can be used. The folowing scheme is
+	implemented in start-up scripts which configure the RTA1
+	target image over osserv and shared memory
+
+	For the moment any change to this scheme would need to be
+	reflected in the default routing table assembled into the
+	RTA1 target image from rta/target.rta/t77.4/routes.msm
+
+	The routing table will later be auto-generated on RTA1
+	target image start, as the network addresses already are
 
 	Blocks of network addresses are used in the following way
 
@@ -160,49 +179,76 @@ The following important updates have been made to emulated RTA1's network servic
 
 	RTA1 is now doing ARP for real and could do ZeroConf
 
-	Previously RTA emulator host kernel has known about RTA1's LAN
-	addresses and RTA1 has obtained some resolutions from the
-        emulator host's ARP traffic
-
-        The old method of using the emulator host as gateway is still
-        needed for Windows 10 PCs to talk over WiFi to RTA1, because
-	netsh cannot add an address 172.29.7.x to the WiFi interface
-	without breaking that interface's DHCP configuration. That
-	tends to lame the Windows computer as an internet participant
-
-	So instead of aliasing the client PCs WiFi interface into
-	RTA1's subnet
-
-		netsh interface ipv4 add address name="WiFi" 172.29.7.x/24
-
-	a host route is added to the client PC. The gateway is the emulator
-	host which is the last address on the following line
-
-		route add -p 172.29.6.y mask 255.255.255.255 192.168.x.x
-
-	You need to do this anyway if you want to talk to RTA1 from another network
-
-	This configuration restriction (inability to add an extra address
-	to the DHCP-configured interface) is confined to Windows. Linux and
-	Darwin (Apple OSX) do not have this restriction
-
-	It's only an assumption based on frequent practice that the Windows
-	Computer's daily traffic is carried on WiFi. If its window on the
-	world is wired Ethernet + DHCP and it's also desired to talk to an
-	emulated RTA1 on Ethernet, then the wired Ethernet interface similarly
-	may not be configured into RTA1's subnet and instead the emulator host's
-	Ethernet interface IP adress must be a routing gateway
+	Previous configuration methods are still available and to some
+	extent necessary for any <a href="#windows">Windows</a> computers included
+	in the network
 	
-        The performance on wire is highly satisfactory, as it always has
-	been on better WiFi LANs
-
 </pre>
-An earlier method used IPFW Divert Socket, but that is not available on
-any recent personal computer. Materials for running IPFW Divert are still
-delivered in directory <b>rta/netifx</b> and run on Mac PowerPC and x86
-up to Snow Leopard, <a href="#ipfw">see Appendix A</a>.
-But BPF-based <b>portal</b> also runs on
-those platforms and is intended for Linux and other platforms
+
+
+<a	name="zeroconf"/>
+<h3>Autoconf and Multihomed Routes</h3>
+
+        routes in the route table of RTA1 target image
+        are typed homed (bound to an interface) or
+        not homed
+
+	<p>
+        routes not homed may replicate remote network addresses
+        in separate attached networks
+
+	<p>
+        routing picks a next hop for datagrams, and if the route
+        is homed IP uses the indicated outgoing interface
+
+	<p>
+        if the route is not homed the outgoing interface is chosen
+        according to datagram source network address, which should
+        not be duplicated in any way on one host
+
+	<p>
+	RTA1 IPv4 can consequently exchange datagrams with remote sockets
+	which MAY replicate addresses on separate attached networks
+
+	<p>
+	ZeroConf is a procedure which may negotiate identical addresses
+	within separate attached networks, but is not the only method
+	of so doing. Manual configuration and DHCP might do the same
+	so long as the networks remain separate
+
+	<p>
+	Addresses which potentially replicate in different attached
+	networks are not routable. Routes which could reach replicated
+	addresses are known to RTA1 IPv4 because their interface
+	attribute in the routing table has the wildcard value ANYNET
+
+	<p>
+        This allows a single routing table entry to route to any
+        autoconf addresses which have been encountered
+
+	<p>
+	Routes of this kind only apply to locally attached networks
+	and are always direct. The next-hop is the the destination
+	
+	<p>
+        ARP caches each protocol address separately for each attached
+	network where it appears
+
+	<p>
+	ARP resolution requires a hit on protocol address plus interface index
+
+
+<h3>Earlier Datagram Service over IPFW</h3>
+
+An earlier network access method for RTA1 used IPFW Divert Socket,
+but that is not available on any recent personal computer
+
+<p>
+Materials for running IPFW Divert are still delivered in directory<br>
+<b>rta/netifx</b> and run on Mac PowerPC and x86 up to Snow Leopard,
+<a href="#ipfw">see Appendix A</a>. However BPF-based <b>portal</b> also
+runs on these slightly venerable Apple platforms, and additionally is specific
+for new Apple platforms and intended for other platforms including Linux
 
 <p>
 Apple Computer did not have PCAP fully working on older platforms when it
@@ -257,8 +303,96 @@ The actions of <b>portal/osserv</b> are
 	from RTA1</b>
 	</ol>
 
+<a	name="windows"/>
+<h3>Network Considerations with Windows 10</h3>
+<pre>
+
+	The earlier method of routing to the emulator host	
+	as gateway to RTA1 is still a good technique for
+	talking from Windows 10 PCs to RTA1
+
+	netsh cannot alias an interface into a subnet
+	without breaking that interface's DHCP configuration.
+	This lames the PC's internet access
+
+	any of the following solutions will assure service
+
+		netsh can manually configure an interface with multiple
+		addresses, allowing inclusion in a subnet where RTA1 is
+		found, and simultaneously access to the internet
+
+		routes can be installed on windows PCs adressing emulator
+		host interfaces as gateways, without attempting to configure
+		PCs with addresses in RTA1's subnets
+
+		one physical network can be used between PCs and RTA1,
+		for example wired Ethernet, leaving automatically configured
+		DHCP to another network, for example WiFi
+
+	Opening the administrator command prompt is enough authority to
+	operate netsh and route
+
+	Manual addition of an address to an interface on Windows 10
+	is like this
+
+                netsh interface ipv4 add address name="WiFi" 172.29.7.x/24
+
+	However if the interface was DHCP up to this point, the DHCP binding
+	is lost and the add is effectively a set
+
+	The less destructive method of naming the emulator host as gateway
+	is like this
+
+                route add -p 172.29.6.y mask 255.255.255.255 192.168.x.x
+
+	The last address on the line is gateway, and it should be the
+	emulator host's known address on this interface 
+
+        You need to do this anyway if you want to talk to RTA1 from another network
+
+        This configuration restriction (inability to add an extra address
+        to the DHCP-configured interface) is confined to Windows. Linux and
+        Darwin (Apple OSX) do not have this restriction
 
 
+</pre>
+
+<h3>Performance Considerations with Low-Cost Home Wifi</h3>
+
+        Some performance restrictions have been encountered
+        using low-cost home WiFi to transmit data in quantity
+        between RTA1 and other locally networked hosts
+
+	<p>
+        Excellent network performance has been regained by
+	transmitting over wired Ethernet instead
+
+	<P>
+        The WiFi products associated with problems appear to treat
+        intranet traffic as upload and drop hundreds of presumably
+        over-budget segments. At any rate packet loss is large.
+
+	<P>
+        RTA1 uses an aggressive TCP resend policy to maintain
+        performance. Aggressive resends are switched on via telnet
+	<pre>
+
+                telnet -s 172.29.7.6 172.29.7.7
+                aggress
+
+	</pre>
+        this command is a flipflop so repeating it turns aggressive
+        resends off again
+
+	<p>
+        This is not considered best practice but an emergency method
+
+	<p>
+        A performant network is present in the form of wired Ethernet
+        wherever WiFi is present
+
+
+<a	name="tiptoe"/>
 <h3>Starting the Emulated RTA1 Machine</h3>
 
 In another shell run the emulator, which is the host binary <b>tiptoe[<i>x</i>]</b>, for example
@@ -280,7 +414,7 @@ for a file <b>../rta.gen/minimal.rom</b>, which is the system image
 in RTA1 target instruction code. A script in <b>rta/rta.gen</b>
 <pre>
 
-	./micro
+	./micro -d
 
 </pre>
 constructs RTA1 target code image <b>minimal.rom</b>
@@ -421,7 +555,7 @@ from wherever you are
 
 <p>
 The emulated machine cannot use a ZeroConf network address
-because it  is behind the firewall divert service of the
+because it is behind the firewall divert service of the
 emulator host, and therefore cannot run ARP
 
 <p>
@@ -438,6 +572,7 @@ RTA1 default network addresses can be changed but then need
 also to be changed in configuration scripts rta/netifx/runL
 and rta/client/prun
 
+<a	name="loopback"/>
 <h3>Special Considerations Networking from
 the Emulator Host to the Emulated Machine</h3>
 
@@ -512,14 +647,23 @@ numbers in ASCII because it can't otherwise represent them
 <div	style="color:#0000FF">
 
 
-        $ ./fp 172.29.7.7
+        $ fp 172.29.7.7
         remote application socket 3 bind state 0 F 2 NB 0 udconnect state 0
 
-        &gt;246913578024691357802e600004 / 2000000000000000000000000e-600000
-         send state 65
-         recv state 34/35 +1.23456789012345678901e+1200000
-        &gt;
+        246913578024691357802e600004 / 2000000000000000000000000e-600000
+        send state 65
+        recv state 34/35 +1.23456789012345678901e+1200000
+        
 
+</div>
+<div	style="color:#FF0000">
+
+	$ fp -U
+	remote application socket 3 bind state 0 F 2 NB 0 udconnect state 0
+
+	3.666666999999333333666666999999333333666666e+1000000 / 3e-250000
+	send state 66
+	recv state 55/35 +1.222222333333111111222222333333111111222222e+1250000
 
 </div>
 </pre>
