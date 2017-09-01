@@ -30,14 +30,17 @@ See also the licensing notice at the foot of this document
 		<li><a href="#address plan">Network Address Plan</a></li>
 		<li><a href="#zeroconf">Autoconf and Multihomed Routes</a></li>
 		<li><a href="#windows">Network Considerations with Windows 10</a></li>
+		<li><a href="#locostwifi">Performance Considerations with Low-Cost Home Wifi</a></li>
 		<li><a href="#loopback">Special Considerations Networking from Emulator Platform to Emulated Machine</a></li>
 		<li><a href="#repair">Checksum Repair using OSX Software Loopback</a></li>
 		<li><a href="#build">How to build the Emulated Machine</a></li>
-		<li><a href="#buildnet">Building a Network Service</a></li>
-		<li><a href="#buildrta">Building the RTA1 Emulator</a></li>
-		<li><a href="#tiptoe">Emulated RTA1 Memory Sizes</a></li>
-	</ol>
-	<li><a href="#operate">Operating the Emulator</a></li>
+			<ol>
+			<li><a href="#buildnet">Building a Network Service</a></li>
+			<li><a href="#buildrta">Building the RTA1 Emulator</a></li>
+			<li><a href="#tiptoe">Emulated RTA1 Memory Sizes</a></li>
+			</ol>
+		<li><a href="#operate">Operating the Emulator</a></li>
+		</ol>
 	<li><a href="#ipfw">Appendix A: netifx Datagram Divert Service</a></li>
 	<ol>
 		<li><a href="#datagram service">Earlier Datagram Service over IPFW</a></li>
@@ -160,8 +163,67 @@ The interface process uses Berkely Packet Filter (BPF) kernel calls
 to receive and send. The materials for running this interface process
 are in directory <b>rta/portal</b>
 
-<div	style="color:0000FF">
+<p>
+An earlier network access method for RTA1 used IPFW Divert Socket,
+but that is not available on any recent personal computer
 
+<p>
+Materials for running IPFW Divert are still delivered in directory
+<b>rta/netifx</b> and run on Mac PowerPC and x86 up to Snow Leopard,<br>
+see <a href="#ipfw">Appendix A</a>. However BPF-based <b>portal</b> also
+runs on these slightly venerable Apple platforms, and additionally is specific<br>
+for new Apple platforms and intended for other platforms including Linux
+
+<p>
+Apple Computer did not have PCAP fully working on older platforms when it
+withdrew IPFW from newer platforms. so BPF-based <b>portal/osserv</b> has
+been devised for any platforms. This has the accidental advantage that
+<b>portal</b> constructs its own filter rules for BPF, and produces a far
+more efficient filter program than the PCAP "compiler"
+
+<p>
+Packet filtering does not remove any incoming frames from the kernel,
+so firewall rules must drop frames after they are copied via BPF for RTA1.
+No firewalls encountered so far have dropped any frames before BPF had them
+
+<p>
+The actions of <b>portal/osserv</b> are
+	<ol>
+	<li>script portal/runL sets firewall rules to
+	drop RTA1 incoming traffic from the kernel</li>
+
+	<br>
+	<li>binary osserv binds real-interface:net-address[/mask][:port]
+	combinations to RTA1 according to command line arguments</li>
+
+        <br>
+	<li>osserv ascertains interface types and determines physical
+	address, address size and whether ARP is used</li>
+
+        <br>
+	<li>osserv writes a macro-assembly source file and build
+	script for the filter program of each interface and starts
+	a process to assemble filter pseudo-instructions, in reality
+	64-bit binary-encoded rules. osserv awaits the completion
+	of each filter program build process</li>
+
+        <br>
+	<li>osserv specifies filter programs, notification timing
+	and non-block action to BPF</li>
+
+        <br>
+	<li>osserv initialises the buffer shared with emulated RTA1
+	and uses it to transmit network configuration PDUs to RTA1</li>
+
+        <br>
+	<li>RTA1 receives configuration tuples as its first traffic</li>
+
+        <br>
+	<li>osserv submits received traffic to RTA1 and transmits traffic
+	from RTA1</b>
+	</ol>
+
+<div    style="color:0000FF">
 
 	<a	name="address plan"/>
 	<h3>Network Address Plan</h3>
@@ -339,65 +401,6 @@ are in directory <b>rta/portal</b>
 	ARP resolution requires a hit on protocol address plus interface index
 
 
-An earlier network access method for RTA1 used IPFW Divert Socket,
-but that is not available on any recent personal computer
-
-<p>
-Materials for running IPFW Divert are still delivered in directory<br>
-<b>rta/netifx</b> and run on Mac PowerPC and x86 up to Snow Leopard,
-<a href="#ipfw">see Appendix A</a>. However BPF-based <b>portal</b> also
-runs on these slightly venerable Apple platforms, and additionally is specific
-for new Apple platforms and intended for other platforms including Linux
-
-<p>
-Apple Computer did not have PCAP fully working on older platforms when it
-withdrew IPFW from newer platforms. so BPF-based <b>portal/osserv</b> has
-been devised for any platforms. This has the accidental advantage that
-<b>portal</b> constructs its own filter rules for BPF, and produces a far
-more efficient filter program than the PCAP "compiler"
-
-<p>
-Packet filtering does not remove any incoming frames from the kernel,
-so firewall rules must drop frames after they are copied via BPF for RTA1.
-No firewalls encountered so far have dropped any frames before BPF had them
-
-<p>
-The actions of <b>portal/osserv</b> are
-	<ol>
-	<li>script portal/runL sets firewall rules to
-	drop RTA1 incoming traffic from the kernel</li>
-
-	<br>
-	<li>binary osserv binds real-interface:net-address[/mask][:port]
-	combinations to RTA1 according to command line arguments</li>
-
-        <br>
-	<li>osserv ascertains interface types and determines physical
-	address, address size and whether ARP is used</li>
-
-        <br>
-	<li>osserv writes a macro-assembly source file and build
-	script for the filter program of each interface and starts
-	a process to assemble filter pseudo-instructions, in reality
-	64-bit binary-encoded rules. osserv awaits the completion
-	of each filter program build process</li>
-
-        <br>
-	<li>osserv specifies filter programs, notification timing
-	and non-block action to BPF</li>
-
-        <br>
-	<li>osserv initialises the buffer shared with emulated RTA1
-	and uses it to transmit network configuration PDUs to RTA1</li>
-
-        <br>
-	<li>RTA1 receives configuration tuples as its first traffic</li>
-
-        <br>
-	<li>osserv submits received traffic to RTA1 and transmits traffic
-	from RTA1</b>
-	</ol>
-
 <a	name="windows"/>
 <h3>Network Considerations with Windows 10</h3>
 <pre>
@@ -451,7 +454,7 @@ The actions of <b>portal/osserv</b> are
 
 
 </pre>
-<a	href="locostwifi"/>
+<a	name="locostwifi"/>
 <h3>Performance Considerations with Low-Cost Home Wifi</h3>
 
         Some performance restrictions have been encountered
