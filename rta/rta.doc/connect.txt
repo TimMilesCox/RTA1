@@ -83,10 +83,13 @@ An emulator host process is run from a shell to provide network connectivity
 <pre>
 
 	cd	<a href="#osserv">rta/portal</a>
-	./runL	
+	./runL	[ ipfw ]
 
 </pre>
-rta/portal/runL is a script which configures networks and runs binary osserv
+rta/portal/runL is a script which configures networks and runs binary osserv.<br>
+Argument ipfw is only needed if the emulator platform is OSX and not recent enough to have<br>
+Packet Filter based firewall <b>pfctl</b>. The platform must then be old enough to have <b>ipfw</b>
+firewall
 
 <a	name="runrta"/>
 <h3>Starting the Emulated RTA1 Machine</h3>
@@ -138,7 +141,8 @@ opened for network connectivity over the emulator host software loopback interfa
 	./prun
 
 </pre>
-rta/client/prun tests connectivity and sets default addresses which PC client program
+rta/client/prun installs connectivity between the emulator platform and emulated RTA1,
+then sets default addresses which PC client program
  <a href="#fp">fp</a> uses to operate the RTA1 96/192-bit floating point server
 
 <p>
@@ -165,7 +169,29 @@ are in directory <b>rta/portal</b>
 
 <p>
 An earlier network access method for RTA1 used IPFW Divert Socket,
-but that is not available on any recent personal computer
+but that is not available on any recent personal computer.<br>
+OSX computers old enough to have <b>ipfw</b> firewall may also use the
+newer and more featured portal/osserv with the argument <b>ipfw</b>
+<pre>
+
+	cd	rta/portal
+	./runL	ipfw
+
+</pre>
+Platforms with Packet Filter based firewall omit the <b>ipfw</b> argument
+
+<p>
+portal/osserv is a Packet Filter based frame service which runs on most
+platforms of any age whatever firewall interface they have.<br>
+However script portal/runL adds one firewall rule and needs to know
+which firewall interface to operate
+
+<p>
+Platform Firewall differences for OSX are per distribution OSX 10.<a style="color:0000FF">X</a>.Y<br>
+and all 10.X.Y distributions are reported to bash shell as 10.0
+
+<p>
+The earlier datagram divert service <b>netifx</b> is implemented entirely via <b>ipfw</b>
 
 <p>
 Materials for running IPFW Divert are still delivered in directory
@@ -182,15 +208,25 @@ been devised for any platforms. This has the accidental advantage that
 more efficient filter program than the PCAP "compiler"
 
 <p>
-Packet filtering does not remove any incoming frames from the kernel,
-so firewall rules must drop frames after they are copied via BPF for RTA1.
-No firewalls encountered so far have dropped any frames before BPF had them
+Packet filtering does not remove any incoming frames from the
+emulator platform kernel, but the kernel only gets frames for which<br>
+it has protocol addresses<br> configured on its interfaces
+
+<p>
+with <b>osserv/portal</b> the practice of aliasing emulator platform
+interfaces with addresses for emulated RTA1 is phased out completely.<br>
+Subseqently it is mostly unnecessary to  drop frames after they are copied
+via BPF for RTA1
+
+<p>
+No firewalls encountered so far have dropped any frames before BPF filter
+programs had them
 
 <p>
 The actions of <b>portal/osserv</b> are
 	<ol>
-	<li>script portal/runL sets firewall rules to
-	drop RTA1 incoming traffic from the kernel</li>
+	<li>script portal/runL sets a firewall rule to prevent
+	local http traffic for RTA1 from reaching the kernel</li>
 
 	<br>
 	<li>binary osserv binds real-interface:net-address[/mask][:port]
@@ -493,25 +529,18 @@ The actions of <b>portal/osserv</b> are
 <a	name="loopback"/>
 <h3>Special Considerations Networking from Emulator Platform to Emulated Machine</h3>
 
-Emulated RTA1 has by default an address 172.29.7.7 on the
-sofware loopback interface of the emulator host 
+Emulated RTA1 has by default an address 172.29.7.7<br>
+The emulator host routes to 172.29.7.7 via gateway 127.0.0.1
 
 <p>
 Any IP traffic from the emulator host to the
-emulated RTA1 must to be forced to come from an
-address other than 172.29.7.7, which is an alias
-of the emulator host's loopback
+emulated RTA1 must to be forced to come from an<br>
+address other than 127.0.0.1, because RTA1 has a
+loopback named 127.0.0.1
 
 <p>
-This is because the sending IP likes to send from the
-loopback alias which it is sending to. If that is allowed
-to happen, RTA1 IP replies to its own address...
-
-<p>
-Another network address is added to the emulator platform software
-loopback interface so that RTA1 can address the emulator host.<br>
 Platform script <b>rta/client/prun</b> adds an address 172.29.7.6
-to loopback and sends the echo request
+to emulator host loopback and sends the echo request
 <pre>
 
 	ping -c 6 -S 172.29.7.6 172.29.7.7
@@ -629,13 +658,18 @@ Then you can interact from the emulator host
 
 </div>
 </pre>
-To browse the RTA1 from the emulator host, just say you're going to 172.29.7.6 and the BPF<br>
-filter in portal/osserv will take the input. The responses will come to 172.29.7.6 which is you
+To browse the RTA1 from the emulator host, direct the browser to 172.29.7.6<br>
+and the BPF filter in portal/osserv will receive traffic to 172.29.7.6:80
+
+<p>
+Responses come to 172.29.7.6 which is you
 <pre>
 
 	http://172.29.7.6
 
 </pre>
+This is a remaining case where a firewall rule must prevent traffic for
+loopback address 172.29.7.6:80 from reaching the kernel
 
 <a	name="repair"/>
 <h3>Checksum Repair using OSX Software Loopback</h3>

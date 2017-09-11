@@ -247,10 +247,16 @@ ip_send				. destination is already in 6:7
 	sx	TX_FRAME
 
 	la	r		. the interface #
-	jnza	ip_homed_route	. ly TX_DATAGRAM
+	jnza	ip_homed_route
+	ly	TX_DATAGRAM
 	dl	dgram:ipsource, y
 	lcal	ip_source_ifidx	. the route is not homed
 				. ifidx must be obtained from ip source address
+	jnza	ip_homed_route
+	la, xi	-5		. that didn't work either
+	j	ip_send_x	. should maybe think about
+				. freeing output buffers on send fail
+				. when not TCP
 ip_homed_route
 
 	and, xi	32767
@@ -695,14 +701,14 @@ ipv4_xforward
 
 ip_source_ifidx
 	dpush	a
-	ly	net_alexical,,xi	. this chain may be lexically ordered
+	la	net_alexical		. this chain may be lexically ordered
 ip_source_next				. anyway it contains all of them
-	la	ifaddr:lexical, y
 	jza	ip_source_no
 	ly	a
 	dl	0, sp
 	dan	ifaddr:net, y
 	jdz	ip_source_yes
+	la	ifaddr:lexical, y
 	j	ip_source_next
 ip_source_yes
 	la	ifaddr:i_f, y
