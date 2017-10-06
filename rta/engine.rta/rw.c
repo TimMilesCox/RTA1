@@ -55,15 +55,15 @@ extern device16			 i_f[];
 #endif
 
 device				 devices[64] = 
-	{ { DEVICE,           BANKS_IN_DEVICE,   { &memory } } ,
-	  { DEVICE,           BANKS_IN_DEVICE,   { NULL    } } ,
+	{ { DEVICE | SYSMEM,  BANKS_IN_DEVICE,   { &memory } } ,
+	  { DEVICE | FSYS24,  BANKS_IN_DEVICE,   { NULL    } } ,
 	  { DEVICE | DATA16,  BANKS_IN_DEVICE16, { NULL    } } } ;
 
 extern int			 _register[256];
 extern int			 base[128];
 extern int			 psr;
 
-static int device_read(int device_index, int relocation_base, int offset)
+int device_read(int device_index, int relocation_base, int offset)
 {
    msw			*w24p;
    word16		*w16p;
@@ -75,7 +75,7 @@ static int device_read(int device_index, int relocation_base, int offset)
 
    if (devicep->flags & DEVICE)
    {
-
+      if (device_index)
       relocation_base &= -64; 
       offset |= relocation_base << 12;
 
@@ -86,7 +86,7 @@ static int device_read(int device_index, int relocation_base, int offset)
          v = (w16p->left << 8)
            |  w16p->right;
       }
-      else
+      else if (devicep->flags & FSYS24)
       {
          w24p = &devicep->s.dev24->array[offset];
 
@@ -94,11 +94,17 @@ static int device_read(int device_index, int relocation_base, int offset)
            | (w24p->t2 <<  8)
            |  w24p->t3;
       }
+      else if (devicep->flags & SYSMEM)
+      {
+         if (offset < WORDS_IN_MEMORY)
+         {
+            LOAD24(v, memory.iaray[offset]);
+         }
+         else v = 0x00FFFFFF;
+      }
+      else v = 0x00A5A5A5;
    }
-   else
-   {
-      v = 0x00FFFFFF;
-   }
+   else v = 0x005A5A5A;
 
    return v;
 }
@@ -106,7 +112,8 @@ static int device_read(int device_index, int relocation_base, int offset)
 
 word memory_read(int ea)
 {
-   static word	outside_executable_space = { 0, II, 1, 5 } ;
+   static word	 outside_executable_space = { 0, II, 0, (1 << 6) | 31 } ;
+   static word	 nop                      = { 0, LK, 0, 128 + 1 } ;
 
    unsigned	 relocation_base, offset;
    int		 index = ea & 0x00FC0000;
@@ -132,30 +139,28 @@ word memory_read(int ea)
 
    if (relocation_base & 0x00400000)
    {
-      if (relocation_base & 63) return outside_executable_space;
+      if (relocation_base & 63)
+      {
+         if (psr & 0x00800000) return nop;
+         return outside_executable_space;
+      }
    }
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
-   if (offset > WORDS_IN_MEMORY)
+   if (offset > WORDS_IN_MEMORY-1)
    {
-      if (psr & 0x00800000)
-      {
-      }
-      else
-      {
-         GUARD_INTERRUPT
-      }
-
+      if (psr & 0x00800000) return nop;
       return outside_executable_space;
    }
 
    return memory.array[offset];
 }
 
-int operand_read(int ea, int designator)
+unsigned int operand_read(int ea, int designator)
 {
-   unsigned			 index, offset, relocation_base, v;
+   unsigned		 index, offset, relocation_base;
+   int			 v;
 
    word			*w24p;
    int			 device_index;
@@ -180,7 +185,7 @@ int operand_read(int ea, int designator)
 
    if ((index) && (index < 8))
    {
-      if ((psr << index) & 32768) relocation_base = base[index + 64];
+      if (psr & (32768 >> index)) relocation_base = base[index + 64];
    }
 
    if ((relocation_base & 0x00C00000) == 0x00400000)
@@ -206,50 +211,57 @@ int operand_read(int ea, int designator)
    }
 
    w24p = &memory.array[offset];
+   L24SL(v, *((int *) w24p));
+
+   /******************************************
+	c for each platform
+	needs to do algebraic right shifts
+	true of gcc and cl
+   ******************************************/
 
    switch (designator)
    {
       case 0:
       case 7:
-         v = (w24p->t1 << 16)
-           | (w24p->t2 <<  8)
-           |  w24p->t3;
-         break;
+         break;				/*	word	*/
       case 1:
-         v = w24p->t1;
-         v -= (v & 128) << 1;
+         v >>= 16;			/*	word.t1	*/
          break;
       case 2:
          if (psr & HALFWORD)
          {
-            v = ((w24p->t2 & 15) << 8) | w24p->t3;
-            v -= (v & 2048) << 1;
+            v >>= 12;			/*	word.h1	*/
             break;
          }
-         v = w24p->t2;
-         v -= (v & 128) << 1;
+
+         v = (v << 8) >> 16;		/*	word.t2	*/
          break;
       case 3:
          if (psr & HALFWORD)
          {
-            v = (w24p->t1 << 4) | ((w24p->t2 & 240) >> 4);
-            v -= (v & 2048) << 1;
+            v = (v << 12) >> 12;	/*	word.h2	*/
             break;
          }
-         v = w24p->t3;
-         v -= (v & 128) << 1;
+
+         v = (v << 16) >> 16;		/*	word.t3	*/
          break;
       default:
-         v = ea;
+         break;
    }
-   return v;
+
+   /**********************************
+	leave 8 zeros at position 31
+	signs from position 24
+   **********************************/
+
+   return (unsigned) v >> 8;
 }
 
 void burst_read2(int *list, int ea)
 {
    unsigned		 index, relocation_base, offset, device_index;
 
-   word			*w24p;
+   int			*w24p;
 
    if (ea < 256)
    {
@@ -301,17 +313,9 @@ void burst_read2(int *list, int ea)
       return;
    }
 
-   w24p = &memory.array[offset];
-
-   *list        = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
-
-   w24p++;
-
-   *(list + 1)  = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
+   w24p = &memory.iaray[offset];
+   LOAD24(*list, *w24p);
+   LOAD24(*(list + 1), *(w24p + 1));
 }
 
 
@@ -319,7 +323,7 @@ void burst_read4(int *list, int ea)
 {
    unsigned		 device_index, index, relocation_base, offset;
 
-   word                 *w24p;
+   int			*w24p;
 
    if (ea < 256)
    {
@@ -375,27 +379,11 @@ void burst_read4(int *list, int ea)
       return;
    }
 
-   w24p = &memory.array[offset];
-
-   *list        = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
-
-   w24p++;
-
-   *(list + 1)  = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
-   w24p++;
-
-   *(list + 2)  = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
-   w24p++;
-
-   *(list + 3)  = (w24p->t1 << 16)
-                | (w24p->t2 <<  8)
-                |  w24p->t3;
+   w24p = &memory.iaray[offset];
+   LOAD24(*list, *w24p);
+   LOAD24(*(list + 1), *(w24p + 1));
+   LOAD24(*(list + 2), *(w24p + 2));
+   LOAD24(*(list + 3), *(w24p + 3));
 }
 
 
@@ -422,13 +410,20 @@ static void device_write(int v, int device_index, int relocation_base, int offse
             w16p->left  = v >> 8;
          }
       }
-      else
+      else if (devicep->flags & FSYS24)
       {
          w24p = &devicep->s.dev24->array[offset];
 
          w24p->t3 = v;
          w24p->t2 = v >> 8;
          w24p->t1 = v >> 16;
+      }
+      else if (devicep->flags & SYSMEM)
+      {
+         if (offset < WORDS_IN_MEMORY)
+         {
+            ORDER32(memory.iaray[offset], v);
+         }
       }
    }
 }
@@ -505,42 +500,40 @@ void operand_write(int v, int ea, int designator)
    {
       case 0:
       case 7:
-         w24p->t3 = v;
-         w24p->t2 = v >> 8;
-         w24p->t1 = v >> 16;
+	 ORDER32(*((int *) w24p), v);
          break;
       case 1:
          w24p->t1 = v;
-          break;
+         break;
       case 2:
          if (psr & HALFWORD)
          {
             w24p->t2 = (w24p->t2 & 15)
-                   | (v      << 4);
+                     | (v      << 4);
             w24p->t1 = (v      >> 4);
          }
-         else w24p->t1 = v;
+         else w24p->t2 = v;
          break;
       case 3:
          if (psr & HALFWORD)
          {
             w24p->t3 = v;
             w24p->t2 =  (w24p->t2  & 240)
-                   | ((v >> 8) &  15);
+                     | ((v >> 8)   &  15);
          }
-         else w24p->t1 = v;
+         else w24p->t3 = v;
          break;
    }
 }
 
 void burst_write2(int *list, int ea)
 {
-   int			 v = *list;
-   int			 w = *(list + 1);
-
    unsigned		 device_index, index, relocation_base, offset;
 
-   word			*w24p;
+   int			*w24p;
+
+   int			 v = *list,
+			 w = *(list + 1);
 
    if (ea < 256)
    {
@@ -603,30 +596,21 @@ void burst_write2(int *list, int ea)
       return;
    }
 
-   w24p = &memory.array[offset];
-
-   w24p->t3 = v;
-   w24p->t2 = v >> 8;
-   w24p->t1 = v >> 16;
-
-   w24p++;
-
-   w24p->t3 = w;
-   w24p->t2 = w >> 8;
-   w24p->t1 = w >> 16;
+   w24p = memory.iaray + offset;
+   ORDER32(*w24p, v);
+   ORDER32(*(w24p + 1), w);
 }
-
 
 void burst_write4(int *list, int ea)
 {
-   int                   v  = *list;
-   int                   w  = *(list + 1);
-   int			 _u = *(list + 2);
-   int                   _l = *(list + 3);
-
    unsigned		 device_index, index, relocation_base, offset;
 
-   word                 *w24p;
+   int			*w24p;
+
+   int			 v = *list,
+			 w  = *(list + 1),
+			 _u = *(list + 2),
+			 _l = *(list + 3);			
 
    if (ea < 256)
    {
@@ -692,28 +676,10 @@ void burst_write4(int *list, int ea)
       return;
    }
 
-   w24p = &memory.array[offset];
-
-   w24p->t3 = v;
-   w24p->t2 = v >> 8;
-   w24p->t1 = v >> 16;
-
-   w24p++;
-
-   w24p->t3 = w;
-   w24p->t2 = w >> 8;
-   w24p->t1 = w >> 16;
-
-   w24p++;
-
-   w24p->t3 = _u;
-   w24p->t2 = _u >> 8;
-   w24p->t1 = _u >> 16;
-
-   w24p++;
-
-   w24p->t3 = _l;
-   w24p->t2 = _l >> 8;
-   w24p->t1 = _l >> 16;
+   w24p = &memory.iaray[offset];
+   ORDER32(*w24p, v);
+   ORDER32(*(w24p + 1), w);
+   ORDER32(*(w24p + 2), _u);
+   ORDER32(*(w24p + 3), _l);
 }
 

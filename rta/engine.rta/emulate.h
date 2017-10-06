@@ -202,6 +202,7 @@ typedef struct { word		 w[262144]; } bank;
 typedef struct { msw		 w[262144]; } fsbank;
 
 typedef union  { word   array[4096 * PAGES_IN_MEMORY];
+		 int	iaray[4096 * PAGES_IN_MEMORY];
                  page	p4k[PAGES_IN_MEMORY]; } system_memory;
 
 typedef union  { msw	array[262144 * BANKS_IN_DEVICE];
@@ -217,7 +218,9 @@ typedef union  { msw	array[262144 * BANKS_IN_DEVICE];
 ***************************************************************************/
 
 #define	DEVICE	32768
+#define	SYSMEM	16384
 #define	DATA16	1
+#define	FSYS24	2
 
 typedef struct { unsigned char	      left,
 				     right; } word16;
@@ -367,7 +370,7 @@ ea = (instruction.t2 << 8) | instruction.t3;		\
 							\
 if (designator == XI)					\
 {							\
-   ea -= (ea & 32768) << 1;				\
+   ea = (ea << 16) >> 16;				\
 }							\
 else							\
 {							\
@@ -416,6 +419,86 @@ ea &= 0x00FFFFFF;
 #define	GUARD_RANGE_SP	24
 #define	GUARD_RANGE_UP	128
 
+#ifdef	X86
+
+	/************************************************
+		not for all little-endian platforms !
+		these will work for 80486+ and compatible
+
+		copies between different endian
+
+		avoiding extra register copies of __builtins
+		specific to gcc, embedded assembly will need
+		different macros for other compilers
+	************************************************/
+
+	/***********************************************
+		load / store 24-bit words modeled in
+		32-bit platform words
+
+		emulated target executable space
+
+		not peripheral filestore array,
+		that is modeled in 24-bit fields
+	***********************************************/
+
+
+	/**********************************************
+		writing store, mask it before
+	**********************************************/
+
+#define	ORDER32(TO, FROM)	__asm__(" movl %0,%%eax" : "=m" (FROM));	\
+				__asm__(" andl $0x00FFFFFF, %eax");             \
+				__asm__(" bswap %eax") ;			\
+				__asm__(" movl %%eax,%0" : "=m" (TO) :: "%eax");
+
+	/**********************************************
+		reading store, do more
+	**********************************************/
+
+#define LOAD24(TO, FROM)	__asm__(" movl %0,%%eax" : "=m" (FROM));	\
+				__asm__(" bswap %eax") ;			\
+				__asm__(" andl $0x00FFFFFF, %eax");		\
+				__asm__(" movl %%eax,%0" : "=m" (TO) :: "%eax");
+
+#define	L24SL(TO, FROM)		__asm__(" movl %0,%%eax" : "=m" (FROM));	\
+				__asm__(" bswap %eax") ;			\
+				__asm__(" shll	$8, %eax");			\
+				__asm__(" movl %%eax,%0" : "=m" (TO) :: "%eax");
+
+
+#elif	defined(X86_MSW)
+
+#define	ORDER32(TO, FROM)	__asm{					\
+					mov	eax, FROM		\
+					and	eax, 0x00FFFFFF		\
+					bswap	eax			\
+					mov	TO, eax			\
+				}
+
+#define	LOAD24(TO, FROM)	__asm{					\
+					mov	eax, FROM		\
+					bswap	eax			\
+					and	eax, 0x00FFFFFF		\
+					mov	TO, eax			\
+				}
+
+#define	L24SL(TO, FROM)		__asm{					\
+					mov	eax, FROM		\
+					bswap	eax			\
+					shll	eax, 8			\
+					mov	TO, eax			\
+				}
+
+#else
+
+	/**********************************************
+		these are for any big-endian
+	**********************************************/
+
+#define ORDER32(TO, FROM) TO = FROM & 0x00FFFFFF;
+#define	LOAD24(TO, FROM)  TO = FROM & 0x00FFFFFF;
+#endif
 
 /********************************************************
 

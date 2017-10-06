@@ -80,7 +80,8 @@ char			 flag[26];
 unsigned short		 arguments;
 char			*argument[ARGUMENTS];
 
-static int		 mscan;
+static int		 runout,
+			 lockstep;
 
 extern void		 execute(word instruction);
 extern word		 memory_read(int ea);
@@ -112,22 +113,34 @@ static int		 start_time;
 
 static void *async()
 {
-   char			 request[360];
+   char			 request[372];
+   char			*p;
+
+   funlockfile(stdin);
+
+   if (flag['s'-'a'] == 0)
+   {
+      putchar(':');
+      fflush(stdout);
+   }
 
    for (;;)
    {
       if (flag['s'-'a'])
       {
-         usleep(10000);
-         continue;
+         putchar('>');
+         fflush(stdout);
       }
 
-      putchar(':');
+      request[0] = 0;
+      p = fgets(request, 360, stdin);
 
+      if      (p) action(p);
+      else if (request[0]) action(request);
+      else printf("please key console input again\n");
 
-      fgets(request, 62, stdin);
-
-      if (request[0] == 's') flag['s'-'a'] = 1;
+      if (flag['v'-'a'])
+      printf("[%x %p %x %x]\n", flag['s'-'a'], p, runout, lockstep);
    }
 }
 
@@ -140,12 +153,20 @@ static int msw2i(msw w)
 
 static void print_register_row(int index)
 {
+   #if 1
+   int		 xx = 8;
+
+   printf("%2.2x:", index);
+   while ((xx--) && (index < 256)) printf(" %6.6x", _register[index++]);
+   
+   #else
    printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x",
            index,
            _register[index],   _register[index+1],
            _register[index+2], _register[index+3],
            _register[index+4], _register[index+5],
            _register[index+6], _register[index+7]);
+   #endif
 }
 
 static void statement()
@@ -171,6 +192,7 @@ static void statement()
 
    while (index2--)
    {
+      if (index > 255) break;
       printf(" %6.6x", _register[index++]);
    }
 
@@ -180,6 +202,7 @@ static void statement()
 
    while (index2--)
    {
+      if (index > 255) break;
       printf(" %6.6x", _register[index++]);
    }
 
@@ -189,6 +212,7 @@ static void statement()
 
    while (index2--)
    {
+      if (index > 255) break;
       printf(" %6.6x", _register[index++]);
    }
    putchar('\n');
@@ -214,7 +238,7 @@ int main(int argc, char *argv[])
    int			 f, count, image_size = 0;
 
    word			*load_address = memory.array;
-   word			 data_word;
+   word			 data_word = { 0, 0, 0, 0 } ;
 
    #ifdef ASYNC
 
@@ -330,13 +354,13 @@ int main(int argc, char *argv[])
 
    #endif
 
+   printf("key %s\n\n", (flag['s'-'a'])
+                        ? "g[break:point] to run"
+                        : "s to enter single step");
+
    for (;;)
    {
-      if (mscan)
-      {
-         usleep(1000000);
-         continue;
-      }
+      if (runout < 0) break;
 
       execute(*apc++);
 
@@ -360,77 +384,50 @@ int main(int argc, char *argv[])
       {
          flag['s'-'a'] = 1;
       }
-      else
+
+      if (flag['s'-'a'])
       {
-         if (flag['s'-'a'] == 0)
-         {
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               time_pointer = _register[REALTIME_CLOCK];
-               if (time_pointer & 0x00800000)
-               {
-                  time_pointer++;
-                  time_pointer &= 0xFFFFFF;
-                  _register[REALTIME_CLOCK] = time_pointer;
-                  if (!time_pointer) ii(YIELD);
-               }
-            }
-
-            #ifdef TIMER
-            instructions--;
-            if (!instructions)
-            {
-               instructions = INTERVAL;
-               gettimeofday(&time, NULL);
-               time_pointer = time.tv_sec * 1000000 + time.tv_usec;
-               time_pointer /= TIME_GRANULE;
-               time_pointer &= 0x00FFFFFF;
-               imask = (psr >> 16) & 127;
-
-               if (time_pointer |= base[TIMER_IO_PORT]) ii(TIMER);
-               {
-                  base[TIMER_IO_PORT] = time_pointer;
-                  if (imask < TIMER_IMASK) ii(TIMER);
-               }
-            }
-            #endif
-
-            continue;
-         }
-      }
-
-      statement();
-
-      for (;;)
-      {
+         lockstep = 1;
+         statement();
          putchar('>');
          fflush(stdout);
-         fgets(command, 80, stdin);
-         symbol = command[0];
-
-         if (symbol == '\n') break;
-
-         if (symbol == 'g') 
-         {
-            symbol = sscanf(&command[1], "%x:%x", &index, &offset);
-
-            if (symbol)
-            {
-               if (symbol == 1) breakpoint = &b0p->w[index];
-               if (symbol == 2) breakpoint = &memory.p4k[index].w[offset];
-            }
-
-            flag['s'-'a'] = 0;
-            break;
-         }
-
-         if (symbol ==  '.') return 0;
-
-         action(command);
       }
+
+      while (lockstep) usleep(10000);
+
+      if (psr & 0x00800000)
+      {
+      }
+      else
+      {
+         time_pointer = _register[REALTIME_CLOCK];
+         if (time_pointer & 0x00800000)
+         {
+            time_pointer++;
+            time_pointer &= 0xFFFFFF;
+            _register[REALTIME_CLOCK] = time_pointer;
+            if (!time_pointer) ii(YIELD);
+         }
+      }
+
+      #ifdef TIMER
+      instructions--;
+      if (!instructions)
+      {
+         instructions = INTERVAL;
+         gettimeofday(&time, NULL);
+         time_pointer = time.tv_sec * 1000000 + time.tv_usec;
+         time_pointer /= TIME_GRANULE;
+         time_pointer &= 0x00FFFFFF;
+         imask = (psr >> 16) & 127;
+
+         if (time_pointer |= base[TIMER_IO_PORT]) ii(TIMER);
+         {
+            base[TIMER_IO_PORT] = time_pointer;
+            if (imask < TIMER_IMASK) ii(TIMER);
+         }
+      }
+      #endif
    }
    return 0;
 }
@@ -445,22 +442,56 @@ int main(int argc, char *argv[])
 static void action(char request[])
 {
    word			 sample;
+   word			*departure;
 
-   int			 x,
+   int			 xx,
 			 index,
+                         base_tag,
                          base_index,
                          offset,
                          absolute;
 
+   int			 symbol = request[0];
+
    char			 path[360];
 
 
-   switch(request[0])
+   if (flag['s'-'a'] == 0)
    {
-      case 'r':
+      if (symbol ^ 's')
+      {
+         printf("key s for single step\n");
+         return;
+      }
+   }
 
-         index = iselect | 24;
-         sscanf(&request[1], "%d", &index);
+   switch(symbol)
+   {
+      case 's':
+         flag['s'-'a'] = 1;
+         break;
+
+      case 'g':
+         xx = sscanf(request + 1, "%x:%x", &index, &offset);
+
+         if (xx == 1) breakpoint = &b0p->w[index];
+         if (xx == 2) breakpoint = &memory.p4k[index].w[offset];
+
+         flag['s'-'a'] = 0;
+         lockstep = 0;
+         putchar(':');
+         fflush(stdout);
+         break;
+
+      case '+':
+         index = sp;
+         index += 23;
+      case '0':
+      case 'r':
+         if (symbol ^ '+') index = iselect | 24;
+
+         if      (symbol == '0') sscanf(request,     "%x", &index);
+         else if (symbol == 'r') sscanf(request + 1, "%d", &index);
 
          while (index < 256)
          {
@@ -474,10 +505,9 @@ static void action(char request[])
 
       case 'm':
 
-         x = sscanf(&request[1], "%x:%x", &base_index, &offset);
-         mscan = 1;
+         xx = sscanf(&request[1], "%x:%x", &base_index, &offset);
 
-         if (x < 2)
+         if (xx < 2)
          {
             offset = base_index;
 
@@ -519,22 +549,77 @@ static void action(char request[])
             }
          }
 
-         mscan = 0;
+         break;
+
+      case 'd':
+
+	/*****************************************************
+		for viewing peripheral device arrays
+	*****************************************************/
+
+         absolute = 0;		/* the device or the offset */
+         offset = 0;
+         base_tag = 0;
+
+         xx = sscanf(request +1, "%x:%x", &absolute, &offset);
+
+         if (xx < 2)
+         {
+            offset = absolute;	/* one or zero values read	*/
+            absolute = 0;	/* device comes from base_index	*/
+
+            if (base_tag = offset & 0x00FC0000)
+            {
+               base_tag >>= 18;
+               offset &= 0x0003FFFF;
+            }
+            else
+            {
+               base_tag = offset & 0x0003F000;
+               base_tag >>= 12;
+               offset &= 0x00000FFF;
+            }
+
+            if ((base_tag)
+            &&  (base_tag < 8)
+            &&  (psr & (32768 >> base_tag))) base_tag += 64;
+
+            base_index = base[base_tag];
+            if (base_index & 0x00400000) absolute = base_index & 63;
+//            printf("[%x %x %x %x]\n", absolute, base_tag, base_index, offset);
+         }
+         else base_index = 0x400000 | absolute;
+
+         for (;;)
+         {
+            printf("%6.6x:%6.6x :", base_index, offset);
+            index = offset + 8;
+
+            while (offset < index)
+            {
+               xx = device_read(absolute, base_index, offset++);
+               printf(" %6.6x", xx);
+            } 
+
+            fgets(request, 48, stdin);
+            if (request[0] == '.') break;
+         }
+
          break;
 
       case 'b':
-         for (x = 0; x < 72; x++)
+         for (xx = 0; xx < 72; xx++)
          {
-            if (!(x & 7)) printf("\n%2.2x:", x);
-            printf(" %6.6x", base[x]);
+            if (!(xx & 7)) printf("\n%2.2x:", xx);
+            printf(" %6.6x", base[xx]);
          }
 
          printf("\n7c                             ");
 
-         for (x = 124; x < 192; x++)
+         for (xx = 124; xx < 192; xx++)
          {
-            if (!(x & 7)) printf("\n%2.2x:", x);
-            printf(" %6.6x", base[x]);
+            if (!(xx & 7)) printf("\n%2.2x:", xx);
+            printf(" %6.6x", base[xx]);
          }
 
          putchar('\n');
@@ -546,17 +631,40 @@ static void action(char request[])
          break;
 
       case 'l':
-         x = sscanf(&request[1], "%s", path);
+         xx = sscanf(&request[1], "%s", path);
+         if (xx == 1) load_fs(path);
+         break;
 
-         if (x == 1) load_fs(path);
+      case 'h':
+         printf("LF\texecute one instruction and display new state\n");
+         printf("+\tdisplay more internal stack registers\n");
+         printf("0n\tdisplay registers starting at hex address\n");
+         printf("r n\tdisplay registers starting at decimal address\n");
+         printf("b\tdisplay relocation / configuration ports\n\n");
+         printf("m [[page:]offset]\tdisplay system memory\n");
+         printf("\tdefault page[s] in current address space\n\n");
+         printf("d [[device:]offset]\tdisplay peripheral memory array[s]\n");
+         printf("\tdefault device[s] in current address space\n\n");
+         printf("g [[page:]breakpoint]\trun [to breakpoint]\n");
+         printf("\tdefault page is current instruction section\n");
+         printf("\tto remove breakpoint g0:0\n\n");
+         printf(".\texit emulator\n");
+         break;
 
+      case '.':
+         runout = -1;
+         lockstep = 0;
+         break;
+
+      default:
+         lockstep = 0;
          break;
    }
 }
 
 static void load_fs(char *path)
 {
-   int		 x,
+   int		 xx,
 		 banks,
 		 index = 0;
 
@@ -569,22 +677,22 @@ static void load_fs(char *path)
    else
    {
       printf("loading file system image %s\n", path);
-      x = read(f, (void *) &page, sizeof(page));
+      xx = read(f, (void *) &page, sizeof(page));
 
       /**************************************************
 	more exactly volume root directory initial page
       **************************************************/
 
-      if (x ^ sizeof(page))
+      if (xx ^ sizeof(page))
       {
          printf("volume header read unsuccessful\n");
          return;
       }
 
-      x = 3 * (page.label.ex.rfw.t3 - VOLUME1_WORDS);
+      xx = 3 * (page.label.ex.rfw.t3 - VOLUME1_WORDS);
       banks = msw2i(page.label.ex.granules);
 
-      printf("%.*s %d storage banks\n", x, &page.label.name[0].t1, banks);
+      printf("%.*s %d storage banks\n", xx, &page.label.name[0].t1, banks);
 
       if (loader) free(loader);
 
@@ -605,9 +713,9 @@ static void load_fs(char *path)
 
       for (;;)
       {
-         x = read(f, loader, 192);
-         if (x < 0) break;
-         if (!x) break;
+         xx = read(f, loader, 192);
+         if (xx < 0) break;
+         if (!xx) break;
          index++;
          loader += 192;
       }

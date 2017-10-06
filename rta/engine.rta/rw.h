@@ -42,7 +42,7 @@
 
 
 
-extern int operand_read(int ea, int designator);
+extern unsigned int operand_read(int ea, int designator);
 extern void burst_read2(int *list, int ea);
 extern void burst_read4(int *list, int ea);
 
