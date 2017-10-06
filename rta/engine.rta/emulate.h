@@ -498,6 +498,7 @@ ea &= 0x00FFFFFF;
 
 #define ORDER32(TO, FROM) TO = FROM & 0x00FFFFFF;
 #define	LOAD24(TO, FROM)  TO = FROM & 0x00FFFFFF;
+#define L24SL(TO, FROM)	  TO = FROM << 8;
 #endif
 
 /********************************************************
