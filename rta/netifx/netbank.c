@@ -42,11 +42,20 @@
 
 
 #include <stdio.h>
+
+#ifdef	X86_MSW
+#include <windows.h>
+#define	INTEL
+//	typedef char TCHAR;
+#else
 #include <unistd.h>
 #include <sys/shm.h>
+#endif
+
 #include <errno.h>
 #include "../engine.rta/emulate.h"
 #include "../rta.run/settings.h"
+#include "../include.rta/address.h"
 #include "sifr_mm.h"
 
 #define	DEVICE_PAGE	2048
@@ -62,14 +71,36 @@ void netbank()
    int		*wrpid;
    #endif
 
+   #ifdef X86_MSW
+   TCHAR	 device_logo[] = "Global\\device01";
+   HANDLE	 mhandle = OpenFileMapping(FILE_MAP_ALL_ACCESS, 0, device_logo);
+
+   if (mhandle == NULL)
+   {
+      printf("device array 1 unavailable\n"
+             "enter '.' to stop the emulator\n");
+      printf("run portal first\n");
+      printf("code %d\n", GetLastError());
+      return;
+   }
+
+   dpointer = (mm_netbuffer *) MapViewOfFile(mhandle,
+                                             FILE_MAP_ALL_ACCESS, 0, 0,
+                                             DEVICE_PAGE * DEVICE_PAGES);
+
+   devices[2].s.dev16 = (void *) dpointer;
+   if (dpointer == NULL) printf("device array not in scope %d\n", GetLastError());
+
+   #else  X86_MSW
    int		 mhandle = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, 0);
 
    printf("netbank %d\n", mhandle);
+
    if (mhandle < 0)
    {
       printf("no network bank is available\n"
              "enter '.' to stop the emulator\n");
-      printf("run netifx first\n");
+      printf("run portal first\n");
       printf("code %d\n", errno);
       return;
    }
@@ -101,6 +132,7 @@ void netbank()
       dpointer->preamble.flag = OUT_OF_BAND_TARGET_PROTOCOL;
       printf("[ID %d @ %p]\n", *wrpid, wrpid);
    }
-   #endif
+   #endif SIGALERT
+   #endif X86_MSW
 }
 

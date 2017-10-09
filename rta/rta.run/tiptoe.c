@@ -42,26 +42,43 @@
 
 
 
+#define	ASYNC
+
+#ifdef	X86_MSW
+
+#include <stdio.h>
+#include <windows.h>
+#include <stdlib.h>
+#include <memory.h>
+#include <fcntl.h>
+//	#include <signal.h>
+//	#include <sys/time.h>
+#include <errno.h>
+
+#ifdef  ASYNC
+#include <process.h>
+#endif
+
+#else	X86_MSW
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <memory.h>
 #include <sys/fcntl.h>
 #include <signal.h>
 #include <sys/time.h>
-
-#include "../engine.rta/emulate.h"
-#include "../engine.rta/ii.h"
-#include "../engine.fs/device24.h"
-#include "idisplay.h"
-
-#define	ASYNC
+#include <errno.h>
 
 #ifdef	ASYNC
 #include <pthread.h>
 #endif
 
-#include <errno.h>
+#endif	X86_MSW
 
+#include "../engine.rta/emulate.h"
+#include "../engine.rta/ii.h"
+#include "../engine.fs/device24.h"
+#include "idisplay.h"
 #include "settings.h"
 
 #define	ARGUMENTS	3
@@ -70,7 +87,7 @@ extern int		 iselect;
 extern word		*apc;
 extern page		*b0p;
 extern unsigned int	 psr;
-extern unsigned int	_register[256];
+extern unsigned int	_register[];
 extern unsigned int	 base[];
 extern system_memory	 memory;
 extern device		 devices[];
@@ -114,9 +131,12 @@ static int		 start_time;
 static void *async()
 {
    char			 request[372];
-   char			*p;
+   char			*_p;
 
+   #ifdef X86_MSW
+   #else
    funlockfile(stdin);
+   #endif
 
    if (flag['s'-'a'] == 0)
    {
@@ -133,14 +153,14 @@ static void *async()
       }
 
       request[0] = 0;
-      p = fgets(request, 360, stdin);
+      _p = fgets(request, 360, stdin);
 
-      if      (p) action(p);
+      if      (_p) action(_p);
       else if (request[0]) action(request);
       else printf("please key console input again\n");
 
       if (flag['v'-'a'])
-      printf("[%x %p %x %x]\n", flag['s'-'a'], p, runout, lockstep);
+      printf("[%x %p %x %x]\n", flag['s'-'a'], _p, runout, lockstep);
    }
 }
 
@@ -221,7 +241,14 @@ static void statement()
 int main(int argc, char *argv[])
 {
    #ifdef DAYCLOCK
+
+   #ifdef X86_MSW
+   SYSTEMTIME		 stime;
+   FILETIME		 ftime;
+   #else
    struct timeval	 time;
+   #endif
+
    int			 instructions = INTERVAL;
    int			 imask;
    #endif
@@ -242,16 +269,27 @@ int main(int argc, char *argv[])
 
    #ifdef ASYNC
 
+   #ifdef X86_MSW
+
+   #else
+
    pthread_attr_t	 asyncb;
    pthread_t		 asyncid;
 
    #endif
 
+   #endif
+
    #ifdef DAYCLOCK
 
+   #ifdef X86_MSW
+   GetLocalTime(&stime);
+   SystemTimeToFileTime(&stime, &ftime);
+   start_time = ftime.dwLowDateTime;
+   #else
    gettimeofday(&time, NULL);
    start_time = time.tv_sec * 1000 + time.tv_usec / 1000;
-
+   #endif
    #endif
 
 
@@ -279,7 +317,11 @@ int main(int argc, char *argv[])
 
    if (arguments)
    {
+      #ifdef X86_MSW
+      f = open(argument[0], O_RDONLY | O_BINARY, 0444);
+      #else
       f = open(argument[0], O_RDONLY, 0444);
+      #endif
 
       if (f < 0)
       {
@@ -342,6 +384,14 @@ int main(int argc, char *argv[])
 
    #ifdef ASYNC
 
+   #ifdef X86_MSW
+
+   x = _beginthread(async, 0, NULL);
+   if (x < 0) printf("async thread start %d %d\n", x, errno);
+   else       printf("async thread ID %x\n", x);
+
+   #else
+
    x = pthread_attr_init(&asyncb);
 
    if (x < 0) printf("threadcbinit %d e %d\n", x, errno);
@@ -352,6 +402,7 @@ int main(int argc, char *argv[])
       else       printf("async thread ID %p\n", asyncid);
    }
 
+   #endif
    #endif
 
    printf("key %s\n\n", (flag['s'-'a'])
@@ -370,8 +421,16 @@ int main(int argc, char *argv[])
       if (!instructions)
       {
          instructions = INTERVAL;
+
+         #if X86_MSW
+         GetLocalTime(&stime);
+         SystemTimeToFileTime(&stime, &ftime);
+         time_pointer = ftime.dwLowDateTime;
+         #else
          gettimeofday(&time, NULL);
          time_pointer = time.tv_sec * 1000 + time.tv_usec / 1000;
+         #endif
+
          time_pointer -= start_time;
          _register[DAYCLOCK_U] = time_pointer >> 24;
          _register[DAYCLOCK]   = time_pointer & 0x00FFFFFF;
@@ -415,11 +474,19 @@ int main(int argc, char *argv[])
       if (!instructions)
       {
          instructions = INTERVAL;
+
+         #ifdef X86_MSW
+         GetLocalTime(&stime);
+         SystemTimeToFileTime(&stime, &ftime);
+         time_pointer = ftime.dwLowDateTime;
+         #else
          gettimeofday(&time, NULL);
          time_pointer = time.tv_sec * 1000000 + time.tv_usec;
+         #endif
+
          time_pointer /= TIME_GRANULE;
          time_pointer &= 0x00FFFFFF;
-         imask = (psr >> 16) & 127;
+         imask = (psr >> 16) & 7;
 
          if (time_pointer |= base[TIMER_IO_PORT]) ii(TIMER);
          {
@@ -669,7 +736,12 @@ static void load_fs(char *path)
 		 index = 0;
 
    char		*loader = (char *) devices[1].s.dev24;
+
+   #ifdef X86_MSW
+   int		 f = open(path, O_RDONLY | O_BINARY, 0444);
+   #else
    int		 f = open(path, O_RDONLY, 0444);
+   #endif
 
    vpage	 page;
 
@@ -689,10 +761,39 @@ static void load_fs(char *path)
          return;
       }
 
+      if (flag['v'-'a'])
+      {
+         printf("[%2.2x%2.2x%2.2x]\n",
+                 page.label.ex.rfw.t1,
+                 page.label.ex.rfw.t2,
+                 page.label.ex.rfw.t3);
+      }
+
+      if (page.label.ex.rfw.t1 ^ 'V')
+      {
+         if (flag['v'-'a'])
+         {
+            index = 0;
+            loader = (char *) &page;
+
+            while (xx--)
+            {
+               if ((index & 15) == 0) printf("\n%4.4x: ", index);
+               printf("%2.2x", *loader++);
+               index++;
+            }
+
+            putchar('\n');
+         }
+
+         return;
+      }
+
       xx = 3 * (page.label.ex.rfw.t3 - VOLUME1_WORDS);
       banks = msw2i(page.label.ex.granules);
 
       printf("%.*s %d storage banks\n", xx, &page.label.name[0].t1, banks);
+      if (banks == 0) return;
 
       if (loader) free(loader);
 

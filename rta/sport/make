@@ -24,12 +24,12 @@
 #    Scripts and utility programs for constructing RTA1 target
 #    executable software are free software
 #
-#    You can redistribute it and/or modify RTA1
+#    You can redistribute and/or modify RTA1 and it materials
 #    under the terms of the GNU General Public License as published by
 #    the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version. 
+#    (at your option) any later version.
 #
-#    RTA1 is distributed in the hope that it will be useful,     
+#    RTA1 is distributed in the hope that it will be useful,
 #    but WITHOUT ANY WARRANTY; without even the implied warranty of
 #    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #    GNU General Public License for more details.
@@ -39,70 +39,48 @@
 #
 #
 #
-#
-#
 
 
-if [ -z "$RTA_BINARY" ]
+
+if	[ -z "$RTA_BINARY" ]
 then
-echo	export $RTA_BINARY=directory-for-new-binaries \
+echo	export RTA_BINARY=directory-for-new-binaries \
 	in your shell profile
 echo	and add \$RTA_BINARY to \$PATH
 exit	0
 fi
 
-if      [ ! -d "$RTA_BINARY" ]
+if	[ ! -d "$RTA_BINARY" ]
 then
-mkdir   "$RTA_BINARY"
+mkdir	"$RTA_BINARY"
 fi
 
-if	[ $1 == "powerpc" ]
+gcc -m32 -c -funsigned-char -o ../emulator.rel/argue.o ../netifx/argue.c
+
+
+if [ "$2" == "linux" ]
 then
-	IFLAG=-UINTEL
-	echo	constructing for network byte order
+echo	linux sockaddr format
+OS=-DLINUX
 else
-	IFLAG=-DINTEL
-	echo	constructing for Intel byte order
+echo	OSX sockaddr format
+OS=-DOSX
 fi
 
-
-pushd   ../netifx
-gcc -m32 -c -funsigned-char $IFLAG -o ../emulator.rel/netbank.o netbank.c
-popd
-
-gcc -m32 -c -funsigned-char -o ../emulator.rel/idisplay.o idisplay.c
-
-if	[ -z $RTA_MBANKS ]
+if  [[ "$1" == "powerpc" ||  "$1" == "sparc" ]]
 then
-export	RTA_MBANKS=2
-fi
-
-echo	emulated RTA executable space $RTA_MBANKS banks image tiptoe$RTA_MBANKS
-
-if	[ $1 == "powerpc" ]
-then
-	ARCHFLAG=-UX86
-	echo	constructing for powerpc
+echo emulator host $1
+BE=-UINTEL
 else
-	ARCHFLAG=-DX86
-	echo	constructing x86 specific
+echo little endian emulator host
+BE=-DINTEL
 fi
 
-pushd	../engine.rta
-./genrel $ARCHFLAG
-popd
+#	gcc -m32 -funsigned-char -c -o ../emulator.rel/physa.o physa.c
+gcc -m32 -funsigned-char $OS $BE -DPCAP -o "$RTA_BINARY/netif"	\
+			../emulator.rel/physa.o			\
+			../emulator.rel/argue.o /usr/lib/libpcap.dylib netif.c
 
-gcc -m32 -DMBANKS=$RTA_MBANKS -o $RTA_BINARY/tiptoe$RTA_MBANKS	\
-				../engine.rel/rta.o		\
-				../engine.rel/ii.o		\
-				../engine.rel/memory.o		\
-				../emulator.rel/netbank.o	\
-				../engine.rel/rw.o		\
-				../engine.rel/alu.o		\
-				../engine.rel/fpu.o		\
-				../engine.rel/sr.o		\
-				../emulator.rel/idisplay.o	\
-				tiptoe.c
 
 echo	binaries in $RTA_BINARY
 ls -l $RTA_BINARY

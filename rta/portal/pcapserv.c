@@ -15,6 +15,11 @@
 
 #include <sys/shm.h>
 #include <pthread.h>
+#include <pcap/pcap.h>
+
+#define	PCAP_BYTES	8192
+#define	PCAP_MS		20
+#define	PCAP_HANDLES	3
 
 #include "../include.rta/argue.h"
 #include "../netifx/ifconfig.h"
@@ -24,10 +29,7 @@
 #include "../include.rta/physa.h"
 
 
-//	#define	IP		PORT(0x0800)
-//	#define	FRAME		FORWARD(0x8000)
 #define	LLHL		0
-//	#define FORWARD(X)      PORT(X) & 65535
 #define	MASKS		120
 
 static int			 iftype[INTERFACES];
@@ -36,6 +38,8 @@ static struct ifreq		 sandl[INTERFACES];
 static struct bpf_program	 bpfp[INTERFACES];
 static unsigned int		 one = 1;
 static unsigned int		 zero;
+
+pcap_t				*pandl[PCAP_HANDLES];
 
 static unsigned int		 maximum;
 static int			 halt_flag;
@@ -144,6 +148,7 @@ static void outputq()
    int			 fdes;
    unsigned char	*p;
 
+   pcap_t		*_s;
 
    while (q->preamble.flag & FRAME)
    {
@@ -167,7 +172,8 @@ static void outputq()
       if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
 
       x = tx_bytes;
-      fdes = s[interface];
+//      fdes = s[interface];
+      _s = pandl[interface];
 
       p = q->frame;
       if (iftype[interface] == DLT_NULL)
@@ -186,7 +192,7 @@ static void outputq()
       }
       #endif
 
-      y = write(fdes, p, x);
+      y = pcap_sendpacket(_s, p, x);
 
       if (flag['v'-'a'])
       {
@@ -516,7 +522,7 @@ static void forward(int x, unsigned char *p, int bytes)
          }
 
          rxdata->preamble.frame_length = PORT(bytes);
-         rxdata->preamble.i_f = PORT(x);
+         rxdata->preamble.interface = PORT(x);
 
          #ifdef TRACE
          sloco(rxdata->frame, p, bytes);
@@ -786,38 +792,42 @@ int main(int argc, char *argv[])
       sprintf(ipath1, "../temp.%s/filter", netdevice);
       sprintf(ipath2, "../temp.%s/physa", netdevice);
 
-      s[x] = open(device, O_RDWR | O_NONBLOCK, 0777);
-      printf("[s %d %d %s]\n", s[x], (s[x] < 0) ? errno : 0, device);
+//      s[x] = open(device, O_RDWR | O_NONBLOCK, 0777);
+//      printf("[s %d %d %s]\n", s[x], (s[x] < 0) ? errno : 0, device);
 
-      if (s[x] < 0)
-      {
-      }
-      else
-      {
-         b2b((char *) &sandl[x], netdevice);
-         y = ioctl(s[x], BIOCSETIF, &sandl[x]);
-         printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+      pandl[x] = pcap_open_live(device_string, PCAP_BYTES, 1, PCAP_MS, diagnostic_string);
+      printf("[%p]\n", pandl[x]);
 
-         if (y < 0)
-         {
-         }
-         else
-         {
+      if (pandl[x])
+      {
+//         b2b((char *) &sandl[x], netdevice);
+//         y = ioctl(s[x], BIOCSETIF, &sandl[x]);
+//         printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+
+//         if (y < 0)
+//         {
+//         }
+//         else
+//         {
             p = (unsigned char *) &sandl;
             y = sizeof(struct ifreq);
             putchar('[');
             while (y--) printf("%2.2x", *p++);
             printf("]\n");
-         }
+//         }
 
-         y = ioctl(s[x], BIOCIMMEDIATE, &one);
-         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
+//         y = ioctl(s[x], BIOCIMMEDIATE, &one);
+//         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
 
-         y = ioctl(s[x], BIOCGBLEN, &maximum);
-         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+//         y = ioctl(s[x], BIOCGBLEN, &maximum);
+//         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
 
-         y = ioctl(s[x], BIOCGDLT, &j);
-         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+//         y = ioctl(s[x], BIOCGDLT, &j);
+//         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+
+         /***********************************************************
+		get the interface type into j via a pcap call
+         ***********************************************************/
 
          switch (j)
          {
@@ -872,7 +882,7 @@ int main(int argc, char *argv[])
          rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
          rxdata->preamble.ll_hl = LLHL;
 
-         rxdata->preamble.i_f = PORT(x);
+         rxdata->preamble.interface = PORT(x);
 
          rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
 

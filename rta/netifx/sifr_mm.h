@@ -45,20 +45,22 @@
 #define DEVICE_PAGE     2048
 #define DEVICE_PAGES    256
 
-#ifdef	INTEL
-#define	OUT_OF_BAND_TARGET_PROTOCOL	0x0040
-#else
-#define	OUT_OF_BAND_TARGET_PROTOCOL	0x4000
-#endif
+#define	FORWARD(X)	PORT(X) & 65535
+
+#define	FRAME				FORWARD(0x8000)
+#define	OUT_OF_BAND_TARGET_PROTOCOL	PORT(0x4000)
+
+#define	IP	PORT(0x0800)
+#define	ARP	PORT(0x0806)
+			
 
 #define	FPL sizeof(mm_descriptor)
-
 
 
 typedef	struct { unsigned short			    flag,
 					    frame_length,
 						   ll_hl,
-					       interface,
+						     i_f,
 						protocol; } mm_descriptor;
 
 typedef struct { mm_descriptor			preamble;

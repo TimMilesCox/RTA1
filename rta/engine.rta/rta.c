@@ -40,7 +40,9 @@
 
 **********************************************************************/
 
-
+#ifdef	X86_MSW
+#include <windows.h>
+#endif
 
 #include <stdio.h>
 #include "emulate.h"

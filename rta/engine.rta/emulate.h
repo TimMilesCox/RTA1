@@ -469,26 +469,11 @@ ea &= 0x00FFFFFF;
 
 #elif	defined(X86_MSW)
 
-#define	ORDER32(TO, FROM)	__asm{					\
-					mov	eax, FROM		\
-					and	eax, 0x00FFFFFF		\
-					bswap	eax			\
-					mov	TO, eax			\
-				}
+#define	ORDER32(TO, FROM)	TO = _byteswap_ulong(FROM & 0x00FFFFFF)
+#define	LOAD24(TO, FROM)	TO = _byteswap_ulong(FROM) & 0x00FFFFFF
+#define	L24SL(TO, FROM)		TO = _byteswap_ulong(FROM) << 8
 
-#define	LOAD24(TO, FROM)	__asm{					\
-					mov	eax, FROM		\
-					bswap	eax			\
-					and	eax, 0x00FFFFFF		\
-					mov	TO, eax			\
-				}
-
-#define	L24SL(TO, FROM)		__asm{					\
-					mov	eax, FROM		\
-					bswap	eax			\
-					shll	eax, 8			\
-					mov	TO, eax			\
-				}
+#define usleep(US)	Sleep(US / 900)
 
 #else
 
