@@ -1,8 +1,21 @@
+
+#ifdef	X86_MSW
+#define	INTEL
+#include <stdio.h>
+#include <fcntl.h>
+#define	DLT_NULL	0
+#define	DLT_EN10MB	1
+//	#include <net/bpf.h>
+#include <windows.h>
+#include <errno.h>
+#else
 #include <stdio.h>
 #include <fcntl.h>
 #include <net/bpf.h>
 #include <unistd.h>
 #include <errno.h>
+#endif
+
 
 #define	HOSTS	6
 
@@ -16,8 +29,11 @@ static int write_program(int iftype, int offset,
 			 y,
 			 bytes;
 
-
+   #ifdef X86_MSW
+   int f = open(ofile2, O_WRONLY | O_TRUNC | O_CREAT | O_BINARY, 0777);
+   #else
    int f = open(ofile2, O_WRONLY | O_TRUNC | O_CREAT, 0777);
+   #endif
 
    if (f < 0) return 0 - errno;
    y = sscanf(net_addresses,
@@ -37,7 +53,7 @@ static int write_program(int iftype, int offset,
    write(f, text, bytes);
 
    #ifdef INTEL
-   bytes = sprintf(text, "INTEL\t$set\t%d\n", INTEL);
+   bytes = sprintf(text, "INTEL\t$set\t%d\n", 1);
    #else
    bytes = sprintf(text, "INTEL\t$set\t%d\n", 0);
    #endif
@@ -77,6 +93,7 @@ static int write_program(int iftype, int offset,
    write(f, text, bytes);
 
    close(f);
+   return 0;
 }
 
 
@@ -89,9 +106,15 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
 			 y,
 			 j;
 
+   #ifdef X86_MSW
+   static PROCESS_INFORMATION pi;
 
+   sprintf(ofile1, "..\temp.%s\bpf_gate.msm", ifname);
+   sprintf(ofile2, "/c .\fgen_%s.bat", ifname);
+   #else
    sprintf(ofile1, "../temp.%s/bpf_gate.msm", ifname);
    sprintf(ofile2, "./fgen.%s", ifname);
+   #endif
 
    switch (iftype)
    {
@@ -108,6 +131,11 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
          x = write_program(iftype,  0, net_addresses, ofile1);
    }
 
+   #ifdef X86_MSW
+   x = CreateProcess("cmd.exe", ofile2, NULL, NULL, 0, 0, NULL, NULL, NULL, &pi);
+   if (x) printf("process launch fgen_%s failed E ", ifname, GetLastError());
+   else WaitForSingleObject(pi.hProcess, INFINITE);
+   #else
    x = fork();
 
    if (x)
@@ -118,6 +146,7 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
       if (y < 0) printf("%d\n", errno);
    }
    else execlp(ofile2, "blanco", (char *) 0);
+   #endif
 
    return 0;
 }
