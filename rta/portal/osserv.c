@@ -743,6 +743,8 @@ int main(int argc, char *argv[])
    pthread_attr_t        asyncb;
    pthread_t             asyncid;
 
+   int			 fdes;
+
 
    argue(argc, argv);
 
@@ -786,16 +788,16 @@ int main(int argc, char *argv[])
       sprintf(ipath1, "../temp.%s/filter", netdevice);
       sprintf(ipath2, "../temp.%s/physa", netdevice);
 
-      s[x] = open(device, O_RDWR | O_NONBLOCK, 0777);
-      printf("[s %d %d %s]\n", s[x], (s[x] < 0) ? errno : 0, device);
+      s[x] = fdes = open(device, O_RDWR | O_NONBLOCK, 0777);
+      printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, device);
 
-      if (s[x] < 0)
+      if (fdes < 0)
       {
       }
       else
       {
          b2b((char *) &sandl[x], netdevice);
-         y = ioctl(s[x], BIOCSETIF, &sandl[x]);
+         y = ioctl(fdes, BIOCSETIF, &sandl[x]);
          printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
 
          if (y < 0)
@@ -810,13 +812,13 @@ int main(int argc, char *argv[])
             printf("]\n");
          }
 
-         y = ioctl(s[x], BIOCIMMEDIATE, &one);
+         y = ioctl(fdes, BIOCIMMEDIATE, &one);
          printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
 
-         y = ioctl(s[x], BIOCGBLEN, &maximum);
+         y = ioctl(fdes, BIOCGBLEN, &maximum);
          printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
 
-         y = ioctl(s[x], BIOCGDLT, &j);
+         y = ioctl(fdes, BIOCGDLT, &j);
          printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
 
          switch (j)
@@ -833,7 +835,7 @@ int main(int argc, char *argv[])
                rxdata->frame[1] = 14;
                physa_octets = 6;
 
-               y = ioctl(s[x], BIOCSSEESENT, &zero);
+               y = ioctl(fdes, BIOCSSEESENT, &zero);
                printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
 
                /********************************************************
@@ -877,8 +879,8 @@ int main(int argc, char *argv[])
          rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
 
          if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
-
-         portal((x) ? 1 : 0, netdevice, addresses);
+         portal(j, netdevice, addresses);
+//         portal((x) ? 1 : 0, netdevice, addresses);
 
          irules = open(ipath1, O_RDONLY, 0777);
          printf("%d/%s\n", irules, ipath1);
@@ -907,7 +909,7 @@ int main(int argc, char *argv[])
          close(irules);
          bpfp[x].bf_len = j;
 
-         y = ioctl(s[x], BIOCSETF, &bpfp[x]);
+         y = ioctl(fdes, BIOCSETF, &bpfp[x]);
          printf("[SF %d]\n", y, (y < 0) ? errno : j);
 
          iphysa = open(ipath2, O_RDONLY, 0777);
@@ -938,14 +940,17 @@ int main(int argc, char *argv[])
 
       for (x = 0; x < arguments; x++)
       {
-         if (s[x] < 0) continue;
-         else bytes = read(s[x], data, 4096);
+         fdes = s[x];
+
+         if (fdes < 0) continue;
+
+         bytes = read(fdes, data, 4096);
 
          if (bytes < 0)
          {
             if (uflag['O'-'A']) putchar('.');
             if (errno == EAGAIN) continue;
-            close(s[x]);
+            close(fdes);
             s[x] = -1;
 	    printf("-%d", x);
             continue;

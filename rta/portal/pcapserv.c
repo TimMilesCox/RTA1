@@ -15,11 +15,14 @@
 
 #include <sys/shm.h>
 #include <pthread.h>
+
+#ifdef	PCAP
 #include <pcap/pcap.h>
 
 #define	PCAP_BYTES	8192
 #define	PCAP_MS		20
 #define	PCAP_HANDLES	3
+#endif
 
 #include "../include.rta/argue.h"
 #include "../netifx/ifconfig.h"
@@ -33,13 +36,17 @@
 #define	MASKS		120
 
 static int			 iftype[INTERFACES];
+
+#ifndef	PCAP
 static int			 s[INTERFACES];
+#else
+static pcap_t			*pcap_p[PCAP_HANDLES];
+#endif
+
 static struct ifreq		 sandl[INTERFACES];
 static struct bpf_program	 bpfp[INTERFACES];
 static unsigned int		 one = 1;
 static unsigned int		 zero;
-
-pcap_t				*pandl[PCAP_HANDLES];
 
 static unsigned int		 maximum;
 static int			 halt_flag;
@@ -145,10 +152,14 @@ static void outputq()
                          tx_bytes,
 			 dgraml;
 
-   int			 fdes;
+   #ifndef PCAP
+   int 			 fdes;
+   #else
+   pcap_t		*p_s;
+   #endif
+
    unsigned char	*p;
 
-   pcap_t		*_s;
 
    while (q->preamble.flag & FRAME)
    {
@@ -172,10 +183,16 @@ static void outputq()
       if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
 
       x = tx_bytes;
-//      fdes = s[interface];
-      _s = pandl[interface];
+
+      #ifndef PCAP
+      fdes = s[interface];
+      #else
+      p_s = pcap_p[interface];
+      #endif
 
       p = q->frame;
+
+      #ifndef PCAP
       if (iftype[interface] == DLT_NULL)
       {
          printf("[%p:%x--", p, x);
@@ -191,8 +208,13 @@ static void outputq()
          write(fdes, &intro, sizeof(intro));
       }
       #endif
+      #endif
 
-      y = pcap_sendpacket(_s, p, x);
+      #ifndef PCAP
+      y = write(fdes, p, x);
+      #else
+      y = pcap_inject(p_s, p, x);
+      #endif
 
       if (flag['v'-'a'])
       {
@@ -522,7 +544,7 @@ static void forward(int x, unsigned char *p, int bytes)
          }
 
          rxdata->preamble.frame_length = PORT(bytes);
-         rxdata->preamble.interface = PORT(x);
+         rxdata->preamble.i_f = PORT(x);
 
          #ifdef TRACE
          sloco(rxdata->frame, p, bytes);
@@ -749,6 +771,14 @@ int main(int argc, char *argv[])
    pthread_attr_t        asyncb;
    pthread_t             asyncid;
 
+   #ifndef PCAP
+   int			 fdes;
+   #else
+   pcap_t		 *p_s;
+   struct pcap_pkthdr	 pcap_descriptor;
+   unsigned char	 diagnostic_string[180] = "what was that?\n";
+   #endif
+
 
    argue(argc, argv);
 
@@ -792,142 +822,163 @@ int main(int argc, char *argv[])
       sprintf(ipath1, "../temp.%s/filter", netdevice);
       sprintf(ipath2, "../temp.%s/physa", netdevice);
 
-//      s[x] = open(device, O_RDWR | O_NONBLOCK, 0777);
-//      printf("[s %d %d %s]\n", s[x], (s[x] < 0) ? errno : 0, device);
+      #ifndef PCAP
 
-      pandl[x] = pcap_open_live(device_string, PCAP_BYTES, 1, PCAP_MS, diagnostic_string);
-      printf("[%p]\n", pandl[x]);
+      s[x] = fdes = open(device, O_RDWR | O_NONBLOCK, 0777);
+      printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, device);
+      if (fdes < 0) continue;
 
-      if (pandl[x])
+      b2b((char *) &sandl[x], netdevice);
+      y = ioctl(fdes, BIOCSETIF, &sandl[x]);
+      printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+
+      if (y < 0)
       {
-//         b2b((char *) &sandl[x], netdevice);
-//         y = ioctl(s[x], BIOCSETIF, &sandl[x]);
-//         printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+      }
+      else
+      {
+         p = (unsigned char *) &sandl;
+         y = sizeof(struct ifreq);
+         putchar('[');
+         while (y--) printf("%2.2x", *p++);
+         printf("]\n");
+      }
 
-//         if (y < 0)
-//         {
-//         }
-//         else
-//         {
-            p = (unsigned char *) &sandl;
-            y = sizeof(struct ifreq);
-            putchar('[');
-            while (y--) printf("%2.2x", *p++);
-            printf("]\n");
-//         }
+      y = ioctl(fdes, BIOCIMMEDIATE, &one);
+      printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
 
-//         y = ioctl(s[x], BIOCIMMEDIATE, &one);
-//         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
+      y = ioctl(fdes, BIOCGBLEN, &maximum);
+      printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
 
-//         y = ioctl(s[x], BIOCGBLEN, &maximum);
-//         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+      y = ioctl(fdes, BIOCGDLT, &j);
+      printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
 
-//         y = ioctl(s[x], BIOCGDLT, &j);
-//         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+      #else
 
-         /***********************************************************
-		get the interface type into j via a pcap call
-         ***********************************************************/
+      pcap_p[x] = p_s = pcap_open_live(netdevice,
+                                       PCAP_BYTES, 1, PCAP_MS, diagnostic_string);
+      printf("[%p] %s %s\n", p_s,
+             (p_s) ? "OK" : diagnostic_string, netdevice);
 
-         switch (j)
-         {
-            case DLT_NULL:
-            case DLT_LOOP:
-               rxdata->frame[1] = 4;
-               physa_octets = 0;
 
-               break;
+      y = pcap_setnonblock(p_s, flag['b'-'a'], diagnostic_string);
+      printf("%d snb %d %s\n", x, y, diagnostic_string);
+      if (p_s == NULL) continue;
 
-            case DLT_EN10MB:
-            case DLT_IEEE802:
-               rxdata->frame[1] = 14;
-               physa_octets = 6;
+      j = pcap_datalink(pcap_p[x]);
 
-               y = ioctl(s[x], BIOCSSEESENT, &zero);
-               printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+      /***********************************************************
+             get the interface type into j via a pcap call
+      ***********************************************************/
 
-               /********************************************************
-			external device, switch no- see transmitted frames
-			but for loopback you must see transmitted frames
-			because you don't otherwise see received frames
-               ********************************************************/
+      #endif
 
-               break;
 
-            default:
-               rxdata->frame[1] = 14;
-         }
+      switch (j)
+      {
+         case DLT_NULL:
+         case DLT_LOOP:
+            rxdata->frame[1] = 4;
+            physa_octets = 0;
 
-         iftype[x] = j;
-         rxdata->frame[0] = j;
+            break;
 
-         rxdata->frame[2] = 0;
-         rxdata->frame[3] = 0;
-         if (x) rxdata->frame[3] = 2;	/* within RTA1 machine
+         case DLT_EN10MB:
+         case DLT_IEEE802:
+            rxdata->frame[1] = 14;
+            physa_octets = 6;
+
+            #ifndef PCAP
+            y = ioctl(fdes, BIOCSSEESENT, &zero);
+            printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+            #endif
+
+            /********************************************************
+		external device, switch no- see transmitted frames
+		but for loopback you must see transmitted frames
+		because you don't otherwise see received frames
+            ********************************************************/
+
+            break;
+
+         default:
+            rxdata->frame[1] = 14;
+      }
+
+      iftype[x] = j;
+      rxdata->frame[0] = j;
+
+      rxdata->frame[2] = 0;
+      rxdata->frame[3] = 0;
+      if (x) rxdata->frame[3] = 2;	/* within RTA1 machine
 					   requeue output from this logical i/f
 					   to logical i/f 2:0
 					   which is managing the shared buffer
 					   they can't all manipulate that
 					*/
 
-         rxdata->frame[8] = 32;		/* default mask size */
+      rxdata->frame[8] = 32;		/* default mask size */
 
-         sscanf(addresses, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 4,
-                                                       rxdata->frame + 5,
-                                                       rxdata->frame + 6,
-                                                       rxdata->frame + 7,
-                                                       rxdata->frame + 8);
+      sscanf(addresses, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 4,
+                                                    rxdata->frame + 5,
+                                                    rxdata->frame + 6,
+                                                    rxdata->frame + 7,
+                                                    rxdata->frame + 8);
 
-         rxdata->frame[9] = physa_octets;
-         rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
-         rxdata->preamble.ll_hl = LLHL;
+      rxdata->frame[9] = physa_octets;
+      rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
+      rxdata->preamble.ll_hl = LLHL;
 
-         rxdata->preamble.interface = PORT(x);
+      rxdata->preamble.i_f = PORT(x);
 
-         rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+      rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
 
-         if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
+      if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
 
-         portal((x) ? 1 : 0, netdevice, addresses);
+      portal(j, netdevice, addresses);
 
-         irules = open(ipath1, O_RDONLY, 0777);
-         printf("%d/%s\n", irules, ipath1);
-         j = 0;
-         bpfp[x].bf_insns = (struct bpf_insn *) heap;
+      irules = open(ipath1, O_RDONLY, 0777);
+      printf("%d/%s\n", irules, ipath1);
+      j = 0;
+      bpfp[x].bf_insns = (struct bpf_insn *) heap;
 
-         for (;;)
-         {
-            /********************************************************
+      for (;;)
+      {
+         /********************************************************
 		read assembled filter rules
 		from ../temp.device/filter
-            ********************************************************/
+         ********************************************************/
 
-            y = read(irules, heap, 8);
-            if (y < 8) break;
-            j++;
-            if (flag['v'-'a'])
-            {
-               printf("[:");
-               for (y = 0; y < 8; y++) printf("%2.2x", heap[y]);
-               printf("]\n");
-            }
-            heap += 8;
+         y = read(irules, heap, 8);
+         if (y < 8) break;
+         j++;
+         if (flag['v'-'a'])
+         {
+            printf("[:");
+            for (y = 0; y < 8; y++) printf("%2.2x", heap[y]);
+            printf("]\n");
          }
-
-         close(irules);
-         bpfp[x].bf_len = j;
-
-         y = ioctl(s[x], BIOCSETF, &bpfp[x]);
-         printf("[SF %d]\n", y, (y < 0) ? errno : j);
-
-         iphysa = open(ipath2, O_RDONLY, 0777);
-         printf("%d/%s\n", iphysa, ipath2);
-	 read(iphysa, rxdata->frame + 10, physa_octets);
-         close(iphysa);
-
-         rxdata->preamble.flag = FRAME;
-         rxdata++;
+         heap += 8;
       }
+
+      close(irules);
+      bpfp[x].bf_len = j;
+
+      #ifndef PCAP
+      y = ioctl(fdes, BIOCSETF, &bpfp[x]);
+      #else
+      y = pcap_setfilter(p_s, &bpfp[x]);
+      #endif
+
+      printf("[SF %d]\n", y, (y < 0) ? errno : j);
+
+      iphysa = open(ipath2, O_RDONLY, 0777);
+      printf("%d/%s\n", iphysa, ipath2);
+      read(iphysa, rxdata->frame + 10, physa_octets);
+      close(iphysa);
+
+      rxdata->preamble.flag = FRAME;
+      rxdata++;
    }
 
    if (flag['h'-'a']) return 0;
@@ -948,14 +999,16 @@ int main(int argc, char *argv[])
 
       for (x = 0; x < arguments; x++)
       {
-         if (s[x] < 0) continue;
-         else bytes = read(s[x], data, 4096);
+         #ifndef PCAP
+         fdes = s[x];
+         if (fdes < 0) continue;
+         bytes = read(fdes, data, 4096);
 
          if (bytes < 0)
          {
             if (uflag['O'-'A']) putchar('.');
             if (errno == EAGAIN) continue;
-            close(s[x]);
+            close(fdes);
             s[x] = -1;
 	    printf("-%d", x);
             continue;
@@ -993,6 +1046,20 @@ int main(int argc, char *argv[])
             p += y;
             bytes -= y;
          }
+
+         #else
+         p_s = pcap_p[x];
+         if (p_s == NULL) continue;
+
+         for(;;)
+         {
+            p = pcap_next(p_s, &pcap_descriptor);
+            if (p == NULL) break;
+            y = pcap_descriptor.len;
+            forward(x, p, y);
+         }
+         #endif
+
       }
 
       outputq();
@@ -1004,7 +1071,13 @@ int main(int argc, char *argv[])
       **********************************************************/
    }
 
-   for (x = 0; x < arguments; x++) close(s[x]);
+   for (x = 0; x < arguments; x++)
+      #ifndef PCAP
+      close(s[x]);
+      #else
+      pcap_close(pcap_p[x]);
+      #endif
+
    return 0;
 }
 
