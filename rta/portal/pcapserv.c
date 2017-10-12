@@ -1,3 +1,13 @@
+
+#ifdef	X86_MSW
+
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+#include <process.h>
+#include <fcntl.h>
+
+#else
 #include <stdio.h>
 #include <string.h>
 
@@ -16,13 +26,15 @@
 #include <sys/shm.h>
 #include <pthread.h>
 
+#endif
+
 #ifdef	PCAP
-#include <pcap/pcap.h>
+#include <pcap.h>
 
 #define	PCAP_BYTES	8192
 #define	PCAP_MS		20
 #define	PCAP_HANDLES	3
-#endif
+#endif	PCAP
 
 #include "../include.rta/argue.h"
 #include "../netifx/ifconfig.h"
@@ -768,8 +780,11 @@ int main(int argc, char *argv[])
    int			 irules,
                          iphysa;
 
+   #ifdef X86_MSW
+   #else
    pthread_attr_t        asyncb;
    pthread_t             asyncid;
+   #endif
 
    #ifndef PCAP
    int			 fdes;
@@ -779,6 +794,15 @@ int main(int argc, char *argv[])
    unsigned char	 diagnostic_string[180] = "what was that?\n";
    #endif
 
+   #ifdef X86_MSW
+   TCHAR         device_logo[] = "Global\\device01";
+   HANDLE        mhandle = CreateFileMapping(INVALID_HANDLE_VALUE,
+                                             NULL,
+                                             PAGE_READWRITE,
+                                             0,
+                                             DEVICE_PAGE * DEVICE_PAGES,
+                                             device_logo);
+   #endif
 
    argue(argc, argv);
 
@@ -792,14 +816,38 @@ int main(int argc, char *argv[])
       return 0;
    }
 
+   #ifdef X86_MSW
+
+   if (mhandle == NULL)
+   {
+      printf("device array 1 unavailable\n"
+             "enter '.' to stop the emulator\n");
+      printf("run portal first\n");
+      printf("code %d\n", GetLastError());
+      return 0;
+   }
+
+   netdata = (mm_netbuffer *) MapViewOfFile(mhandle,
+                                            FILE_MAP_ALL_ACCESS, 0, 0,
+                                            DEVICE_PAGE * DEVICE_PAGES);
+
+   if (netdata == NULL)
+   {
+      printf("device array not in scope %d\n", GetLastError());
+      return 0
+   }
+
+   #else
 
    x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
    printf("shared core handle %d code %d size %d\n", x, errno,
            DEVICE_PAGE * DEVICE_PAGES);
 
    if (x < 0) return 0;
-
    netdata = shmat(x, NULL, 0);
+
+   #endif
+
    printf("shared core based @ %p code %d\n", netdata, errno);
 
    rxdata = netdata->i;
@@ -983,6 +1031,14 @@ int main(int argc, char *argv[])
 
    if (flag['h'-'a']) return 0;
 
+   #ifdef X86_MSW
+
+   x = _beginthread(async, 0, NULL);
+   if (x < 0) printf("async thread start %d %d\n", x, errno);
+   else       printf("async thread ID %x\n", x);
+
+   #else
+
    x = pthread_attr_init(&asyncb);
 
    if (x < 0) printf("threadcbinit %d e %d\n", x, errno);
@@ -992,6 +1048,7 @@ int main(int argc, char *argv[])
       if (x < 0) printf("async thread start %d %d\n", x, errno);
       else       printf("async thread ID %p\n", asyncid);
    }
+   #endif
 
    for (;;)
    {
