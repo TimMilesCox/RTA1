@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <process.h>
 #include <fcntl.h>
+//	#include <net/if.h>
+#include <pcap/bpf.h>
 
 #else
 #include <stdio.h>
@@ -56,6 +58,7 @@ static pcap_t			*pcap_p[PCAP_HANDLES];
 #endif
 
 static struct ifreq		 sandl[INTERFACES];
+
 static struct bpf_program	 bpfp[INTERFACES];
 static unsigned int		 one = 1;
 static unsigned int		 zero;
@@ -159,7 +162,7 @@ static void outputq()
    char                  pbuffer[24];
    int                   k, symbol;
 
-   unsigned short        interface,
+   unsigned short        i_f,
                          llhl,
                          tx_bytes,
 			 dgraml;
@@ -175,9 +178,9 @@ static void outputq()
 
    while (q->preamble.flag & FRAME)
    {
-      interface = PORT(q->preamble.i_f);
+      i_f = PORT(q->preamble.i_f);
 
-      switch (iftype[interface])
+      switch (iftype[i_f])
       {
          case DLT_NULL:
             llhl = 4;
@@ -192,20 +195,20 @@ static void outputq()
       tx_bytes = PORT(q->preamble.frame_length);
       dgraml = tx_bytes - llhl;
 
-      if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
+      if (flag['v'-'a']) printf("[%x:tx %x]\n", i_f, tx_bytes);
 
       x = tx_bytes;
 
       #ifndef PCAP
-      fdes = s[interface];
+      fdes = s[i_f];
       #else
-      p_s = pcap_p[interface];
+      p_s = pcap_p[i_f];
       #endif
 
       p = q->frame;
 
       #ifndef PCAP
-      if (iftype[interface] == DLT_NULL)
+      if (iftype[i_f] == DLT_NULL)
       {
          printf("[%p:%x--", p, x);
          p += 4;
@@ -834,7 +837,7 @@ int main(int argc, char *argv[])
    if (netdata == NULL)
    {
       printf("device array not in scope %d\n", GetLastError());
-      return 0
+      return 0;
    }
 
    #else

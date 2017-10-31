@@ -1,0 +1,472 @@
+
+	include	rta_x86.h
+.model	small
+.code
+
+;	this is the operand reader / writer
+;	for emulated RTA1 on x86
+
+;	layout is
+
+;	RTA1 24-bit registers are modeled in an array of
+;	platform-endian integers. In x86 these are 32-bit
+;	little-endian integers
+
+;	platform-endian doesn't affect registers
+;	because all endianness is not at the CPU
+;	side of the bus, but at the memory side
+
+;	when x86 staticises an emulated register in the CPU
+;	it is big endian. The stored integers where emulated
+;	registers are modeled are platform-endian, with identical
+;	effect on big and little endian emulator platforms
+
+;	RTA1 24-bit executable space storage words are
+;	modeled in another array of platform-endian integers
+;	and on x86 they are swapped on read and write
+;	so that storage conforms with RTA1 canonical order
+
+;       RTA1 architecture has registers in the first 256 locations
+;       of address space and access differentiates registers from
+;       from memory according to effective address
+
+;	location of registers and storage are handed to read / write
+;	routines as RTA1 word linear effective addresses
+
+;	These routines maintain the RTA1 linear addresses passed
+;	in registers and apply them with shift and displacement, for
+;	example
+
+;		mov	eax, dword ptr [eax*4+_memory_array]
+;		bswap	eax
+;		mov	dword_ptr [ebx*4+__register], eax
+
+;	RTA1 register addresses are already absolute in terms of
+;	the emulated RTA1 machine
+
+;	RTA1 storage addresses are translated by RTA1 relocation
+;	architecture before application, and remain linear addresses
+;	of the emulated machine
+
+;	instructions call these operand routines with RTA1 effective 
+;	address in eax
+
+;	instructions receive operands in eax and ebx, or in a list of
+;	registers pointed by ebx
+
+;	store instructions submit values in ebx or in a list of
+;	registers pointed by ebx
+
+;	to preserve linear address consistency, application instruction
+;	work areas, where needed in addition to X86 registers, are
+;	implemented as sub-architectural extra RTA1 registers at the end
+;	of the 256-longword register stack. X86 register ebx can identify
+;	these locations as "registers"
+
+;	instructions which both read and write (modify) storage
+;	supply a callback pointer in ebx and are called back to update
+;	the retrieved value if it is in executable space. The callback
+;	idea avoids evaluating the effective address twice for one
+;	operation
+
+;	Finally the effect of storage buses characteristically different
+;	from RTA1 executable space is emulated in the routines
+;	peripheral_array and peripheral_array_write
+
+;	Peripheral bus types implemented are
+
+;		filestore containing extents of up to 768K octets
+;		accessible to RTA1 as up to 256K words in each extent.
+;		The 3-octet words are in canonical order and packed
+
+;		network interface buffering shared with the emulator
+;		platform and reading out to RTA1 at 16 data bits per
+;		word with eight high-order zero bits. RTA writes 16
+;		data bits to these locations from register low-order
+;		bit positions
+
+;	Device types
+
+;		executable space
+;		24-bit filestore array
+;		16-bit network interface array
+
+;	are associated with the device tagged in RTA1 memory relocation
+;	pointers. Executable space is device zero
+
+
+burst_read2:
+	mov	cx, 6
+	cmp	eax, 00FFFF00h
+	jnz	bus_read
+				; load registers from registers
+	mov	ebx, dword ptr [eax*4+__register+4]
+	mov	eax, dword ptr [eax*4+__register]
+	ret
+	
+burst_read4:				; buffered read
+	mov	cx, 7			; that will help the caller
+	cmp	eax, 00FFFF00h		; ebx is a register number
+	jnz	bus_read		; may also identify extra
+					; workspace registers
+					; at register stack tail
+	mov	esi, eax
+	mov	eax, dword ptr [esi*4+__register+12]
+	mov	dword ptr [ebx*4+12], eax
+	mov	eax, dword ptr [esi*4+__register+8]
+	mov	dword ptr [ebx*4+8], eax
+	mov	eax, dword ptr [esi*4+__register+4]
+	mov	dword ptr [ebx*4+4], eax
+	mov	eax, dword ptr [esi*4+__register]
+	mov	dword ptr [ebx*4], eax
+	ret
+
+operand_read:			; call here with designator coded in cx
+	and	cl, 7		; and ea in eax
+	cmp	cl, 4
+	je	immediate
+	cmp	cl, 5
+	je	immediate_xi
+
+	test	eax, 00FFFF00h
+	jnz	bus_read	; ea does not point to registers
+	mov	eax, dword ptr [eax*4+__register]
+	ret 
+
+bus_read:
+	call	load_base_pointer
+	test	eax, 00400000h
+	je	memory_read_4k_bank
+	test	eax, 63
+	je	memory_read_256k_bank
+	jmp	peripheral_array
+
+memory_read_4k_bank:
+memory_read_256k_bank:
+	shl	eax, 12
+	add	esi, eax
+	movzx	eax, cx
+	mov	ax, word ptr [eax*2+read_action]
+	jmp	ax
+
+read_action:
+	dw	memory_read
+	dw	memory_t1
+	dw	memory_t2
+	dw	memory_t3
+	dw	immediate	; don't get here
+	dw	immediate_xi	; don't get here
+	dw	memory_read2
+	dw	memory_read4
+
+memory_read:
+	mov	eax, dword ptr [esi*4]
+	mov	al, 0
+	bswap	eax
+immediate:
+immediate_xi:
+	ret
+
+memory_read2:
+	mov	eax, dword ptr [esi*4]
+	mov	ebx, dword ptr [esi*4+4]
+	mov	al, 0
+	mov	bl, 0
+	bswap	eax
+	bswap	ebx
+	ret
+
+memory_read4:			; store by pointer
+				; this will be useful to the caller
+	mov	eax, dword ptr [esi*4+_memory_array]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebx*4], eax
+	mov	eax, dword ptr [esi*4+4+_memory_array]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebx*4+4], eax
+	mov	eax, dword ptr [esi*4+8+_memory_array]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebx*4+8], eax
+	mov	eax, dword ptr [esi*4+12+_memory_array]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebx*4+12], eax
+	ret
+
+memory_t1:
+	mov	eax, dword ptr [esi*4+_memory_array]
+	shl	eax, 16		; t1 = 3.2.THIS.zero
+	jmp	memory_tw
+
+memory_t2:
+	mov	eax, dword ptr [esi*4+_memory_array]
+	test	byte ptr[_psr], HALF_W
+	jnz	memory_h1
+	shl	eax, 8		; t2 = 3.THIS.1.zero
+	jmp	memory_tw
+
+memory_t3:
+	mov	eax, dword ptr [esi*4+_memory_array]
+	test	byte ptr[_psr], HALF_W
+	jnz	memory_h2
+memory_tw:
+	sar	eax, 16		; t3 = THIS.2.1.zero
+	shr	eax, 8
+	ret
+
+memory_h1:
+	bswap	eax		; already loaded but not swapped
+	shl	eax, 8		; h1 = zero.HERE.2.3
+	jmp	memory_hw
+
+memory_h2:
+	bswap	eax		; already loaded but not swapped
+	shl	eax, 8+20
+memory_hw:
+	sar	eax, 12
+	shr	eax, 8
+	ret
+
+
+burst_write4:
+	mov	cx, 7
+	test	eax, 00FFFF00h
+	jnz	bus_write
+
+	; store emulated registers to emulated registers
+
+	test	dword ptr [_psr], 0800000h	; ISR ?
+	jnz	write4_registers	; ISRs may write some spare registers
+	cmp	eax, 124
+	ja	dont			; but applications may not write
+					; any interrupt registers
+
+write4_registers:
+	mov	edi, eax		; eax can be freed
+
+	mov	eax, dword ptr [ebx*4]	; data for store
+					; ebx is a register number
+					; which can be extra register locations
+					; serving as workspace at the tail of
+					; the register stack
+
+	mov	dword ptr [edi*4+__register], eax
+	mov	eax, dword ptr [ebx*4+4]
+	mov	dword ptr [edi*4+__register+4], eax
+
+	mov	eax, dword ptr [ebx*4+8]
+	mov	dword ptr [edi*4+__register+8], eax
+	mov	eax, dword ptr [ebx*4+12]
+	mov	dword ptr [edi*4+__register+12], eax
+	ret
+
+burst_write2:
+	mov	cx, 6
+	test	eax, 00FFFF00h
+	jnz	bus_write
+
+	; store to emulated registers
+
+	test	dword ptr [_psr], 0800000h	; ISR ?
+	jnz	write2_registers	; there are spare registers at the end
+	cmp	eax, 126		; but applications may not write
+					; any interrupt registers
+	ja	dont
+
+write2_registers:
+	mov	edi, eax			; time to free eax
+	mov	eax, dword ptr [ebx*4]
+	mov	ebx, dword ptr [ebx*4+4]
+	mov	dword ptr [edi*4+__register], eax
+	mov	dword ptr [edi*4+__register+4], ebx
+	ret
+
+operand_write:
+	test	eax, 00FFFF00h
+	jnz	bus_write
+	test	eax, 80h		; in the interrupt registers?
+	jz	write1_register
+	test	dword ptr [_psr], 0800000h
+	jz	dont
+
+write1_register:
+	mov	dword ptr [eax*4+__register], ebx
+	ret
+
+bus_write:
+	call	load_base_pointer
+	test	eax, 00400000h
+	je	memory_write_4k_bank
+	test	eax, 63
+	je	memory_write_256k_bank
+	jmp	peripheral_array_write
+
+memory_write_4k_bank:
+memory_write_256k_bank:
+	shl	eax, 12
+	add	esi, eax
+	mov	edi, esi
+
+	movzx	eax, cx
+	mov	ax, word ptr [eax*2+write_action]
+	jmp	ax
+
+write_action:
+	dw	memory_write
+	dw	write_t1
+	dw	write_t2
+	dw	write_t3
+	dw	dont
+	dw	just_dont
+	dw	memory_write2
+	dw	memory_write4
+
+memory_write:
+	bswap	ebx
+	mov	dword ptr [edi*4+_memory_array], ebx
+dont:
+just_dont:
+	ret
+
+write_t1:
+	mov	byte ptr [edi*4+_memory_array+1], bl
+	ret
+
+write_t2:
+	test	dword ptr [_psr], HALF_W
+	jnz	write_h1
+	mov	byte ptr [edi*4+_memory_array+2], bl
+	ret
+
+write_t3:
+	test	dword ptr [_psr], HALF_W
+	jnz	write_h2
+	mov	byte ptr [edi*4+_memory_array+3], bl
+	ret
+
+write_h1:
+	mov	eax, dword ptr [esi*4+_memory_array]	; si still = di
+	bswap	eax
+	and	ebx, 4095
+	shl	ebx, 12
+	and	eax, 4095
+	or	eax, ebx
+	jmp	write_hw
+
+write_h2:
+	mov	eax, dword ptr [esi*4+_memory_array]	; si still = di
+	bswap	eax
+	and	eax, 4095
+	shl	eax, 12
+	and	ebx, 4095
+	or	eax, ebx
+
+write_hw:
+	bswap	eax
+	mov	dword ptr [edi*4+_memory_array], eax
+	ret
+
+memory_write2:				; eax is already free
+	mov	eax, dword ptr [ebx*4]
+	mov	ebx, dword ptr [ebx*4+4]
+	bswap	eax
+	bswap	ebx
+	mov	dword ptr [edi*4+_memory_array], eax
+	mov	dword ptr [edi*4+_memory_array+4], ebx
+	ret
+
+memory_write4:
+	mov	eax, dword ptr [ebx*4]	; bx is an register number and may
+					; identify extra workspace registers
+					; at register stack tail
+	bswap	eax
+	mov	dword ptr [edi*4+_memory_array], eax
+	mov	eax, dword ptr [ebx*4+4]
+	bswap	eax
+	mov	dword ptr [edi*4+_memory_array+4], eax
+	mov	eax, dword ptr [ebx*4+8]
+	bswap	eax
+	mov	dword ptr [edi*4+_memory_array+8], eax
+	mov	eax, dword ptr [ebx*4+12]
+	bswap	eax
+	mov	dword ptr [edi*4+_memory_array+12], eax
+	ret
+
+				; for execute and modify instructions
+_memory_read:			; read only executable space
+	call	load_base_pointer
+	test	eax, 00400000h
+	jz	mword_go
+	test	eax, 63
+	jz	mword_go
+	mov	esi, 0		; flag unsuitable
+	ret			; you can't have 0
+mword_go:			; add PAGES_IN_MEMORY check
+	shl	eax, 12
+	add	esi, eax	; report target address
+	mov	eax, dword ptr [esi*4+_memory_array]
+	bswap	eax
+	ret	
+
+;	TS calls here without checking for register range
+;	because you don't and may not test and set a register.
+;	TS and EX instructions always have a storage operand
+
+;	N INC DEC SIM POPA SRC SLC check register range and
+;	operate directly on registers. operand write trips
+;	if applications try to write interrupt registers
+
+;	N INC DEC SIM POPA SRC SLC call here to operate
+;	on storage
+
+_modify:
+	call	_memory_read
+	test	esi, esi
+	jz	dont_modify
+	call	ebx	; callback to TS N INC DEC SIM POPA SRC SLC
+			; ebx must not get overwritten
+			; in _memory_read / _load_base_pointer
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [esi*4+_memory_array], eax
+dont_modify:
+	ret
+
+load_base_pointer:
+	mov	esi, eax
+	and	eax, 00FC0000h
+	jz	page_pointer
+	and	esi, 0003FFFFh
+	sar	eax, 18
+	jmp	check_alternative_pointer
+
+page_pointer:
+	and	esi, 00000FFFh
+	sar	eax, 12
+	jz	base_pointer		; B0 has no see$ alternative
+
+check_alternative_pointer:
+	test	word ptr [_psr], 07F00h ; see$1..7, any see$ set?
+	jz	base_pointer		; no, this is mostly the case
+
+;	push	cx			; should not need saving
+	mov	cl, al			; check see$ for this address block
+	mov	ch, 128
+	shr	ch, cl
+	test	ch, byte ptr [_psr+1]	; writes condition flags
+;	pop	cx			; does not write condition flags
+					; should not have needed saving
+	jz	base_pointer
+	or	ax, 64			; use base pointer from range 65..71
+base_pointer:
+	mov	eax, dword ptr [eax*4+_base]
+	ret
+	
+peripheral_array:
+	ret
+peripheral_array_write:
+	ret
+end
