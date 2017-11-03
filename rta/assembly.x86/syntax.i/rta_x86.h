@@ -3,7 +3,8 @@ extern _base:near
 extern _apc:near
 extern _psr:near
 extern _context:near
-extern _memory_array:near
+extern _memory:near
+extern _devices:near
 
 HALF_W	equ	128
 FP_R	equ	8
@@ -62,4 +63,10 @@ PRIORITY equ	priority*4
 DAYCLOCK_U equ	dayclock_u*4
 DAYCLOCK equ	dayclock*4
 
+DEVICE  equ	32768
+SYSMEM  equ	16384
+DATA16  equ	1
+FSYS24  equ	2
+
+extern	_devices:near
 
