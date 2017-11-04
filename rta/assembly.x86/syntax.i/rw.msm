@@ -91,7 +91,20 @@
 
 ;		pop	ebp		; return to previous register frame[0] application
 					;                          or frame[1] interrupt
-;		mov	eax, [bp+mantissa3]                         
+
+;	Both internal stack pointers are also absolute, so for stack operations
+;	bp should be momentarily forced to the lower-addressed (application) stack
+;	frame after being used to point the stack location of reference
+
+;		mov	ebx, dword ptr [ebp+S_P]	; read one of the two stack pointers
+;		cmp	ebx, ebp+STACK_LOWER_LIMIT	; 24*4 within context of either stack
+;		jl	II_GUARD
+;		add	ebx, -1				; new stack top
+;		mov	dword ptr [ebp+S_P], ebx
+;		push	ebp				; which ever stack pointer it is, it points
+;		mov	ebp,__register			; relative to all the register stack
+;		call	operand_read			; for I am the single-word push instruction
+;		pop	ebp				;
 
 ;	register identities supplied from emulated instructions to these routines
 ;	are their lowercase names equated to RTA1 word addresses
@@ -135,31 +148,30 @@
 ;	shifts and jumps use the ea which is already indexed or indirected
 ;	if necessary and make to operand call
 
-;	instructions set cl to 6 for two-word operand cycles
-;	instructions set cl to 7 for four-word operand cycles
+;	instructions call _burst_read2 or _burst_write2 for two-word operand cycles
+;	instructions call _burst_read4 or _burst_write4 for four-word operand cycles
 
 ;	operand reads of 1 or 2 words return values in eax:ebx
 
-;		mov	cl, 6		; 2 words please
-;		call	_operand_read
+;		call	_burst_read2
 ;		mov	dword ptr [ebp+A], eax
 ;		mov	dword ptr [ebp+B], ebx
 
 ;	to store one operand word place it in ebx
 
-;	sc	mov	ebx, dword ptr[_psr]	; I am the store carry instruction sc
+;	_sc	mov	ebx, dword ptr[_psr]	; I am the store carry instruction sc
 ;		and	ebx, 1			; CARRY
 ;		call	_operand_write
 
 ;	to store two or four words or to load four words, point bx to register
 
-;	qpop	mov	ebx, dword ptr [ebp+S_P] ; internal stack pointer
+;	_qpop	mov	ebx, dword ptr [ebp+S_P] ; internal stack pointer
 ;						; either application sp or interrupt sp
-;		mov	cl, 7			; please write 4 words to EA
+;
 ;		add	dword ptr [ebp+S_P], 4	; from the internal stack+= 4
 ;		push	ebp			;
 ;		mov	ebp, __register		; in case context is interrupt registers
-;		call	_operand_write		; both internal stack pointers are absolute
+;		call	_burst_write4		; both internal stack pointers are absolute
 ;		pop	ebp
 
 ;	more complex instructions do something to the registers after
@@ -249,14 +261,14 @@ bus_read:			; readout any memory
 	call	load_base_pointer
 	test	eax, 00400000h
 	je	memory_read_4k_block
-	test	eax, 63
+	test	eax, 63 
 	je	memory_read_256k_block
 	jmp	_device_read
 
 memory_read_4k_block:		; readout system memory
 memory_read_256k_block:
-	shl	eax, 12
-	add	esi, eax
+	shl	eax, 12		; page pointer * 4096
+	add	esi, eax	; linear absolute word pointer
 	mov	edi, _memory	; byte address
 
 memory_read_on:
@@ -561,7 +573,7 @@ _modify:				; read/write operation
 	test	edi, edi
 	jz	dont_modify
 	call	ebx	; callback to TS N INC DEC SIM POPA SRC SLC
-			; ebp+ebx must not get overwritten
+			; edi+esi must not get overwritten
 			; in _memory_read / _load_base_pointer
 	mov	al, 0
 	bswap	eax
@@ -606,7 +618,8 @@ base_pointer:
 
 ;	check the target memory block is in range and the bus characteristic
 ;	of the memory device when selecting blocks of memory, not when
-;	accessing them
+;	accessing them. Use 8 spare bits in the word containing _base[]
+;	for a quick recall of the emulated bus attribute on reference
 
 ;	because this software emulation needs to act differently for
 
@@ -713,44 +726,51 @@ truebase_none:
 					; and reference will cause a jump to device read
 					; or device write where this state will be detected
 truebase_complete:
+	mov	byte ptr [eax*4+_base+3], bl	; use high order octet of _base[]
+						; sub-architecturally
+			
 true_nothing:
 	ret
 
-device_index:				; construct pointer to device descriptor
-	push	ax			; from bank handle
-	shl	al, 2			; drop bits 7..6 and multiply by 4
+device_array:
+	sal	eax, 2			; al = device id * 4 : 0000FF01 BBBBBBB BBBBBBBB device00 
 	movzx	edi, al
-	pop	ax
-	shr	eax, 6
-	shl	eax, 18
-	add	esi, eax
+	mov	edi, dword ptr [edi*2+_devices+4]
+	rol	eax, 8-2		; bus flags -> al
 	ret
 
+linear_pointer:
+	sar	eax, 14			; delete device00 0000FF : 00000000 0000001 BBBBBBBB BBBBBBBB
+	sal	eax, 18			; multiply bank index by bank size
+					; on 386 platform we are restricted to 16384 banks
+	add	esi, eax
+	ret
+	
 _device_read:				; readout device arrays
         test    eax, 0800000h           ; the vilainous bank index?
         jnz     device_read_void
 
-	call	device_index
-	cmp	word ptr [edi*2+_devices], DEVICE or SYSMEM
-	jz	device_read_sysmem
-	cmp	word ptr [edi*2+_devices], DEVICE or DATA16
-	jz	device_read_data16
-	cmp	word ptr [edi*2+_devices], DEVICE or FSYS24
-	jz	device_read_array24
+	call	device_array
+	test	al, DATA16 or FSYS24	; bus type bits added to _base[] pointer
+	jz	device_read_sysmem	;
+	test	al, DATA16
+	jnz	device_read_data16
+	test	al, FSYS24
+	jnz	device_read_array24
 
 device_read_void:
 	mov	eax, 0FFFFFFh
 	ret
 
 device_read_sysmem:			; readout system memory array
-	mov	edi, dword ptr [edi*2+_devices+4] ; octet address of x86 platform storage
-	call	memory_read_on		; allow all variations partial word / multiword
+	lcal	linear_pointer
+	jmp	memory_read_on		; allow all variations partial word / multiword
 	ret
 
 device_read_data16:			; readout 16-bit array
-	mov	edi, dword ptr [edi*2+_devices+4] ; octet address of x86 platform storage
+	lcal	linear_pointer
 	movzx	eax, cl
-	mov	ax, word ptr [eax*2+device_read16_action]
+	mov	ax, word ptr [eax+device_read16_action]
 	jmp	ax
 
 device_read16_action:
@@ -794,6 +814,7 @@ device_read_data16_4:			; readout 4 words of 16-bit array
 	ret
 
 device_read_array24:			; readout from packed 24-bit array
+	lcal	linear_pointer
 	call	device_array24_setpointer
 	movzx	eax, cl
 	mov	ax, word ptr [eax*2+device_read24_action]
@@ -836,25 +857,24 @@ _device_write:				; store device arrays
 	test	eax, 0800000h		; the vilainous bank index?
 	jnz	device_write_void
 
-	call	device_index
-	cmp	word ptr [edi*2+_devices], DEVICE or SYSMEM
+	lcal	device_array
+	test	al, DATA16 or FSYS24
 	jz	device_write_sysmem
-	cmp	word ptr [edi*2+_devices], DEVICE or DATA16
-	jz	device_write_data16
-	cmp	word ptr [edi*2+_devices], DEVICE or FSYS24	
-	jz	device_write_array24
+	test	al, DATA16
+	jnz	device_write_data16
+	test	al, FSYS24
+	jnz	device_write_array24
 
 device_write_void:			; store in array of target system memory
 	ret
 
 device_write_sysmem:
-	sal	eax, 2			; int32 index
-	mov	edi, dword ptr [edi*2+_devices+4] ; octet address of x86 platform storage
-	call	memory_write_on		; allow all variations partial word / multiword
-	ret
+	lcal	linear_pointer
+	jmp	memory_write_on		; allow all variations partial word / multiword
 
 device_write_data16:
-	mov	edi, dword ptr [edi*2+_devices+4]	; octet address of x86 platform storage
+	lcal	linear_pointer
+	sar	eax, 8
 	movzx	eax, cl
 	mov	ax, word ptr [eax*2+device_write16_action]
 	jmp	ax
@@ -891,6 +911,7 @@ device_write_data16_2:			; store 2 words in 16-bit array
 	ret
 
 device_write_array24:			; store 24-bit packed array
+	call	linear_pointer
 	call	device_array24_setpointer
 	movzx	eax, cl
 	mov	ax, word ptr [eax*2+device_write24_action]
