@@ -1,8 +1,8 @@
 
 
-;	include	rta_x86.h
-;	.model	large
-;	.code
+	include	rta_x86.h
+	.model	large
+	.code
 
 ;	this is the operand reader / writer
 ;	for emulated RTA1 on x86
@@ -220,34 +220,12 @@
 ;	devices are identified in RTA1 memory relocation pointers and
 ;	tagged with device type. Executable space is device zero
 
-						; position-independent jump pad jump
-ixgo:	shl	eax, 1				; 2-byte vectors
-	add	eax, dword ptr [esp]		; + the return address
-	movzx	eax, word ptr [eax]		; position-independent jump pad jump
-	add	dword ptr [esp], eax		; index is in eax
-	ret
-
-ixgo_b:	shl	ebx, 1				; 2-byte vectors
-	add	ebx, dword ptr [esp]		; add on the return address
-	movzx	ebx, word ptr [ebx]		; @ return address + vector * 2
-	add	dword ptr [esp], ebx
-	ret
-						; position-independent jump pad jump with latent parameter
-ixlgo:	shl	ebx, 2				; 4-byte vectors
-	add	ebx, dword ptr [esp]		; add on the return address
-	mov	ebx, dword ptr [ebx]		; @return address + vector + 4
-	add	word ptr [esp], bx		; with latent parameter
-	adc	word ptr [esp+2], 0		; index in ebx
-	shr	ebx, 16				; latent parameter returned in bx
-	ret
 
 burst_read2:
 	mov	cx, 6
 	cmp	eax, 00FFFF00h
-	jz	read2_registers
-	jmp	bus_read
-
-read2_registers:				; load registers from registers
+	jnz	bus_read
+				; load registers from registers
 	mov	ebx, dword ptr [eax*4+__register+4]
 	mov	eax, dword ptr [eax*4+__register]
 	ret
@@ -255,10 +233,9 @@ read2_registers:				; load registers from registers
 burst_read4:				; buffered read
 	mov	cx, 7			; that will help the caller
 	cmp	eax, 00FFFF00h		; ebp+ebx contains a register number
-	jz	read4_registers		; may also identify extra
-	jmp	bus_read
+	jnz	bus_read		; may also identify extra
 					; workspace registers
-read4_registers:			; at register stack tail
+					; at register stack tail
 	mov	esi, eax
 	mov	eax, dword ptr [esi*4+__register+12]
 	mov	dword ptr [ebp+ebx*4+12], eax
@@ -270,7 +247,7 @@ read4_registers:			; at register stack tail
 	mov	dword ptr [ebp+ebx*4], eax
 	ret
 
-_operand_read:			; call here with designator coded in cx
+operand_read:			; call here with designator coded in cx
 	and	cl, 7		; and ea in eax
 	cmp	cl, 4
 	je	immediate
@@ -299,8 +276,10 @@ memory_read_256k_block:
 
 memory_read_on:
 	movzx	eax, cx
-	call	ixgo
+	movzx	eax, word ptr [eax*2+read_action]
+;	jmp	ax
 
+	call	yoo
 read_action:
 	dw	memory_read-read_action
 	dw	memory_t1-read_action
@@ -310,6 +289,10 @@ read_action:
 	dw	immediate_xi-read_action	; don't get here
 	dw	memory_read2-read_action
 	dw	memory_read4-read_action
+	dd	99
+yoo:	add	[esp], eax
+	ret
+
 
 memory_read:			; readout system memory 1 word
 	mov	eax, dword ptr [edi+esi*4]
@@ -438,7 +421,7 @@ write2_registers:
 	mov	dword ptr [edi*4+__register+4], ebx
 	ret
 
-_operand_write:
+operand_write:
 	test	eax, 00FFFF00h
 	jnz	bus_write
 	test	eax, 80h		; in the interrupt registers?
@@ -468,7 +451,8 @@ memory_write_256k_block:
 memory_write_on:
 
 	movzx	eax, cx
-	call	ixgo
+	mov	ax, word ptr [eax*2+write_action]
+	jmp	ax
 
 write_action:
 	dw	memory_write-write_action
@@ -793,7 +777,8 @@ device_read_sysmem:			; readout system memory array
 device_read_data16:			; readout 16-bit array
 	call	linear_pointer
 	movzx	eax, cl
-	call	ixgo
+	mov	ax, word ptr [eax+device_read16_action]
+	jmp	ax
 
 device_read16_action:
 	dw	device_read_data16_1-device_read16_action
@@ -839,7 +824,8 @@ device_read_array24:			; readout from packed 24-bit array
 	call	linear_pointer
 	call	device_array24_setpointer
 	movzx	eax, cl
-	call	ixgo
+	mov	ax, word ptr [eax*2+device_read24_action]
+	jmp	ax
 
 device_read24_action:
 	dw	device_read_array24_1-device_read24_action
@@ -897,7 +883,8 @@ device_write_data16:
 	call	linear_pointer
 	sar	eax, 8
 	movzx	eax, cl
-	call	ixgo
+	mov	ax, word ptr [eax*2+device_write16_action]
+	jmp	ax
 
 device_write16_action:
 	dw	device_write_data16_1-device_write16_action
@@ -934,7 +921,8 @@ device_write_array24:			; store 24-bit packed array
 	call	linear_pointer
 	call	device_array24_setpointer
 	movzx	eax, cl
-	call	ixgo
+	mov	ax, word ptr [eax*2+device_write24_action]
+	jmp	ax
 
 device_write24_action:
 	dw	device_write_array24_1-device_write24_action
@@ -977,4 +965,5 @@ device_array24_setpointer:
 	shl	eax, 1				; double it
 	add	esi, eax			; add it to the number you first thought of...
 	ret
+end
 

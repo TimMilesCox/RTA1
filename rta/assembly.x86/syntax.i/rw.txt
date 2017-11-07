@@ -1,0 +1,1060 @@
+     1                              <1> %define ptr
+     2                              <1> %define include
+     3                              <1> %define .model
+     4                              <1> %define .code
+     5                              <1> 
+     6                              <1> %include "rta_x86n.h"
+     7                              <2> extern __register
+     8                              <2> extern _base
+     9                              <2> extern _apc
+    10                              <2> extern _psr
+    11                              <2> extern _context
+    12                              <2> extern _memory
+    13                              <2> extern _devices
+    14                              <2> 
+    15                              <2> HALF_W	equ	128
+    16                              <2> FP_R	equ	8
+    17                              <2> 
+    18                              <2> r	equ	0
+    19                              <2> k	equ	1
+    20                              <2> x	equ	2
+    21                              <2> y	equ	3
+    22                              <2> a	equ	4
+    23                              <2> b	equ	5
+    24                              <2> mantissa2 equ	6
+    25                              <2> mantissa3 equ	7
+    26                              <2> residue	equ	8
+    27                              <2> p	equ	12
+    28                              <2> q	equ	13
+    29                              <2> fp	equ	14
+    30                              <2> s_p	equ	15
+    31                              <2> 
+    32                              <2> rdatac	equ	20
+    33                              <2> rdata	equ	21
+    34                              <2> wdatac	equ	22
+    35                              <2> wdata	equ	23
+    36                              <2> 
+    37                              <2> 
+    38                              <2> fp_guard equ	128+19
+    39                              <2> 
+    40                              <2> rt_clock equ	128+20
+    41                              <2> priority equ	128+21
+    42                              <2> dayclock_u equ	128+22
+    43                              <2> dayclock equ	128+23
+    44                              <2> 
+    45                              <2> R	equ	r*4
+    46                              <2> K	equ	k*4
+    47                              <2> X	equ	x*4
+    48                              <2> Y	equ	y*4
+    49                              <2> A	equ	a*4
+    50                              <2> B	equ	b*4
+    51                              <2> MANTISSA2 equ	mantissa2*4
+    52                              <2> MANTISSA3 equ	mantissa3*4
+    53                              <2> RESIDUE	equ	residue*4
+    54                              <2> 
+    55                              <2> P	equ	p*4
+    56                              <2> Q	equ	q*4
+    57                              <2> FP	equ	fp*4
+    58                              <2> S_P	equ	s_p*4
+    59                              <2> 
+    60                              <2> RDATAC	equ	rdatac*4
+    61                              <2> RDATA	equ	rdata*4
+    62                              <2> WDATAC	equ	wdatac*4
+    63                              <2> WDATA	equ	wdata*4
+    64                              <2> 
+    65                              <2> FP_GUARD equ	fp_guard*4
+    66                              <2> 
+    67                              <2> RT_CLOCK equ	rt_clock*4
+    68                              <2> PRIORITY equ	priority*4
+    69                              <2> DAYCLOCK_U equ	dayclock_u*4
+    70                              <2> DAYCLOCK equ	dayclock*4
+    71                              <2> 
+    72                              <2> DEVICE  equ	32768
+    73                              <2> SYSMEM  equ	16384
+    74                              <2> DATA16  equ	1
+    75                              <2> FSYS24  equ	2
+    76                              <2> 
+    77                              <1> 
+    78                              <1> %define	DEVICE_or_SYSMEM	DEVICE|SYSMEM
+    79                              <1> %define	DEVICE_or_DATA16	DEVICE|DATA16
+    80                              <1> %define	DEVICE_or_FSYS24	DEVICE|FSYS24
+    81                              <1> %define	DATA16_or_FSYS24	DATA16|FSYS24
+    82                              <1> 
+    83                              <1> 	BITS	32
+    84                              <1> 	SECTION	.text
+    85                                  
+    86                                  
+    87                                  	include	rta_x86.h
+    88                                  	.model	large
+    89                                  	.code
+    90                                  
+    91                                  ;	this is the operand reader / writer
+    92                                  ;	for emulated RTA1 on x86
+    93                                  
+    94                                  ;	layout is
+    95                                  
+    96                                  ;	RTA1 24-bit registers are modeled in an array of
+    97                                  ;	platform-endian integers. In x86 these are 32-bit
+    98                                  ;	little-endian integers
+    99                                  
+   100                                  ;	platform-endian doesn't affect registers
+   101                                  ;	because endianness is not at the CPU
+   102                                  ;	side of the bus, but at the memory side
+   103                                  
+   104                                  ;	when Intel circuitry in the x86 CPU staticises the value
+   105                                  ;	of an emulated register, that value is big endian
+   106                                  
+   107                                  ;	the stored integers where emulated registers are modeled
+   108                                  ;	are platform-endian, with identical effect on big and
+   109                                  ;	little endian emulator platforms
+   110                                  
+   111                                  ;	RTA1 24-bit executable space storage words are modeled in
+   112                                  ;	another array of platform-endian 32-bit integers. Emulation
+   113                                  ;	on x86 swaps the byte order of storage words on read and
+   114                                  ;	before write to conform with RTA1 canonical storage order
+   115                                  
+   116                                  ;       RTA1 architecture has registers in the first 256 locations
+   117                                  ;       of address space and access differentiates registers from
+   118                                  ;       from memory according to effective address
+   119                                  
+   120                                  ;	location of registers and storage are handed to read / write
+   121                                  ;	routines as RTA1 word linear effective addresses
+   122                                  
+   123                                  ;	These routines maintain the RTA1 linear addresses passed
+   124                                  ;	in x86 registers and apply them with shifted scale plus
+   125                                  ;	displacement, for example
+   126                                  
+   127                                  ;		mov	eax, dword ptr [edi+esi*4+_memory]
+   128                                  ;		bswap	eax
+   129                                  ;		mov	dword_ptr [ebp+ebx*4], eax
+   130                                  
+   131                                  ;	RTA1 register addresses are already absolute in terms of
+   132                                  ;	the emulated RTA1 machine
+   133                                  
+   134                                  ;	ebp points at the context register frame. There are two
+   135                                  ;	register frames, application and interrupt. Registers
+   136                                  ;	addressed as storage operand are in a single list
+   137                                  
+   138                                  ;		mov	eax, dword ptr [esi*4+__register]
+   139                                  
+   140                                  ;	RTA1 storage addresses are translated by RTA1 relocation
+   141                                  ;	architecture before application. The updated linear addresses
+   142                                  ;	of the emulated machine are in esi
+   143                                  
+   144                                  ;	The operand routines in this file point edi to the x86 platform
+   145                                  ;	storage array start of the storage device, most often emulated
+   146                                  ;	RTA1 executable space
+   147                                  
+   148                                  ;	instructions call these operand routines with RTA1 effective 
+   149                                  ;	address in eax
+   150                                  
+   151                                  ;	instructions receive load operand values in eax and ebx, or in
+   152                                  ;	a list of RTA1 emulated register locations pointed by ebp+ebx
+   153                                  
+   154                                  ;	store instructions submit a value in ebx, or values in list of
+   155                                  ;	RTA1 emulated register locations pointed by ebp+ebx
+   156                                  
+   157                                  ;	to preserve linear address consistency, application instruction
+   158                                  ;	work areas, where needed in addition to x86 registers, are
+   159                                  ;	implemented as sub-architectural extra RTA1 registers at the end
+   160                                  ;	of the 256-longword register stack. x86 register ebp+ebx*4 identify
+   161                                  ;	these locations by linear RTA1 word quantum as "registers"
+   162                                  
+   163                                  ;	RTA1 registers and storage alike are in 24-bit word address quantum space
+   164                                  
+   165                                  ;	emulated instructions loading or storing multiple hidden extra work
+   166                                  ;	registers should unconditionally set ebp to the start or application
+   167                                  ;	frame of the emulated register array, so that [ebp+ebx*4] accesses the
+   168                                  ;	correct locations at register occurence 256+
+   169                                  
+   170                                  ;               _floating_operand2 equ  256+12
+   171                                  
+   172                                  ;		push	ebp
+   173                                  ;		mov	ebp, __register	; point to application register frame[0]
+   174                                  ;		mov	ebx, 256+_floating_operand2
+   175                                  ;		call	_burst_read4
+   176                                  
+   177                                  ;		pop	ebp		; return to previous register frame[0] application
+   178                                  					;                          or frame[1] interrupt
+   179                                  
+   180                                  ;	Both internal stack pointers are also absolute, so for stack operations
+   181                                  ;	ebp should be momentarily forced to the lower-addressed (application) stack
+   182                                  ;	frame after being used to point the stack location of reference
+   183                                  
+   184                                  ;		mov	ebx, dword ptr [ebp+S_P]	; read one of the two stack pointers
+   185                                  ;		cmp	ebx, ebp+STACK_LOWER_LIMIT	; 24*4 within context of either stack
+   186                                  ;		jl	II_GUARD
+   187                                  ;		add	ebx, -1				; new stack top
+   188                                  ;		mov	dword ptr [ebp+S_P], ebx
+   189                                  ;		push	ebp				; which ever stack pointer it is, it points
+   190                                  ;		mov	ebp,__register			; relative to all the register stack
+   191                                  ;		call	operand_read			; for I am the single-word push instruction
+   192                                  ;		pop	ebp				;
+   193                                  
+   194                                  ;	register identities supplied from emulated instructions to these routines
+   195                                  ;	are their lowercase names equated to RTA1 word addresses
+   196                                  
+   197                                  ;	There exist also uppercase spellings which instruction routines may
+   198                                  ;	access internally. The uppercase names are four times in value the
+   199                                  ;	equivalent lowercase ordinal names to give x86 platform offset values
+   200                                  
+   201                                  ;       Assembly language equate is like parentheses! What's in a label
+   202                                  ;       is not an expression but its value. Nothing like C preprocessor.
+   203                                  ;       Just in case you're developing enhancements in assembly using
+   204                                  ;       preprocessor and #define
+   205                                  
+   206                                  ;		_floating_operand2 equ	256+12
+   207                                  ;		FLOATING_OPERAND2 equ	_floating_operand2*4
+   208                                  
+   209                                  
+   210                                  ;		a	equ	4
+   211                                  ;		b	equ	5
+   212                                  ;		mantissa2 equ	6
+   213                                  
+   214                                  ;		A	equ	a*4
+   215                                  ;		B	equ	b*4
+   216                                  ;		MANTISSA2 equ	mantissa2*4
+   217                                  
+   218                                  ;		mov	ebx, dword ptr [bp+MANTISSA2]	; the very same!
+   219                                  ;		mov	ebx, dword ptr [bp+mantissa2*4]	; the very same
+   220                                  
+   221                                  ;	but to identify an instruction-implied register to these operand routines
+   222                                  
+   223                                  ;		mov	ebx, mantissa2		; bp already says which register set
+   224                                  
+   225                                  ;	instruction evaluation supplies right-hand side operand EA in eax
+   226                                  ;	Instruction implementation needs not examine EA. Call _operand_read
+   227                                  ;	or _operand_write. eax must be as supplied to the instruction routine
+   228                                  ;	on on operand retrieve and store
+   229                                  
+   230                                  ;	simple instructions receive operand mode in cl from instruction
+   231                                  ;	evaluation
+   232                                  
+   233                                  ;	shifts and jumps use the ea which is already indexed or indirected
+   234                                  ;	if necessary and make no operand call
+   235                                  
+   236                                  ;	instructions call _burst_read2 or _burst_write2 for two-word operand cycles
+   237                                  ;	instructions call _burst_read4 or _burst_write4 for four-word operand cycles
+   238                                  
+   239                                  ;	operand reads of 1 or 2 words return values in eax:ebx
+   240                                  
+   241                                  ;		call	_burst_read2
+   242                                  ;		mov	dword ptr [ebp+A], eax
+   243                                  ;		mov	dword ptr [ebp+B], ebx
+   244                                  
+   245                                  ;	to store one operand word place it in ebx
+   246                                  
+   247                                  ;	_sc	mov	ebx, dword ptr[_psr]	; I am the store carry instruction sc
+   248                                  ;		and	ebx, 1			; CARRY
+   249                                  ;		call	_operand_write
+   250                                  
+   251                                  ;	to store two or four words or to load four words, point bx to register
+   252                                  
+   253                                  ;	_qpop	mov	ebx, dword ptr [ebp+S_P] ; internal stack pointer
+   254                                  ;						; either application sp or interrupt sp
+   255                                  ;
+   256                                  ;		add	dword ptr [ebp+S_P], 4	; internal stack+= 4
+   257                                  ;		push	ebp			;
+   258                                  ;		mov	ebp, __register		; in case context is interrupt registers
+   259                                  ;		call	_burst_write4		; both internal stack pointers are absolute
+   260                                  ;		pop	ebp			; point epb back to application registers
+   261                                  ;						;                or interrupt registers
+   262                                  
+   263                                  ;	more complex instructions do something to the registers after
+   264                                  ;	acquiring operands
+   265                                  
+   266                                  ;		call	_operand_read
+   267                                  ;		add	eax, dword ptr [ebp+A]
+   268                                  ;		rol	eax
+   269                                  ;		and	al, CARRY		; 1
+   270                                  ;		or	byte ptr [_psr], al	; low-order byte of longword _psr
+   271                                  ;		shr	eax, 8
+   272                                  ;		mov	dword ptr [ebp+A], eax
+   273                                  
+   274                                  ;	Emulated RTA1 instructions which both read and write (modify)
+   275                                  ;	storage supply a callback pointer in ebx, and are called back
+   276                                  ;	to update the retrieved value if it is in executable space. The
+   277                                  ;	callback idea avoids evaluating the effective address twice for
+   278                                  ;	one operation
+   279                                  
+   280                                  ;	Finally the effect of storage buses characteristically different
+   281                                  ;	from RTA1 executable space is emulated in the routines
+   282                                  ;	device_read and device_write
+   283                                  
+   284                                  ;	Peripheral bus types implemented are
+   285                                  
+   286                                  ;		filestore containing extents of up to 768K octets
+   287                                  ;		accessible to RTA1 as up to 256K words in each extent.
+   288                                  ;		The 3-octet words are in canonical order and packed
+   289                                  
+   290                                  ;		network interface buffer store shared with the emulator
+   291                                  ;		platform and reading out to RTA1 at 16 data bits per word
+   292                                  ;		with eight high-order zero bits. RTA writes 16 data bits
+   293                                  ;		to these locations from register low-order bit positions.
+   294                                  ;		Storage byte order is canonical. These buffers are normal
+   295                                  ;		and contiguous byte arrays of the emulator platform.
+   296                                  ;		To RTA1 they are an attached device array of 16-bit words
+   297                                  
+   298                                  ;	Device array types are
+   299                                  
+   300                                  ;		executable space
+   301                                  ;		24-bit filestore array
+   302                                  ;		16-bit network interface array
+   303                                  
+   304                                  ;	devices are identified in RTA1 memory relocation pointers and
+   305                                  ;	tagged with device type. Executable space is device zero
+   306                                  
+   307 00000000 01E0                    ixgo:	add	eax, esp			; 
+   308 00000002 0FB70444                	movzx	eax, word ptr[esp+eax*2]	; position-independent jump pad jump
+   309 00000006 010424                  	add	dword ptr [esp], eax		; index is in eax
+   310 00000009 C3                      	ret
+   311                                  
+   312 0000000A 01E3                    ixlgo:	add	ebx, esp
+   313 0000000C 0FB71C9C                	movzx	ebx, word ptr [esp+ebx*4]	; position-independent jump pad jump
+   314 00000010 66011C24                	add	word ptr [esp], bx		; with latent parameter
+   315 00000014 66815424020000          	adc	word ptr [esp+2], 0		; index in ebx
+   316 0000001B C1EB10                  	shr	ebx, 16				; latent parameter returned in bx
+   317 0000001E C3                      	ret
+   318                                  
+   319                                  burst_read2:
+   320 0000001F 66B90600                	mov	cx, 6
+   321 00000023 3D00FFFF00              	cmp	eax, 00FFFF00h
+   322 00000028 7565                    	jnz	bus_read
+   323                                  				; load registers from registers
+   324 0000002A 8B1C85[04000000]        	mov	ebx, dword ptr [eax*4+__register+4]
+   325 00000031 8B0485[00000000]        	mov	eax, dword ptr [eax*4+__register]
+   326 00000038 C3                      	ret
+   327                                  	
+   328                                  burst_read4:				; buffered read
+   329 00000039 66B90700                	mov	cx, 7			; that will help the caller
+   330 0000003D 3D00FFFF00              	cmp	eax, 00FFFF00h		; ebp+ebx contains a register number
+   331 00000042 754B                    	jnz	bus_read		; may also identify extra
+   332                                  					; workspace registers
+   333                                  					; at register stack tail
+   334 00000044 89C6                    	mov	esi, eax
+   335 00000046 8B04B5[0C000000]        	mov	eax, dword ptr [esi*4+__register+12]
+   336 0000004D 89449D0C                	mov	dword ptr [ebp+ebx*4+12], eax
+   337 00000051 8B04B5[08000000]        	mov	eax, dword ptr [esi*4+__register+8]
+   338 00000058 89449D08                	mov	dword ptr [ebp+ebx*4+8], eax
+   339 0000005C 8B04B5[04000000]        	mov	eax, dword ptr [esi*4+__register+4]
+   340 00000063 89449D04                	mov	dword ptr [ebp+ebx*4+4], eax
+   341 00000067 8B04B5[00000000]        	mov	eax, dword ptr [esi*4+__register]
+   342 0000006E 89449D00                	mov	dword ptr [ebp+ebx*4], eax
+   343 00000072 C3                      	ret
+   344                                  
+   345                                  operand_read:			; call here with designator coded in cx
+   346 00000073 80E107                  	and	cl, 7		; and ea in eax
+   347 00000076 80F904                  	cmp	cl, 4
+   348 00000079 7455                    	je	immediate
+   349 0000007B 80F905                  	cmp	cl, 5
+   350 0000007E 7450                    	je	immediate_xi
+   351                                  
+   352 00000080 A900FFFF00              	test	eax, 00FFFF00h
+   353 00000085 7508                    	jnz	bus_read	; ea does not point to registers
+   354 00000087 8B0485[00000000]        	mov	eax, dword ptr [eax*4+__register]
+   355 0000008E C3                      	ret 
+   356                                  
+   357                                  bus_read:			; readout any memory
+   358 0000008F E8B5020000              	call	base_pointer
+   359 00000094 A900004000              	test	eax, 00400000h	; big block?
+   360 00000099 740C                    	je	memory_read_4k_block
+   361 0000009B A93F000000              	test	eax, 63		; executable space or device array? 
+   362 000000A0 7405                    	je	memory_read_256k_block
+   363 000000A2 E97E030000              	jmp	_device_read
+   364                                  
+   365                                  memory_read_4k_block:		; readout system memory
+   366                                  				; test here, esi may not be > 4095
+   367                                  memory_read_256k_block:
+   368 000000A7 C1E00C                  	shl	eax, 12		; page pointer * 4096
+   369 000000AA 01C6                    	add	esi, eax	; linear absolute word pointer
+   370 000000AC BF[00000000]            	mov	edi, _memory	; byte address
+   371                                  
+   372                                  memory_read_on:
+   373 000000B1 0FB7C1                  	movzx	eax, cx
+   374 000000B4 E847FFFFFF              	call	ixgo
+   375                                  
+   376                                  read_action:
+   377 000000B9 1000                    	dw	memory_read-read_action
+   378 000000BB 5800                    	dw	memory_t1-read_action
+   379 000000BD 6300                    	dw	memory_t2-read_action
+   380 000000BF 7700                    	dw	memory_t3-read_action
+   381 000000C1 1700                    	dw	immediate-read_action		; don't get here
+   382 000000C3 1700                    	dw	immediate_xi-read_action	; don't get here
+   383 000000C5 1800                    	dw	memory_read2-read_action
+   384 000000C7 2800                    	dw	memory_read4-read_action
+   385                                  
+   386                                  memory_read:			; readout system memory 1 word
+   387 000000C9 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   388 000000CC B000                    	mov	al, 0
+   389 000000CE 0FC8                    	bswap	eax
+   390                                  immediate:
+   391                                  immediate_xi:
+   392 000000D0 C3                      	ret
+   393                                  
+   394                                  memory_read2:			; readout system memory 2 words
+   395 000000D1 8B5CB704                	mov	ebx, dword ptr [edi+esi*4+4]
+   396 000000D5 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   397                                  
+   398 000000D8 B000                    	mov	al, 0
+   399 000000DA B300                    	mov	bl, 0
+   400 000000DC 0FC8                    	bswap	eax
+   401 000000DE 0FCB                    	bswap	ebx
+   402 000000E0 C3                      	ret
+   403                                  				; readout system memory 4 words
+   404                                  memory_read4:			; store by pointer
+   405                                  				; this will be useful to the caller
+   406                                  
+   407 000000E1 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   408 000000E4 B000                    	mov	al, 0
+   409 000000E6 0FC8                    	bswap	eax
+   410 000000E8 89449D00                	mov	dword ptr [ebp+ebx*4], eax
+   411 000000EC 8B44B704                	mov	eax, dword ptr [edi+esi*4+4]
+   412 000000F0 B000                    	mov	al, 0
+   413 000000F2 0FC8                    	bswap	eax
+   414 000000F4 89449D04                	mov	dword ptr [ebp+ebx*4+4], eax
+   415 000000F8 8B44B708                	mov	eax, dword ptr [edi+esi*4+8]
+   416 000000FC B000                    	mov	al, 0
+   417 000000FE 0FC8                    	bswap	eax
+   418 00000100 89449D08                	mov	dword ptr [ebp+ebx*4+8], eax
+   419 00000104 8B44B70C                	mov	eax, dword ptr [edi+esi*4+12]
+   420 00000108 B000                    	mov	al, 0
+   421 0000010A 0FC8                    	bswap	eax
+   422 0000010C 89449D0C                	mov	dword ptr [ebp+ebx*4+12], eax
+   423 00000110 C3                      	ret
+   424                                  
+   425                                  memory_t1:
+   426 00000111 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   427 00000114 C1E010                  	shl	eax, 16		; t1 = 3.2.THIS.zero
+   428 00000117 E920000000              	jmp	memory_tw
+   429                                  
+   430                                  memory_t2:
+   431 0000011C 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   432 0000011F F605[00000000]80        	test	byte ptr[_psr], HALF_W
+   433 00000126 751B                    	jnz	memory_h1
+   434 00000128 C1E008                  	shl	eax, 8		; t2 = 3.THIS.1.zero
+   435 0000012B E90C000000              	jmp	memory_tw
+   436                                  
+   437                                  memory_t3:
+   438 00000130 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   439 00000133 F605[00000000]80        	test	byte ptr[_psr], HALF_W
+   440 0000013A 7511                    	jnz	memory_h2
+   441                                  memory_tw:
+   442 0000013C C1F810                  	sar	eax, 16		; t3 = THIS.2.1.zero
+   443 0000013F C1E808                  	shr	eax, 8
+   444 00000142 C3                      	ret
+   445                                  
+   446                                  memory_h1:
+   447 00000143 0FC8                    	bswap	eax		; already loaded but not swapped
+   448 00000145 C1E008                  	shl	eax, 8		; h1 = zero.HERE.2.3
+   449 00000148 E905000000              	jmp	memory_hw
+   450                                  
+   451                                  memory_h2:
+   452 0000014D 0FC8                    	bswap	eax		; already loaded but not swapped
+   453 0000014F C1E01C                  	shl	eax, 8+20
+   454                                  memory_hw:
+   455 00000152 C1F80C                  	sar	eax, 12
+   456 00000155 C1E808                  	shr	eax, 8
+   457 00000158 C3                      	ret
+   458                                  
+   459                                  				; store system memory
+   460                                  burst_write4:
+   461 00000159 66B90700                	mov	cx, 7
+   462 0000015D A900FFFF00              	test	eax, 00FFFF00h
+   463 00000162 0F85A3000000            	jnz	NEAR bus_write
+   464                                  
+   465                                  	; store emulated registers to emulated registers
+   466                                  
+   467 00000168 F705[00000000]0000-     	test	dword ptr [_psr], 0800000h	; ISR ?
+   468 00000170 8000               
+   469 00000172 750B                    	jnz	write4_registers	; ISRs may write some spare registers
+   470 00000174 3D7C000000              	cmp	eax, 124
+   471 00000179 0F87CB000000            	ja	NEAR dont		; but applications may not write
+   472                                  					; any interrupt registers
+   473                                  
+   474                                  write4_registers:
+   475 0000017F 89C7                    	mov	edi, eax		; eax can be freed
+   476                                  
+   477 00000181 8B449D00                	mov	eax, dword ptr [ebp+ebx*4]	; data for store
+   478                                  					; ebp+ebx is a register number
+   479                                  					; which can be extra register locations
+   480                                  					; serving as workspace at the tail of
+   481                                  					; the register stack
+   482                                  
+   483 00000185 8904BD[00000000]        	mov	dword ptr [edi*4+__register], eax
+   484 0000018C 8B449D04                	mov	eax, dword ptr [ebp+ebx*4+4]
+   485 00000190 8904BD[04000000]        	mov	dword ptr [edi*4+__register+4], eax
+   486                                  
+   487 00000197 8B449D08                	mov	eax, dword ptr [ebp+ebx*4+8]
+   488 0000019B 8904BD[08000000]        	mov	dword ptr [edi*4+__register+8], eax
+   489 000001A2 8B449D0C                	mov	eax, dword ptr [ebp+ebx*4+12]
+   490 000001A6 8904BD[0C000000]        	mov	dword ptr [edi*4+__register+12], eax
+   491 000001AD C3                      	ret
+   492                                  
+   493                                  burst_write2:
+   494 000001AE 66B90600                	mov	cx, 6
+   495 000001B2 A900FFFF00              	test	eax, 00FFFF00h
+   496 000001B7 7552                    	jnz	bus_write
+   497                                  
+   498                                  	; store to emulated registers
+   499                                  
+   500 000001B9 F705[00000000]0000-     	test	dword ptr [_psr], 0800000h	; ISR ?
+   501 000001C1 8000               
+   502 000001C3 750B                    	jnz	write2_registers	; there are spare registers at the end
+   503 000001C5 3D7E000000              	cmp	eax, 126		; but applications may not write
+   504                                  					; any interrupt registers
+   505 000001CA 0F877A000000            	ja	NEAR dont
+   506                                  
+   507                                  write2_registers:
+   508 000001D0 89C7                    	mov	edi, eax			; time to free eax
+   509 000001D2 8B449D00                	mov	eax, dword ptr [ebp+ebx*4]
+   510 000001D6 8B5C9D04                	mov	ebx, dword ptr [ebp+ebx*4+4]
+   511 000001DA 8904BD[00000000]        	mov	dword ptr [edi*4+__register], eax
+   512 000001E1 891CBD[04000000]        	mov	dword ptr [edi*4+__register+4], ebx
+   513 000001E8 C3                      	ret
+   514                                  
+   515                                  operand_write:
+   516 000001E9 A900FFFF00              	test	eax, 00FFFF00h
+   517 000001EE 751B                    	jnz	bus_write
+   518 000001F0 A980000000              	test	eax, 80h		; in the interrupt registers?
+   519 000001F5 740C                    	jz	write1_register
+   520 000001F7 F705[00000000]0000-     	test	dword ptr [_psr], 0800000h
+   521 000001FF 8000               
+   522 00000201 7447                    	jz	dont
+   523                                  
+   524                                  write1_register:
+   525 00000203 891C85[00000000]        	mov	dword ptr [eax*4+__register], ebx
+   526 0000020A C3                      	ret
+   527                                  
+   528                                  bus_write:				; write any memory
+   529 0000020B E839010000              	call	base_pointer
+   530 00000210 A900004000              	test	eax, 00400000h		; big block?
+   531 00000215 740C                    	je	memory_write_4k_block
+   532 00000217 A93F000000              	test	eax, 63			; executable space or device array?
+   533 0000021C 7405                    	je	memory_write_256k_block
+   534 0000021E E9EA020000              	jmp	_device_write
+   535                                  
+   536                                  memory_write_4k_block:			; write system memory
+   537                                  					; test here, esi may not be > 4095
+   538                                  memory_write_256k_block:
+   539 00000223 C1E00C                  	shl	eax, 12
+   540 00000226 01C6                    	add	esi, eax
+   541 00000228 BF[00000000]            	mov	edi, _memory
+   542                                  
+   543                                  memory_write_on:
+   544                                  
+   545 0000022D 0FB7C1                  	movzx	eax, cx
+   546 00000230 E8CBFDFFFF              	call	ixgo
+   547                                  
+   548                                  write_action:
+   549 00000235 1000                    	dw	memory_write-write_action
+   550 00000237 1600                    	dw	write_t1-write_action
+   551 00000239 1B00                    	dw	write_t2-write_action
+   552 0000023B 2C00                    	dw	write_t3-write_action
+   553 0000023D 1500                    	dw	dont-write_action
+   554 0000023F 1500                    	dw	just_dont-write_action
+   555 00000241 7200                    	dw	memory_write2-write_action
+   556 00000243 8600                    	dw	memory_write4-write_action
+   557                                  
+   558                                  memory_write:					; store system memory 1 word
+   559 00000245 0FCB                    	bswap	ebx
+   560 00000247 891CB7                  	mov	dword ptr [edi+esi*4], ebx
+   561                                  dont:
+   562                                  just_dont:
+   563 0000024A C3                      	ret
+   564                                  
+   565                                  write_t1:
+   566 0000024B 885CB701                	mov	byte ptr [edi+esi*4+1], bl
+   567 0000024F C3                      	ret
+   568                                  
+   569                                  write_t2:
+   570 00000250 F705[00000000]8000-     	test	dword ptr [_psr], HALF_W
+   571 00000258 0000               
+   572 0000025A 7516                    	jnz	write_h1
+   573 0000025C 885CB702                	mov	byte ptr [edi+esi*4+2], bl
+   574 00000260 C3                      	ret
+   575                                  
+   576                                  write_t3:
+   577 00000261 F705[00000000]8000-     	test	dword ptr [_psr], HALF_W
+   578 00000269 0000               
+   579 0000026B 751F                    	jnz	write_h2
+   580 0000026D 885CB703                	mov	byte ptr [edi+esi*4+3], bl
+   581 00000271 C3                      	ret
+   582                                  
+   583                                  write_h1:
+   584 00000272 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   585 00000275 0FC8                    	bswap	eax
+   586 00000277 81E3FF0F0000            	and	ebx, 4095
+   587 0000027D C1E30C                  	shl	ebx, 12
+   588 00000280 25FF0F0000              	and	eax, 4095
+   589 00000285 09D8                    	or	eax, ebx
+   590 00000287 E915000000              	jmp	write_hw
+   591                                  
+   592                                  write_h2:
+   593 0000028C 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   594 0000028F 0FC8                    	bswap	eax
+   595 00000291 25FF0F0000              	and	eax, 4095
+   596 00000296 C1E00C                  	shl	eax, 12
+   597 00000299 81E3FF0F0000            	and	ebx, 4095
+   598 0000029F 09D8                    	or	eax, ebx
+   599                                  
+   600                                  write_hw:
+   601 000002A1 0FC8                    	bswap	eax
+   602 000002A3 8904B7                  	mov	dword ptr [edi+esi*4], eax
+   603 000002A6 C3                      	ret
+   604                                  					; store system memory 2 words
+   605                                  memory_write2:				; eax is already free
+   606 000002A7 8B449D00                	mov	eax, dword ptr [ebp+ebx*4]
+   607 000002AB 8B5C9D04                	mov	ebx, dword ptr [ebp+ebx*4+4]
+   608 000002AF 0FC8                    	bswap	eax
+   609 000002B1 0FCB                    	bswap	ebx
+   610 000002B3 8904B7                  	mov	dword ptr [edi+esi*4], eax
+   611 000002B6 895CB704                	mov	dword ptr [edi+esi*4+4], ebx
+   612 000002BA C3                      	ret
+   613                                  
+   614                                  memory_write4:				; store system memory 4 words
+   615 000002BB 8B449D00                	mov	eax, dword ptr [ebp+ebx*4]	; bx is a register number and may
+   616                                  					; identify extra workspace registers
+   617                                  					; at register stack tail
+   618 000002BF 0FC8                    	bswap	eax
+   619 000002C1 8904B7                  	mov	dword ptr [edi+esi*4], eax
+   620 000002C4 8B449D04                	mov	eax, dword ptr [ebp+ebx*4+4]
+   621 000002C8 0FC8                    	bswap	eax
+   622 000002CA 8944B704                	mov	dword ptr [edi+esi*4+4], eax
+   623 000002CE 8B449D08                	mov	eax, dword ptr [ebp+ebx*4+8]
+   624 000002D2 0FC8                    	bswap	eax
+   625 000002D4 8944B708                	mov	dword ptr [edi+esi*4+8], eax
+   626 000002D8 8B449D0C                	mov	eax, dword ptr [ebp+ebx*4+12]
+   627 000002DC 0FC8                    	bswap	eax
+   628 000002DE 8944B70C                	mov	dword ptr [edi+esi*4+12], eax
+   629 000002E2 C3                      	ret
+   630                                  
+   631                                  				; for execute and modify instructions
+   632                                  _memory_read:			; read only executable space and similar memory types
+   633 000002E3 E861000000              	call	base_pointer
+   634 000002E8 A900004000              	test	eax, 00400000h
+   635 000002ED 742F                    	jz	mword_go_0
+   636 000002EF A93F000000              	test	eax, 63
+   637 000002F4 7428                    	jz	mword_go_0
+   638                                  
+   639 000002F6 6650                    	push	ax		; this may be another 16 gigaword sysmem device
+   640 000002F8 C0E002                  	shl	al, 2		; clear bits 7..6 from the device field
+   641 000002FB 0FB6F8                  	movzx	edi, al
+   642 000002FE 6658                    	pop	ax
+   643                                  
+   644 00000300 6681BC3F[00000000]-     	cmp	word ptr [edi*2+_devices], DEVICE_or_SYSMEM
+   645 00000308 00C0               
+   646                                  
+   647 0000030A 750C                    	jnz	mword_no_x	; well is it?
+   648 0000030C 8BBC3F[04000000]        	mov	edi, dword ptr [edi*2+_devices+4]
+   649 00000313 E90B000000              	jmp	mword_go_x	; extra system memory device found
+   650                                  
+   651                                  mword_no_x:
+   652 00000318 BF00000000              	mov	edi, 0		; flag unsuitable
+   653 0000031D C3                      	ret			; you can't have 0
+   654                                  
+   655                                  mword_go_0:			; add PAGES_IN_MEMORY check
+   656 0000031E BF[00000000]            	mov	edi, _memory
+   657                                  mword_go_x:
+   658 00000323 C1E00C                  	shl	eax, 12
+   659 00000326 01C6                    	add	esi, eax	; report target address
+   660 00000328 8B04B7                  	mov	eax, dword ptr [edi+esi*4]
+   661 0000032B B000                    	mov	al, 0
+   662 0000032D 0FC8                    	bswap	eax
+   663 0000032F C3                      	ret	
+   664                                  
+   665                                  ;	TS calls here without checking for register range
+   666                                  ;	because you don't and may not test and set a register.
+   667                                  ;	TS and EX instructions always have a storage operand
+   668                                  
+   669                                  ;	N INC DEC SIM POPA SRC SLC check register range and
+   670                                  ;	operate directly on registers. operand write trips
+   671                                  ;	if applications try to write interrupt registers
+   672                                  
+   673                                  ;	N INC DEC SIM POPA SRC SLC call here to operate
+   674                                  ;	on storage
+   675                                  
+   676                                  _modify:				; read/write operation
+   677 00000330 E8AEFFFFFF              	call	_memory_read
+   678 00000335 85FF                    	test	edi, edi
+   679 00000337 7407                    	jz	dont_modify
+   680 00000339 FFD3                    	call	ebx	; callback to TS N INC DEC SIM POPA SRC SLC
+   681                                  			; edi+esi must not get overwritten
+   682                                  			; in _memory_read / _base_pointer
+   683 0000033B 0FC8                    	bswap	eax
+   684 0000033D 8904B7                  	mov	dword ptr [edi+esi*4], eax
+   685                                  dont_modify:
+   686 00000340 C3                      	ret
+   687                                  
+   688 00000341 0040201008040201        base_flag_mask db 0, 64, 32, 16, 8, 4, 2, 1	; test psr for kernel memory select
+   689                                  
+   690                                  base_pointer:			; find handle to memory block containing operand
+   691 00000349 89C6                    	mov	esi, eax	; the tag is EA bits 23..18 (=0) EA bits 17..12
+   692 0000034B 250000FC00              	and	eax, 00FC0000h
+   693 00000350 740E                    	jz	page_pointer
+   694 00000352 81E6FFFF0300            	and	esi, 0003FFFFh
+   695 00000358 C1F812                  	sar	eax, 18
+   696 0000035B E90B000000              	jmp	alternative_pointer?
+   697                                  
+   698                                  page_pointer:
+   699 00000360 81E6FF0F0000            	and	esi, 00000FFFh
+   700 00000366 C1F80C                  	sar	eax, 12
+   701 00000369 7416                    	jz	base_selected		; B0 has no see$ alternative
+   702                                  					; big bank pointer is nonzero
+   703                                  alternative_pointer?:
+   704 0000036B A838                    	test	al, 56			; shift radix is 32, skip test if bits 111000
+   705 0000036D 7512                    	jnz	base_selected		; because values 32+1..7
+   706                                  					; would not shift value 128 off the map
+   707                                  					; 
+   708                                  					; should not need the opcode value in ch again
+   709 0000036F 8A2D[01000000]          	mov	ch, byte ptr [_psr+1]	; contains see$1..7
+   710 00000375 22A8[41030000]          	and	ch, byte ptr [eax+base_flag_mask]
+   711 0000037B 7404                    	jz	base_selected
+   712 0000037D 660D4000                	or	ax, 64			; use base pointer from range 65..71
+   713                                  
+   714                                  base_selected:
+   715 00000381 8B0485[00000000]        	mov	eax, dword ptr [eax*4+_base]
+   716 00000388 C3                      	ret
+   717                                  
+   718                                  ;	sub-architectural measure on sabr and reload instructions
+   719                                  
+   720                                  ;	check the target memory block is in range and the bus characteristic
+   721                                  ;	of the memory device when selecting blocks of memory, not when
+   722                                  ;	accessing them. Use 8 spare bits in the word containing _base[]
+   723                                  ;	for a quick recall of the emulated bus attribute on reference
+   724                                  
+   725                                  ;	because this software emulation needs to act differently for
+   726                                  
+   727                                  ;		executable space	rta1 24-bit words canonical memory
+   728                                  ;					modeled in platform 32-bit words
+   729                                  
+   730                                  ;		shared network buffers	16-bit words canonical in memory
+   731                                  ;					and zero extend on readout to RTA1
+   732                                  
+   733                                  ;		24-bit filestore array	3-octet words stored big-endian
+   734                                  ;					in packed array
+   735                                  
+   736                                  ;	concept RTA1 device arrays with bus behaviour differences are completely
+   737                                  ;	emulated on PC emulations because device arrays are modeled in PC RAM.
+   738                                  
+   739                                  ;	Various bus behaviours are emulated transparently to RTA1 target software
+   740                                  ;	in anticipation	that different memories for different uses may be attached
+   741                                  ;	on product boards, making core-emulated RTA1s much more efficient for not
+   742                                  ;	needing this part of emulation
+   743                                  
+   744                                  ;	devices
+   745                                  
+   746                                  ;	device 0 is always executable space, but there may be more devices
+   747                                  ;	with bus characteristics like device 0. The device descriptors are
+   748                                  
+   749                                  ;		_________________________________________________________________
+   750                                  ;		| 16 bits flags	| 16 bits banks	|       32 bits pointer		|
+   751                                  ;		|_______________|____high index_|_______________________________|
+   752                                  
+   753                                  
+   754                                  ;	[out]	sabr	[go]	[call]	reload instructions call here
+   755                                  ;	go and call can probably check quicker themself
+   756                                  ;	out can be trusted because applications don't out memory _base[] ports
+   757                                  
+   758                                  ;	a big block in an RTA1 address window is 262144 words.
+   759                                  ;	this checking concerns address windows tagged 2..63
+   760                                  ;	a device is an array up to 65536 big blocks or banks
+   761                                  
+   762                                  ;	you get here with the relocation handle in ebx
+   763                                  ;	and the target window tag in eax, because that is the EA of a sabr instruction
+   764                                  
+   765                                  _truebase:
+   766 00000389 3D02000000              	cmp	eax, 2
+   767 0000038E 7C7A                    	jl	true_nothing
+   768 00000390 3D3F000000              	cmp	eax, 63		; if the window tag range makes no sense at all
+   769 00000395 7773                    	ja	true_nothing	; don't start trying to make sense of it
+   770                                  
+   771 00000397 8998[00000000]          	mov	dword ptr [eax+_base], ebx	
+   772                                  
+   773                                  				; start by assuming it's good. That saves it away
+   774 0000039D F7C300004000            	test	ebx, 0400000h	; if it's not big block pointer it's device zero
+   775 000003A3 7408                    	jz	truebase_memory_page
+   776 000003A5 F7C33F000000            	test	ebx, 63		; if it's device zero it can only be system memory
+   777 000003AB 7511                    	jnz	truebase_device	;
+   778                                  				; device other than zero may be system memory
+   779                                  				; or 16-bit network memory. In emulation, filestore
+   780                                  				; is a different sort because it's 24-bit packed
+   781                                  				; and executable space is modeled in 32-bit words
+   782                                  truebase_memory_page:
+   783 000003AD C1CB06                  	ror	ebx, 6		;    00000000  0?pppp pppppp pppppp pppppp
+   784                                  				; -> pppppp00  0000000?  pppppppp pppppppp
+   785                                  
+   786                                  				; swivel the relocation pointer to compare the
+   787                                  				; the target bank id with the device bank high index
+   788                                  
+   789 000003B0 663B1D[02000000]        	cmp	bx, word ptr [_devices+2]	; device banks of 262144 words
+   790                                  						; executable space is device 0
+   791                                  
+   792 000003B7 7740                    	ja	truebase_none	; you can't have that memory block, very sorry
+   793 000003B9 E945000000              	jmp	truebase_complete
+   794                                  
+   795                                  truebase_device:			
+   796 000003BE C1E30A                  	shl	ebx, 2+8	;    00000000  01bbbb bbbbbb bbbbbb device
+   797                                  				; -> bbbbbbbb  bbbbbbbb  device00 00000000
+   798                                  
+   799 000003C1 66C1EB07                	shr	bx, 10-3	; device * 8
+   800 000003C5 0FB7F3                  	movzx	esi, bx
+   801 000003C8 81C6[00000000]          	add	esi, _devices
+   802 000003CE 668B1E                  	mov	bx, word ptr [esi]	; flags.banks -> banks.flags in ebx
+   803                                  
+   804 000003D1 66F7C30080              	test	bx, DEVICE
+   805 000003D6 7421                    	jz	truebase_none	; this device is not there
+   806                                  				; and nothing-based is already tagged
+   807 000003D8 C1CB10                  	ror	ebx, 16		;
+   808 000003DB 663B5E02                	cmp	bx, word ptr [esi+2]	; bank requested in range ?
+   809 000003DF 7718                    	ja	truebase_none	; turn nothing-based back on and leave
+   810                                  
+   811                                  	; now we are certain of allowing this storage selection
+   812                                  	; if we recognise the device type
+   813                                  	; otherwise we're certain that we won't allow it
+   814                                  
+   815 000003E1 C1CB10                  	ror	ebx, 16
+   816                                  	
+   817 000003E4 6681FB00C0              	cmp	bx, DEVICE_or_SYSMEM
+   818 000003E9 7418                    	jz	truebase_complete	; a device of the same kind as executable space
+   819 000003EB 6681FB0180              	cmp	bx, DEVICE_or_DATA16
+   820 000003F0 7411                    	jz	truebase_complete	; a device of the same kind as shared network buffers
+   821 000003F2 6681FB0280              	cmp	bx, DEVICE_or_FSYS24
+   822 000003F7 740A                    	jz	truebase_complete	; an array of packed 3-octet fields organised
+   823                                  					; as a file system
+   824                                  truebase_none:
+   825 000003F9 C780[00000000]0100-     	mov	dword ptr [eax+_base], 0C00001h
+   826 00000401 C000               
+   827                                  					; the vilainous bank index means nothing based
+   828                                  					; and reference will cause a jump to device read
+   829                                  					; or device write where this state will be detected
+   830                                  truebase_complete:
+   831 00000403 881C85[03000000]        	mov	byte ptr [eax*4+_base+3], bl	; use high order octet of _base[]
+   832                                  						; sub-architecturally
+   833                                  			
+   834                                  true_nothing:
+   835 0000040A C3                      	ret
+   836                                  
+   837                                  device_array:
+   838 0000040B C1E002                  	sal	eax, 2			; al = device id * 4 : 0000FF01 BBBBBBB BBBBBBBB device00 
+   839 0000040E 0FB6F8                  	movzx	edi, al
+   840 00000411 8BBC3F[04000000]        	mov	edi, dword ptr [edi*2+_devices+4]
+   841 00000418 C1C006                  	rol	eax, 8-2		; bus flags -> al
+   842 0000041B C3                      	ret
+   843                                  
+   844                                  linear_pointer:
+   845 0000041C C1F80E                  	sar	eax, 14			; delete device00 0000FF : 00000000 0000001 BBBBBBBB BBBBBBBB
+   846 0000041F C1E012                  	sal	eax, 18			; multiply bank index by bank size
+   847                                  					; on 386 platform we are restricted to 16384 banks
+   848 00000422 01C6                    	add	esi, eax
+   849 00000424 C3                      	ret
+   850                                  	
+   851                                  _device_read:				; readout device arrays
+   852 00000425 A900008000                      test    eax, 0800000h           ; the vilainous bank index?
+   853 0000042A 7511                            jnz     device_read_void
+   854                                  
+   855 0000042C E8DAFFFFFF              	call	device_array
+   856 00000431 A803                    	test	al, DATA16_or_FSYS24	; bus type bits added to _base[] pointer
+   857 00000433 740E                    	jz	device_read_sysmem	;
+   858 00000435 A801                    	test	al, DATA16
+   859 00000437 7515                    	jnz	device_read_data16
+   860 00000439 A802                    	test	al, FSYS24
+   861 0000043B 756A                    	jnz	device_read_array24
+   862                                  
+   863                                  device_read_void:
+   864 0000043D B8FFFFFF00              	mov	eax, 0FFFFFFh
+   865 00000442 C3                      	ret
+   866                                  
+   867                                  device_read_sysmem:			; readout system memory array
+   868 00000443 E8D4FFFFFF              	call	linear_pointer
+   869 00000448 E964FCFFFF              	jmp	memory_read_on		; allow all variations partial word / multiword
+   870 0000044D C3                      	ret
+   871                                  
+   872                                  device_read_data16:			; readout 16-bit array
+   873 0000044E E8C9FFFFFF              	call	linear_pointer
+   874 00000453 0FB6C1                  	movzx	eax, cl
+   875 00000456 E8A5FBFFFF              	call	ixgo
+   876                                  
+   877                                  device_read16_action:
+   878 0000045B 1000                    	dw	device_read_data16_1-device_read16_action
+   879 0000045D 1000                    	dw	device_read_data16_1-device_read16_action
+   880 0000045F 1000                    	dw	device_read_data16_1-device_read16_action
+   881 00000461 1000                    	dw	device_read_data16_1-device_read16_action
+   882 00000463 1000                    	dw	device_read_data16_1-device_read16_action
+   883 00000465 1000                    	dw	device_read_data16_1-device_read16_action
+   884 00000467 1700                    	dw	device_read_data16_2-device_read16_action
+   885 00000469 2300                    	dw	device_read_data16_4-device_read16_action
+   886                                  
+   887                                  device_read_data16_1:			; readout 1 word of 16-bit array
+   888 0000046B 0FB70477                	movzx	eax, word ptr [edi+esi*2]
+   889 0000046F 86E0                    	xchg	ah, al
+   890 00000471 C3                      	ret
+   891                                  
+   892                                  device_read_data16_2:			; readout 2 words of 16-bit array
+   893 00000472 8B0477                  	mov	eax, dword ptr [edi+esi*2]	; 4.3.2.1
+   894 00000475 0FC8                    	bswap	eax				; 1.2.3.4
+   895 00000477 0FB7D8                  	movzx	ebx, ax				; 0.0.3.4
+   896 0000047A C1E810                  	shr	eax, 16				; 0.0.1.2
+   897 0000047D C3                      	ret
+   898                                  
+   899                                  device_read_data16_4:			; readout 4 words of 16-bit array
+   900 0000047E 8B0477                  	mov	eax, dword ptr [edi+esi*2]	; 4.3.2.1
+   901 00000481 0FC8                    	bswap	eax				; 1.2.3.4
+   902 00000483 6650                    	push	ax
+   903 00000485 C1E810                  	shr	eax, 16				; 0.0.1.2
+   904 00000488 89449D00                	mov	dword ptr [ebp+ebx*4], eax	;
+   905 0000048C 6658                    	pop	ax				; 0.0.3.4
+   906 0000048E 89449D04                	mov	dword ptr [ebp+ebx*4+4], eax	;
+   907                                  
+   908 00000492 8B447704                	mov	eax, dword ptr [edi+esi*2+4]	; 8.7.6.5
+   909 00000496 0FC8                    	bswap	eax				; 5.6.7.8
+   910 00000498 50                      	push	eax
+   911 00000499 C1E810                  	shr	eax, 16				; 0.0.5.6
+   912 0000049C 89449D08                	mov	dword ptr [ebp+ebx*4+8], eax	; 
+   913 000004A0 6658                    	pop	ax				; 0.0.7.8
+   914 000004A2 89449D08                	mov	dword ptr [ebp+ebx*4+8], eax	;
+   915 000004A6 C3                      	ret
+   916                                  
+   917                                  device_read_array24:			; readout from packed 24-bit array
+   918 000004A7 E870FFFFFF              	call	linear_pointer
+   919 000004AC E835010000              	call	device_array24_setpointer
+   920 000004B1 0FB6C1                  	movzx	eax, cl
+   921 000004B4 E847FBFFFF              	call	ixgo
+   922                                  
+   923                                  device_read24_action:
+   924 000004B9 1000                    	dw	device_read_array24_1-device_read24_action
+   925 000004BB 1000                    	dw	device_read_array24_1-device_read24_action
+   926 000004BD 1000                    	dw	device_read_array24_1-device_read24_action
+   927 000004BF 1000                    	dw	device_read_array24_1-device_read24_action
+   928 000004C1 1000                    	dw	device_read_array24_1-device_read24_action
+   929 000004C3 1000                    	dw	device_read_array24_1-device_read24_action
+   930 000004C5 2400                    	dw	device_read_array24_2-device_read24_action
+   931 000004C7 4900                    	dw	device_read_array24_4-device_read24_action
+   932                                  
+   933                                  device_read_array24_1:			; readout a wowrd of packed 24-bit array
+   934 000004C9 660FB60437              	movzx	ax, byte ptr [edi+esi]
+   935 000004CE C1E008                  	shl	eax, 8
+   936 000004D1 8A443701                	mov	al, byte ptr [edi+esi+1]
+   937 000004D5 C1E008                  	shl	eax, 8
+   938 000004D8 8A443702                	mov	al, byte ptr [edi+esi+2]
+   939 000004DC C3                      	ret
+   940                                  
+   941                                  device_read_array24_2:			; readout 2 words of packed 24-bit array
+   942 000004DD E8E7FFFFFF              	call	device_read_array24_1
+   943 000004E2 89449D00                	mov	dword ptr [ebp+ebx*4], eax
+   944 000004E6 81C603000000            	add	esi, 3
+   945 000004EC E8D8FFFFFF              	call	device_read_array24_1
+   946 000004F1 89449D04                	mov	dword ptr [ebp+ebx*4+4], eax
+   947 000004F5 81C603000000            	add	esi, 3
+   948 000004FB 81C302000000            	add	ebx, 2
+   949 00000501 C3                      	ret
+   950                                  
+   951                                  device_read_array24_4:			; readout 4 words of packed 24-bit array
+   952 00000502 E8D6FFFFFF              	call	device_read_array24_2
+   953 00000507 E8D1FFFFFF              	call	device_read_array24_2
+   954 0000050C C3                      	ret
+   955                                  
+   956                                  _device_write:				; store device arrays
+   957 0000050D A900008000              	test	eax, 0800000h		; the vilainous bank index?
+   958 00000512 7511                    	jnz	device_write_void
+   959                                  
+   960 00000514 E8F2FEFFFF              	call	device_array
+   961 00000519 A803                    	test	al, DATA16_or_FSYS24
+   962 0000051B 7409                    	jz	device_write_sysmem
+   963 0000051D A801                    	test	al, DATA16
+   964 0000051F 750F                    	jnz	device_write_data16
+   965 00000521 A802                    	test	al, FSYS24
+   966 00000523 7558                    	jnz	device_write_array24
+   967                                  
+   968                                  device_write_void:			; store in array of target system memory
+   969 00000525 C3                      	ret
+   970                                  
+   971                                  device_write_sysmem:
+   972 00000526 E8F1FEFFFF              	call	linear_pointer
+   973 0000052B E9FDFCFFFF              	jmp	memory_write_on		; allow all variations partial word / multiword
+   974                                  
+   975                                  device_write_data16:
+   976 00000530 E8E7FEFFFF              	call	linear_pointer
+   977 00000535 C1F808                  	sar	eax, 8
+   978 00000538 0FB6C1                  	movzx	eax, cl
+   979 0000053B E8C0FAFFFF              	call	ixgo
+   980                                  
+   981                                  device_write16_action:
+   982 00000540 1000                    	dw	device_write_data16_1-device_write16_action
+   983 00000542 1000                    	dw	device_write_data16_1-device_write16_action
+   984 00000544 1000                    	dw	device_write_data16_1-device_write16_action
+   985 00000546 1000                    	dw	device_write_data16_1-device_write16_action
+   986 00000548 1000                    	dw	device_write_data16_1-device_write16_action
+   987 0000054A 1000                    	dw	device_write_data16_1-device_write16_action
+   988 0000054C 2A00                    	dw	device_write_data16_2-device_write16_action
+   989 0000054E 1700                    	dw	device_write_data16_4-device_write16_action
+   990                                  
+   991                                  device_write_data16_1:			; store 16-bit array
+   992 00000550 86FB                    	xchg	bh, bl
+   993 00000552 66891C77                	mov	word ptr [edi+esi*2], bx
+   994 00000556 C3                      	ret
+   995                                  
+   996                                  
+   997                                  device_write_data16_4:			; store 4 words in 16-bit array
+   998 00000557 668B449D08              	mov	ax, word ptr [ebp+ebx*4+8]	;     5.6
+   999 0000055C C1E010                  	shl	eax, 16				; 5.6.0.0
+  1000 0000055F 668B449D0C              	mov	ax, word ptr [ebp+ebx*4+12]	; 5.6.7.8
+  1001 00000564 0FC8                    	bswap	eax				; 8.7.6.5
+  1002 00000566 89447704                	mov	dword ptr [edi+esi*2+4], eax
+  1003                                  
+  1004                                  device_write_data16_2:			; store 2 words in 16-bit array
+  1005 0000056A 668B449D00              	mov	ax, word ptr [ebp+ebx*4]
+  1006 0000056F C1E010                  	shl	eax, 16				; 1.2.0.0
+  1007 00000572 668B449D04              	mov	ax, word ptr [ebp+ebx*4+4]	; 1.2.3.4
+  1008 00000577 0FC8                    	bswap	eax				; 4.3.2.1
+  1009 00000579 890477                  	mov	dword ptr [edi+esi*2], eax	; 1.2.3.4
+  1010 0000057C C3                      	ret
+  1011                                  
+  1012                                  device_write_array24:			; store 24-bit packed array
+  1013 0000057D E89AFEFFFF              	call	linear_pointer
+  1014 00000582 E85F000000              	call	device_array24_setpointer
+  1015 00000587 0FB6C1                  	movzx	eax, cl
+  1016 0000058A E871FAFFFF              	call	ixgo
+  1017                                  
+  1018                                  device_write24_action:
+  1019 0000058F 1000                    	dw	device_write_array24_1-device_write24_action
+  1020 00000591 1000                    	dw	device_write_array24_1-device_write24_action
+  1021 00000593 1000                    	dw	device_write_array24_1-device_write24_action
+  1022 00000595 1000                    	dw	device_write_array24_1-device_write24_action
+  1023 00000597 1000                    	dw	device_write_array24_1-device_write24_action
+  1024 00000599 1000                    	dw	device_write_array24_1-device_write24_action
+  1025 0000059B 2700                    	dw	device_write_array24_2-device_write24_action
+  1026 0000059D 4C00                    	dw	device_write_array24_4-device_write24_action
+  1027                                  
+  1028                                  device_write_array24_1:			; store 1 word in packed 24-bit array
+  1029 0000059F 89D8                    	mov	eax, ebx
+  1030                                  device_write_array24_x:
+  1031 000005A1 C1C010                  	rol	eax, 16
+  1032 000005A4 880437                  	mov	byte ptr [edi+esi], al
+  1033 000005A7 C1C008                  	rol	eax, 8
+  1034 000005AA 88443701                	mov	byte ptr [edi+esi+1], al
+  1035 000005AE C1C008                  	rol	eax, 8
+  1036 000005B1 88443702                	mov	byte ptr [edi+esi+2], al
+  1037 000005B5 C3                      	ret
+  1038                                  
+  1039                                  device_write_array24_2:			; store 2 words in packed 24-bit array
+  1040 000005B6 8B449D00                	mov	eax, [ebp+ebx*4]
+  1041 000005BA E8E2FFFFFF              	call	device_write_array24_x
+  1042 000005BF 81C603000000            	add	esi, 3
+  1043 000005C5 8B449D04                	mov	eax, [ebp+ebx*4+4]
+  1044 000005C9 E8D3FFFFFF              	call	device_write_array24_x
+  1045 000005CE 81C603000000            	add	esi, 3
+  1046 000005D4 81C302000000            	add	ebx, 2
+  1047 000005DA C3                      	ret
+  1048                                  
+  1049                                  device_write_array24_4:			; store 4 words in packed 24-bit array
+  1050 000005DB E8D6FFFFFF              	call	device_write_array24_2
+  1051 000005E0 E8D1FFFFFF              	call	device_write_array24_2
+  1052 000005E5 C3                      	ret
+  1053                                  
+  1054                                  device_array24_setpointer:
+  1055 000005E6 89F0                    	mov	eax, esi			; think of a number
+  1056 000005E8 D1E0                    	shl	eax, 1				; double it
+  1057 000005EA 01C6                    	add	esi, eax			; add it to the number you first thought of...
+  1058 000005EC C3                      	ret
+  1059                                  end
+  1060                                  
