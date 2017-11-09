@@ -27,30 +27,51 @@
 #define	TIME_UPDATE	1
 #define	LOCKSTEP	2
 #define	BREAKPOINT	4
+#define ROM_PAGE	&memory.p4k[0].w[0]
 
-static word             *breakpoint;
+static word		*breakpoint;
 static int		 indication;
-
+int			 trace, trace1, trace2, trace3;
 
 #ifndef	X86_MSW
 static struct pollfd	 attention = { 0, POLLIN } ;
 #endif
 
 static long long	 start_time;
-static long		 u[2];
+static long long	 u;
 #ifndef	X86_MSW
 static struct timeval	 time1;
 #endif
 
-extern int               iselect;
-extern word             *apc;
-extern page             *b0p;
-extern unsigned int      psr;
-extern unsigned int	*register_set;
-extern unsigned int     _register[];
-extern unsigned int      base[];
-extern system_memory     memory;
-extern device            devices[];
+extern system_memory	 memory;
+
+int              	 iselect = 128;
+word		    	*apc = ROM_PAGE;
+page            	*b0p  = memory.p4k;
+unsigned int		 b0_name;
+unsigned int    	 psr = 0x00800000;
+unsigned int    	 _register[256+24]
+			= { 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+			    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
+
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a,
+                            0x00a5a5a5, 0x005a5a5a } ;
+unsigned int		*register_set = _register+128;
+unsigned int     	 base[192];
+// system_memory    	 memory;
+device           	 devices[64];
 
 extern word              memory_read(int ea);
 extern int               bus_read(int device, int pointer);
@@ -137,19 +158,19 @@ int main(int argc, char *argv[])
 
    #ifdef X86_MSW
 
-   x = _beginthread(async, 0, NULL);
-   if (x < 0) printf("async thread start %d %d\n", x, errno);
-   else       printf("async thread ID %x\n", x);
+   _x = _beginthread(async, 0, NULL);
+   if (_x < 0) printf("async thread start %d %d\n", _x, errno);
+   else       printf("async thread ID %x\n", _x);
 
    #else
 
-   x = pthread_attr_init(&asyncb);
+   _x = pthread_attr_init(&asyncb);
 
-   if (x < 0) printf("threadcbinit %d e %d\n", x, errno);
+   if (_x < 0) printf("threadcbinit %d e %d\n", _x, errno);
    else
    {
-      x = pthread_create(&asyncid, &asyncb, &emulate, NULL);
-      if (x < 0) printf("async thread start %d %d\n", x, errno);
+      _x = pthread_create(&asyncid, &asyncb, &emulate, NULL);
+      if (_x < 0) printf("async thread start %d %d\n", _x, errno);
       else       printf("async thread ID %p\n", asyncid);
    }
 
@@ -162,11 +183,11 @@ int main(int argc, char *argv[])
    for (;;)
    {
       #ifdef X86_MSW
-      x = _kbhit(1);
+      _x = _kbhit(1);
       #else
-      x = poll(&attention, 1, 1000);
+      _x = poll(&attention, 1, 1000);
 
-      if (x < 0)
+      if (_x < 0)
       {
          printf("problem with input request %d. exit emulator\n", errno);
          break;
@@ -174,7 +195,7 @@ int main(int argc, char *argv[])
       else
       #endif
 
-      if (x)
+      if (_x)
       {
          flag['s'-'a'] = 1;
          putchar('>');
@@ -198,10 +219,10 @@ int main(int argc, char *argv[])
 
       #ifdef X86_MSW
       Sleep(1000);
-      *((long long *) u) = GetTickCount64();
+      u = GetTickCount64();
       #else
       gettimeofday(&time1, NULL);
-      *((long long *) u) = time1.tv_sec * 1000 + time1.tv_usec / 1000;
+      u = time1.tv_sec * 1000 + time1.tv_usec / 1000;
       #endif
 
       indication |= TIME_UPDATE;
@@ -212,102 +233,125 @@ int main(int argc, char *argv[])
 
 void *emulate()	/* thread start */
 {
+   unsigned int		 transitionl,
+			 transitionu;
+
    printf("emulation start\n");
 
    for (;;)
    {
+      if (flag['s'-'a']) indication |= LOCKSTEP;
+      if (flag['e'-'a']) printf("[%x %p %x %p]\n",
+                                 indication, register_set, psr, apc);
       #ifdef X86_MSW
       __masm {
         engage:
+		push	eax
+		push	ebx
+		push	ecx
+		push	edx
+		push	ebp
+		push	esi
+		push	edi
+
                 mov     ebp, dword ptr [register_set]
                 mov     edx, dword ptr [apc]
+
         next:   mov     eax, dword ptr [ed]
                 add     edx, 4
                 bswap   eax
                 call    execute
                 test    word ptr [indication], TIME_UPDATE|LOCKSTEP|BREAKPOINT
                 jz      next
-                test    word ptr [indication], TIME_UPDATE
-                jz      breakpoint?
 
-                mov     ebx, dword ptr [u]
-                mov     eax, dword ptr [u+4]
-                bswap   ebx
-                shl     eax, 8
-                mov     al, bl
-                xor     bl, bl
-                mov     dword ptr [_register+4*DAYCLOCK], ebx
-                bswap   eax
-                xor     al, al
-                mov     dword ptr [_register+4*DAYCLOCK_U], eal
-		and	word ptr [indication], -1^TIME_UPDATE;
-        
-        breakpoint?:
-                test    word ptr [indication], BREAKPOINT
-                jz      console?
-                cmp     edx, dword ptr [breakpoint]
-                jnz     console?
-		mov	byte ptr [flag+'s'-'a'], 1
-                or      word pointer [indication], LOCKSTEP
+		mov	dword ptr [apc], edx
+		mov	dword ptr [register_set], ebp
 
-        console?:
-                test    word pointer [indication], LOCKSTEP
-                jz      next
-                mov     dword ptr [register_set], ebp
-                mov     dword ptr [_apc], edx
+		pop	edi
+		pop	esi
+		pop	ebp
+		pop	edx
+		pop	ecx
+		pop	ebx
+		pop	eax
       }
       #else
       __asm__
       { 
 	engage:
+;		OSX PIC
+;		reference no extern variables in asm block
+;		compiler injects instructions which use an index register
+;		it was ebx but could change any compiler release
+;		if things go wrong gcc -S tipt.c
+
+		push	ebp
+
+;		compiler does not allow pop esi
+;		so don't push it
+
+		push	edi
+		push	edx
+		push	ecx
+		push	ebx
+		push	eax
+
+;		compiler does not allow pop esi
+;		so don't push it
+
 		mov	ebp, register_set
 		mov	edx, apc
 
 	next:	mov	eax, [edx]
 		add	edx, 4
 		bswap	eax
-
 		call	execute
-	jmp	away
 		test	indication, TIME_UPDATE|LOCKSTEP|BREAKPOINT
 		jz	next
 
-		test	indication, TIME_UPDATE
-		jz	ifbreakpoint
-		
-		mov	ebx, u[0]
-		mov	eax, u[1]
-		bswap	ebx
-		shl	eax, 8
-		mov	al, bl
-		xor	bl, bl
-		mov	_register[DAYCLOCK], ebx
-		bswap	eax
-		xor	al, al
-		mov	_register[DAYCLOCK_U], ebx
+		mov	dword ptr [trace3], ebp
 
-	ifbreakpoint:
-                xor     bl, bl
-		test	indication, BREAKPOINT
-		jz	ifconsole
-		cmp	edx, breakpoint
-		jnz	ifconsole
-		mov	flag['s'-'a'], 1
-
-	ifconsole:
-		test	flag['s'-'a'], 1
-		jz	no_lockstep
-		or	indication, LOCKSTEP
-	no_lockstep:
-		test	indication, LOCKSTEP
-		jz	next
-away:
 		mov	register_set, ebp
 		mov	apc, edx
+
+		pop	eax
+		pop	ebx
+		pop	ecx
+		pop	edx
+		pop	edi
+
+;		compiler does not allow pop esi
+
+		pop	ebp
       }
       #endif
 
-      printf("@\n");
+      if (flag['e'-'a'])
+      printf("[0:%8.8x 1:%8.8x 2:%8.8x 3:%8.8x]\n",
+              trace, trace1, trace2, trace3);
+
+      if (indication & TIME_UPDATE)
+      {
+         transitionl = u & 0x00FFFFFF;
+         transitionu = (u >> 24) & 0x00FFFFFF;
+
+         _register[DAYCLOCK] = u & 0x00FFFFFF;
+         _register[DAYCLOCK_U] = (u >> 24) & 0x00FFFFFF;
+         indication &= -1 ^ TIME_UPDATE;
+         if (indication == 0) continue;
+      }
+
+      if (indication & BREAKPOINT)
+      {
+         if (apc == breakpoint)
+         {
+            flag['s'-'a'] = 1;
+            indication |= LOCKSTEP;
+         }
+      }
+
+      if ((indication & LOCKSTEP) == 0) continue;
+
       statement();
       putchar('>');
       fflush(stdout);
@@ -345,6 +389,7 @@ static void action(char request[])
    switch(symbol)
    {
       case 's':
+	 indication |= LOCKSTEP;
          flag['s'-'a'] = 1;
          break;
 
@@ -641,7 +686,7 @@ static void statement()
    int                   index2;
 
    instruction_display(apc - 1, 1, flag['l'-'a']);
-   printf("%6.6x %8.8x\n", psr, apc - memory.array);
+   printf("%6.6x %8.8x\n", psr, (word *) apc - memory.array);
    instruction_display(apc, 6, flag['l'-'a']);
 
    while (index < (iselect | 24))
@@ -691,19 +736,10 @@ static int msw2i(msw w)
 
 static void print_register_row(int index)
 {
-   #if 1
    int           xx = 8;
 
+   if (flag['e'-'a']) printf("[%p]", _register);
    printf("%2.2x:", index);
    while ((xx--) && (index < 256)) printf(" %6.6x", _register[index++]);
-
-   #else
-   printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x",
-           index,
-           _register[index],   _register[index+1],
-           _register[index+2], _register[index+3],
-           _register[index+4], _register[index+5],
-           _register[index+6], _register[index+7]);
-   #endif
 }
 

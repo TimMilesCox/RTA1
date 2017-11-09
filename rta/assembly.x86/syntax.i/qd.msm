@@ -1,41 +1,214 @@
-_sr:	ret
-_sk:	ret
-_sx:	mov	ebx, dword ptr [ebp+X]
+
+_jdz:	mov	ebx, dword ptr [ebp+A]
+	or	ebx, dword ptr [ebp+B]
+	jnz	_jdz_
+	jmp	_j
+_jdz_	ret
+
+_sr:	cmp	cl, I
+	jz	_inA
+	cmp	cl, XI
+	jz	_on
+
+	mov	ebx, dword ptr [ebp+R]
 	jmp	_operand_write
+
+_sk:	cmp	cl, I
+	jz	_inB
+	cmp	cl, XI
+	jz	_off
+
+	mov	ebx, dword ptr [ebp+K]
+	jmp	_operand_write
+
+_sx:	cmp	cl, I
+	jz	_outA
+	cmp	cl, XI
+	jz	_rsr
+
+	mov	ebx, dword ptr [ebp+X]
+	jmp	_operand_write
+
+_sy:	cmp	cl, I
+	jz	_outB
+	cmp	cl, XI
+	jz	_wsr
+
+	mov	ebx, dword ptr [ebp+Y]
+	jmp	_operand_write;
+
+_sa:	cmp	cl, I
+	jz	_reload
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [ebp+A]
+	jmp	_operand_write
+
+_sb:	cmp	cl, I
+	jz	_emulator_cool
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [ebp+B]
+	jmp	_operand_write
+
+_z:	cmp	cl, I
+	jz	_sabr
+	cmp	cl, XI
+	jz	_lret
+
+	mov	ebx, 0
+	jmp	_operand_write
+
+_pop:	cmp	cl, I
+	jz	escape
+	cmp	cl, XI
+	jz	_fret
+
+	mov	ebx, dword ptr [ebp+S_P]
+	mov	ebx, dword ptr [ebx*4+__register]
+	add	dword ptr [ebp+S_P], 1
+	jmp	_operand_write
+
+_lr:	call	_operand_read
+	mov	dword ptr [ebp+R], eax
 	ret
-_sy:	ret
-_sa:	ret
-_sb:	ret
-_z:	ret
-_pop:	ret
-_lr:	ret
-_lk:	ret
+
+_lk:	call	_operand_read
+	mov	dword ptr [ebp+K], eax
+	ret
 _lx:	call	_operand_read
 	mov	dword ptr [ebp+X], eax
 	ret
-_ly:	ret
-_la:	ret
-_lb:	ret
-_tz:	ret
-_tp:	ret
-_ax:	ret
-_ay:	ret
-_or:	ret
-_orB:	ret
-_and:	ret
-_andB:	ret
-_xor:	ret
-_xorB:	ret
-_aa:	ret
-_ab:	ret
-_ana:	ret
-_anb:	ret
+
+_ly:	call	_operand_read
+	mov	dword ptr [ebp+Y], eax
+	ret
+
+_la:	call	_operand_read
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_lb:	call	_operand_read
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_tz:	cmp	cl, I
+	jz	escape
+	cmp	cl, XI
+	jz	_ii
+
+	call	_operand_read
+	test	eax, 00FFFFFFh
+	jnz	_tz_
+	add	edx, 4
+_tz_:	ret
+
+_tp:	cmp	cl, I
+	jz	_jdz
+	cmp	cl, XI
+	jz	_ir
+
+	call	_operand_read
+	test	eax, 00800000h
+	jnz	_tp_
+	add	edx, 4
+_tp_:	ret
+
+_ax:	call	_operand_read
+	add	eax, dword ptr [ebp+X]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+X], eax
+	ret
+
+_ay:	call	_operand_read
+	add	eax, dword ptr [ebp+Y]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+Y], eax
+	ret
+
+_or:	call	_operand_read
+	or	dword ptr [ebp+A], eax
+	ret
+
+_orB:	call	_operand_read
+	or	dword ptr [ebp+B], eax
+	ret
+
+_and:	call	_operand_read
+	and	dword ptr [ebp+A], eax
+	ret
+
+_andB:	call	_operand_read
+	and	dword ptr [ebp+B], eax
+	ret
+
+_xor:	call	_operand_read
+	xor	dword ptr [ebp+A], eax
+	ret
+
+_xorB:	call	_operand_read
+	xor	dword ptr [ebp+B], eax
+	ret
+
+_aa:	call	_operand_read
+	add	eax, dword ptr [ebp+A]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_ab:	call	_operand_read
+	add	eax, dword ptr [ebp+B]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_ana:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+	add	eax, dword ptr [ebp+A]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_anb:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+	add	eax, dword ptr [ebp+B]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+B], eax
+	ret
+
 _m:	ret
 _mf:	ret
 _d:	ret
-_push:	ret
+_push:	call	_operand_read
+	mov	ebx, dword ptr [ebp+S_P]
+	add	ebx, -1
+	mov	dword ptr [ebp+S_P], ebx
+	mov	dword ptr [ebx*4+__register], ebx
+	ret
 
-_sar:	ret
+_sar:	mov	cx, ax
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+A], eax
+	ret
+
 _sbr:	ret
 _dsr:	ret
 _jdr:	ret
@@ -58,7 +231,7 @@ _jao:	ret
 _jpa:	ret
 _jpb:	ret
 _j:	mov	edx, dword ptr [_b0p]
-	shl	edx, 12
+	shl	eax, 2
 	add	edx, eax
 	ret
 _jpo:	ret

@@ -46,16 +46,16 @@
 system_memory			  memory;
 #define ROM_PAGE		 &memory.p4k[0].w[0];
 
-int		 psr = 0x00800000;
-word		*apc = ROM_PAGE;
+//	int		 psr = 0x00800000;
+//	word		*apc = ROM_PAGE;
 
-int		 iselect = 128;
+//	int		 iselect = 128;
 
-int		 b0_name;
-page		*b0p = memory.p4k;
+//	int		 b0_name;
+//	page		*b0p = memory.p4k;
 
-int		 _register[256+24];
-unsigned int	*register_set = _register+128;
+//	int		 _register[256+24];
+//	unsigned int	*register_set = _register+128;
 
 			/*********************************************
 				The IO ports are given the name
