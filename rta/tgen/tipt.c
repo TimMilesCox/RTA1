@@ -309,8 +309,6 @@ void *emulate()	/* thread start */
 		test	indication, TIME_UPDATE|LOCKSTEP|BREAKPOINT
 		jz	next
 
-		mov	dword ptr [trace3], ebp
-
 		mov	register_set, ebp
 		mov	apc, edx
 
