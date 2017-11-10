@@ -1,0 +1,245 @@
+
+
+_ax:	call	_operand_read
+	add	eax, dword ptr [ebp+X]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+X], eax
+	ret
+
+_ay:	call	_operand_read
+	add	eax, dword ptr [ebp+Y]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+Y], eax
+	ret
+
+_or:	call	_operand_read
+	or	dword ptr [ebp+A], eax
+	ret
+
+_orB:	call	_operand_read
+	or	dword ptr [ebp+B], eax
+	ret
+
+_and:	call	_operand_read
+	and	dword ptr [ebp+A], eax
+	ret
+
+_andB:	call	_operand_read
+	and	dword ptr [ebp+B], eax
+	ret
+
+_xor:	call	_operand_read
+	xor	dword ptr [ebp+A], eax
+	ret
+
+_xorB:	call	_operand_read
+	xor	dword ptr [ebp+B], eax
+	ret
+
+_aa:	call	_operand_read
+	add	eax, dword ptr [ebp+A]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_ab:	call	_operand_read
+	add	eax, dword ptr [ebp+B]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_ana:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+	add	eax, dword ptr [ebp+A]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_anb:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+	add	eax, dword ptr [ebp+B]
+	rol	eax, 8
+	and	al, 1
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_m:	ret
+_mf:	ret
+_d:	ret
+
+shift_nowhere
+	xor	ebx, ebx
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+_sar:	mov	cx, ax			; platform shift radix is 32
+	mov	eax, dword ptr [ebp+A]	; that does all that is required
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sbr:	mov	cx, ax
+	mov	eax, dword ptr [ebp+B]
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_dsr:	add	eax, -48, 		; any more than 47 produces zero
+	jc	shift_nowhere
+	add	eax, 48			; restore the shift count
+	mov	cx, ax			; set aside the shift count
+	add	cx, -24			; function shift count -24
+	jnc	_dsr_			; operate shift count original
+
+					; way 2: high order word becomes zero
+					; operate shift count minus 24
+	mov	eax, dword ptr [ebp+A]	; low-order word contains only 
+	mov	dword ptr [ebp+A], 0	; bits from high-order word
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+B], eax
+	ret
+					; way 3: shift between 2 words
+_dsr_:	mov	cx, 32			; isolate bits to shift a->b at ebx high order
+	sub	cx, ax			; shift left 24 - target shift count + 8
+	mov	ebx, dword ptr [ebp+A]	; read high_order target word
+	shl	ebx, cl			; drop high-order result word bits for a moment
+	mov	cx, ax			; ready target shift count
+	mov	eax, dword ptr [ebp+B]	; read low-order target word
+	shl	eax, 8			; align with ebx at high order positions
+	shr	eax, cl			; shift low-order target word target positions
+	or	ebx, eax		; combine with down-shifted bits into ebx
+	shr	ebx, 8			; reposition the final low-order result
+	mov	eax, dword ptr [ebp+A]	; retrieve high order input hopefully from x86 L1 cache
+	shr	eax, cl			; daringly rely on upper 8 bits never written nonzero
+	mov	dword ptr [ebp+B], ebx	; routines which generate an inter-word carry
+	mov	dword ptr [ebp+A], eax	; must make sure modeled registers are written 31..24 clear
+	ret				; initial state was static memory zero
+_sal:	mov	cx, ax			; shift radix x86 is 32, fine for here
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, cl
+	and	eax, 00FFFFFFh		; write back to registers only 00000000 thru 00FFFFFF
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sbl:	mov	cx, ax
+	mov	eax, dword ptr [ebp+B]
+	shl	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_dsl:	add	eax, -48
+	jc	shift_nowhere		; the result is 48 zeros
+	add	eax, 48
+	mov	cx, ax
+	add	cx, -24
+	jnc	_dsl_			; the result is over 24 bits in size
+					; the result is under 24 bits in size
+	mov	eax, dword ptr [ebp+B]
+	mov	dword ptr [ebp+B], 0
+	shl	eax, cl
+	and	eax, 00FFFFFFh		; write back to registers only 00000000 thru 00FFFFFF
+	mov	eax, dword ptr [ebp+A]
+	ret
+
+_dsl_:	mov	cx, 24			; shift count < 24, shift up to 23 bits a <- b
+	sub	cx, ax
+	mov	ebx, dword ptr [ebp+B]
+	shr	ebx, cl			; isolate the bits shifting leftwards into a
+	mov	cx, ax
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, cl
+	or	eax, ebx
+	and	eax, 00FFFFFFh
+	mov	ebx, dword ptr [ebp+B]
+	shl	ebx, cl
+	and	ebx, 00FFFFFFh
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+	
+
+_rar:	mov	ebx, dword ptr [ebp+A]
+	call	rrr
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+_rbr:	mov	ebx, dword ptr [ebp+B]
+	call	rrr
+	mov	dword ptr [ebp+D], ebx
+	ret
+
+_rrr:	and	eax, 31
+	mov	cx, ax
+	add	xx, -24
+	jz	_rrz
+	jc	_rrr_
+	mov	cx, ax
+_rrr_:	mov	ax, cx		; the net shift count must be in ax
+	shl	ecx, 16		; hide the rotate count
+	mov	cx, 32		; replace it with 24+8 minus itself
+	sub	cx, ax
+	mov	eax, ebx	; move low-order bits to high-order << 8
+	shl	eax, cl		; 
+	shr	ecx, 16		; retrieve the rotate count
+	shr	ebx, cl		; simple shift right
+	shr	eax, 8		; reposition the new high-order bits
+	or	ebx, eax
+_rrz:	ret
+	
+
+dr_range:			; inputs swapped if necessary
+	and	eax, 63		; and net shift count got below 24
+	mov	cx, ax
+	add	cx, -48
+	jc	dr_round	; rotate 48 = don't rotate 
+	mov	cx, ax
+dr_round
+	add	ax, -24		; rotate a lot means swap and rotate less
+	mov	eax, dword ptr [ebp+A]
+	mov	ebx, dword ptr [ebp+B]
+	jnc	_drr_noswitch	; cx is < 24 and eax:ebx are in order
+	add	cx, -24		; change count and reorder inputs
+	mov	eax, ebx
+	mov	ebx, dword ptr [ebp+A]
+_drr_noswitch
+	ret
+
+_drr:	call	dr_range
+	ror	ebx, 
+
+_ral:	ret
+_rbl:	ret
+_drl:	ret
+_saa:	ret
+_sba:	ret
+_dsa:	ret
+
+_n:	ret
+_inc:	ret
+_dec:	ret
+_popA:	ret
+_src:	ret
+_slc:	ret
+_lsc:	ret
+_da:	ret
+_dan:	ret
+_dlsc:	ret
+
