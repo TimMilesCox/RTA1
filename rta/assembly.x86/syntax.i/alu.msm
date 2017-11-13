@@ -37,7 +37,11 @@ _xorB:	call	_operand_read
 	ret
 
 _aa:	call	_operand_read
-	add	eax, dword ptr [ebp+A]
+	jmp	_aa_
+_ana:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+_aa_:	add	eax, dword ptr [ebp+A]
 	rol	eax, 8
 	and	al, 1
 	or	byte ptr [_psr], al
@@ -46,29 +50,11 @@ _aa:	call	_operand_read
 	ret
 
 _ab:	call	_operand_read
-	add	eax, dword ptr [ebp+B]
-	rol	eax, 8
-	and	al, 1
-	or	byte ptr [_psr], al
-	shr	eax, 8
-	mov	dword ptr [ebp+B], eax
-	ret
-
-_ana:	call	_operand_read
-	xor	eax, 00FFFFFFh
-	add	eax, 1
-	add	eax, dword ptr [ebp+A]
-	rol	eax, 8
-	and	al, 1
-	or	byte ptr [_psr], al
-	shr	eax, 8
-	mov	dword ptr [ebp+A], eax
-	ret
-
+	jmp	_ab_
 _anb:	call	_operand_read
 	xor	eax, 00FFFFFFh
 	add	eax, 1
-	add	eax, dword ptr [ebp+B]
+_ab_:	add	eax, dword ptr [ebp+B]
 	rol	eax, 8
 	and	al, 1
 	or	byte ptr [_psr], al
@@ -86,29 +72,29 @@ shift_nowhere
 	mov	dword ptr [ebp+A], ebx
 	ret
 
-_sar:	mov	cx, ax			; platform shift radix is 32
+_sar:	mov	cl, al			; platform shift radix is 32
 	mov	eax, dword ptr [ebp+A]	; that does all that is required
 	shr	eax, cl
 	and	eax, 00FFFFFFh
 	mov	dword ptr [ebp+A], eax
 	ret
 
-_sbr:	mov	cx, ax
+_sbr:	mov	cl, al
 	mov	eax, dword ptr [ebp+B]
 	shr	eax, cl
 	and	eax, 00FFFFFFh
 	mov	dword ptr [ebp+B], eax
 	ret
 
-_dsr:	add	eax, -48, 		; any more than 47 produces zero
+_dsr:	mov	cl, al
+	add	eax, -48, 		; any more than 47 produces zero
 	jc	shift_nowhere
-	add	eax, 48			; restore the shift count
-	mov	cx, ax			; set aside the shift count
-	add	cx, -24			; function shift count -24
+	mov	ch, al			; set aside the shift count
+	add	cl, -24			; function shift count -24
 	jnc	_dsr_			; operate shift count original
 
 					; way 2: high order word becomes zero
-					; operate shift count minus 24
+	mov	cl, ch			; operate shift count minus 24
 	mov	eax, dword ptr [ebp+A]	; low-order word contains only 
 	mov	dword ptr [ebp+A], 0	; bits from high-order word
 	shr	eax, cl
@@ -116,11 +102,11 @@ _dsr:	add	eax, -48, 		; any more than 47 produces zero
 	mov	dword ptr [ebp+B], eax
 	ret
 					; way 3: shift between 2 words
-_dsr_:	mov	cx, 32			; isolate bits to shift a->b at ebx high order
-	sub	cx, ax			; shift left 24 - target shift count + 8
+_dsr_:	xor	cl, 255			; turn the underflowed count to 32-count
+	add	cl, 9
 	mov	ebx, dword ptr [ebp+A]	; read high_order target word
 	shl	ebx, cl			; drop high-order result word bits for a moment
-	mov	cx, ax			; ready target shift count
+	mov	cl, ch			; ready target shift count
 	mov	eax, dword ptr [ebp+B]	; read low-order target word
 	shl	eax, 8			; align with ebx at high order positions
 	shr	eax, cl			; shift low-order target word target positions
@@ -131,27 +117,29 @@ _dsr_:	mov	cx, 32			; isolate bits to shift a->b at ebx high order
 	mov	dword ptr [ebp+B], ebx	; routines which generate an inter-word carry
 	mov	dword ptr [ebp+A], eax	; must make sure modeled registers are written 31..24 clear
 	ret				; initial state was static memory zero
-_sal:	mov	cx, ax			; shift radix x86 is 32, fine for here
+
+_sal:	mov	cl, al			; shift radix x86 is 32, fine for here
 	mov	eax, dword ptr [ebp+A]
 	shl	eax, cl
 	and	eax, 00FFFFFFh		; write back to registers only 00000000 thru 00FFFFFF
 	mov	dword ptr [ebp+A], eax
 	ret
 
-_sbl:	mov	cx, ax
+_sbl:	mov	cl, al
 	mov	eax, dword ptr [ebp+B]
 	shl	eax, cl
 	and	eax, 00FFFFFFh
 	mov	dword ptr [ebp+B], eax
 	ret
 
-_dsl:	add	eax, -48
+_dsl:	mov	cl, al
+	add	eax, -48
 	jc	shift_nowhere		; the result is 48 zeros
-	add	eax, 48
-	mov	cx, ax
-	add	cx, -24
+	mov	ch, cl
+	add	cl, -24
 	jnc	_dsl_			; the result is over 24 bits in size
 					; the result is under 24 bits in size
+	mov	cl, ch
 	mov	eax, dword ptr [ebp+B]
 	mov	dword ptr [ebp+B], 0
 	shl	eax, cl
@@ -159,11 +147,11 @@ _dsl:	add	eax, -48
 	mov	eax, dword ptr [ebp+A]
 	ret
 
-_dsl_:	mov	cx, 24			; shift count < 24, shift up to 23 bits a <- b
-	sub	cx, ax
+_dsl_:	xor	cl, 255			; change underflowed count to 32 - count
+	add	cl, 9			
 	mov	ebx, dword ptr [ebp+B]
 	shr	ebx, cl			; isolate the bits shifting leftwards into a
-	mov	cx, ax
+	mov	cl, ch
 	mov	eax, dword ptr [ebp+A]
 	shl	eax, cl
 	or	eax, ebx
@@ -177,57 +165,207 @@ _dsl_:	mov	cx, 24			; shift count < 24, shift up to 23 bits a <- b
 	
 
 _rar:	mov	ebx, dword ptr [ebp+A]
-	call	rrr
+	call	rr
 	mov	dword ptr [ebp+A], ebx
 	ret
 
 _rbr:	mov	ebx, dword ptr [ebp+B]
-	call	rrr
-	mov	dword ptr [ebp+D], ebx
+	call	rr
+	mov	dword ptr [ebp+B], ebx
 	ret
 
-_rrr:	and	eax, 31
-	mov	cx, ax
-	add	xx, -24
-	jz	_rrz
-	jc	_rrr_
-	mov	cx, ax
-_rrr_:	mov	ax, cx		; the net shift count must be in ax
-	shl	ecx, 16		; hide the rotate count
-	mov	cx, 32		; replace it with 24+8 minus itself
-	sub	cx, ax
-	mov	eax, ebx	; move low-order bits to high-order << 8
-	shl	eax, cl		; 
-	shr	ecx, 16		; retrieve the rotate count
-	shr	ebx, cl		; simple shift right
-	shr	eax, 8		; reposition the new high-order bits
-	or	ebx, eax
-_rrz:	ret
+_drr:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	drr
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+	%if	1
+rr:	shl	ebx, 8
+	test	al, 24		; bits 16:8 are self-cancelling
+	jpe	rr7
+	test	al, 16
+	jz	rr8		; 16 is off so 8 is on
+	rol	ebx, 8		; 8 left in 24-bit ring = 16 right
+	mov	bh, bl		; compress 32-bit ring to 24-bit
+	jmp	short rr7
+rr8:	mov	bl, bh		; extend 24-bit ring to 32-bit
+	ror	ebx, 8
+rr7:	and	cl, 7		; isolate remaining count bits
+	mov	bl, bh		; don't ask, just do it
+	ror	ebx, cl
+	shr	ebx, 8
+	ret
+
+rl:	shl	ebx, 8
+	test	al, 24		; bits 16:8 are self-cancelling
+	jpe	rl7
+	test	al, 16
+	jz	rl8		; 16 is off so 8 is on
+	mov	bl, bh		; extend 24-bit ring to 32-bit
+	ror	ebx, 8		; 8 right in 24-bit ring = 16 left
+	jmp	short rl7
+rl8:	rol	ebx, 8
+	mov	bh, bl		; compress 32-bit ring to 24-bit	
+rl7:	and	cl, 7
+	xor	bl, bl
+	rol	ebx, cl
+	or	bh, bl
+	shr	ebx, 8
+	ret
+
+drr:	shl	eax, 8
+	shr	ebx, 8
+
+	test	cl, 48		; bits 32:16 are self-cancelling
+	jpo	drr24		; rotate 48 = zero or 56 = 8 positions
+	test	cl, 8
+	jz	drr7
+	jmp	drr_cdrr8
+
+drr24:	xchg	eax, ebx	; rotate 24 right or left as you wish
+	test	cl, 24
+	jpe	drr24_32	; pattern is 100xxx or 011xxx
+	test	cl, 8		; pattern is 010xxx or 101xxx
+	jz	drrl8		; pattern is 010
+	xchg	eax, ebx	; swap back, pattern 101 = 40 right = 8 left 
+drrl8:	call	near drl8	; pattern is 010
+	jmp	short drr7 	; already rotated 24 right, now 8 left
+
+drr24_32:
+	jnz	drr7		; pattern is 011 = rotate 24. We did
+drr_cdrr8:
+	call	near drr8	; pattern is 100 = rotate 32
+drr7:	and	cl, 7
+	mov	bl, ah		; rotate low bits ebx 31:8 to eax high positions
+	mov	al, bh		; rotate low bits eax 31:8 to ebx high positions
+	ror	eax, cl
+	ror	ebx, cl
+	shr	eax, 8
+	shr	ebx, 8
+	ret
+
+drr8:   mov     bh, al          ; cross 8 bits from one 32-bit ring to another
+        mov     ah, bl
+        ror     eax, 8
+        ror     ebx, 8
+        ret
+
+drl8:   rol     eax, 8
+        rol     ebx, 8
+        mov     ah, bl          ; cross 8 bits from one 32-bit ring to another
+        mov     bh, al
+        ret
+
+drl:	shl	eax, 8
+	shl	ebx, 8
+	test	cl, 48		; values 32:16 cancel each other
+	jpo	drl24
+	test	cl, 8
+	jz	drl7
+	jmp	short drl_cdrl8
+
+drl24:	xchg	eax, ebx
+	test	cl, 24
+	jpe	drl24_32	; pattern is 011xxx or 100xxx
+	test	cl, 8		; pattern is 010xxx or 101xxx
+	jz	drlr8		; pattern is 010 = 16 left = 8 right
+	xchg	eax, ebx	; swap back, pattern = 101 = 40 left = 8 right
+drlr8:	call	drr8
+	jmp	short drl7
+
+drl24_32:
+	jnz	drl7		; pattern is 011 = rotate24. We did
+drl_cdrl8:			; pattern = 100xxx or 001xxx, rotate 8 more
+	call	drl8
+drl7:	and	cl, 7		; rotate positions 0..7
+	xor	al, al
+	xor	bl, bl
+	rol	eax, cl
+	rol	ebx, cl
+	or	ah, bl
+	or	bh, al
+	shr	eax, 8
+	shr	ebx, 8
 	
 
-dr_range:			; inputs swapped if necessary
-	and	eax, 63		; and net shift count got below 24
-	mov	cx, ax
-	add	cx, -48
-	jc	dr_round	; rotate 48 = don't rotate 
-	mov	cx, ax
-dr_round
-	add	ax, -24		; rotate a lot means swap and rotate less
-	mov	eax, dword ptr [ebp+A]
-	mov	ebx, dword ptr [ebp+B]
-	jnc	_drr_noswitch	; cx is < 24 and eax:ebx are in order
-	add	cx, -24		; change count and reorder inputs
-	mov	eax, ebx
-	mov	ebx, dword ptr [ebp+A]
-_drr_noswitch
+	%else
+
+rr:	shl	ebx, 8
+	mov	cl, al
+rrmore:	mov	bl, bh
+	add	cl, -8
+	jz	rrx
+	jnc	rrlast
+	ror	ebx, 8
+	jmp	rrmore
+rrlast:	add	cl, 8
+	ror	ebx, cl
+rrx:	shr	ebx, 8
 	ret
 
-_drr:	call	dr_range
-	ror	ebx, 
 
-_ral:	ret
-_rbl:	ret
-_drl:	ret
+
+rl:	shl	ebx, 8
+	mov	cl, al
+rlmore:	add	cl, -8
+	jz	rlx
+	jnc	rmlast
+	rol	ebx, 8
+	mov	bh, bl
+	jmp	rlmore
+rmlast:	add	cl, 8
+	mov	bl, 0
+	rol	ebx, cl
+	or	bh, bl
+rlx:	shr	ebx, 8
+	ret
+
+drl:	shl	eax, 8
+	shl	ebx, 8
+drlmore:
+	add	cl, -8
+	jz	drlx
+	jnc	drllast
+	rol	eax, 8
+	rol	ebx, 8
+	mov	ah, bl
+	mov	bh, al
+	jmp	drlmore
+drllast:
+	add	cl, 8
+	mov	al, 0
+	mov	bl, 0
+	rol	eax, cl
+	rol	ebx, cl
+	or	ah, bl
+	or	bh, al
+drlx:	shr	eax, 8
+	shr	ebx, 8
+	ret
+
+	%endif
+
+_ral:	mov	ebx, dword ptr [ebp+A]
+	call	rl
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+_rbl:	mov	ebx, dword ptr [ebp+B]
+	call	rl
+	mov	dword ptr [ebp+B], ebx
+	ret	
+
+_drl:	mov	cl, al
+	mov	eax, dword ptr [ebp+A]
+	mov	ebx, dword ptr [ebp+B]
+	call	drl
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
 _saa:	ret
 _sba:	ret
 _dsa:	ret
