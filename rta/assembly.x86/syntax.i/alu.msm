@@ -373,7 +373,7 @@ _inc_register:
 	mov	ebx, [eax*4+__register]
 	add	ebx, 1
 	and	ebx, 00FFFFFFh
-	jmp	operand_write
+	jmp	_operand_write
 
 _dec:	test	eax, 00FFFF00h
 	jz	_dec_register
@@ -405,13 +405,14 @@ _popA_register:
 	and	bl, 1			; write carry to PSR
 	or	byte ptr [_psr], bl
 	shr	ebx, 8
-	jmp	operand_write
+	jmp	_operand_write
 
 ring25_r:
 	shl	ebx, 8
 	mov	bl, byte ptr [_psr]
 	ror	ebx, 1
 	shr	bl, 7
+	and	byte ptr [_psr], 254
 	or	byte ptr [_psr], bl
 	shr	ebx, 8
 	ret
@@ -419,9 +420,10 @@ ring25_r:
 ring25_l:
 	shl	ebx, 8
 	mov	bl, byte ptr [_psr]
-	shl	7, bl
+	shl	bl, 7
 	rol	ebx, 1
 	and	bl, 1
+	and	byte ptr [_psr], 254
 	or	byte ptr [_psr], bl
 	shr	ebx, 8
 	ret
@@ -438,7 +440,7 @@ _src_:	ret
 _src_register:
 	mov	ebx, [eax*4+__register]
 	call	ring25_r
-	jmp	operand_write
+	jmp	_operand_write
 
 _slc:	test	eax, 00FFFF00h
 	jz	_slc_register
@@ -452,10 +454,80 @@ _slc_:	ret
 _slc_register:
 	mov	ebx, [eax*4+__register]
 	call	ring25_l
-	jmp	operand_write
+	jmp	_operand_write
 
-_lsc:	ret
-_da:	ret
-_dan:	ret
-_dlsc:	ret
+scale:	mov	cl, 22
+	rol	eax, 9
+	and	al, 1
+	mov	ch, al
+	and	ah, 254
+	or	ah, al
+scale_for:
+	rol	eax, 1
+scale_again
+	and	al, 1
+	or	ah, al
+	xor	al, ch
+	jnz	scaled
+	add	cl, -1
+	jc	scale_for
+scaled:	mov	al, ah
+	ror	eax, 9		; triggering bit -> sign position
+	ret
 
+_lsc:	call	_operand_read
+	call	scaled
+	xor	cl, 255
+	add	cl, 24
+	movzx	ebx, cl
+	mov	dword ptr [ebp+A], eax
+	mov	dword ptr [ebp+B], ebx
+	ret
+
+_da:	call	_burst_read2
+	jmp	_da_
+_dan:	call	_burst_read2
+	xor	ebx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	add	ebx, 1
+_da_:	add	ebx, [ebp+B]
+	rol	ebx, 8
+	movzx	ecx, bl
+	shr	ebx, 8
+	mov	[ebp+B], ebx
+	add	eax, ecx
+	add	eax, [ebp+A]
+	rol	eax, 8
+	and	byte ptr [_psr], 254
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	mov	[ebp+A], eax
+	ret
+
+_dlsc:	call	_burst_read2
+	call	scale
+	and	cl, cl
+	jp	_dlsc24
+	mov	dword ptr [ebp+B], eax
+	mov	eax, ebx
+	mov	cl, 22			; restart the loop
+	call	scale_again		; with 2nd word but same sign
+	mov	dword ptr [ebp+A], eax
+	xor	cl, 255
+	add	cl, 48
+	movzx	ebx, cl
+	mov	dword ptr [ebp+MANTISSA2], ebx
+	ret
+_dlsc24:
+	mov	dword ptr [ebp+A], eax
+	xor	cl, 255
+	add	cl, 24
+	movzx	eax, cl
+	mov	dword ptr [ebp+MANTISSA2], eax
+	movzx	eax, ch			; just one sign
+	ror	eax, 8
+	add	eax, -1			; a word of signs
+	call	drl			; position the 2nd shift word
+					; with sign fill
+	mov	dword ptr [ebp+B],ebx
+	ret
