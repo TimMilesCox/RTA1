@@ -347,12 +347,113 @@ _dsa:	mov	cl, al
 	mov	dword ptr [ebp+A], eax
 	ret
 
-_n:	ret
-_inc:	ret
-_dec:	ret
-_popA:	ret
-_src:	ret
-_slc:	ret
+_n:	test	eax, 00FFFF00h
+	jz	_n_register
+	call	_memory_read
+	and	edi, edi
+	jz	_n_
+	xor	eax, 00FFFFFFh
+	mov	dword ptr [edi+esi], eax
+_n_:	ret
+_n_register:
+	mov	ebx, [eax*4+__register]
+	xor	ebx, 00FFFFFFh
+	jmp	_operand_write
+
+_inc:	test	eax, 00FFFF00h
+	jz	_inc_register
+	call	_memory_read
+	and	edi, edi
+	jz	_inc_
+	add	eax, 1
+	and	eax, 00FFFFFFh
+	mov	dword ptr [edi+esi], eax
+_inc_:	ret
+_inc_register:
+	mov	ebx, [eax*4+__register]
+	add	ebx, 1
+	and	ebx, 00FFFFFFh
+	jmp	operand_write
+
+_dec:	test	eax, 00FFFF00h
+	jz	_dec_register
+	call	_memory_read
+	and	edi, edi
+	jz	_dec_
+	add	eax, -1
+	and	eax, 00FFFFFFh
+	mov	dword ptr [edi+esi], eax
+_dec_:	ret
+_dec_register:
+	mov	ebx, [eax*4+__register]
+	add	ebx, -1
+	and	ebx, 00FFFFFFh
+	jmp	_operand_write
+
+_popA:	call	stack_read		; value returned in ebx, does not touch eax
+	test	eax, 00FFFF00h
+	jz	_popA_register
+	call	_memory_read		; does not touch ebx
+	and	edi, edi
+	jz	_popA_
+	add	eax, ebx
+	mov	dword ptr [edi+esi], eax
+_popA_:	ret
+_popA_register:
+	add	ebx, [eax*4+__register]
+	rol	ebx, 8
+	and	bl, 1			; write carry to PSR
+	or	byte ptr [_psr], bl
+	shr	ebx, 8
+	jmp	operand_write
+
+ring25_r:
+	shl	ebx, 8
+	mov	bl, byte ptr [_psr]
+	ror	ebx, 1
+	shr	bl, 7
+	or	byte ptr [_psr], bl
+	shr	ebx, 8
+	ret
+
+ring25_l:
+	shl	ebx, 8
+	mov	bl, byte ptr [_psr]
+	shl	7, bl
+	rol	ebx, 1
+	and	bl, 1
+	or	byte ptr [_psr], bl
+	shr	ebx, 8
+	ret
+
+_src:	test	eax, 00FFFF00h
+	jz	_src_register
+	call	_memory_read
+	and	edi, edi
+	jz	_src_
+	mov	ebx, eax
+	call	ring25_r
+	mov	dword ptr [edi+esi], ebx
+_src_:	ret
+_src_register:
+	mov	ebx, [eax*4+__register]
+	call	ring25_r
+	jmp	operand_write
+
+_slc:	test	eax, 00FFFF00h
+	jz	_slc_register
+	call	memory_read
+	and	edi, edi
+	jz	_slc_
+	mov	ebx, eax
+	call	ring25_l
+	mov	dword ptr [edi+esi], ebx
+_slc_:	ret
+_slc_register:
+	mov	ebx, [eax*4+__register]
+	call	ring25_l
+	jmp	operand_write
+
 _lsc:	ret
 _da:	ret
 _dan:	ret
