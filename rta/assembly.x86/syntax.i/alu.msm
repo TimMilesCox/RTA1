@@ -66,12 +66,6 @@ _m:	ret
 _mf:	ret
 _d:	ret
 
-shift_nowhere
-	xor	ebx, ebx
-	mov	dword ptr [ebp+B], ebx
-	mov	dword ptr [ebp+A], ebx
-	ret
-
 _sar:	mov	cl, al			; platform shift radix is 32
 	mov	eax, dword ptr [ebp+A]	; that does all that is required
 	shr	eax, cl
@@ -86,37 +80,14 @@ _sbr:	mov	cl, al
 	mov	dword ptr [ebp+B], eax
 	ret
 
-_dsr:	mov	cl, al
-	add	eax, -48, 		; any more than 47 produces zero
-	jc	shift_nowhere
-	mov	ch, al			; set aside the shift count
-	add	cl, -24			; function shift count -24
-	jnc	_dsr_			; operate shift count original
 
-					; way 2: high order word becomes zero
-	mov	cl, ch			; operate shift count minus 24
-	mov	eax, dword ptr [ebp+A]	; low-order word contains only 
-	mov	dword ptr [ebp+A], 0	; bits from high-order word
-	shr	eax, cl
-	and	eax, 00FFFFFFh
-	mov	dword ptr [ebp+B], eax
+_dsr:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	dsr
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
 	ret
-					; way 3: shift between 2 words
-_dsr_:	xor	cl, 255			; turn the underflowed count to 32-count
-	add	cl, 9
-	mov	ebx, dword ptr [ebp+A]	; read high_order target word
-	shl	ebx, cl			; drop high-order result word bits for a moment
-	mov	cl, ch			; ready target shift count
-	mov	eax, dword ptr [ebp+B]	; read low-order target word
-	shl	eax, 8			; align with ebx at high order positions
-	shr	eax, cl			; shift low-order target word target positions
-	or	ebx, eax		; combine with down-shifted bits into ebx
-	shr	ebx, 8			; reposition the final low-order result
-	mov	eax, dword ptr [ebp+A]	; retrieve high order input hopefully from x86 L1 cache
-	shr	eax, cl			; daringly rely on upper 8 bits never written nonzero
-	mov	dword ptr [ebp+B], ebx	; routines which generate an inter-word carry
-	mov	dword ptr [ebp+A], eax	; must make sure modeled registers are written 31..24 clear
-	ret				; initial state was static memory zero
 
 _sal:	mov	cl, al			; shift radix x86 is 32, fine for here
 	mov	eax, dword ptr [ebp+A]
@@ -132,37 +103,13 @@ _sbl:	mov	cl, al
 	mov	dword ptr [ebp+B], eax
 	ret
 
-_dsl:	mov	cl, al
-	add	eax, -48
-	jc	shift_nowhere		; the result is 48 zeros
-	mov	ch, cl
-	add	cl, -24
-	jnc	_dsl_			; the result is over 24 bits in size
-					; the result is under 24 bits in size
-	mov	cl, ch
-	mov	eax, dword ptr [ebp+B]
-	mov	dword ptr [ebp+B], 0
-	shl	eax, cl
-	and	eax, 00FFFFFFh		; write back to registers only 00000000 thru 00FFFFFF
-	mov	eax, dword ptr [ebp+A]
-	ret
-
-_dsl_:	xor	cl, 255			; change underflowed count to 32 - count
-	add	cl, 9			
+_dsl	mov	cl, al
 	mov	ebx, dword ptr [ebp+B]
-	shr	ebx, cl			; isolate the bits shifting leftwards into a
-	mov	cl, ch
 	mov	eax, dword ptr [ebp+A]
-	shl	eax, cl
-	or	eax, ebx
-	and	eax, 00FFFFFFh
-	mov	ebx, dword ptr [ebp+B]
-	shl	ebx, cl
-	and	ebx, 00FFFFFFh
+	call	dsl
 	mov	dword ptr [ebp+B], ebx
 	mov	dword ptr [ebp+A], eax
 	ret
-	
 
 _rar:	mov	ebx, dword ptr [ebp+A]
 	call	rr
@@ -182,7 +129,75 @@ _drr:	mov	cl, al
 	mov	dword ptr [ebp+A], eax
 	ret
 
-	%if	1
+
+dsr:	shl	eax, 8
+	shl	ebx, 8
+dsru:	add	cl, -24
+	jnc	dsrl
+	mov	ebx, eax
+	xor	eax, eax
+	jmp	dsru
+dsrl:	add	cl, 16
+	jnc	dsr8
+dsr8:	shr	eax, 8
+	mov	bl, al
+	ror	ebx, 8
+	add	cl,-8
+	jc	dsr8
+dsr7:	and	cl, 7
+	shr	eax, cl
+	mov	bl, al		; bits from al in high-order positions bl
+	rol	bl, cl		; roll them to low-order positions
+	ror	ebx, cl
+	shr	ebx, 8
+	shr	eax, 8
+	ret
+
+dsl:	shl	eax, 8
+	shl	ebx, 8
+dslu:	add	cl, -24
+	jnc	dsll
+	mov	eax, ebx
+	xor	ebx, ebx
+	jmp	dslu
+dsll:	add	cl, 16
+	jnc	dsl7
+dsl8:	rol	ebx, 8
+	mov	al, bl
+	shl	eax, 8
+	add	cl, -8
+	jc	dsl8
+dsl7:	and	cl, 7
+	rol	ebx, cl
+	mov	al, bl		; bits from bl in low-order positions al
+	ror	al, cl		; roll them to high-order positions
+	shl	eax, cl
+	shr	ebx, 8
+	shr	eax, 8
+	ret
+
+dsa:	shl	eax, 8
+	shl	ebx, 8
+dsa24:	add	cl, -24
+	jnc	dsa16
+	mov	ebx, eax
+	sar	eax, 24
+	jmp	dsa24
+dsa16:	add	cl, 16
+	jnc	dsa7
+dsa8:	sar	eax, 8
+	mov	bl, al
+	ror	ebx, 0
+	add	cl, -8
+	jc	dsa8
+dsa7:	and	cl, 7
+	sar	eax, cl
+	mov	bl, al		; bits from al in high-order positions bl
+	rol	bl, cl		; roll them to low-order positions
+	ror	ebx, cl
+	ret	
+
+
 rr:	shl	ebx, 8
 	test	al, 24		; bits 16:8 are self-cancelling
 	jpe	rr7
@@ -241,8 +256,8 @@ drr_cdrr8:
 drr7:	and	cl, 7
 	mov	bl, ah		; rotate low bits ebx 31:8 to eax high positions
 	mov	al, bh		; rotate low bits eax 31:8 to ebx high positions
-	ror	eax, cl
-	ror	ebx, cl
+	ror	eax, cl		; bits from bh in low order positions al
+	ror	ebx, cl		; bits from ah in low order positions bl
 	shr	eax, 8
 	shr	ebx, 8
 	ret
@@ -291,63 +306,6 @@ drl7:	and	cl, 7		; rotate positions 0..7
 	shr	ebx, 8
 	
 
-	%else
-
-rr:	shl	ebx, 8
-	mov	cl, al
-rrmore:	mov	bl, bh
-	add	cl, -8
-	jz	rrx
-	jnc	rrlast
-	ror	ebx, 8
-	jmp	rrmore
-rrlast:	add	cl, 8
-	ror	ebx, cl
-rrx:	shr	ebx, 8
-	ret
-
-
-
-rl:	shl	ebx, 8
-	mov	cl, al
-rlmore:	add	cl, -8
-	jz	rlx
-	jnc	rmlast
-	rol	ebx, 8
-	mov	bh, bl
-	jmp	rlmore
-rmlast:	add	cl, 8
-	mov	bl, 0
-	rol	ebx, cl
-	or	bh, bl
-rlx:	shr	ebx, 8
-	ret
-
-drl:	shl	eax, 8
-	shl	ebx, 8
-drlmore:
-	add	cl, -8
-	jz	drlx
-	jnc	drllast
-	rol	eax, 8
-	rol	ebx, 8
-	mov	ah, bl
-	mov	bh, al
-	jmp	drlmore
-drllast:
-	add	cl, 8
-	mov	al, 0
-	mov	bl, 0
-	rol	eax, cl
-	rol	ebx, cl
-	or	ah, bl
-	or	bh, al
-drlx:	shr	eax, 8
-	shr	ebx, 8
-	ret
-
-	%endif
-
 _ral:	mov	ebx, dword ptr [ebp+A]
 	call	rl
 	mov	dword ptr [ebp+A], ebx
@@ -366,9 +324,28 @@ _drl:	mov	cl, al
 	mov	dword ptr [ebp+A], eax
 	ret
 
-_saa:	ret
-_sba:	ret
-_dsa:	ret
+_saa:	mov	cl, al
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, 8
+	sar	eax, cl
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sba:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	shl	ebx, 8
+	sar	ebx, cl
+	mov	dword ptr [ebp+B], ebx
+	ret
+
+_dsa:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	dsa
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
 
 _n:	ret
 _inc:	ret

@@ -187,13 +187,15 @@
 ;		shr	eax, 8
 ;		mov	dword ptr [ebp+A], eax
 
-;	Emulated RTA1 instructions which both read and write (modify)
-;	storage supply a callback pointer in ebx, and are called back
-;	to update the retrieved value if it is in executable space. The
-;	callback idea avoids evaluating the effective address twice for
-;	one operation
+;	emulated RTA1 instructions which both read and write (modify)
+;	storage use the address in [edi + esi] to rewrite. edi is
+;	NULL if it's not a suitable memory for a modify operation
 
-;	Finally the effect of storage buses characteristically different
+;	modify instructions which may have a register operand (not TS)
+;	call _operand_write to rewrite a register. This guards aganst
+;	applications writing interrupt registers.
+ 
+;	the effect of storage buses characteristically different
 ;	from RTA1 executable space is emulated in the routines
 ;	device_read and device_write
 
@@ -584,7 +586,7 @@ mword_go_x:
 	bswap	eax
 	ret	
 
-;	TS calls here without checking for register range
+;	TS calls _memory_read without checking for register range
 ;	because you don't and may not test and set a register.
 ;	TS and EX instructions always have a storage operand
 
@@ -592,20 +594,12 @@ mword_go_x:
 ;	operate directly on registers. operand write trips
 ;	if applications try to write interrupt registers
 
-;	N INC DEC SIM POPA SRC SLC call here to operate
-;	on storage
+;	N INC DEC SIM POPA SRC SLC call _memory_read if their 
+;	operand is not a register. If the EA doesn't resolve to
+;	a system-memory block then edi is NULL which can't
+;	be used. edi is the sub-architectural part of storage
+;	location = address in X86 where the RTA1 memory is modeled
 
-_modify:				; read/write operation
-	call	_memory_read
-	test	edi, edi
-	jz	dont_modify
-	call	ebx	; callback to TS N INC DEC SIM POPA SRC SLC
-			; edi+esi must not get overwritten
-			; in _memory_read / _base_pointer
-	bswap	eax
-	mov	dword ptr [edi+esi*4], eax
-dont_modify:
-	ret
 
 base_flag_mask db 0, 64, 32, 16, 8, 4, 2, 1	; test psr for kernel memory select
 
