@@ -217,29 +217,62 @@ _jyge:	mov	ebx, dword ptr [ebp+R]
 ;	jmp	_j
 ;_jdz_	ret
 
-_qs:	mov	ebx, A
+_qs:	mov	ebx, a
 	jmp	_burst_write4
 
-_ql:	mov	ebx, A
+_ql:	mov	ebx, a
 	jmp	_burst_read4
 
-_qpop:	mov	ebx, dword ptr [ebp+S_P]
+_qpop:	push	ebp
+	mov	ebx, dword ptr [ebp+S_P]
 	add	dword ptr [ebp+S_P], 4
 	mov	ebp, __register		; ISR and application
 					; stack pointers are absolute
-	jmp	_burst_write4_absolute
+	call	_burst_write4
+	pop	ebp
+	ret
 
-_qpush:	mov	ebx, dword ptr [ebp+S_P]
+_qpush: push	ebp
+	mov	ebx, dword ptr [ebp+S_P]
 	add	ebx, -4
-	mov	dword ptr [ebp+S_P], sp
-	jmp	_burst_read4_absolute
+	mov	dword ptr [ebp+S_P], ebx
+	mov	ebp, __register
+	call	_burst_read4
+	pop	ebp
 
-_dpush:	ret
-_mta:	ret
-_sc:	ret
-_mlb:	ret
-_ds:	ret
-_dl:	ret
+_dpush:	call	_burst_read2
+	mov	ecx, dword ptr [ebp+S_P]
+	add	dword ptr [ebp+S_P], -2
+	mov	[ecx*4], eax
+	mov	[ecx*4+4], ebx
+	ret
+
+_mta:	call	_operand_read
+	xor	eax, dword ptr [ebp+A]
+	and	eax, dword ptr [ebp+K]
+	jnz	_mta_
+	add	edx, 4		; k AND (a XOR operand) = 0, skip 1 instruction
+_mta_:	ret
+
+_sc:	mov	ebx, dword ptr [_psr]
+	and	ebx, 1		; store carry 
+	jmp	_operand_write
+
+_mlb:	call	_operand_read
+	mov	ebx, dword ptr [ebp+K]
+	and	eax, ebx
+	xor	ebx, 00FFFFFFh
+	and	ebx, dword ptr [ebp+B]
+	or	ebx, eax
+	mov	dword ptr [ebp+B], ebx	; b = (b AND (NOT k)) OR (operand AND k)
+	ret
+
+_ds:	mov	bx, a
+	jmp	_burst_write2
+
+_dl:	mov	bx, a
+	jmp	_burst_read2
+
 _spare:	ret
 
 _ex:	call	memory_read
