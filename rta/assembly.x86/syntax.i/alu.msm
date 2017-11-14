@@ -353,7 +353,7 @@ _n:	test	eax, 00FFFF00h
 	and	edi, edi
 	jz	_n_
 	xor	eax, 00FFFFFFh
-	mov	dword ptr [edi+esi], eax
+	mov	dword ptr [edi+esi*4], eax
 _n_:	ret
 _n_register:
 	mov	ebx, [eax*4+__register]
@@ -367,7 +367,7 @@ _inc:	test	eax, 00FFFF00h
 	jz	_inc_
 	add	eax, 1
 	and	eax, 00FFFFFFh
-	mov	dword ptr [edi+esi], eax
+	mov	dword ptr [edi+esi*4], eax
 _inc_:	ret
 _inc_register:
 	mov	ebx, [eax*4+__register]
@@ -382,7 +382,7 @@ _dec:	test	eax, 00FFFF00h
 	jz	_dec_
 	add	eax, -1
 	and	eax, 00FFFFFFh
-	mov	dword ptr [edi+esi], eax
+	mov	dword ptr [edi+esi*4], eax
 _dec_:	ret
 _dec_register:
 	mov	ebx, [eax*4+__register]
@@ -397,7 +397,7 @@ _popA:	call	stack_read		; value returned in ebx, does not touch eax
 	and	edi, edi
 	jz	_popA_
 	add	eax, ebx
-	mov	dword ptr [edi+esi], eax
+	mov	dword ptr [edi+esi*4], eax
 _popA_:	ret
 _popA_register:
 	add	ebx, [eax*4+__register]
@@ -435,7 +435,7 @@ _src:	test	eax, 00FFFF00h
 	jz	_src_
 	mov	ebx, eax
 	call	ring25_r
-	mov	dword ptr [edi+esi], ebx
+	mov	dword ptr [edi+esi*4], ebx
 _src_:	ret
 _src_register:
 	mov	ebx, [eax*4+__register]
@@ -449,7 +449,7 @@ _slc:	test	eax, 00FFFF00h
 	jz	_slc_
 	mov	ebx, eax
 	call	ring25_l
-	mov	dword ptr [edi+esi], ebx
+	mov	dword ptr [edi+esi*4], ebx
 _slc_:	ret
 _slc_register:
 	mov	ebx, [eax*4+__register]
@@ -476,8 +476,8 @@ _da_:	add	ebx, [ebp+B]
 	mov	[ebp+A], eax
 	ret
 
-field_scale:			; position 24-bit integer until
-	rol	eax, 8		; high-order 8 bits are not all signs
+field_scale:			; examine 24-bit integer in 8-position steps
+	rol	eax, 8		; until high-order 8 bits are not all signs
 	mov	ah, al
 	xor	al, ch
 	jnz	not8signs
@@ -541,7 +541,9 @@ _dlsc24:				; different when high order word is all signs
 	shr	eax, 8			; one result word of signs
 	mov	dword ptr [ebp+B], eax	; into the low-order result word
 	mov	eax, ebx		; scale the low-order input
+	xor	cl, cl			; restart the scale count-up
 	call	field_scale
+	add	cl, 24			; restore the early part of the count-up
 	call	scale8
 	movzx	ebx, cl
 	mov	dword ptr [ebp+MANTISSA2], ebx	; store the scale
@@ -554,3 +556,7 @@ _dlsc24:				; different when high order word is all signs
 	shr	eax, 8
 	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
+
+_fpx:	ret
+_fpp:	ret
+
