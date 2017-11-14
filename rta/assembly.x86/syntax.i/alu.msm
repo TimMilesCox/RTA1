@@ -456,34 +456,6 @@ _slc_register:
 	call	ring25_l
 	jmp	_operand_write
 
-scale:	mov	cl, 22
-	rol	eax, 9
-	and	al, 1
-	mov	ch, al
-	and	ah, 254
-	or	ah, al
-scale_for:
-	rol	eax, 1
-scale_again
-	and	al, 1
-	or	ah, al
-	xor	al, ch
-	jnz	scaled
-	add	cl, -1
-	jc	scale_for
-scaled:	mov	al, ah
-	ror	eax, 9		; triggering bit -> sign position
-	ret
-
-_lsc:	call	_operand_read
-	call	scaled
-	xor	cl, 255
-	add	cl, 24
-	movzx	ebx, cl
-	mov	dword ptr [ebp+A], eax
-	mov	dword ptr [ebp+B], ebx
-	ret
-
 _da:	call	_burst_read2
 	jmp	_da_
 _dan:	call	_burst_read2
@@ -504,30 +476,81 @@ _da_:	add	ebx, [ebp+B]
 	mov	[ebp+A], eax
 	ret
 
-_dlsc:	call	_burst_read2
-	call	scale
-	and	cl, cl
-	jp	_dlsc24
-	mov	dword ptr [ebp+B], eax
-	mov	eax, ebx
-	mov	cl, 22			; restart the loop
-	call	scale_again		; with 2nd word but same sign
-	mov	dword ptr [ebp+A], eax
-	xor	cl, 255
-	add	cl, 48
-	movzx	ebx, cl
-	mov	dword ptr [ebp+MANTISSA2], ebx
+field_scale:			; position 24-bit integer until
+	rol	eax, 8		; high-order 8 bits are not all signs
+	mov	ah, al
+	xor	al, ch
+	jnz	not8signs
+	add	cl, 8
+	cmp	al, 24
+	jb	field_scale
+not8signs:
 	ret
-_dlsc24:
-	mov	dword ptr [ebp+A], eax
-	xor	cl, 255
-	add	cl, 24
-	movzx	eax, cl
-	mov	dword ptr [ebp+MANTISSA2], eax
-	movzx	eax, ch			; just one sign
+
+scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0 
+
+scale8:	test	al, 240		; highest 1s bit in al is the 1st non-sign
+	jnz	scale4
+	add	cl, 4
+	rol	al, 4
+scale4:	shr	al, 4	
+	movzx	esi, al	; you can have si now
+	add	cl, [cs:esi+scalex]
+	ret
+
+_lsc:	call	_operand_read
+	shl	eax, 8		; 1.2.3
+	sar	eax, 8		; s.1.2.3
+	rol	eax, 8		; 1.2.3.s
+	xor	cx, cx
+	mov	ch, al		; keep 8 sign bits
+	call	field_scale
+	call	scale8
+	movzx	ebx, cl
+	mov	dword ptr [ebp+B], ebx	; store the scale
+	mov	al, ah			; reverse the last 8 rotation positions
 	ror	eax, 8
-	add	eax, -1			; a word of signs
-	call	drl			; position the 2nd shift word
-					; with sign fill
-	mov	dword ptr [ebp+B],ebx
+	and	cl, 7			; do the last part of the rotate
+	xor	al, al
+	rol	eax, 7
+	or	ah, al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax	; store the rotated value
+	ret
+
+_dlsc:	call	_burst_read2
+	mov	dword ptr [ebp+A], eax		; keep original 1st word
+	shl	eax, 8
+	sar	eax, 8
+	rol	eax, 8
+	xor	cx, cx
+	mov	ch, al				; keep 8 sign bits
+	call	field_scale
+	and	al, al
+	jz	_dlsc24				; if the first word is all signs
+	call	scale8
+	movzx	eax, cl
+	mov	dword ptr [ebp+MANTISSA2], eax	; store the scale
+	mov	eax, dword ptr [ebp+A]		; retrieve the input high order word
+	call	drl				; scale the two input words per cl
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax  	; store the rotated value
+	ret
+
+_dlsc24:				; different when high order word is all signs
+	shr	eax, 8			; one result word of signs
+	mov	dword ptr [ebp+B], eax	; into the low-order result word
+	mov	eax, ebx		; scale the low-order input
+	call	field_scale
+	call	scale8
+	movzx	ebx, cl
+	mov	dword ptr [ebp+MANTISSA2], ebx	; store the scale
+	mov	al, ah
+	ror	eax, 8			; reverse the last 8 rotation positions
+	and	cl, 7			; do the last part of the rotate
+	xor	al, al
+	rol	eax, 7
+	or	ah, al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
