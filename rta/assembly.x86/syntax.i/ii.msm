@@ -1,11 +1,48 @@
-_on:	
+_on:	or	word ptr [_psr], ax	; only touch low-order 16 bits
 	ret
 
-_off:
+_off:	xor	ax, 0000FFFFh
+	and	word ptr [_psr], ax	; only touch low-order 16 bits
 	ret
 
-_ii:
+_ii:	mov	ebp, __register+128*4
+	mov	dword ptr [_iselect], 128
+	add	dword ptr [ebp+S_P], -4
+	mov	ebx, dword ptr [ebp+S_P]
+	sub	edx, dword ptr [_b0p]
+	shr	edx, 2
+	mov	dword ptr [ebx*4+__register+12], edx	; save PC offset
+	mov	edx, dword ptr [_b0_name]
+	mov	dword ptr [ebx*4+__register+8], edx	; save bank ID
+	mov	edx, dword ptr [_psr]
+	mov	dword ptr [ebx*4+__register+4], edx
+	mov	dword ptr [ebx*4+__register], 0
+	test	edx, 00800000h			; nested interrupt ?
+	jnz	_ii_ii
+	mov	dword ptr [ebp+FP], ebx	; if not, mark interrupted
+					; application stack frame
+_ii_ii:	or	edx, 00800000h		; ISR active
+	mov	dword ptr [_psr], edx
+	mov	edx, eax		; get to the operand
+	and	edx, 63			; address from interrupt vector
+	shr	eax, 6
+	and	eax, 000003FFh
+	jmp	_go2_bank
 	ret
 
-_ir:
+_ir:	mov	ebx, dword ptr [ebp+S_P]
+	add	dword ptr [ebp+S_P], 4
+	mov	ecx, dword ptr [ebx*4+__register+4]
+	mov	dword ptr [_psr], ecx
+	shr	ecx, 16
+	and	cx, 128
+	mov	dword ptr [_iselect], ecx
+	jnz	_ir_ir		; returned to another ISR?
+	mov	ebp, __register	; point to application registers
+_ir_ir:	mov	edx, eax
+	mov	eax, [ebx*4+__register+8]	; return b0_name
+	add	edx, [ebx*4+__register+12]	; +- return displacement
+	and	edx, 00FFFFFFh
+	jmp	_go2_bank
 	ret
+
