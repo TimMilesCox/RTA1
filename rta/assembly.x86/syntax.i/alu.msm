@@ -557,6 +557,57 @@ _dlsc24:				; different when high order word is all signs
 	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
 
-_fpx:	ret
-_fpp:	ret
+_fpx:	call	_burst_read2
+	mov	esi, dword ptr [ebp+S_P]	; you can have esi now
+	add	esi, -4
+	mov	dword ptr [ebp+S_P], esi
+	mov	ecx, eax
+	rol	eax, 2+8
+	shl	ax, 12
+	sar	eax, 12
+	ror	eax, 2
+	shr	eax, 8
+	mov	[esi*4+__register], eax
+	shl	eax, 8
+	sar	eax, 24
+	shr	eax, 8
+	mov	[esi*4+__register+12], eax
+	ror	ecx, 12
+	shr	ecx, 4
+	ror	ebx, 8
+	mov	cx, bx
+	shr	ecx, 4
+	mov	[esi*4+__register+4], ecx
+	ror	ebx, 8
+	mov	bx, ax
+	shl	ebx, 4
+	shr	ebx, 8
+	mov	[esi*4+__register+4], ebx
+	ret
+
+_fpp:	mov	esi, dword ptr [ebp+S_P]
+	add	dword ptr [ebp+S_P], 4
+	mov	ebx, dword ptr [esi*4+__register]
+				; 0000 0000 smxx xxxx xxxx xxXX XXXX XXXX
+	ror	ebx, 10		; XXXX XXXX XX00 0000 00sm xxxx xxxx xxxx
+	shr	bx, 12		; XXXX XXXX XX00 0000 0000 0000 0000 00sm
+	ror	ebx, 2+4	; 0000 smXX XXXX XXXX 0000 0000 0000 0000
+	mov	ecx, dword ptr [esi*4+__register+4]
+	ror	ecx, 8		; c.0.a.b
+	mov	bx, cx
+	shr	ebx, 4		; 0000 0000 smXX XXXX XXXX MMMM MMMM MMMM
+	mov	dword ptr [esi*4+__register], ebx	; at old stack top
+	mov	ebx, dword ptr [esi*4+__register+8]
+	ror	ecx, 8		; b.c.0.a
+	ror	ebx, 8		; f.0.d.e
+	mov	cx, bx		; b.c.d.e
+	shl	ecx, 4
+	shr	ecx, 8
+	mov	dword ptr [esi*4+__register+4], ecx
+	push	ebp
+	mov	ebp, __register
+	mov	ebx, esi
+	call	_burst_write2
+	pop	ebp
+	ret
 
