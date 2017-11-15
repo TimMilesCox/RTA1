@@ -60,6 +60,7 @@ stack_read:
 	mov	ebx, dword ptr [ebp+S_P]
 	mov	ebx, dword ptr [ebx*4+__register]
 	add	dword ptr [ebp+S_P], 1
+	ret
 
 _pop:	cmp	cl, I
 	jz	escape
@@ -115,10 +116,9 @@ _tp:	cmp	cl, I
 _tp_:	ret
 
 _push:	call	_operand_read
+	add	dword ptr [ebp+S_P], -1
 	mov	ebx, dword ptr [ebp+S_P]
-	add	ebx, -1
-	mov	dword ptr [ebp+S_P], ebx
-	mov	dword ptr [ebx*4+__register], ebx
+	mov	dword ptr [ebx*4+__register], eax
 	ret
 
 _jdz:	mov	ebx, dword ptr [ebp+B]
@@ -135,8 +135,6 @@ _jdr:	mov	ebx, dword ptr [ebp+R]	; dec r and jump if it passed from zero to -1
 	test	cl, 1
 	jnz	_j
 	ret
-
-	
 
 _lcal:	mov	ebx, dword ptr [ebp+S_P]
 	add	ebx, -1
@@ -202,13 +200,17 @@ _jnb:	test	dword ptr [ebp+B], 00800000h
 	ret
 
 _jxge:	mov	ebx, dword ptr [ebp+R]
-	cmp	ebx, dword ptr [ebp+X]
-	jb	_j
+	xor	ebx, 00FFFFFFh
+	add	ebx, 1
+	add	ebx, dword ptr [ebp+X]
+	jnc	_j
 	ret
 
 _jyge:	mov	ebx, dword ptr [ebp+R]
-	cmp	ebx, dword ptr [ebp+Y]
-	jb	_j
+	xor	ebx, 00FFFFFFh
+	add	ebx, 1
+	add	ebx, dword ptr [ebp+Y]
+	jnc	_j
 	ret
 
 ;_jdz:	mov	ebx, dword ptr [ebp+A]
@@ -241,10 +243,10 @@ _qpush: push	ebp
 	pop	ebp
 
 _dpush:	call	_burst_read2
-	mov	ecx, dword ptr [ebp+S_P]
 	add	dword ptr [ebp+S_P], -2
-	mov	[ecx*4], eax
-	mov	[ecx*4+4], ebx
+	mov	ecx, dword ptr [ebp+S_P]
+	mov	[ecx*4+__register], eax
+	mov	[ecx*4+__register+4], ebx
 	ret
 
 _mta:	call	_operand_read
@@ -270,21 +272,24 @@ _mlb:	call	_operand_read
 _ds:	mov	bx, a
 	jmp	_burst_write2
 
-_dl:	mov	bx, a
-	jmp	_burst_read2
+_dl:	call	_burst_read2
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
 
 _spare:	ret
 
-_ex:	call	memory_read
+_ex:	call	_memory_read
 	and	edi, edi
 	jz	_ex_
 	jmp	_execute
 _ex_:	ret
 
-_ts:	call	memory_read
+_ts:	call	_memory_read
 	and	edi, edi
 	jz	_ts_
-	or	dword ptr [edi+esi*4], 00800000h	; claim the TS word
+	or	dword ptr [edi+esi*4], 008000h	; claim the TS word
+						; 00800000h backwards
 	test	eax, 00800000h
 	jnz	_ts_
 	add	edx, 4		; successful, skip one instruction
@@ -319,6 +324,8 @@ _call:	sub	edx, _b0p
 	mov	edx, _b0_name
 	mov	[ebx*4+__register], edx
 _go:	call	_operand_read	; memory or register
+;	mov	[__register+128*4], eax
+;	ret
 	mov	edx, eax	; lookaside to calculate the vector
 	test	eax, 0400000h
 	jz	_go_4k_bank

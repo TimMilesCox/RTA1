@@ -43,8 +43,21 @@ static long long	 u;
 static struct timeval	 time1;
 #endif
 
-extern system_memory	 memory;
+#if	0
 
+int			 iselect = 128;
+word			*apc = ROM_PAGE;
+extern page		*b0p;
+extern unsigned int	 b0_name;
+extern unsigned int	 psr;
+extern unsigned int	_register[];
+unsigned int		*register_set = _register+128;
+extern unsigned int	 base[];
+extern device		 devices[];
+
+#else
+
+system_memory            memory;
 int              	 iselect = 128;
 word		    	*apc = ROM_PAGE;
 page            	*b0p  = memory.p4k;
@@ -72,6 +85,8 @@ unsigned int		*register_set = _register+128;
 unsigned int     	 base[192];
 // system_memory    	 memory;
 device           	 devices[64];
+
+#endif
 
 extern word              memory_read(int ea);
 extern int               bus_read(int device, int pointer);
@@ -286,6 +301,8 @@ void *emulate()	/* thread start */
 ;		if things go wrong gcc -S tipt.c
 
 		push	ebp
+		mov	ebp, esi
+		push	ebp
 
 ;		compiler does not allow pop esi
 ;		so don't push it
@@ -301,14 +318,12 @@ void *emulate()	/* thread start */
 
 		mov	ebp, register_set
 		mov	edx, apc
-
 	next:	mov	eax, [edx]
 		add	edx, 4
 		bswap	eax
 		call	execute
 		test	indication, TIME_UPDATE|LOCKSTEP|BREAKPOINT
 		jz	next
-
 		mov	register_set, ebp
 		mov	apc, edx
 
@@ -319,7 +334,8 @@ void *emulate()	/* thread start */
 		pop	edi
 
 ;		compiler does not allow pop esi
-
+		pop	ebp
+		mov	esi, ebp
 		pop	ebp
       }
       #endif
@@ -684,6 +700,7 @@ static void statement()
    int                   index2;
 
    instruction_display(apc - 1, 1, flag['l'-'a']);
+   if (flag['e'-'a']) printf("[RP %p]", register_set);
    printf("%6.6x %8.8x\n", psr, (word *) apc - memory.array);
    instruction_display(apc, 6, flag['l'-'a']);
 

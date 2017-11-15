@@ -104,7 +104,7 @@
 ;		mov	dword ptr [ebp+S_P], ebx
 ;		push	ebp				; which ever stack pointer it is, it points
 ;		mov	ebp,__register			; relative to all the register stack
-;		call	operand_read			; for I am the single-word push instruction
+;		call	_operand_read			; for I am the single-word push instruction
 ;		pop	ebp				;
 
 ;	register identities supplied from emulated instructions to these routines
@@ -245,7 +245,7 @@ ixlgo:	shl	ebx, 2				; 4-byte vectors
 
 _burst_read2:
 	mov	cx, 6
-	cmp	eax, 00FFFF00h
+	test	eax, 00FFFF00h
 	jz	read2_registers
 	jmp	bus_read
 
@@ -256,7 +256,7 @@ read2_registers:				; load registers from registers
 	
 _burst_read4:				; buffered read
 	mov	cx, 7			; that will help the caller
-	cmp	eax, 00FFFF00h		; ebp+ebx contains a register number
+	test	eax, 00FFFF00h		; ebp+ebx contains a register number
 	jz	read4_registers		; may also identify extra
 	jmp	bus_read
 					; workspace registers
@@ -286,6 +286,8 @@ _operand_read:			; call here with designator coded in cx
 
 bus_read:			; readout any memory
 	call	base_pointer
+;	mov	dword ptr [__register+153*4], eax
+;	or	dword ptr [__register+153*4], 80000000h
 	test	eax, 00400000h	; big block?
 	je	memory_read_4k_block
 	test	eax, 63		; executable space or device array? 
@@ -300,7 +302,7 @@ memory_read_256k_block:
 	mov	edi, _memory	; byte address
 
 memory_read_on:
-	movzx	eax, cx
+	movzx	eax, cl
 	call	ixgo
 
 read_action:
@@ -314,6 +316,8 @@ read_action:
 	dw	memory_read4-read_action
 
 memory_read:			; readout system memory 1 word
+;	mov	dword ptr [__register+154*4], edi
+;	mov	dword ptr [__register+155*4], esi
 	mov	eax, dword ptr [edi+esi*4]
 	mov	al, 0
 	bswap	eax
@@ -468,8 +472,7 @@ memory_write_256k_block:
 	mov	edi, _memory
 
 memory_write_on:
-
-	movzx	eax, cx
+	movzx	eax, cl
 	call	ixgo
 
 write_action:
@@ -607,7 +610,8 @@ base_flag_mask db 0, 64, 32, 16, 8, 4, 2, 1	; test psr for kernel memory select
 
 base_pointer:			; find handle to memory block containing operand
 	mov	esi, eax	; the tag is EA bits 23..18 (=0) EA bits 17..12
-	and	eax, 00FC0000h
+;	mov	dword ptr [__register+153*4], eax
+	test	eax, 00FC0000h
 	jz	page_pointer
 	and	esi, 0003FFFFh
 	sar	eax, 18
@@ -631,6 +635,8 @@ alternative_pointer?:
 
 base_selected:
 	mov	eax, dword ptr [eax*4+_base]
+;	mov	dword ptr [__register+152*4], eax
+;	or	dword ptr [__register+152*4], 00800000h
 	ret
 
 ;	sub-architectural measure on sabr and reload instructions
