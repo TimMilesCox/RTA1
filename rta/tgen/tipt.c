@@ -76,6 +76,7 @@ unsigned int		*register_set = _register+128;
 // device           	 devices[64];
 #include "ioports.c"
 #include "devices.c"
+device			*pdevice = devices;
 
 #endif
 
