@@ -27,10 +27,15 @@
 #define	TIME_UPDATE	1
 #define	LOCKSTEP	2
 #define	BREAKPOINT	4
+#define	CHILLDOWN	8
+
+#define	chilldown	base[103]
+
 #define ROM_PAGE	&memory.p4k[0].w[0]
 
 static word		*breakpoint;
-static int		 indication;
+
+int			 indication;
 int			 trace, trace1, trace2, trace3;
 
 #ifndef	X86_MSW
@@ -63,28 +68,14 @@ word		    	*apc = ROM_PAGE;
 page            	*b0p  = memory.p4k;
 unsigned int		 b0_name;
 unsigned int    	 psr = 0x00800000;
-unsigned int    	 _register[256+24]
-			= { 0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-			    0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-                            0,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,
-
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a,
-                            0x00a5a5a5, 0x005a5a5a } ;
+unsigned int    	 _register[256+24];
+ 
 unsigned int		*register_set = _register+128;
-unsigned int     	 base[192];
+// unsigned int     	 base[192];
 // system_memory    	 memory;
-device           	 devices[64];
+// device           	 devices[64];
+#include "ioports.c"
+#include "devices.c"
 
 #endif
 
@@ -322,7 +313,7 @@ void *emulate()	/* thread start */
 		add	edx, 4
 		bswap	eax
 		call	execute
-		test	indication, TIME_UPDATE|LOCKSTEP|BREAKPOINT
+		test	indication, CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT
 		jz	next
 		mov	register_set, ebp
 		mov	apc, edx
@@ -343,6 +334,12 @@ void *emulate()	/* thread start */
       if (flag['e'-'a'])
       printf("[0:%8.8x 1:%8.8x 2:%8.8x 3:%8.8x]\n",
               trace, trace1, trace2, trace3);
+
+      if (indication & CHILLDOWN)
+      {
+         indication &= -1 ^ CHILLDOWN;
+         usleep(base[103]);
+      }
 
       if (indication & TIME_UPDATE)
       {
@@ -415,6 +412,15 @@ static void action(char request[])
 
          flag['s'-'a'] = 0;
          indication &= -1 ^ LOCKSTEP;
+         if (xx) indication |= BREAKPOINT;
+
+         if (breakpoint)
+         {
+            if (flag['v'-'a']) printf("[>%x,%x]",
+                                       indication, breakpoint - memory.array);
+            if (flag['e'-'a']) printf("[@%p:%p]", memory.array, breakpoint);
+         }
+
          putchar(':');
          fflush(stdout);
          break;
@@ -550,7 +556,10 @@ static void action(char request[])
             printf(" %6.6x", base[xx]);
          }
 
-         printf("\n7c                             ");
+         printf("\n\n60:");
+         for (xx = 96; xx < 104; xx++) printf(" %6.6x", base[xx]);
+
+         printf("\n\n7c                             ");
 
          for (xx = 124; xx < 192; xx++)
          {

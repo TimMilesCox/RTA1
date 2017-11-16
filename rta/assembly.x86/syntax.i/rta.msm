@@ -199,19 +199,17 @@ _jnb:	test	dword ptr [ebp+B], 00800000h
 	jnz	_j
 	ret
 
-_jxge:	mov	ebx, dword ptr [ebp+R]
-	xor	ebx, 00FFFFFFh
-	add	ebx, 1
-	add	ebx, dword ptr [ebp+X]
-	jnc	_j
-	ret
+_jxge:	mov	ebx, dword ptr [ebp+X]
+	sub	ebx, dword ptr [ebp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  x <  r,    jump
+	ret				; yes: x >= r, no jump
 
-_jyge:	mov	ebx, dword ptr [ebp+R]
-	xor	ebx, 00FFFFFFh
-	add	ebx, 1
-	add	ebx, dword ptr [ebp+Y]
-	jnc	_j
-	ret
+_jyge:	mov	ebx, dword ptr [ebp+Y]
+	sub	ebx, dword ptr [ebp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  y <  r,    jump
+	ret				; yes: y >= r, no jump
 
 ;_jdz:	mov	ebx, dword ptr [ebp+A]
 ;	or	ebx, dword ptr [ebp+B]
@@ -235,12 +233,12 @@ _qpop:	push	ebp
 	ret
 
 _qpush: push	ebp
+	add	dword ptr [ebp+S_P], -4
 	mov	ebx, dword ptr [ebp+S_P]
-	add	ebx, -4
-	mov	dword ptr [ebp+S_P], ebx
 	mov	ebp, __register
 	call	_burst_read4
 	pop	ebp
+	ret
 
 _dpush:	call	_burst_read2
 	add	dword ptr [ebp+S_P], -2
@@ -306,6 +304,7 @@ _sim:	mov	ebx, dword ptr [_psr]
 	and	eax, 7
 	shl	eax, 16
 	or	dword ptr [_psr], eax
+	bswap	ebx
 	mov	dword ptr [edi+esi*4], ebx
 _sim_:	ret
 _sim_register:
@@ -315,15 +314,14 @@ _sim_register:
 	or	dword ptr [_psr], ecx
 	jmp	_operand_write
 
-_call:	sub	edx, _b0p
-	shr	edx, 2		; offset word index
-	mov	ebx, [ebp+S_P]
-	add	ebx, -2
-	mov	[ebp+S_P], ebx
-	mov	[ebx*4+__register+4], edx
-	mov	edx, _b0_name
-	mov	[ebx*4+__register], edx
-_go:	call	_operand_read	; memory or register
+_call:	add	dword ptr [ebp+S_P], -2
+	mov	ebx, dword ptr [ebp+S_P]
+	sub	edx, dword ptr [_b0p]		; platform location of executing bank
+	shr	edx, 2				; word offset from platform octet offset
+	mov	dword ptr [ebx*4+__register+4], edx
+	mov	edx, dword ptr [_b0_name]	; identity of emulated executing bank
+	mov	dword ptr [ebx*4+__register], edx
+_go:	call	_operand_read	; may be memory or register
 ;	mov	[__register+128*4], eax
 ;	ret
 	mov	edx, eax	; lookaside to calculate the vector
