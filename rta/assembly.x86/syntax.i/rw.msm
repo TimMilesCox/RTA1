@@ -760,34 +760,26 @@ true_nothing:
 
 device_array:
 	shl	eax, 2			; al = device id * 4 : 0000FF01 BBBBBBB BBBBBBBB device00 
-	movzx	ebx, al
-	mov	edi, _devices
-	mov	ch, byte ptr [edi+ebx*2]
-	mov	edi, dword ptr [edi+ebx*2+4]
+	mov	ch, al
 	shr	eax, 8
-	shl	eax, 18
-	add	esi, eax
+	shl	eax, 18				; bank index to word index
+	add	esi, eax			; linear word index, eax is free
+	movzx	eax, ch				; eax is device ID * 4
+	mov	edi, _devices
+	mov	ch, byte ptr [edi+eax*2]	; device type
+	mov	edi, dword ptr [edi+eax*2+4]	; physical platform address of device storage
 	ret
 
 _device_read:				; readout device arrays
         test    eax, 0800000h           ; the vilainous bank index?
         jnz     device_read_void
 
-;	mov	dword ptr [__register+160*4], eax
-;	shl	eax, 2
-;	movzx	ebx, al
-;	mov	edi, _devices
-;	mov	ch, byte ptr [edi+ebx*2]
-;	mov	edi, dword ptr [edi+ebx*2+4]
-;	shr	eax, 8
-;	shl	eax, 18
-	
+	mov     dword ptr [__register+160*4], eax
 
 	call	device_array
 
 	mov	dword ptr [__register+161*4], ecx
         mov     dword ptr [__register+162*4], edi
-;	add	esi, eax
 	mov	dword ptr [__register+163*4], esi
 	mov	dword ptr [__register+166*4], eax
 	mov	dword ptr [__register+167*4], _devices
@@ -842,21 +834,19 @@ device_read_data16_2:			; readout 2 words of 16-bit array
 	ret
 
 device_read_data16_4:			; readout 4 words of 16-bit array
-	mov	eax, dword ptr [edi+esi*2]	; 4.3.2.1
+	mov	eax, dword ptr [edi+esi*2]
 	bswap	eax				; 1.2.3.4
-	push	ax
-	shr	eax, 16				; 0.0.1.2
-	mov	dword ptr [ebp+ebx*4], eax	;
-	pop	ax				; 0.0.3.4
-	mov	dword ptr [ebp+ebx*4+4], eax	;
+	movzx	ecx, ax
+	shr	eax, 16
+	mov	dword ptr [ebp+ebx*4], eax
+	mov	dword ptr [ebp+ebx*4+4], ecx
 
-	mov	eax, dword ptr [edi+esi*2+4]	; 8.7.6.5
+	mov     eax, dword ptr [edi+esi*2+4]
 	bswap	eax				; 5.6.7.8
-	push	eax
-	shr	eax, 16				; 0.0.5.6
-	mov	dword ptr [ebp+ebx*4+8], eax	; 
-	pop	ax				; 0.0.7.8
-	mov	dword ptr [ebp+ebx*4+8], eax	;
+	movzx	ecx, ax
+	shr	eax, 16
+	mov	dword ptr [ebp+ebx*4+8], eax
+	mov	dword ptr [ebp+ebx*4+12], ecx
 	ret
 
 device_read_array24:			; readout from packed 24-bit array
@@ -887,21 +877,25 @@ device_read_array24_1:			; readout a wowrd of packed 24-bit array
 	mov	al, byte ptr [edi+esi+1]
 	shl	eax, 8
 	mov	al, byte ptr [edi+esi+2]
+	mov	esi, 3
 	ret
 
 device_read_array24_2:			; readout 2 words of packed 24-bit array
 	call	device_read_array24_1
-	mov	dword ptr [ebp+ebx*4], eax
-	add	esi, 3
+	mov	dword ptr [ebp+A], eax
 	call	device_read_array24_1
-	mov	dword ptr [ebp+ebx*4+4], eax
-	add	esi, 3
-	add	ebx, 2
+	mov	dword ptr [ebp+B], eax
 	ret
 
 device_read_array24_4:			; readout 4 words of packed 24-bit array
-	call	device_read_array24_2
-	call	device_read_array24_2
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+4], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+8], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+12], eax
 	ret
 
 _device_write:				; store device arrays
@@ -951,18 +945,24 @@ device_write_data16_1:			; store 16-bit array
 
 
 device_write_data16_4:			; store 4 words in 16-bit array
-	mov	ax, word ptr [ebp+ebx*4+8]	;     5.6
+					; low-order half is swapped on bus read
+					; and canonical in eax
+	mov	ax, word ptr [ebp+ebx*4+8]	; get low-order half 3rd register
 	shl	eax, 16				; 5.6.0.0
 	mov	ax, word ptr [ebp+ebx*4+12]	; 5.6.7.8
-	bswap	eax				; 8.7.6.5
+	bswap	eax				; it's correct so swap for bus write
 	mov	dword ptr [edi+esi*2+4], eax
 
+
 device_write_data16_2:			; store 2 words in 16-bit array
-	mov	ax, word ptr [ebp+ebx*4]
+					; registers are modeled in storage
+					; so each bus read corrects an octet pair
+
+	mov	ax, word ptr [ebp+ebx*4]	; get low-order half 1st register
 	shl	eax, 16				; 1.2.0.0
 	mov	ax, word ptr [ebp+ebx*4+4]	; 1.2.3.4
-	bswap	eax				; 4.3.2.1
-	mov	dword ptr [edi+esi*2], eax	; 1.2.3.4
+	bswap	eax				; it's correct, so swap for bus write
+	mov	dword ptr [edi+esi*2], eax
 	ret
 
 device_write_array24:			; store 24-bit packed array
@@ -997,15 +997,14 @@ device_write_array24_x:
 	mov	byte ptr [edi+esi+1], al
 	rol	eax, 8
 	mov	byte ptr [edi+esi+2], al
+	add	esi, 3
 	ret
 
 device_write_array24_2:			; store 2 words in packed 24-bit array
 	mov	eax, [ebp+ebx*4]
 	call	device_write_array24_x
-	add	esi, 3
 	mov	eax, [ebp+ebx*4+4]
 	call	device_write_array24_x
-	add	esi, 3
 	add	ebx, 2
 	ret
 

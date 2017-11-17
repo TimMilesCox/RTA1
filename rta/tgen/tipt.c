@@ -436,7 +436,7 @@ static void action(char request[])
          if      (symbol == '0') sscanf(request,     "%x", &index);
          else if (symbol == 'r') sscanf(request + 1, "%d", &index);
 
-         while (index < 256)
+         while (index < 280)
          {
             print_register_row(index);
             index += 8;
@@ -765,6 +765,6 @@ static void print_register_row(int index)
 
    if (flag['e'-'a']) printf("[%p]", _register);
    printf("%2.2x:", index);
-   while ((xx--) && (index < 256)) printf(" %6.6x", _register[index++]);
+   while ((xx--) && (index < 280)) printf(" %6.6x", _register[index++]);
 }
 
