@@ -293,26 +293,33 @@ _ts:	call	_memory_read
 	add	edx, 4		; successful, skip one instruction
 _ts_:	ret
 
-_sim:	mov	ebx, dword ptr [_psr]
-	rol	ebx, 16
-	and	ebx, 7
-	test	eax, 00FFFF00h
+simin:	mov	ecx, dword ptr [_psr]	; hand back EA in eax unchanged
+	ror	ecx, 16			; and imask for store in ebx
+	and	ebx, 7			; new imask for insertion
+	mov	bh, cl			; imask for save
+	and	cl, 248			; guard MS 5 bits of PSR
+	and	bh, 7			; store only saved imask
+	or	cl, al			; add new imask bits to PSR
+	ror	ecx, 16			; position and activate
+	mov	dword ptr [_psr], ecx
+	shr	ebx, 8			; position imask for save
+	ret
+
+_sim:	test	eax, 00FFFF00h		; storage or register?
 	jz	_sim_register
-	call	_memory_read
-	and	edi, edi
-	jz	_sim_
-	and	eax, 7
-	shl	eax, 16
-	or	dword ptr [_psr], eax
-	bswap	ebx
-	mov	dword ptr [edi+esi*4], ebx
+	call	_memory_read		; storage, system memory only
+	and	edi, edi		; is that where this location is?
+	jz	_sim_			; if not don't do this request
+	mov	ebx, eax
+	call	simin			; swap imask in PSR
+	bswap	ebx			; storing by hand so swap first
+	mov	dword ptr [edi+esi*4], ebx ; write to addresses from read
 _sim_:	ret
 _sim_register:
-	mov	ecx, dword ptr [ebp+eax*4]
-	and	ecx, 7
-	shl	ecx, 16		; also zeros the operand type in cl
-	or	dword ptr [_psr], ecx
-	jmp	_operand_write
+	mov	ebx, dword ptr [ebp+eax*4]	; read register[EA]
+	call	simin			; swap imask in PSR
+	jmp	_operand_write		; allow operand complex to decide
+					; if this is a register you may write
 
 _call:	add	dword ptr [ebp+S_P], -2
 	mov	ebx, dword ptr [ebp+S_P]
