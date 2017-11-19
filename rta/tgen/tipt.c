@@ -248,8 +248,9 @@ void *emulate()	/* thread start */
    for (;;)
    {
       if (flag['s'-'a']) indication |= LOCKSTEP;
-      if (flag['e'-'a']) printf("[%x %p %x %p]\n",
-                                 indication, register_set, psr, apc);
+      if (flag['e'-'a']) printf("[%x %p %x %p %x]\n",
+                                 indication, register_set, psr, apc,
+                                 apc - memory.array);
       #ifdef X86_MSW
       __masm {
         engage:
