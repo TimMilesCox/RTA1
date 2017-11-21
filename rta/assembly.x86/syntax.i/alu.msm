@@ -64,9 +64,121 @@ _ab_:	add	eax, dword ptr [ebp+B]
 	mov	dword ptr [ebp+B], eax
 	ret
 
-_m:	ret
-_mf:	ret
-_d:	ret
+_m:	push	edx			; 80386 platform has it ready made, so
+	call	_operand_read
+	shl	eax, 8
+	sar	eax, 8
+	mov	ebx, dword ptr [__register+B]	; this is really RTA1 multiplicand but
+						; it makes no difference which is which
+	shl	ebx, 8
+	sar	ebx, 8
+	imul	ebx
+	rol	eax, 8
+	shl	edx, 8
+	mov	dl, al
+	shr	eax, 8
+	mov	dword ptr [__register+B], eax
+	shl	edx, 8
+	shr	edx, 8
+	mov	dword ptr [__register+A], eax
+	pop	edx
+	ret
+
+_mf:	push	edx		; the multiplier is signed the multiplicand unsigned
+	call	_operand_read
+	mov	ecx, eax	; just to remember the multiplier sign
+	test	eax, 00800000h
+	jz	_mfplusplus
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+_mfplusplus:
+	mov	ebx, dword ptr [__register+B]	; this is the multiplicand, unsigned
+	mul	ebx		; two 24-bit unsigned values should be OK here
+	rol	eax, 8
+	shl	edx, 8
+	mov	dl, al
+	shr	eax, 8
+	shl	edx, 8
+	shr	edx, 8
+	test	ecx, 00800000h	; was the multiplier signed?
+	jz	_mfstore
+	xor	eax, 00FFFFFFh
+	xor	edx, 00FFFFFFh
+	add	eax, 1
+	rol	eax, 1
+	movzx	ecx, al
+	shr	eax, 1
+	add	edx, ecx
+	and	edx, 00FFFFFFh
+_mfstore:
+	mov	dword ptr [__register+B], eax
+	mov	dword ptr [__register+A], edx
+	pop	edx
+	ret
+
+;	we should use the platform's divide instead of
+;	shift / test-subtract but RTA1 has a 48-bit quotient
+;	so two unsigned divides and sign conversions are done
+
+_d:	push	edx
+	call	_operand_read
+	mov	ebx, eax
+	mov	ecx, 0
+	test	eax, 00800000h
+	jz	_divisorplus
+	xor	cx, 0FFFFh		; -divisor +-quotient 
+	xor	ebx, 00FFFFFFh
+	add	ebx, 1
+_divisorplus:
+	mov	dword ptr [__register+A], eax	; dealt with 1st
+	mov	dword ptr [__register+B], edx	; dealt with after
+	test	eax, 00800000h
+	jz	_dividendplus
+	xor	ecx, 0FFFFFF00h		; quotient reversed, remainder negative
+	xor	edx,  00FFFFFFh
+	xor	eax,  00FFFFFFh
+	add	edx, 1
+_dividendplus:
+	push	edx
+	shr	edx, 24
+	add	eax, edx		; possible carry from negation
+	shr	edx, 1			; zero it
+	div	ebx			; quotient in eax
+	mov	dword ptr [__register+MANTISSA2], eax
+	pop	eax			; remainder is new upper dividend in edx
+					; the two halves must be catenated now
+	shl	eax, 8
+	mov	al, dl
+	ror	eax, 8
+	shr	edx, 8
+	div	ebx
+
+	sar	ecx, 8			; quotient sign moved to cl
+	shl	edx, 8			; sign remainder
+	xor	edx, ecx
+	and	ecx, 511
+	add	edx, ecx
+	shr	edx, 8			; store remainder
+	mov	dword ptr [__register+B], edx
+
+	test	cl, 128			; quotient negative?
+	jz	_dstoreq
+
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+	rol	eax, 8
+	mov	edx, dword ptr [__register+MANTISSA2] ; high order quotient word
+	xor	edx, 00FFFFFFh
+	movzx	ecx, al
+	shr	eax, 1
+	add	edx, ecx
+	and	edx, 00FFFFFFh
+	mov	dword ptr [__register+MANTISSA2], edx
+	
+_dstoreq:
+	mov	dword ptr [__register+A], eax
+	pop	edx
+	ret
 
 _sar:	mov	cl, al			; platform shift radix is 32
 	mov	eax, dword ptr [ebp+A]	; that does all that is required
@@ -166,6 +278,7 @@ dsll:	add	cl, 16
 	jnc	dsl7
 dsl8:	rol	ebx, 8
 	mov	al, bl
+	xor	bl, bl
 	shl	eax, 8
 	add	cl, -8
 	jc	dsl8
@@ -502,21 +615,24 @@ field_scale:			; examine 24-bit integer in 8-position steps
 	xor	al, ch
 	jnz	not8signs
 	add	cl, 8
-	cmp	al, 24
+	cmp	cl, 24
 	jb	field_scale
 not8signs:
+	mov	dword ptr [__register+256*4], ecx
 	ret
 
 scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0 
 
-scale8:	test	al, 240		; highest 1s bit in al is the 1st non-sign
+scale8: and	al, al
+	jz	scalez
+	test	al, 240		; highest 1s bit in al is the 1st non-sign
 	jnz	scale4
 	add	cl, 4
 	rol	al, 4
 scale4:	shr	al, 4	
 	movzx	esi, al	; you can have si now
 	add	cl, [cs:esi+scalex]
-	ret
+scalez:	ret
 
 _lsc:	call	_operand_read
 	shl	eax, 8		; 1.2.3
