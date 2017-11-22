@@ -68,8 +68,8 @@ _m:	push	edx			; 80386 platform has it ready made, so
 	call	_operand_read
 	shl	eax, 8
 	sar	eax, 8
-	mov	ebx, dword ptr [__register+B]	; this is really RTA1 multiplicand but
-						; it makes no difference which is which
+	mov	ebx, dword ptr [ebp+B]	; this is really RTA1 multiplicand but
+					; it makes no difference which is which
 	shl	ebx, 8
 	sar	ebx, 8
 	imul	ebx
@@ -77,10 +77,10 @@ _m:	push	edx			; 80386 platform has it ready made, so
 	shl	edx, 8
 	mov	dl, al
 	shr	eax, 8
-	mov	dword ptr [__register+B], eax
+	mov	dword ptr [ebp+B], eax
 	shl	edx, 8
 	shr	edx, 8
-	mov	dword ptr [__register+A], eax
+	mov	dword ptr [ebp+A], eax
 	pop	edx
 	ret
 
@@ -92,7 +92,7 @@ _mf:	push	edx		; the multiplier is signed the multiplicand unsigned
 	xor	eax, 00FFFFFFh
 	add	eax, 1
 _mfplusplus:
-	mov	ebx, dword ptr [__register+B]	; this is the multiplicand, unsigned
+	mov	ebx, dword ptr [ebp+B]	; this is the multiplicand, unsigned
 	mul	ebx		; two 24-bit unsigned values should be OK here
 	rol	eax, 8
 	shl	edx, 8
@@ -111,74 +111,163 @@ _mfplusplus:
 	add	edx, ecx
 	and	edx, 00FFFFFFh
 _mfstore:
-	mov	dword ptr [__register+B], eax
-	mov	dword ptr [__register+A], edx
+	mov	dword ptr [ebp+B], eax
+	mov	dword ptr [ebp+A], edx
 	pop	edx
 	ret
 
-;	we should use the platform's divide instead of
-;	shift / test-subtract but RTA1 has a 48-bit quotient
-;	so two unsigned divides and sign conversions are done
+_d:	xor	ebx, ebx
+	push	ebx		;
+	push	ebx		; quotient
+	push	ebx		; dividend[b]
+	push	ebx		; dividend[a]
+	push	ebx		; trailing divisor
+	push	ebx		; divisor
+	push	ebx		; signs2 
+	push	ebx		; signs1
+	mov	ebx, 24
+	push	ebx		; beats
 
-_d:	push	edx
+
+_D_BEATS	equ	0
+_D_SIGNS1	equ	1*4
+_D_SIGNS2	equ	2*4
+_D_DIVISORU	equ	3*4
+_D_DIVISORL	equ	4*4
+_D_DIVIDENDU	equ	5*4
+_D_DIVIDENDL	equ	6*4
+_D_QUOTIENTU	equ	7*4
+_D_QUOTIENTL	equ	8*4
+
 	call	_operand_read
-	mov	ebx, eax
-	mov	ecx, 0
+	mov	dword ptr [__register+260*4], eax
 	test	eax, 00800000h
-	jz	_divisorplus
-	xor	cx, 0FFFFh		; -divisor +-quotient 
-	xor	ebx, 00FFFFFFh
-	add	ebx, 1
-_divisorplus:
-	mov	dword ptr [__register+A], eax	; dealt with 1st
-	mov	dword ptr [__register+B], edx	; dealt with after
-	test	eax, 00800000h
-	jz	_dividendplus
-	xor	ecx, 0FFFFFF00h		; quotient reversed, remainder negative
-	xor	edx,  00FFFFFFh
-	xor	eax,  00FFFFFFh
-	add	edx, 1
-_dividendplus:
-	push	edx
-	shr	edx, 24
-	add	eax, edx		; possible carry from negation
-	shr	edx, 1			; zero it
-	div	ebx			; quotient in eax
-	mov	dword ptr [__register+MANTISSA2], eax
-	pop	eax			; remainder is new upper dividend in edx
-					; the two halves must be catenated now
-	shl	eax, 8
-	mov	al, dl
-	ror	eax, 8
-	shr	edx, 8
-	div	ebx
-
-	sar	ecx, 8			; quotient sign moved to cl
-	shl	edx, 8			; sign remainder
-	xor	edx, ecx
-	and	ecx, 511
-	add	edx, ecx
-	shr	edx, 8			; store remainder
-	mov	dword ptr [__register+B], edx
-
-	test	cl, 128			; quotient negative?
-	jz	_dstoreq
-
+	jnz	_d_nmagnitude1			; must be stored negative
 	xor	eax, 00FFFFFFh
-	add	eax, 1
-	rol	eax, 8
-	mov	edx, dword ptr [__register+MANTISSA2] ; high order quotient word
-	xor	edx, 00FFFFFFh
-	movzx	ecx, al
-	shr	eax, 1
-	add	edx, ecx
-	and	edx, 00FFFFFFh
-	mov	dword ptr [__register+MANTISSA2], edx
+	jmp	_d_nmagnitude2
+_d_nmagnitude1:
+	add	eax, -1				; if it's already negative
+	mov	dword ptr [esp+_D_SIGNS2], 0FFFFFFFFh
+_d_nmagnitude2:
+	mov	dword ptr [__register+261*4], eax
+	call	qscale
+	mov	dword ptr [__register+262*4], eax
+	mov	dword ptr [__register+263*4], ebx
+	cmp	bl, 24
+	jz	_d_allsigns
+	add	dword ptr [esp+_D_BEATS], ebx
+_d_allsigns:
+	mov	ebx, 00FFFFFF00h ; make the divisor 48 bits contiguous	
+	mov	bl, al
+	ror	ebx, 8
+	shl	eax, 8
+	mov	ax, 65535
+	ror	eax, 16
+
+	mov	dword ptr [esp+_D_DIVISORL], ebx
+	mov	dword ptr [esp+_D_DIVISORU], eax
+
+	mov	dword ptr [__register+257*4], ebx
+	mov	dword ptr [__register+256*4], eax
+
+	mov	ecx, 1				; precarry
+	mov	ebx, dword ptr [ebp+B]	; dividend
+	mov	eax, dword ptr [ebp+A]
+
+	mov	dword ptr [__register+266*4], ebx
+	mov	dword ptr [__register+265*4], eax
+
+	test	eax, 00800000h
+	jz	_d_pmagnitude			; must be stored positive
+	mov	dword ptr [esp+_D_SIGNS1], 00FFFFFFFFh
+	xor	ebx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	add	ecx, ebx
+	mov	ebx, ecx
+	and	ebx, 00FFFFFFh
+	shr	ecx, 24
+	add	eax, ecx
+	and	eax, 00FFFFFFh
+
+_d_pmagnitude:
+	shl	ebx, 8
+	mov	bl, al
+	ror	ebx, 8
+	shl	eax, 8
+	shr	eax, 16
+	mov	dword ptr [esp+_D_DIVIDENDL], ebx
+	mov	dword ptr [esp+_D_DIVIDENDU], eax
+
+	mov	dword ptr [__register+259*4], ebx
+	mov	dword ptr [__register+258*4], eax
+
+	mov	ecx, dword ptr [esp+_D_BEATS]
+	mov	dword ptr [__register+264*4], ecx
+
+	add	ecx, -1
+_d_beat:			; iterative part as quick as possible
+				; could study doing a pair of Intel divides here
+	stc
+	rcr	dword ptr [esp+_D_DIVISORU], 1
+	rcr	dword ptr [esp+_D_DIVISORL], 1
+
+	stc
+	adc	ebx, dword ptr [esp+_D_DIVISORL]
+	adc	eax, dword ptr [esp+_D_DIVISORU]
+
+	jc	_d_carried
+	mov	ebx, dword ptr [esp+_D_DIVIDENDL]
+	mov	eax, dword ptr [esp+_D_DIVIDENDU]
+	jmp	_d_carried_or_not
+
+_d_carried:
+	mov	dword ptr [esp+_D_DIVIDENDL], ebx
+	mov	dword ptr [esp+_D_DIVIDENDU], eax
+
+_d_carried_or_not:
+	rcl	dword ptr [esp+_D_QUOTIENTL], 1
+	rcl	dword ptr [esp+_D_QUOTIENTU], 1
 	
-_dstoreq:
-	mov	dword ptr [__register+A], eax
-	pop	edx
+	add	ecx, -1
+	jc	_d_beat
+
+	pop	ecx		; BEATS
+	pop	ecx		; SIGNS1
+	pop	eax		; SIGNS2
+	pop	ebx		; DIVISORU
+	pop	ebx		; DIVISORL
+	pop	ebx		; DIVIDENDU
+	pop	ebx		; DIVIDENDL
+
+	xor	ebx, ecx	; set remainder to sign of dividend
+	
+	and	ebx, 00FFFFFFh	; store remainder
+	mov	dword ptr [ebp+B], ebx
+
+	xor	ecx, eax	; set sign of quotient to difference of signs
+
+	pop	eax		; QUOTIENTU
+	pop	ebx		; QUOTIENTL
+
+	jns	_d_quotient_plus		; cc set from xor
+
+	not	eax
+	not	ebx
+	add	ebx, 1
+	adc	eax, 0
+
+_d_quotient_plus:
+	shl	eax, 8
+	rol	ebx, 8
+	mov	al, bl
+	shr	ebx, 8
+	shl	eax, 8
+	shr	eax, a
+
+	mov	dword ptr [ebp+A], ebx
+	mov	dword ptr [ebp+MANTISSA2], eax
 	ret
+
 
 _sar:	mov	cl, al			; platform shift radix is 32
 	mov	eax, dword ptr [ebp+A]	; that does all that is required
@@ -596,6 +685,7 @@ _dan:	call	_burst_read2
 	xor	eax, 00FFFFFFh
 	add	ebx, 1
 _da_:	add	ebx, [ebp+B]
+	mov	dword ptr [__register+279*4], ebx
 	rol	ebx, 8
 	movzx	ecx, bl
 	shr	ebx, 8
@@ -618,7 +708,6 @@ field_scale:			; examine 24-bit integer in 8-position steps
 	cmp	cl, 24
 	jb	field_scale
 not8signs:
-	mov	dword ptr [__register+256*4], ecx
 	ret
 
 scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0 
@@ -634,23 +723,27 @@ scale4:	shr	al, 4
 	add	cl, [cs:esi+scalex]
 scalez:	ret
 
-_lsc:	call	_operand_read
-	shl	eax, 8		; 1.2.3
+
+qscale:	shl	eax, 8		; 1.2.3
 	sar	eax, 8		; s.1.2.3
 	rol	eax, 8		; 1.2.3.s
 	xor	cx, cx
 	mov	ch, al		; keep 8 sign bits
 	call	field_scale
 	call	scale8
-	movzx	ebx, cl
-	mov	dword ptr [ebp+B], ebx	; store the scale
-	mov	al, ah			; reverse the last 8 rotation positions
+	mov	al, ah		; reverse 8 rotate positions
 	ror	eax, 8
-	and	cl, 7			; do the last part of the rotate
+	movzx	ebx, cl
+	and	cl, 7		; last part rotate
 	xor	al, al
-	rol	eax, 7
+	rol	eax, cl
 	or	ah, al
 	shr	eax, 8
+	ret
+
+_lsc:	call	_operand_read
+	call	qscale
+	mov	dword ptr [ebp+B], ebx	; store the scale
 	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
 

@@ -36,7 +36,10 @@
 static word		*breakpoint;
 
 int			 indication;
+
+#if 0
 int			 trace, trace1, trace2, trace3;
+#endif
 
 #ifndef	X86_MSW
 static struct pollfd	 attention = { 0, POLLIN } ;
@@ -205,8 +208,12 @@ int main(int argc, char *argv[])
       if (_x)
       {
          flag['s'-'a'] = 1;
+
+         #if 0
          putchar('>');
          fflush(stdout);
+         #endif
+
          _p = fgets(text, 71, stdin);
 
          if (_p == NULL)
@@ -333,9 +340,11 @@ void *emulate()	/* thread start */
       }
       #endif
 
+      #if 0
       if (flag['e'-'a'])
       printf("[0:%8.8x 1:%8.8x 2:%8.8x 3:%8.8x]\n",
               trace, trace1, trace2, trace3);
+      #endif
 
       if (indication & CHILLDOWN)
       {
@@ -366,8 +375,11 @@ void *emulate()	/* thread start */
       if ((indication & LOCKSTEP) == 0) continue;
 
       statement();
+
+      #if 1
       putchar('>');
       fflush(stdout);
+      #endif
 
       while (indication & LOCKSTEP) usleep(10000);
    } 
@@ -386,6 +398,7 @@ static void action(char request[])
                          absolute;
 
    int			 symbol = request[0];
+   int			 prompt = 0;
 
    char			 path[360];
 
@@ -398,6 +411,8 @@ static void action(char request[])
          return;
       }
    }
+
+   prompt = 1;
 
    switch(symbol)
    {
@@ -423,6 +438,7 @@ static void action(char request[])
             if (flag['e'-'a']) printf("[@%p:%p]", memory.array, breakpoint);
          }
 
+         prompt = 0;
          putchar(':');
          fflush(stdout);
          break;
@@ -599,13 +615,23 @@ static void action(char request[])
          break;
 
       case '.':
+         prompt = 0;
          indication &= -1 ^ LOCKSTEP;
          break;
 
       default:
+         prompt = 0;
          indication &= -1 ^ LOCKSTEP;
          break;
    }
+
+   #if 1
+   if (prompt)
+   {
+      putchar('>');
+      fflush(stdout);
+   }
+   #endif
 }
 
 static void load_fs(char *path)
