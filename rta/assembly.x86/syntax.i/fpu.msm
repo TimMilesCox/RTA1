@@ -1,4 +1,369 @@
-_fa:	ret
-_fan:	ret
-_fm:	ret
-_fd:	ret
+_acquire:			; readout floating operand
+				; and pack to 32-bit words
+				; for 1 bit-distance shifting
+	test	eax, 00FFFF00h
+	jnz	_acquireM
+_acquireR:			; from registers
+	mov	esi, eax
+	mov	eax, dword ptr [esi*4+__register]
+	shl	eax, 8
+	sar	eax, 8
+	rol	eax, 8
+	mov	cl, al
+	sar	eax, 8
+	ror	ecx, 8
+	sar	ecx, 24		; 32 sign bits
+	xor	eax, ecx	; magnitude scale
+	mov	dword ptr [ebp+ebx], ecx
+	mov	dword ptr [ebp+ebx+1*4], eax
+	mov	dword ptr [ebp+ebx+5*4], ecx
+	mov	dword ptr [ebp+ebx+6*4], ecx
+	mov	dword ptr [ebp+ebx+7*4], ecx	
+	mov	eax, dword ptr [esi*4+__register+3*4]	; read mantissa bits 23..0
+	mov	cl, al		; low order 8 mantissa bits + 24 signs
+	ror	ecx, 8
+	mov	dword ptr [ebp+ebx+4*4], ecx
+	shl	eax, 8
+	mov	ecx, dword ptr [esi*4+__register+2*4]	; read mantissa bits 47..24
+	mov	ax, cx
+	ror	eax, 16
+	mov	dword ptr [ebp+ebx+3*4], eax
+	mov	eax, dword ptr [esi*4+__register+1*4]	; read mantissa bits 71..48
+	shl	eax, 8
+	shr	ecx, 16
+	mov	al, cl
+	mov	dword ptr [ebp+ebx+2*4], eax
+	
+	ret
+
+;	<------------ 144-bit mantissa 143..72-------------|
+;	<------------  72-bit mantissa ------>
+;	_____________|___________|____________|____________________________
+;	|      24    | 8 |   16  |   16   | 8 |    24 signs|96 more signs for
+;	|____________|___|______ |________|___|____________|residue calculation
+;	| platform word 5| platform word 4|   +rounding <--- @  96-bit operation
+
+;	                 <---------------------------------[ platform words 2..0
+;	                 :
+;	                 [                                                  ]
+
+;	                 |--- 144-bit mantissa 71:0   -------->
+;	                      rounding @ 192-bit operation --->+
+;      	                 _________________________|____________|_____________
+;	                 |      24    | 8 |   16  |   16   | 8 |    24 signs|
+;	                 |____________|___|_______|________|___|____________|
+;	                 | platform word 2| platform word 1| platform word 0|
+;	                                    
+
+_acquireM:			; from memory
+	call	bus_read	; 1st operand word returned in eax
+	shl	eax, 8		; [edi+esi] point to all 4 words
+	sar	eax, 8
+	rol	eax, 8
+	mov	cl, al
+	ror	ecx, 8
+	sar	ecx, 24
+	xor	eax, ecx
+	mov	dword ptr [ebx], ecx
+	mov	dword ptr [ebx+1*4], eax
+	mov	dword ptr [ebx+7*4], ecx
+	mov	dword ptr [ebx+6*4], ecx
+	mov	dword ptr [ebx+5*4], ecx
+	mov	eax, dword ptr [edi+esi+3*4]
+	mov	cl, al
+	ror	ecx, 8
+	mov	dword ptr [ebx+4*4], ecx
+	mov	ecx, dword ptr [edi+esi+2*4]
+	shl	eax, 8
+	mov	ax, cx
+	ror	eax, 16
+	mov	dword ptr [ebx+3*4], eax
+	mov	eax, dword ptr [edi+esi+1*4]
+	shl	eax, 8
+	shr	ecx, 16
+	mov	al, cl
+	mov	dword ptr [ebx+2*4], eax
+	ret
+
+_deliver_:
+	test	dword ptr [_psr], FP_R
+	jz	_deliver
+
+_store_residue:			; deliver floating residue
+	add	ebx, -72	; calculate exponent of residue
+	mov	cl, 72
+	
+_normalise_residue:
+	test	dword ptr [esi+5*4], 080000000h
+	jnz	_residue_normalised
+	clc
+	rcl	dword ptr [esi+7*4], 1
+	rcl	dword ptr [esi+6*4], 1
+	rcl	dword ptr [esi+5*4], 1
+	add	ebx, -1
+	add	cl, -1
+	jc	_normalise_residue
+	xor	ebx, ebx
+_residue_normalised:
+	mov	eax, dword ptr [esi]	; signs
+	xor	eax, ebx
+	and	eax, 00FFFFFFh
+	push	esi
+	push	ecx
+	add	esi, 5*4
+	mov	ebx, 8
+	call	_store_float
+	pop	ecx
+	pop	esi
+
+_deliver:			; deliver floating result
+	ror	ecx, 16
+	movzx	ebx, cx		; result register[ebp+] 
+	add	esi, 5*4
+	mov	eax, dword ptr [esi+4]		; characteristic
+
+_store_float
+        mov     dword ptr [ebp+ebx*4], eax      ; that part wasn't hard
+        mov     eax, dword ptr [esi]
+        movzx   ecx, al
+        shr     eax, 8
+        mov     dword ptr [ebp+ebx*4+4], eax
+        mov     eax, dword ptr [esi+4]
+        shl     ecx, 16
+        ror     eax, 16
+        mov     cx, ax
+        mov     dword ptr [ebp+ebx*4+8], ecx
+        mov     ecx, dword ptr [esi+8]
+        shr     ecx, 16
+        mov     ax, cx
+        shr     eax, 8
+        mov     dword ptr [ebp+ebx*4+8], ecx
+	ret
+
+_OUTPUT	equ	__register+272*4
+_INPUTR equ	__register+264*4
+_INPUT2 equ	__register+256*4
+
+zoutput:
+	xor	eax, eax
+	mov	dword ptr [esi], eax
+	mov	dword ptr [esi+1*4], eax
+	mov	dword ptr [esi+2*4], eax
+	mov	dword ptr [esi+3*4], eax
+	mov	dword ptr [esi+4*4], eax
+	mov	dword ptr [esi+5*4], eax
+	mov	dword ptr [esi+6*4], eax
+	mov	dword ptr [esi+7*4], eax
+	ret
+
+round:	mov	eax, dword ptr [__register+FP_GUARD]
+	ror	ecx, 16				; save destination register index
+	test	dword ptr [_psr], FP_R
+	jz	round72
+	xor	dword ptr [esi+7*4], eax	; round a 144-bit mantissa
+	mov	cx, 08F8Fh			; set words 6 and beats 144
+	ret
+round72:
+	xor	dword ptr [esi+4*4], eax	; round a 72-bit mantissa
+	mov	cx, 04747h			; set words 3 and beats 72
+	ret
+
+zover:	not	dword ptr [esi+2*4]
+	not	dword ptr [esi+3*4]
+	not	dword ptr [esi+4*4]
+	not	dword ptr [esi+5*4]
+	not	dword ptr [esi+6*4]
+	not	dword ptr [esi+7*4]
+	ret
+
+_add_low:
+        mov     edx, dword ptr [_INPUT2+7*4]
+        adc     edx, dword ptr [_INPUTR+7*4]
+        mov     ebx, dword ptr [_INPUT2+6*4]
+        adc     ebx, dword ptr [_INPUTR+6*4]
+        mov     eax, dword ptr [_INPUT2+5*4]
+        adc     eax, dword ptr [_INPUTR+5*4]
+        ret
+
+_add_high:
+        mov     edx, dword ptr [_INPUT2+4*4]
+        adc     edx, dword ptr [_INPUTR+4*4]
+        mov     ebx, dword ptr [_INPUT2+3*4]
+        adc     ebx, dword ptr [_INPUTR+3*4]
+        mov     eax, dword ptr [_INPUT2+2*4]
+        adc     eax, dword ptr [_INPUTR+2*4]
+        ret
+
+fa:	ret
+fan:	ret
+
+fm:	mov	esi, _OUTPUT
+	call	zoutput
+
+	mov	esi, _OUTPUT
+	jmp	_store_residue
+
+fd:	mov	esi, _OUTPUT
+	call	zoutput		; result which may stay zero
+	mov	eax, dword ptr [_INPUT2]
+	mov	ebx, eax
+	xor	eax, dword ptr [_INPUT2+2*4]
+	jns	_deliver_	; not normalised = zero divisor
+	and	ebx, ebx
+	js	fd_comp1
+	mov	esi, _INPUT2	; divisor must be 1s complement negative
+	call	zover
+fd_comp1:
+	test	dword ptr [_INPUTR], 080000000h
+	jz	fd_upright	; dividend must be positive magnitude
+	mov	esi, _INPUTR
+	call	zover
+fd_upright
+	call	round		; this also set counters
+
+	push	edx
+
+	test	ch, 128
+	jz	near fd_72
+	mov	edi, esp
+
+fd_144:	stc
+	rcr	dword ptr [_INPUT2+2*4], 1
+	rcr	dword ptr [_INPUT2+3*4], 1
+	rcr	dword ptr [_INPUT2+4*4], 1
+	rcr	dword ptr [_INPUT2+5*4], 1
+	rcr	dword ptr [_INPUT2+6*4], 1
+	rcr	dword ptr [_INPUT2+7*4], 1
+
+	stc
+	call	_add_low
+	push	edx
+	push	ebx
+	push	eax
+	call	_add_high
+
+	jnc	fd_144level
+
+	mov	dword ptr [_INPUTR+2*4], eax
+	mov	dword ptr [_INPUTR+3*4], ebx
+	mov	dword ptr [_INPUTR+4*4], edx
+
+	pop	eax
+	mov	dword ptr [_INPUTR+5*4], eax
+	pop	eax
+	mov	dword ptr [_INPUTR+6*4], eax
+	pop	eax
+	mov	dword ptr [_INPUTR+7*4], eax
+fd_144level:
+	mov	esp, edi
+	rcl	dword ptr [_OUTPUT+7*4], 1
+	rcl	dword ptr [_OUTPUT+6*4], 1
+	rcl	dword ptr [_OUTPUT+5*4], 1
+	rcl	dword ptr [_OUTPUT+4*4], 1
+	rcl	dword ptr [_OUTPUT+3*4], 1
+	rcl	dword ptr [_OUTPUT+2*4], 1
+
+	add	cl, -1
+	jc	fd_144
+	jmp	fd_restore	
+
+fd_72:	stc
+	rcr     dword ptr [_INPUT2+2*4], 1
+	rcr	dword ptr [_INPUT2+3*4], 1
+	rcr	dword ptr [_INPUT2+4*4], 1
+
+	stc
+	call	_add_high
+	jnc	fd_72level
+
+	mov	dword ptr [_INPUTR+2*4], eax
+	mov	dword ptr [_INPUTR+3*4], ebx
+	mov	dword ptr [_INPUTR+2*4], edx
+fd_72level:
+	rcl	dword ptr [_OUTPUT+4*4], 1
+	rcl	dword ptr [_OUTPUT+3*4], 1
+	rcl	dword ptr [_OUTPUT+2*4], 1
+	add	cl, -1
+	jc	fd_72
+
+fd_restore:
+	pop	edx		; hand the program counter back
+
+ 	mov	eax, dword ptr [_INPUTR+1*4]	; + magnitude dividend exponent
+	sub	eax, dword ptr [_INPUT2+1*4]	; + magnitude divisor exponent
+	add	eax, 00400001h			; midpoint + 1
+	and	eax, 007FFFFFh
+	mov	dword ptr [_OUTPUT+1*4], eax
+
+	mov	cl, ch		; retrieve 2nd copy of beats count
+fd_normalise:
+	test	dword ptr [_OUTPUT+2*4], 080000000h
+	jnz	fd_normalised
+	clc
+	rcl	dword ptr [_OUTPUT+7*4], 1
+	rcl	dword ptr [_OUTPUT+6*4], 1
+	rcl	dword ptr [_OUTPUT+5*4], 1
+	rcl	dword ptr [_OUTPUT+4*4], 1
+	rcl	dword ptr [_OUTPUT+3*4], 1
+	rcl	dword ptr [_OUTPUT+2*4], 1
+
+	add	dword ptr [_OUTPUT+1*4], -1
+	add	cl, -1
+	jc	fd_normalise
+	mov	dword ptr [_OUTPUT+1*4], 0	; if mantissa is zero 
+						; so is everything else
+fd_normalised:
+	mov	esi, _OUTPUT			; tell rewrite where it is
+	mov	eax, dword ptr [_INPUTR]	; determine sign of quotient
+	xor	eax, dword ptr [_INPUT2]
+	mov	ebx, eax
+	and	ebx, 00FFFFFFh			; for switching the characteristic
+	xor	dword ptr [_OUTPUT+1*4], ebx	; switch characeristic of quotient
+	xor	dword ptr [_OUTPUT+2*4], eax	; switch quotient mantissa
+	xor	dword ptr [_OUTPUT+3*4], eax
+	xor	dword ptr [_OUTPUT+4*4], eax
+	test	ch, 128				; beats count < 128
+	jz	_deliver			; if so deliver the quotient
+	xor	dword ptr [_OUTPUT+5*4], eax	; switch the long mantissa
+	xor	dword ptr [_OUTPUT+6*4], eax
+	xor	dword ptr [_OUTPUT+7*4], eax
+	xor	ebx, dword ptr [_OUTPUT+1*4]	; hand + magnitude exponent along
+	jmp	_store_residue			; deliver the residue
+						; and then the quotient
+
+_fa:	mov	ebx, _INPUT2
+	call	_acquire
+	mov	eax, A
+	add	eax, ebp
+	mov	ebx, _INPUTR
+	call	_acquire
+	mov	cx, a				; destination[ebp+index]
+	jmp	fa
+
+_fan:	mov	ebx, _INPUT2
+	call	_acquire
+	mov	eax, A
+	add	eax, ebp
+	mov	ebx, _INPUTR
+	call	_acquire
+	mov	cx, a				; destination[ebp+index]
+	jmp	fan
+
+_fm:	mov	ebx, _INPUT2
+	call	_acquire
+	mov	eax, A
+	add	eax, ebp
+	mov	ebx, _INPUTR
+	call	_acquire
+	mov	cx, a				; destination[ebp+index]
+	jmp	fm
+
+_fd:	mov	ebx, _INPUT2
+	call	_acquire
+	mov	eax, A
+	add	eax, ebp
+	mov	ebx, _INPUTR
+	call	_acquire
+	mov	cx, a				; destination[ebp+index]
+	jmp	fd
+
