@@ -57,6 +57,8 @@ fs24_sla   -	1:d
 . http_file_octets
 .	+	0:d
 
+http_threads	1
+
 http_formation1
 	"HTTP/1.1 200 OK":CR:LF:;
 	"Content-Type: text/html; charset=UTF-8":CR:LF:;
@@ -137,8 +139,9 @@ http_walk
 	aa, xi	-TCP_SYNRECEIVED
 	jnza	http_remote_close?
 	call	(xaccept)
+	ii	YIELD$			. let the connection establish, then
 	ql	(http_request_thread,,,:q)
-	sx	6			. connection as parameter
+	sx	6			. assign the connection as parameter
 	ii	THREAD$
 	jnza	http_walk		. thread started
 	la	x			. thread not started, no resource
@@ -152,12 +155,22 @@ http_remote_close?
 	ii	YIELD$			. in case TCP servicing needed
 	j	http_walk_q		. start at the list start
 					. after you have done this
+http_xserve
+        $if     HTTP_THREADED
+        ii      YIELD$
+        j       http_walk_q
+        $endif
+http_zserve
+        fret    0
+
 
 http_request_thread $head_near	scalars(http_thread_transmission, int, a	;
 					fs24_cursor,		long		;
 					http_file_octets,	long		;	
 					http_target_name, 	72//3		)
 
+
+	inc	http_threads
 
 http_next_request
 	dl	http_sla
@@ -308,16 +321,10 @@ http_drop_request
 http_hangup
 .	call	(xdisco)
 http_thread_exit
+	dec	http_threads
 	$ret				.	thread end
 .	j	http_walk
 
-http_xserve
-	$if	HTTP_THREADED
-	ii	YIELD$
-	j	http_walk_q
-	$endif
-http_zserve
-	fret	0
 
 http_get_what				. y = caller's name buffer
 					. a = descriptor request message
