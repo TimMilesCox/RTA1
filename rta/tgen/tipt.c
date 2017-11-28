@@ -83,8 +83,9 @@ device			*pdevice = devices;
 
 #endif
 
-extern word              memory_read(int ea);
-extern int               bus_read(int device, int pointer);
+static word		 memory_read(int ea);
+extern void		 bus_read();
+//	extern int               bus_read(int device, int pointer);
 extern void              netbank();
 extern void		 execute(int instruction);
 
@@ -272,7 +273,7 @@ void *emulate()	/* thread start */
                 mov     ebp, dword ptr [register_set]
                 mov     edx, dword ptr [apc]
 
-        next:   mov     eax, dword ptr [ed]
+        next:   mov     eax, dword ptr [edx]
                 add     edx, 4
                 bswap   eax
                 call    execute
@@ -793,5 +794,28 @@ static void print_register_row(int index)
    if (flag['e'-'a']) printf("[%p]", _register);
    printf("%2.2x:", index);
    while ((xx--) && (index < 280)) printf(" %6.6x", _register[index++]);
+}
+
+
+/********************************************
+	readout target current address space
+********************************************/
+
+static word memory_read(int ea)
+{
+   word		 data;
+
+   __asm__
+   {
+	mov	eax, ea
+	push	ecx
+	mov	ecx, 0
+	call	bus_read
+	pop	ecx
+	bswap	eax
+	mov	data, eax
+   }
+
+   return data;
 }
 
