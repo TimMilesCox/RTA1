@@ -51,10 +51,10 @@ static long long	 u;
 static struct timeval	 time1;
 #endif
 
-#if	0
+#ifdef	GCC
 
-int			 iselect = 128;
-word			*apc = ROM_PAGE;
+extern int		 iselect;
+extern word		*apc;
 extern page		*b0p;
 extern unsigned int	 b0_name;
 extern unsigned int	 psr;
@@ -62,10 +62,12 @@ extern unsigned int	_register[];
 unsigned int		*register_set = _register+128;
 extern unsigned int	 base[];
 extern device		 devices[];
+extern system_memory	 memory;
 
 #else
 
 system_memory            memory;
+
 int              	 iselect = 128;
 word		    	*apc = ROM_PAGE;
 page            	*b0p  = memory.p4k;
@@ -83,11 +85,21 @@ device			*pdevice = devices;
 
 #endif
 
+#ifdef	GCC
+extern word		 memory_read(int ea);
+#else
 static word		 memory_read(int ea);
+#endif
+
 extern void		 bus_read();
 //	extern int               bus_read(int device, int pointer);
 extern void              netbank();
+
+#ifdef	GCC
+extern void		 execute(word instruction);
+#else
 extern void		 execute(int instruction);
+#endif
 
 static void		*emulate();
 static void		 statement();
@@ -291,6 +303,8 @@ void *emulate()	/* thread start */
 		pop	ebx
 		pop	eax
       }
+      #elif	defined	GCC
+      execute(*apc++);
       #else
       __asm__
       { 
@@ -801,6 +815,7 @@ static void print_register_row(int index)
 	readout target current address space
 ********************************************/
 
+#ifndef	GCC
 static word memory_read(int ea)
 {
    word		 data;
@@ -818,4 +833,5 @@ static word memory_read(int ea)
 
    return data;
 }
+#endif
 

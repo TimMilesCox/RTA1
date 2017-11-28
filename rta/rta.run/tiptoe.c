@@ -82,6 +82,9 @@
 #include "settings.h"
 
 #define	ARGUMENTS	3
+#define	CHILLDOWN	8
+
+int			 indication;
 
 extern int		 iselect;
 extern word		*apc;
@@ -467,6 +470,12 @@ int main(int argc, char *argv[])
             _register[REALTIME_CLOCK] = time_pointer;
             if (!time_pointer) ii(YIELD);
          }
+      }
+
+      if (indication & CHILLDOWN)
+      {
+         indication &= -1 ^ CHILLDOWN;
+         usleep(base[103]);
       }
 
       #ifdef TIMER

@@ -56,6 +56,8 @@
 #include "../rta.run/idisplay.h"
 #endif
 
+extern int			 indication;
+
 extern system_memory		 memory;
 #define ROM_PAGE		 &memory.p4k[0].w[0];
 
@@ -1284,6 +1286,7 @@ void execute(word instruction)
                   *******************************************************/
 
                   if (ea < IO_PORTS) base[ea] = a;
+                  if (ea == 102) indication |= a;
                   break;
                }
                
@@ -1326,6 +1329,7 @@ void execute(word instruction)
                   *******************************************************/
 
                   if (ea < IO_PORTS) base[ea] = b;
+                  if (ea == 102) indication |= b;
                   break;
                }
 
