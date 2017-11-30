@@ -123,6 +123,7 @@ http_walk_q
 
 
 http_walk
+	dl	(10d)			. this loop is otherwise tight
 	lx	transmission:next
 	tz	x
 	j	$+2
@@ -144,10 +145,10 @@ http_walk
 	sx	6			. assign the connection as parameter
 	ii	THREAD$
 	jnza	http_walk		. thread started
-	la	x			. thread not started, no resource
-	lcal	http_request_thread	. use this thread as last resort
-	j	http_walk
-
+	la	x			. thread not started but connection accepted
+	lcal	http_request_thread	. serve request in this thread
+	j	http_walk		. if connection not really established
+					. the call will return without action
 http_remote_close?
 	aa, xi	TCP_SYNRECEIVED-TCP_CLOSEWAIT
 	jnza	http_walk
@@ -181,7 +182,11 @@ http_next_request
 	lx	http_thread_transmission
 	la	transmission:state
 	aa	-TCP_ESTABLISHED,,xi
-	jnza	http_thread_exit
+	jza	http_traffic?
+	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED
+	jza	http_wait		. this takes longer on network
+	j	http_thread_exit	. than on loopback
+http_traffic?
 	la	transmission:receiveq:head
 	jza	http_wait
 
@@ -284,15 +289,16 @@ http_pushover
 	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
-	call	(tcp_release_rxline)
+http_norequest
 	lx	http_thread_transmission
+	call	(tcp_release_rxline)
 http_wait
-	dl	(750d)
-	ii	TWAIT$
-	j	http_next_request
-
+	dl	(20d)			. wait for remote browser
+	ii	TWAIT$			. to ask anything more
+	j	http_next_request	. on this connection
 
 http_drop_request
+	ii	GUARD$
 	la, xi	3*(0148d-01459)-1
 	lb, xi	$1("HTTP/1.1 200 OK":CR:LF:;
                    "Content-Type: text/html; charset=UTF-8":CR:LF:;
