@@ -736,7 +736,8 @@ tcp4_established!
 					. the top bit of the result
 					. is reliable
 	lcal	tcp4_retransmit1
-
+	lcal	tcp_restart_timer2	. (30.11.2017) ? an oversight
+					. this was not here?
 tcp4_new_traffic?
 	lcal	tcp_send_on_window
 	j	tcp4_globaltime?
@@ -751,9 +752,18 @@ tcp4_synreceived?
 	ana	transmission:timer(2)
 	jna	tcp4_globaltime?
 
+	$if	1			. adult time now!
+	tz	transmission:q4ack:head	. a local socket replied?
+	lcal	tcp4_retransmit1	. resend if so
+	lcal	tcp_restart_timer2	. no more completely automatic accepts
+
+	$else
+
 	lcal	tcp_restart_timer2
 	call	(tcp_accept)
 	j	tcp4_globaltime?	. there are 2 comebacks from accept
+
+	$endif
 
 tcp4_globaltime?
 	la	transmission:timer(1)
