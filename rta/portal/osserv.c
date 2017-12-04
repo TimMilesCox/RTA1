@@ -70,6 +70,9 @@ static struct bpf_hdr	 intro = { { 0, 0 } , 0, 0, sizeof(struct bpf_hdr) } ;
 static unsigned short udp_checksum(int bytes, char *user_datagram, char *net_addresses);
 static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses);
 
+static void diagnose(unsigned char *buffer_start,
+                     unsigned char *scan_point,
+                     int header_bytes, int packet_bytes, int buffer_bytes);
 
 static void *async()
 {
@@ -966,6 +969,7 @@ int main(int argc, char *argv[])
 	    if (j < 18)
             {
                printf("[1.%p/%p H%d F%d/%d]\n", data, p, j, y, bytes);
+               if (uflag['V'-'A']) diagnose(data, p, j, y, bytes);
                break;
             }
 
@@ -985,6 +989,30 @@ int main(int argc, char *argv[])
 
             forward(x, p, y);
 
+            if (uflag['A'-'A'] == 0)
+            {
+               /**************************************
+                  force alignment unless opted not to
+               **************************************/
+
+               y += j & 3;
+
+               /*************************************
+                  sometimes for ARP
+                  BPF uses header length to pack to
+                  halfword, even when datagram is
+                  a longword-aligned size
+
+                  the summed unalignedness of header
+                  size + packet size is used, because
+                  doing boolean stuff to the pointer
+                  requires desperate casting
+               **************************************/
+
+               y += 3;
+               y &= -4;
+            }
+
             p += y;
             bytes -= y;
          }
@@ -1001,5 +1029,49 @@ int main(int argc, char *argv[])
 
    for (x = 0; x < arguments; x++) close(s[x]);
    return 0;
+}
+
+static void diagnose(unsigned char *buffer_start,
+                     unsigned char *scan_point,
+                     int header_bytes, int packet_bytes, int buffer_bytes)
+{
+   int			 x = scan_point - buffer_start;
+   unsigned char	*q = buffer_start;
+   int			 poi = 0;
+
+   printf("input scan desynchronised %d+ bytes at %p\n", x, buffer_start);
+   printf("spurious header information at %p "
+          "header %d/ packet %d/ buffer %d\n",
+           scan_point, header_bytes, packet_bytes, buffer_bytes);
+
+   while (x--)
+   {
+      if ((poi & 15) == 0) printf("\n%4.4x: ", poi);
+      printf("%2.2x", *q++);
+      poi++;
+   }
+
+   printf("\n%d more bytes in buffer\n", buffer_bytes);
+
+   if (poi & 15)
+   {
+      printf("%4.4x: ", poi);
+      x = (poi & 15);
+      while (x--) printf("  ");
+
+      while (buffer_bytes--)
+      {
+         printf("%2.2x", *q++);
+         poi++;
+         if ((poi & 15) == 0) break;
+      }
+   }
+
+   while (buffer_bytes--)
+   {
+      if ((poi & 15) == 0) printf("\n%4.4x: ", poi);
+      printf("%2.2x", *q++);
+      poi++;
+   }
 }
 
