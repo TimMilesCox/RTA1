@@ -89,9 +89,10 @@ device			*pdevice = devices;
 extern word		 memory_read(int ea);
 #else
 static word		 memory_read(int ea);
-#endif
-
+static int device_array_read(int descriptor, int offset);
+extern void		 device_read();
 extern void		 bus_read();
+#endif
 //	extern int               bus_read(int device, int pointer);
 extern void              netbank();
 
@@ -572,7 +573,12 @@ static void action(char request[])
 
             while (offset < index)
             {
+               #ifdef GCC
                xx = device_read(absolute, base_index, offset++);
+               #else
+               xx = device_array_read(base_index, offset++);
+               #endif
+
                printf(" %6.6x", xx);
             } 
 
@@ -828,6 +834,37 @@ static word memory_read(int ea)
 	call	bus_read
 	pop	ecx
 	bswap	eax
+	mov	data, eax
+   }
+
+   return data;
+}
+
+static int device_array_read(int index, int offset)
+{
+   int		 data,
+		 descriptor = index,
+		 pointer = offset;
+
+   /*****************************************************
+	note
+	some gcc releases will fall apart
+	if you reference function arguments from asm block
+	so massage the arguments in dynamic variables
+   *****************************************************/
+
+   __asm__
+   {
+	push	ecx
+	mov	ecx, esi
+	push	ecx
+	xor	ecx, ecx
+	mov 	eax, descriptor
+	mov	esi, pointer
+	call	device_read
+	pop	ecx
+	mov	esi, ecx
+	pop	ecx
 	mov	data, eax
    }
 
