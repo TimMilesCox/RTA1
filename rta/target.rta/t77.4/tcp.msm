@@ -1090,8 +1090,50 @@ tcp_options_complete
 	sa	transmission:mss, x
 	lret	1
 	
+tcp_clear
+	push	x
+tcp_clear1
+	lx	0, sp
+	ly	transmission:receiveq,,i
+	lcal	readq
+	jza	tcp_clear2
+	lcal	net_free
+	j	tcp_clear1
+tcp_clear2
+	lx	0, sp
+	ly	transmission:deferq,,i
+	lcal	readq
+	jza	tcp_clear3
+	lcal	net_free
+	j	tcp_clear2
+tcp_clear3
+	lx	0, sp
+	ly	transmission:q4window,,i
+	lcal	readq
+	jza	tcp_clear4
+	lcal	net_free_txb
+	j	tcp_clear3
+tcp_clear4
+	lx	0, sp
+	ly	transmission:q4ack,,i
+	lcal	readq
+	jza	tcp_clearx
+	lcal	net_free_txb
+	j	tcp_clear4
+tcp_clearx
+	pop	x
+	lret	0
+
+tcp_log_reset
+	push	1,,xi
+	popA	tcpOutRsts.i+1
+	jnc	$+2
+	inc	tcpOutRsts.i
+	lret	0	
 
 tcp_ripdown
+	lcal	tcp_clear
+	lcal	tcp_log_reset
 	push,xi	TCP_DELETETCB
 	pop	transmission:state
 	lret	0

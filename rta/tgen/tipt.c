@@ -209,7 +209,7 @@ int main(int argc, char *argv[])
       #ifdef X86_MSW
       _x = _kbhit(1);
       #else
-      _x = poll(&attention, 1, 1000);
+      _x = poll(&attention, 1, 3);
 
       if (_x < 0)
       {
@@ -221,7 +221,13 @@ int main(int argc, char *argv[])
 
       if (_x)
       {
+         #if 0
+         /************************************************
+            this is examined properly in function action()
+            and somtimes poll() produces an unimportant event 
+         ************************************************/
          flag['s'-'a'] = 1;
+         #endif
 
          #if 0
          putchar('>');
@@ -261,9 +267,6 @@ int main(int argc, char *argv[])
 
 void *emulate()	/* thread start */
 {
-   unsigned int		 transitionl,
-			 transitionu;
-
    printf("emulation start\n");
 
    for (;;)
@@ -290,7 +293,7 @@ void *emulate()	/* thread start */
                 add     edx, 4
                 bswap   eax
                 call    execute
-                test    word ptr [indication], TIME_UPDATE|LOCKSTEP|BREAKPOINT
+                test    word ptr [indication], CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT
                 jz      next
 
 		mov	dword ptr [apc], edx
@@ -305,7 +308,11 @@ void *emulate()	/* thread start */
 		pop	eax
       }
       #elif	defined	GCC
-      execute(*apc++);
+      for (;;)
+      {
+         execute(*apc++);
+         if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
+      }
       #else
       __asm__
       { 
@@ -370,9 +377,6 @@ void *emulate()	/* thread start */
 
       if (indication & TIME_UPDATE)
       {
-         transitionl = u & 0x00FFFFFF;
-         transitionu = (u >> 24) & 0x00FFFFFF;
-
          _register[DAYCLOCK] = u & 0x00FFFFFF;
          _register[DAYCLOCK_U] = (u >> 24) & 0x00FFFFFF;
          indication &= -1 ^ TIME_UPDATE;
@@ -445,6 +449,14 @@ static void action(char request[])
 
          flag['s'-'a'] = 0;
          indication &= -1 ^ LOCKSTEP;
+
+         /***************************************************
+		some systems give -1 with errno = 0
+		when stream terminates at 1st byte
+         ***************************************************/
+
+         if (xx < 1) xx = 0;
+
          if (xx) indication |= BREAKPOINT;
 
          if (breakpoint)
