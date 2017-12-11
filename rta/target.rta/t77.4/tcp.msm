@@ -91,7 +91,7 @@ tcp4	la	tcpq.head
 	la	transfer:hl_code, x
 	sa	HL_FLAGS
 
-	and, xi	TCP_SYN++TCP_ACK
+	and, xi	TCP_SYN++TCP_ACK++TCP_RST
 	xor, xi	TCP_SYN
 	jnza	tcp_reset_dq		. similar case to IP input loop
 					. nothing listening, but we must
@@ -640,14 +640,28 @@ tcp_reset_dq				. and the descriptor for tcp_reject
 					. is still in fp
 	la	transfer:hl_code
 	and, xi	TCP_RST
-	jza	tcp_stepover_response	. don't answer an incoming RST please
+	jnza	tcp_stepover_response	. don't answer an incoming RST please
 	lcal	tcp_reject		. no connection
 	j	tcp_stepover_response
 
 tcp_ripdown_reset
-	lcal	tcp_reset
+	lx	connection
+	la	transmission:state
+	aa	-TCP_CLOSED,,xi
+	jza	tcp_stepover_response
+	aa	TCP_CLOSED-TCP_DELETETCB,,xi
+	jza	tcp_stepover_response
+	lcal	tcp_reset		. send a reset if possible
 	j	$+1			. there are two returns
 tcp_ripdown_silently
+	lx	connection
+
+	la	transmission:state
+	aa	-TCP_DELETETCB,,xi
+	jza	tcp_stepover_response
+	aa	TCP_DELETETCB-TCP_CLOSED,,xi
+	jza	tcp_stepover_response
+
 	lcal	tcp_ripdown
 
 tcp_deletetcb
@@ -744,7 +758,7 @@ tcp4_new_traffic?
 
 tcp4_synreceived?
 	anu, xi	TCP_SYNRECEIVED
-	jnza	tcp4_state?
+	jnzb	tcp4_state?
 
 	lcal	tcp_send_on_window
 
@@ -797,6 +811,8 @@ tcp4_globaltime?
 tcp4_state?
 tcp4_closed?
 	anu, xi	TCP_CLOSED
+	jzb	tcp4_free_block
+	anu, xi	TCP_DELETETCB
 	jnzb	tcp4_globaltime?
 	
 tcp4_free_block
@@ -1089,57 +1105,42 @@ tcp_options_complete
 	la	MSS
 	sa	transmission:mss, x
 	lret	1
-	
+
+	$if	0
 tcp_clear
 	push	x
-tcp_clear1
-	lx	0, sp
-	ly	transmission:receiveq,,i
-	lcal	readq
-	jza	tcp_clear2
-	lcal	net_free
-	j	tcp_clear1
-tcp_clear2
-	lx	0, sp
-	ly	transmission:deferq,,i
-	lcal	readq
-	jza	tcp_clear3
-	lcal	net_free
-	j	tcp_clear2
-tcp_clear3
+tcp_clear3			. remove q4window now
 	lx	0, sp
 	ly	transmission:q4window,,i
 	lcal	readq
 	jza	tcp_clear4
 	lcal	net_free_txb
 	j	tcp_clear3
-tcp_clear4
+tcp_clear4			. mark q4ack no-send, no-retain
 	lx	0, sp
 	ly	transmission:q4ack,,i
 	lcal	readq
 	jza	tcp_clearx
-	lcal	net_free_txb
+	z	descriptor:bytes, a
 	j	tcp_clear4
 tcp_clearx
 	pop	x
 	lret	0
+	$endif
 
 tcp_log_reset
-	push	1,,xi
-	popA	tcpOutRsts.i+1
-	jnc	$+2
-	inc	tcpOutRsts.i
+	MIB_ICOUNT48	tcpOutRsts:i
 	lret	0	
 
 tcp_ripdown
-	lcal	tcp_clear
+.	lcal	tcp_clear
 	lcal	tcp_log_reset
-	push,xi	TCP_DELETETCB
+	push,xi	TCP_CLOSED
 	pop	transmission:state
 	lret	0
 
 tcp_refuse
-	lcal	tcp_reset
+	lcal	tcp_reset	. send a reset if possible
 	j	$+1	
 	lcal	tcp_ripdown
 	fret	0

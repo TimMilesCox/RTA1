@@ -439,6 +439,13 @@ tcp_release
 	$endif				. catch up with the connection state
 					. before taking a new segment
 tcp_add_segment
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	tcp_request_segment
+	aa	TCP_ESTABLISHED-TCP_CLOSEWAIT,,xi
+	jnza	tcp_relinquish
+
+tcp_request_segment
 	push	x
 	push	b
 	lr	MSS
@@ -477,12 +484,17 @@ tcp_add_nosegment
 	pop	b			. outstanding count
 	pop	x			. connexion
 
+	$if	1
+	j	tcp_add_segment
+	$else
         la      transmission:state
         aa, xi  -TCP_ESTABLISHED
         jza     tcp_add_segment
         aa, xi  TCP_ESTABLISHED-TCP_CLOSEWAIT
         jza     tcp_add_segment
+	$endif
 
+tcp_relinquish
         lb, xi  -6
 	pop	fp			. descriptor
 	pop	a
