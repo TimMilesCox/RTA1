@@ -115,7 +115,7 @@ _normalise_residue:
 	xor	eax, dword ptr [esi+5*4]	; normalising position residual mantissa
 	js	_residue_normalised
 	mov	eax, dword ptr [esi+1*4]	; signs again
-	rcl	eax				; place a sign in carry				
+	rcl	eax, 1				; place a sign in carry				
 	rcl	dword ptr [esi+7*4], 1		; rotate 96 bits residual mantissa
 	rcl	dword ptr [esi+6*4], 1
 	rcl	dword ptr [esi+5*4], 1
@@ -221,20 +221,20 @@ _add_high:
         ret
 
 fan:	mov	esi, _INPUT2
-	lcal	zover				; mantissa
-	not	dword ptr [_INPUT2*4]		; 32 signs
+	call	zover				; mantissa
+	not	dword ptr [_INPUT2+1*4]		; 32 signs
 
 fa:	shl	ecx, 16				; save target register index
 	mov	edi, _INPUT2
 	mov	esi, _INPUTR
 
-	mov	eax, dword ptr [_INPUT2*4]	; normalised?
+	mov	eax, dword ptr [_INPUT2+1*4]	; normalised?
 	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit must ^ signs
-	jm	fa_addend_normalised		; yes
+	js	fa_addend_normalised		; yes
 	test	dword ptr [_psr], FP_R		; not normalised. Residue?
 	jz	fa_nop				; no, do nothing
 
-	mov	eax, dword ptr [_INPUT2*4]
+	mov	eax, dword ptr [_INPUT2+1*4]
 	and	eax, 00FFFFFFh			; signed magnitude zero -> residue
 	mov	dword ptr [ebp+8*4], eax
 	mov	dword ptr [ebp+9*4], eax
@@ -243,9 +243,9 @@ fa:	shl	ecx, 16				; save target register index
 fa_nop:	ret					; accumulator block unchanged
 
 fa_addend_normalised:
-	mov	eax, dword ptr [_INPUTR*4]	; register side operand normalised?
+	mov	eax, dword ptr [_INPUTR+1*4]	; register side operand normalised?
 	xor	eax, dword ptr [_INPUTR+2*4]	; normalising bit must ^ signs
-	jm	fa_promote_magnitude		; normalised, get on with it
+	js	fa_promote_magnitude		; normalised, get on with it
 	mov	esi, _INPUT2			; accumulator block is not normalised
 	jmp	_deliver_			; storage addend zero-added
 
@@ -266,7 +266,7 @@ fa_add:	cmp	eax, 160			; do they touch?
 	mov	cx, ax
 
 	push	esi
-	mov	esi, _register+OUTPUT+1*4 
+	mov	esi, _OUTPUT+1*4 
 	mov	dword ptr [esi], ebx
 
 fa_bias_words:
@@ -279,7 +279,7 @@ fa_bias_words:
 	sub	ch, cl
 
 fa_bias_overlap:
-	cmp	esi, _register+_OUTPUT+8*4
+	cmp	esi, _OUTPUT+8*4
 	jae	fa_bias_cover
 
 	mov	ebx, [edi+4]
@@ -298,7 +298,7 @@ fa_bias_overlap:
 fa_bias_cover:
 
 	pop	esi
-	mov	edi, +register+_OUTPUT
+	mov	edi, _OUTPUT
 
 	mov	ebx, 4
 	mov	cl, 3
@@ -309,7 +309,7 @@ fa_bias_cover:
 	mov	cl, 6
 
 fa_round:
-	mov	eax, dword ptr [_register+FP_GUARD]
+	mov	eax, dword ptr [__register+FP_GUARD]
 	xor	dword ptr [esi+ebx*4], eax
 	clc
 
@@ -350,8 +350,11 @@ fa_adjust1:
 	add	cl, -1
 	jc	fa_adjust1
 
+						; a bit more goes here
+fa_sign
 
 
+	jmp	_deliver_
 
 	
 
