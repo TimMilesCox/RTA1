@@ -4,6 +4,7 @@ _acquire:			; readout floating operand
 	test	eax, 00FFFF00h
 	jnz	_acquireM
 _acquireR:			; from registers
+	push	ecx
 	mov	esi, eax
 	mov	eax, dword ptr [esi*4+__register]
 	shl	eax, 8
@@ -12,29 +13,36 @@ _acquireR:			; from registers
 	mov	cl, al
 	sar	eax, 8
 	ror	ecx, 8
-	sar	ecx, 24		; 32 sign bits
-	xor	eax, ecx	; magnitude scale
-	mov	dword ptr [ebp+ebx], ecx
-	mov	dword ptr [ebp+ebx+1*4], eax
-	mov	dword ptr [ebp+ebx+5*4], ecx
-	mov	dword ptr [ebp+ebx+6*4], ecx
-	mov	dword ptr [ebp+ebx+7*4], ecx	
+	sar	ecx, 24				; 32 sign bits
+	xor	eax, ecx			; magnitude scale
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebx], eax		; scale magnitude -> platform word 7
+	mov	dword ptr [ebx+1*4], ecx	; 32 signs to platform word 6
+	mov	dword ptr [ebx+5*4], ecx	; 96 signs to platform words 2..0
+	mov	dword ptr [ebx+6*4], ecx
+	mov	dword ptr [ebx+7*4], ecx	
 	mov	eax, dword ptr [esi*4+__register+3*4]	; read mantissa bits 23..0
 	mov	cl, al		; low order 8 mantissa bits + 24 signs
 	ror	ecx, 8
-	mov	dword ptr [ebp+ebx+4*4], ecx
+	mov	dword ptr [ebx+4*4], ecx
 	shl	eax, 8
 	mov	ecx, dword ptr [esi*4+__register+2*4]	; read mantissa bits 47..24
 	mov	ax, cx
 	ror	eax, 16
-	mov	dword ptr [ebp+ebx+3*4], eax
+	mov	dword ptr [ebx+3*4], eax
 	mov	eax, dword ptr [esi*4+__register+1*4]	; read mantissa bits 71..48
 	shl	eax, 8
 	shr	ecx, 16
 	mov	al, cl
-	mov	dword ptr [ebp+ebx+2*4], eax
-	
+	mov	dword ptr [ebx+2*4], eax
+	pop	ecx
 	ret
+
+;	___________________________________
+;	| magnitude scale|     32 signs   |
+;	|________________|________________|
+;	| platform word 7| platform word 6|
+
 
 ;	<------------ 144-bit mantissa 143..72-------------|
 ;	<------------  72-bit mantissa ------>
@@ -56,17 +64,20 @@ _acquireR:			; from registers
 ;	                                    
 
 _acquireM:			; from memory
+	push	ecx
 	call	_bus_read	; 1st operand word returned in eax
 	shl	eax, 8		; [edi+esi] point to all 4 words
 	sar	eax, 8
 	rol	eax, 8
 	mov	cl, al
 	ror	ecx, 8
-	sar	ecx, 24
-	xor	eax, ecx
-	mov	dword ptr [ebx], ecx
-	mov	dword ptr [ebx+1*4], eax
-	mov	dword ptr [ebx+7*4], ecx
+	ror	eax, 8
+	sar	ecx, 24				; 32 sign bits
+	xor	eax, ecx			; magnitude of scale
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebx], eax		; scale magnitude to platform word 7
+	mov	dword ptr [ebx+1*4], ecx	; 32 signs to platform word 6
+	mov	dword ptr [ebx+7*4], ecx	; and to platform words 2..0
 	mov	dword ptr [ebx+6*4], ecx
 	mov	dword ptr [ebx+5*4], ecx
 	mov	eax, dword ptr [edi+esi+3*4]
@@ -83,60 +94,75 @@ _acquireM:			; from memory
 	shr	ecx, 16
 	mov	al, cl
 	mov	dword ptr [ebx+2*4], eax
+	pop	ecx
 	ret
 
 _deliver_:
 	test	dword ptr [_psr], FP_R
 	jz	_deliver
-
+	mov	ebx, dword ptr [esi]
+	xor	ebx, dword ptr [esi+1*4]
+	and	ebx, 00FFFFFFh
+				; all results have been polarised
+				; but if you are here ebx =
+				; positive magnitude of major exponent
 _store_residue:			; deliver floating residue
 	add	ebx, -72	; calculate exponent of residue
 	mov	cl, 72
-	
+
 _normalise_residue:
-	test	dword ptr [esi+5*4], 080000000h
-	jnz	_residue_normalised
-	clc
-	rcl	dword ptr [esi+7*4], 1
+	mov	eax, dword ptr [esi+1*4]	; signs
+	xor	eax, dword ptr [esi+5*4]	; normalising position residual mantissa
+	js	_residue_normalised
+	mov	eax, dword ptr [esi+1*4]	; signs again
+	rcl	eax				; place a sign in carry				
+	rcl	dword ptr [esi+7*4], 1		; rotate 96 bits residual mantissa
 	rcl	dword ptr [esi+6*4], 1
 	rcl	dword ptr [esi+5*4], 1
 	add	ebx, -1
 	add	cl, -1
 	jc	_normalise_residue
-	xor	ebx, ebx
+	xor	ebx, ebx			; value is signed zero
 _residue_normalised:
-	mov	eax, dword ptr [esi]	; signs
+	mov	eax, dword ptr [esi+1*4]	; signs
 	xor	eax, ebx
 	and	eax, 00FFFFFFh
-	push	esi
-	push	ecx
-	add	esi, 5*4
-	mov	ebx, 8
-	call	_store_float
-	pop	ecx
-	pop	esi
 
-_deliver:			; deliver floating result
-	ror	ecx, 16
-	movzx	ebx, cx		; result register[ebp+] 
-	add	esi, 5*4
-	mov	eax, dword ptr [esi+4]		; characteristic
+	mov	dword ptr [ebp+8*4], eax	; scale XOR signs
+	mov	eax, dword ptr [esi+7*4]	; bits 31..24 of platform word please
+	mov	ebx, dword ptr [esi+6*4]	; next higher order 32 bits of mantissa
+	mov	ax, bx				; place 16 of them
+	rol	eax, 8				; immediately above mantissa LS 8 bits
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+11*4], eax	; store mantissa bits 23..0
+	mov	eax, dword ptr [esi+5*4]	; read mantissa bits 71..40
+	mov	bl, al				; place bits 47..40 above bits 39..24
+	ror	ebx, 8
+	shr	ebx, 8
+	mov	dword ptr [ebp+10*4], ebx	; store mantissa bits 47..24
+	shr	eax, 8				; store mantissa bits 71..48
+	mov	dword ptr [ebp+9*4], eax
+
+_deliver:					; deliver floating result
+	ror	ecx, 16				; upper cx = target register index
+	movzx	ebx, cx				; result register[ebp+]
+	mov	eax, dword ptr [esi]		; characteristic already signed
 
 _store_float
         mov     dword ptr [ebp+ebx*4], eax      ; that part wasn't hard
-        mov     eax, dword ptr [esi]
+        mov     eax, dword ptr [esi+2*4]	; read bits 71..40 major mantissa
         movzx   ecx, al
         shr     eax, 8
-        mov     dword ptr [ebp+ebx*4+4], eax
-        mov     eax, dword ptr [esi+4]
-        shl     ecx, 16
+        mov     dword ptr [ebp+ebx*4+4], eax	; store mantissa bits 71..48
+        mov     eax, dword ptr [esi+3*4]	; read mantissa bits 39..8
+        shl     ecx, 16				; position mantissa bits 47..40
         ror     eax, 16
-        mov     cx, ax
-        mov     dword ptr [ebp+ebx*4+8], ecx
-        mov     ecx, dword ptr [esi+8]
-        shr     ecx, 16
+        mov     cx, ax				; position mantissa bits 39..24
+        mov     dword ptr [ebp+ebx*4+8], ecx	; store mantissa bits 47..24
+        mov     ecx, dword ptr [esi+8]		; read mantissa bits 7..0 plus 24
+        shr     ecx, 16				; position after mantissa 23..8
         mov     ax, cx
-        shr     eax, 8
+        shr     eax, 8				; store mantissa bits 23..0
         mov     dword ptr [ebp+ebx*4+8], ecx
 	ret
 
@@ -194,32 +220,169 @@ _add_high:
         adc     eax, dword ptr [_INPUTR+2*4]
         ret
 
-fa:	ret
-fan:	ret
+fan:	mov	esi, _INPUT2
+	lcal	zover				; mantissa
+	not	dword ptr [_INPUT2*4]		; 32 signs
 
-fm:	mov	esi, _OUTPUT
+fa:	shl	ecx, 16				; save target register index
+	mov	edi, _INPUT2
+	mov	esi, _INPUTR
+
+	mov	eax, dword ptr [_INPUT2*4]	; normalised?
+	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit must ^ signs
+	jm	fa_addend_normalised		; yes
+	test	dword ptr [_psr], FP_R		; not normalised. Residue?
+	jz	fa_nop				; no, do nothing
+
+	mov	eax, dword ptr [_INPUT2*4]
+	and	eax, 00FFFFFFh			; signed magnitude zero -> residue
+	mov	dword ptr [ebp+8*4], eax
+	mov	dword ptr [ebp+9*4], eax
+	mov	dword ptr [ebp+10*4], eax	
+	mov	dword ptr [ebp+11*4], eax
+fa_nop:	ret					; accumulator block unchanged
+
+fa_addend_normalised:
+	mov	eax, dword ptr [_INPUTR*4]	; register side operand normalised?
+	xor	eax, dword ptr [_INPUTR+2*4]	; normalising bit must ^ signs
+	jm	fa_promote_magnitude		; normalised, get on with it
+	mov	esi, _INPUT2			; accumulator block is not normalised
+	jmp	_deliver_			; storage addend zero-added
+
+fa_promote_magnitude:
+	mov	eax, dword ptr [_INPUTR+1*4]	; relate the exponent magnitudes
+	sub	eax, dword ptr [_INPUT2+1*4]
+	jae	fa_add				; register-side operand is higher
+	mov	edi, _INPUTR			; not so, importance is reversed
+	mov	esi, _INPUT2
+	neg	eax
+
+fa_add:	cmp	eax, 160			; do they touch?
+	ja	fa_nop
+	shl	ax, 3				; sign fill words
+	shr	al, 3				; sign fill bits
+
+	mov	ebx, dword ptr [edi+1*4]	; signs
+	mov	cx, ax
+
+	push	esi
+	mov	esi, _register+OUTPUT+1*4 
+	mov	dword ptr [esi], ebx
+
+fa_bias_words:
+	add	esi, 4
+	mov	dword ptr [esi], ebx
+	add	ch, -1
+	jc	fa_bias_words
+
+	mov	ch, 32
+	sub	ch, cl
+
+fa_bias_overlap:
+	cmp	esi, _register+_OUTPUT+8*4
+	jae	fa_bias_cover
+
+	mov	ebx, [edi+4]
+	xchg	ch, cl
+	shl	ebx, cl
+	xchg	ch, cl
+	add	edi, 4
+	mov	eax, [edi+4]
+	shr	eax, cl
+	or	eax, ebx
+	add	esp, 4
+	
+	mov	dword ptr [esi], eax
+	jmp	fa_bias_overlap
+
+fa_bias_cover:
+
+	pop	esi
+	mov	edi, +register+_OUTPUT
+
+	mov	ebx, 4
+	mov	cl, 3
+
+	test	dword ptr [_psr], FP_R
+	jz	fa_round
+	mov	ebx, 7
+	mov	cl, 6
+
+fa_round:
+	mov	eax, dword ptr [_register+FP_GUARD]
+	xor	dword ptr [esi+ebx*4], eax
+	clc
+
+fa_action:
+	mov	eax, dword ptr [edi+ebx*4]
+	adc	dword ptr [esi+ebx*4], eax
+	add	ebx, -1
+	add	cl, -1
+	jc	fa_action
+
+	mov	eax, dword ptr [esi+1*4]	; did the result change polarity?
+	xor	eax, dword ptr [esi+2*4]
+	jns	fa_sign
+
+	not	dword ptr [esi+1*4]
+	mov	eax, dword ptr [esi+1*4]
+	and	eax, eax
+	
+	mov	ebx, 4
+	mov	cl, 3
+	test	dword ptr [_psr], FP_R
+	jz	carry_thru
+	mov	ebx, 7
+	mov	cl, 6
+
+carry_thru
+	and	eax, 255<<24
+	jnz	fa_adjust
+	mov	eax, 1<<24
+
+fa_adjust:
+	clc
+fa_adjust1:
+	adc	eax, dword ptr [esi+ebx*4]
+	mov	dword ptr [esi+ebx*4], eax
+	add	eax, dword ptr [esi+1*4]
+	add	ebx, -1
+	add	cl, -1
+	jc	fa_adjust1
+
+
+
+
+	
+
+
+fm:	shl	ecx, 16				; save target register index
+
+	mov	esi, _OUTPUT			; initialise final accumulation
 	call	zoutput
 
 	mov	esi, _OUTPUT
 	jmp	_store_residue
 
-fd:	mov	esi, _OUTPUT
-	call	zoutput		; result which may stay zero
-	mov	eax, dword ptr [_INPUT2]
+fd:	shl	ecx, 16				; save target register index
+
+	mov	esi, _OUTPUT
+	call	zoutput				; result which may stay zero
+	mov	eax, dword ptr [_INPUT2+1*4]	; signs
 	mov	ebx, eax
-	xor	eax, dword ptr [_INPUT2+2*4]
-	jns	_deliver_	; not normalised = zero divisor
-	and	ebx, ebx
-	js	fd_comp1
-	mov	esi, _INPUT2	; divisor must be 1s complement negative
+	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit 31
+	jns	_deliver_			; not normalised = zero divisor
+	and	ebx, ebx	; divisor either is negative magnitude
+	js	fd_comp1	
+	mov	esi, _INPUT2	; or shall be
 	call	zover
 fd_comp1:
-	test	dword ptr [_INPUTR], 080000000h
+	test	dword ptr [_INPUTR+1*4], 080000000h
 	jz	fd_upright	; dividend must be positive magnitude
 	mov	esi, _INPUTR
 	call	zover
 fd_upright
-	call	round		; this also set counters
+	call	round		; this also sets counters
 
 	push	edx
 
@@ -227,7 +390,7 @@ fd_upright
 	jz	near fd_72
 	mov	edi, esp
 
-fd_144:	stc
+fd_144:	stc			; shift divisor -mantissa 1 position right 
 	rcr	dword ptr [_INPUT2+2*4], 1
 	rcr	dword ptr [_INPUT2+3*4], 1
 	rcr	dword ptr [_INPUT2+4*4], 1
@@ -235,16 +398,16 @@ fd_144:	stc
 	rcr	dword ptr [_INPUT2+6*4], 1
 	rcr	dword ptr [_INPUT2+7*4], 1
 
-	stc
-	call	_add_low
+	stc			; add negative mantissa to positive dividend
+	call	_add_low	; save the low half in the stack
 	push	edx
 	push	ebx
 	push	eax
-	call	_add_high
+	call	_add_high			; add the high half in eax edx ebx
 
-	jnc	fd_144level
+	jnc	fd_144level			; no carry = drop the result
 
-	mov	dword ptr [_INPUTR+2*4], eax
+	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
 	mov	dword ptr [_INPUTR+3*4], ebx
 	mov	dword ptr [_INPUTR+4*4], edx
 
@@ -255,8 +418,8 @@ fd_144:	stc
 	pop	eax
 	mov	dword ptr [_INPUTR+7*4], eax
 fd_144level:
-	mov	esp, edi
-	rcl	dword ptr [_OUTPUT+7*4], 1
+	mov	esp, edi			; clear stack whether popped or not
+	rcl	dword ptr [_OUTPUT+7*4], 1	; shift calue of carry into quotient
 	rcl	dword ptr [_OUTPUT+6*4], 1
 	rcl	dword ptr [_OUTPUT+5*4], 1
 	rcl	dword ptr [_OUTPUT+4*4], 1
@@ -267,20 +430,20 @@ fd_144level:
 	jc	fd_144
 	jmp	fd_restore	
 
-fd_72:	stc
-	rcr     dword ptr [_INPUT2+2*4], 1
-	rcr	dword ptr [_INPUT2+3*4], 1
+fd_72:	stc					; quicker routine for 96-bit result
+	rcr     dword ptr [_INPUT2+2*4], 1	; shift -mantissa 1 position right
+	rcr	dword ptr [_INPUT2+3*4], 1	
 	rcr	dword ptr [_INPUT2+4*4], 1
 
-	stc
+	stc					; add -mantissa to +dividend
 	call	_add_high
-	jnc	fd_72level
+	jnc	fd_72level			; no carry = drop the result
 
-	mov	dword ptr [_INPUTR+2*4], eax
+	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
 	mov	dword ptr [_INPUTR+3*4], ebx
 	mov	dword ptr [_INPUTR+2*4], edx
 fd_72level:
-	rcl	dword ptr [_OUTPUT+4*4], 1
+	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
 	rcl	dword ptr [_OUTPUT+3*4], 1
 	rcl	dword ptr [_OUTPUT+2*4], 1
 	add	cl, -1
@@ -289,17 +452,19 @@ fd_72level:
 fd_restore:
 	pop	edx		; hand the program counter back
 
- 	mov	eax, dword ptr [_INPUTR+1*4]	; + magnitude dividend exponent
-	sub	eax, dword ptr [_INPUT2+1*4]	; + magnitude divisor exponent
+ 	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
+	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
 	add	eax, 00400001h			; midpoint + 1
 	and	eax, 007FFFFFh
-	mov	dword ptr [_OUTPUT+1*4], eax
+	mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
+						; -> front of delivery string
 
-	mov	cl, ch		; retrieve 2nd copy of beats count
-fd_normalise:
+	mov	cl, ch				; retrieve 2nd copy of beats count
+
+fd_normalise:					; quotient mantissa normalised?
 	test	dword ptr [_OUTPUT+2*4], 080000000h
 	jnz	fd_normalised
-	clc
+	clc					; shift replacement value = 0
 	rcl	dword ptr [_OUTPUT+7*4], 1
 	rcl	dword ptr [_OUTPUT+6*4], 1
 	rcl	dword ptr [_OUTPUT+5*4], 1
@@ -307,18 +472,18 @@ fd_normalise:
 	rcl	dword ptr [_OUTPUT+3*4], 1
 	rcl	dword ptr [_OUTPUT+2*4], 1
 
-	add	dword ptr [_OUTPUT+1*4], -1
+	add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
 	add	cl, -1
 	jc	fd_normalise
-	mov	dword ptr [_OUTPUT+1*4], 0	; if mantissa is zero 
+	mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
 						; so is everything else
 fd_normalised:
 	mov	esi, _OUTPUT			; tell rewrite where it is
-	mov	eax, dword ptr [_INPUTR]	; determine sign of quotient
-	xor	eax, dword ptr [_INPUT2]
-	mov	ebx, eax
-	and	ebx, 00FFFFFFh			; for switching the characteristic
-	xor	dword ptr [_OUTPUT+1*4], ebx	; switch characeristic of quotient
+	mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
+	xor	eax, dword ptr [_INPUT2+1*4]
+	mov	ebx, eax			; copy quotient sign
+	and	ebx, 00FFFFFFh			; mask, polarise quotient scale
+	xor	dword ptr [_OUTPUT], ebx	; switch characteristic of quotient
 	xor	dword ptr [_OUTPUT+2*4], eax	; switch quotient mantissa
 	xor	dword ptr [_OUTPUT+3*4], eax
 	xor	dword ptr [_OUTPUT+4*4], eax
@@ -333,37 +498,37 @@ fd_normalised:
 
 _fa:	mov	ebx, _INPUT2
 	call	_acquire
-	mov	eax, A
-	add	eax, ebp
+	mov	eax, a
+	add	eax, dword ptr [_iselect]	; this application targets registers+a
+	mov	cx, ax				; with the same delivery address
 	mov	ebx, _INPUTR
-	call	_acquire
-	mov	cx, a				; destination[ebp+index]
+	call	_acquireR
 	jmp	fa
 
 _fan:	mov	ebx, _INPUT2
 	call	_acquire
-	mov	eax, A
-	add	eax, ebp
+	mov	eax, a
+	add	eax, dword ptr [_iselect]	; this application targets registers+a
+	mov	cx, ax				; with the same delivery address
 	mov	ebx, _INPUTR
-	call	_acquire
-	mov	cx, a				; destination[ebp+index]
+	call	_acquireR
 	jmp	fan
 
 _fm:	mov	ebx, _INPUT2
 	call	_acquire
-	mov	eax, A
-	add	eax, ebp
+	mov	eax, a
+	add	eax, dword ptr [_iselect]	; this application targets registers+a
+	mov	cx, ax				; with the same delivery address
 	mov	ebx, _INPUTR
-	call	_acquire
-	mov	cx, a				; destination[ebp+index]
+	call	_acquireR
 	jmp	fm
 
 _fd:	mov	ebx, _INPUT2
 	call	_acquire
-	mov	eax, A
-	add	eax, ebp
+	mov	eax, a
+	add	eax, dword ptr [_iselect]	; this application targets registers+a
+	mov	cx, ax				; with the same delivery address
 	mov	ebx, _INPUTR
-	call	_acquire
-	mov	cx, a				; destination[ebp+index]
+	call	_acquireR
 	jmp	fd
 
