@@ -1,42 +1,37 @@
-_acquire:			; readout floating operand
+_compress:			; readout floating operand
 				; and pack to 32-bit words
 				; for 1 bit-distance shifting
-	test	eax, 00FFFF00h
-	jnz	_acquireM
-_acquireR:			; from registers
-	push	ecx
-	mov	esi, eax
-	mov	eax, dword ptr [esi*4+__register]
-	shl	eax, 8
-	sar	eax, 8
-	rol	eax, 8
-	mov	cl, al
-	sar	eax, 8
-	ror	ecx, 8
-	sar	ecx, 24				; 32 sign bits
-	xor	eax, ecx			; magnitude scale
-	and	eax, 00FFFFFFh
-	mov	dword ptr [ebx], eax		; scale magnitude -> platform word 7
-	mov	dword ptr [ebx+1*4], ecx	; 32 signs to platform word 6
-	mov	dword ptr [ebx+5*4], ecx	; 96 signs to platform words 2..0
-	mov	dword ptr [ebx+6*4], ecx
-	mov	dword ptr [ebx+7*4], ecx	
-	mov	eax, dword ptr [esi*4+__register+3*4]	; read mantissa bits 23..0
-	mov	cl, al		; low order 8 mantissa bits + 24 signs
-	ror	ecx, 8
-	mov	dword ptr [ebx+4*4], ecx
-	shl	eax, 8
-	mov	ecx, dword ptr [esi*4+__register+2*4]	; read mantissa bits 47..24
-	mov	ax, cx
-	ror	eax, 16
-	mov	dword ptr [ebx+3*4], eax
-	mov	eax, dword ptr [esi*4+__register+1*4]	; read mantissa bits 71..48
-	shl	eax, 8
-	shr	ecx, 16
-	mov	al, cl
-	mov	dword ptr [ebx+2*4], eax
-	pop	ecx
+				; acquired operand is in 1st half of 
+				; 8-register block [esi]
+
+	mov	eax, dword ptr [esi]	; 1s-complement scale field
+	shl	eax, 8			; 1st data bit reveals sign
+	sar	eax, 8			; propagate that sign some
+	mov	ebx, eax
+	sar	eax, 24			; propagate signs to 32 bits
+	xor	ebx, eax		; change scale to unsigned magnitude
+	mov	dword ptr [esi], ebx	; position scale magnitude in 1st register
+	mov	dword ptr [esi+7*4], eax	; 96 trailing signs
+	mov	dword ptr [esi+6*4], eax
+	mov	dword ptr [esi+5*4], eax
+	mov	ebx, dword ptr [esi+3*4]	; read low-order mantissa word
+	mov	al, bl				; low-order octet
+	ror	eax, 24				; is followed by 24 signs
+	mov	dword ptr [esi+4*4], eax	; ebx also contains mantissa 23..8
+	mov	eax, dword ptr [esi+2*4]	; eax now contains mantissa 47..24
+	shl	ebx, 8
+	mov	bx, ax				; mantissa 39..24 -> ebx
+	ral	ebx, 16
+	mov	dword ptr [esi+3*4], ebx
+	mov	ebx, dword ptr [esi+1*4]	; mantissa 71..48
+	shl	ebx, 8
+	shr	eax, 16				; mantissa 47..40
+	mov	bl, al
+	mov	dword ptr [esi+2*4], ebx	; mantissa 71..40
+	mov	eax, dword ptr [esi+5*4]	; copy 32 signs
+	mov	dword ptr [esi+1*4], eax	; to 2nd word of register block
 	ret
+
 
 ;	___________________________________
 ;	| magnitude scale|     32 signs   |
@@ -44,7 +39,7 @@ _acquireR:			; from registers
 ;	| platform word 7| platform word 6|
 
 
-;	<------------ 144-bit mantissa 143..72-------------|
+;	<------------ 168-bit mantissa 167..72-------------|
 ;	<------------  72-bit mantissa ------>
 ;	_____________|___________|____________|____________________________
 ;	|      24    | 8 |   16  |   16   | 8 |    24 signs|96 more signs for
@@ -55,47 +50,13 @@ _acquireR:			; from registers
 ;	                 :
 ;	                 [                                                  ]
 
-;	                 |--- 144-bit mantissa 71:0   -------->
+;	                 |--- 168-bit mantissa 71:0   -------->
 ;	                      rounding @ 192-bit operation --->+
 ;      	                 _________________________|____________|_____________
 ;	                 |      24    | 8 |   16  |   16   | 8 |    24 signs|
 ;	                 |____________|___|_______|________|___|____________|
 ;	                 | platform word 2| platform word 1| platform word 0|
 ;	                                    
-
-_acquireM:			; from memory
-	push	ecx
-	call	_bus_read	; 1st operand word returned in eax
-	shl	eax, 8		; [edi+esi] point to all 4 words
-	sar	eax, 8
-	rol	eax, 8
-	mov	cl, al
-	ror	ecx, 8
-	ror	eax, 8
-	sar	ecx, 24				; 32 sign bits
-	xor	eax, ecx			; magnitude of scale
-	and	eax, 00FFFFFFh
-	mov	dword ptr [ebx], eax		; scale magnitude to platform word 7
-	mov	dword ptr [ebx+1*4], ecx	; 32 signs to platform word 6
-	mov	dword ptr [ebx+7*4], ecx	; and to platform words 2..0
-	mov	dword ptr [ebx+6*4], ecx
-	mov	dword ptr [ebx+5*4], ecx
-	mov	eax, dword ptr [edi+esi+3*4]
-	mov	cl, al
-	ror	ecx, 8
-	mov	dword ptr [ebx+4*4], ecx
-	mov	ecx, dword ptr [edi+esi+2*4]
-	shl	eax, 8
-	mov	ax, cx
-	ror	eax, 16
-	mov	dword ptr [ebx+3*4], eax
-	mov	eax, dword ptr [edi+esi+1*4]
-	shl	eax, 8
-	shr	ecx, 16
-	mov	al, cl
-	mov	dword ptr [ebx+2*4], eax
-	pop	ecx
-	ret
 
 _deliver_:
 	test	dword ptr [_psr], FP_R
@@ -166,9 +127,14 @@ _store_float
         mov     dword ptr [ebp+ebx*4+8], ecx
 	ret
 
-_OUTPUT	equ	__register+272*4
-_INPUTR equ	__register+264*4
-_INPUT2 equ	__register+256*4
+_output equ	272
+_inputr equ	264
+_input2 equ	256
+
+_OUTPUT	equ	__register+_output*4
+_INPUTR equ	__register+_inputr*4
+_INPUT2 equ	__register+_input2*4
+_BIAS	$equ	_OUTPUT
 
 zoutput:
 	xor	eax, eax
@@ -499,39 +465,70 @@ fd_normalised:
 	jmp	_store_residue			; deliver the residue
 						; and then the quotient
 
-_fa:	mov	ebx, _INPUT2
-	call	_acquire
-	mov	eax, a
-	add	eax, dword ptr [_iselect]	; this application targets registers+a
-	mov	cx, ax				; with the same delivery address
-	mov	ebx, _INPUTR
-	call	_acquireR
-	jmp	fa
+;	these instructions take the left-side + target as
+;	[register_set]->a:b:mantissa2:mantissa3
+;	and the right side as [ea]
 
-_fan:	mov	ebx, _INPUT2
-	call	_acquire
-	mov	eax, a
-	add	eax, dword ptr [_iselect]	; this application targets registers+a
-	mov	cx, ax				; with the same delivery address
-	mov	ebx, _INPUTR
-	call	_acquireR
-	jmp	fan
+;	after acquisition and before delivery they call modules
+;	fa fan fm fd
+;	which may be used in extended instruction sets
+;	using source and target registers in the internal stack
+;	with maximum mantissa size 168 bits
 
-_fm:	mov	ebx, _INPUT2
-	call	_acquire
-	mov	eax, a
-	add	eax, dword ptr [_iselect]	; this application targets registers+a
-	mov	cx, ax				; with the same delivery address
-	mov	ebx, _INPUTR
-	call	_acquireR
-	jmp	fm
 
-_fd:	mov	ebx, _INPUT2
-	call	_acquire
+_fa:	push	ebp				; _input2 is [register]+absolute
+	mov	ebp, __register
+	mov	ebx, _input2
+	call	_burst_read4
 	mov	eax, a
-	add	eax, dword ptr [_iselect]	; this application targets registers+a
-	mov	cx, ax				; with the same delivery address
-	mov	ebx, _INPUTR
-	call	_acquireR
-	jmp	fd
+	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+	push	eax				; save target register name
+	mov	ebx, _inputr			; _inputr is [register]+absolute
+	call	_burst_read4
+	call	fa
+	pop	ecx				; retrieve target register name
+	pop	ebp
+	jmp	_deliver_
+
+_fan:	push	ebp
+	mov	ebp, __register			; _input2 is [register]+absolute
+	mov	ebx, _input2
+	call	_burst_read4
+	mov	eax, a
+	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+	push	eax				; save target register name
+	mov	ebx, _inputr			; _inputr is [register]+absolute
+	call	_burst_read4
+	call	fan
+	pop	ecx				; retrieve target register name
+	pop	ebp
+	jmp	_deliver_
+
+_fm:	push	ebp
+	mov	ebp, __register			; _input2 is [register]+absolute
+	mov	ebx, _input2
+	call	_burst_read4
+	mov	eax, a
+	or	eax, dword ptr [_iselect]	; this application targets registers+a
+	push	eax				; save target register name
+	mov	ebx, _inputr			; _inputr is [register]+absolute
+	call	_burst_read4
+	call	fm
+	pop	ecx				; retrieve target register name
+	pop	ebp
+	jmp	_deliver_
+	
+_fd:	push	ebp
+	mov	ebp, __register			; _input2 is [register]+absolute
+	mov	ebx, _input2
+	call	_burst_read4
+	mov	eax, a
+	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+	push	eax				; save target register name
+	mov	ebx, _inputr			; _inputr is [register]+absolute
+	call	_burst_read4
+	call	fd
+	pop	ecx				; retrieve target register name
+	pop	ebp
+	jmp	_deliver_
 
