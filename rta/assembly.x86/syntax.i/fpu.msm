@@ -1,4 +1,4 @@
-_compress:			; readout floating operand
+compress4to8:			; readout floating operand
 				; and pack to 32-bit words
 				; for 1 bit-distance shifting
 				; acquired operand is in 1st half of 
@@ -56,7 +56,9 @@ _compress:			; readout floating operand
 ;	                 |      24    | 8 |   16  |   16   | 8 |    24 signs|
 ;	                 |____________|___|_______|________|___|____________|
 ;	                 | platform word 2| platform word 1| platform word 0|
-;	                                    
+
+;	                 |    residue rounding -->+
+;	                 |--- 144-bit mantissa -->	                                    
 
 _deliver_:
 	test	dword ptr [_psr], FP_R
@@ -148,16 +150,119 @@ zoutput:
 	mov	dword ptr [esi+7*4], eax
 	ret
 
+round_ultra:					; for 168-bit / 72-bit mantissa
+	mov	eax, dword ptr [__register+FP_GUARD]
+	test	dword ptr [_psr], FP_R		; if future stack instructions 
+	jz	round72				; are not size-specific
+round168:					; and if instruction is size-specific
+	xor	dword ptr [esi+7*4], eax
+	mov	ecx, 0007A7A7h			; 7 platform words 168 beats
+	ret 
+
 round:	mov	eax, dword ptr [__register+FP_GUARD]
-	ror	ecx, 16				; save destination register index
 	test	dword ptr [_psr], FP_R
 	jz	round72
-	xor	dword ptr [esi+7*4], eax	; round a 144-bit mantissa
-	mov	cx, 08F8Fh			; set words 6 and beats 144
+	sar	eax, 8				; position rounding to trailing edge
+	xor	dword ptr [esi+6*4], eax	; round a 144-bit mantissa
+	mov	ecx, 00068F8Fh			; 6 platform words 144 beats
 	ret
 round72:
 	xor	dword ptr [esi+4*4], eax	; round a 72-bit mantissa
-	mov	cx, 04747h			; set words 3 and beats 72
+	mov	ecx, 00044747h			; 4 platform words 72 beats
+	ret
+
+revision_carry:
+	mov	ebx, ecx
+	add	ebx, -3
+	and	eax, eax
+	js	revision_carry_signs
+	mov	eax, 1
+revision_carry_signs:
+	cmp	ebx, 4
+	jnz	revision_carry_on
+	shl	eax, 16				; mantissa is platform words and a half
+	ret
+revision_carry_on:
+	shl	eax, 24				; mantissa is platform words and a quarter
+	ret
+
+
+restore_trailing_signs:				
+	push	ecx				; you might like that back again
+	push	edx				; borrow the program counter
+	mov	edx, dword ptr [esi+1*4]	; read some signs
+	mov	32, ch				;
+	sub	cl, ch
+	mov	eax, dword ptr [esi+ebx*4+2*4]
+	sar	edx, cl				; turn [mantissa bits] signs off
+	rol	eax, cl
+	mv	cl, ch
+	shl	eax, cl
+	or	eax, edx
+	mov	dword ptr [esi+ebx*4+2*4], eax
+	pop	edx				; hand back the program counter
+	pop	ecx				; restore the counters
+	ret					; not yet any cases of mantissa exact platform words.
+						; It would then be unnecessary but harmless rewriting
+						; 32 signs to rounding field in next platform word
+	
+frame_mantissa:
+	ror	ecx, 16				; swap words count up, beats index down
+	add	ch, 1				; up the beats index to beats count
+	shr	cx, 5				; positions / 32 in ch
+	shr	cl, 3				; positions /// 32 in cl
+	movzx	ebx, ch				; containing platform words
+	ret
+
+renormalise:					; rule 1: restore sign fill in
+						; low-order containing platform word
+						; it was mashed by rounding and adding
+	call	frame_mantissa			; this measurement could be elsewhere or earlier
+	call	restore_trailing_signs
+
+	ror	ecx, 16				; the governing parameter is now
+						; the containing words count in cx
+renormalise32:
+	mov	eax, dword ptr [esi+2*4]	; sample 32 mantissa bits
+	cmp	eax, dword ptr [esi+1*4]	; compare it with 32 signs
+	jnz	renormalise8
+	call	rotate32left			; this also discovers if it's ALL signs = 0
+	and	eax, eax			; and is the only place that needs examined
+	jnz	renormalise32
+
+	mov	dword pointer [esi], eax	; mantissa is signed zero, +0 -> scale
+renormalised:
+	ret
+
+renormalise8:					; from this point on the value is nonzero
+	rol	eax, 8				; are there 8 signs at head of mantissa?
+	cmp	al, byte ptr [esi+1*4]
+	jnz	renormalise1			; you have found the 8 bits containing the
+						; normalising bit
+	call	rotate8left			; or else you haven't
+	mov     eax, dword ptr [esi+2*4]	; sample the moved mantissa
+	jmp	renormalise8
+
+renormalise1:
+	mov	eax, dword ptr [esi+2*4]	; is the bit at normalising position
+	xor	eax, dword ptr [esi+1*4]	; opposite polarity to the number?
+	js	renormalised			; arrived
+	call	bitwise_scale			; almost arrived
+	jmp	renormalise1
+
+bitwise_scale:
+	mov	eax, dword ptr [ebx*4+bitwise_scalex]
+	jmp	[eax]
+
+bitwise_scalex:
+	dd	scale0, scale1, scale2, scale3, scale4, scale5
+
+scale5:	rcl	[esi+ebx*4+6*4]
+scale4:	rcl	[esi+ebx*4+5*4]
+scale3:	rcl	[esi+ebx*4+4*4]
+scale2:	rcl	[esi+ebx*4+3*4]	
+scale1:	rcl	[esi+ebx*4+2*4]
+scale0:	add	dword ptr [esi], -1		; scale decrement
 	ret
 
 zover:	not	dword ptr [esi+2*4]
@@ -190,22 +295,12 @@ fan:	mov	esi, _INPUT2
 	call	zover				; mantissa
 	not	dword ptr [_INPUT2+1*4]		; 32 signs
 
-fa:	shl	ecx, 16				; save target register index
-	mov	edi, _INPUT2
+fa:	mov	edi, _INPUT2
 	mov	esi, _INPUTR
 
 	mov	eax, dword ptr [_INPUT2+1*4]	; normalised?
 	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit must ^ signs
 	js	fa_addend_normalised		; yes
-	test	dword ptr [_psr], FP_R		; not normalised. Residue?
-	jz	fa_nop				; no, do nothing
-
-	mov	eax, dword ptr [_INPUT2+1*4]
-	and	eax, 00FFFFFFh			; signed magnitude zero -> residue
-	mov	dword ptr [ebp+8*4], eax
-	mov	dword ptr [ebp+9*4], eax
-	mov	dword ptr [ebp+10*4], eax	
-	mov	dword ptr [ebp+11*4], eax
 fa_nop:	ret					; accumulator block unchanged
 
 fa_addend_normalised:
@@ -213,7 +308,7 @@ fa_addend_normalised:
 	xor	eax, dword ptr [_INPUTR+2*4]	; normalising bit must ^ signs
 	js	fa_promote_magnitude		; normalised, get on with it
 	mov	esi, _INPUT2			; accumulator block is not normalised
-	jmp	_deliver_			; storage addend zero-added
+	ret					; storage addend zero-added
 
 fa_promote_magnitude:
 	mov	eax, dword ptr [_INPUTR+1*4]	; relate the exponent magnitudes
@@ -223,23 +318,23 @@ fa_promote_magnitude:
 	mov	esi, _INPUT2
 	neg	eax
 
-fa_add:	cmp	eax, 160			; do they touch?
+fa_add:	cmp	eax, 223			; do they touch?
 	ja	fa_nop
-	shl	ax, 3				; sign fill words
+	shl	ax, 3				; sign fill platform words
 	shr	al, 3				; sign fill bits
 
 	mov	ebx, dword ptr [edi+1*4]	; signs
 	mov	cx, ax
 
+	push	edx				; borrow the program counter
 	push	esi
-	mov	esi, _OUTPUT+1*4 
-	mov	dword ptr [esi], ebx
-
+	mov	esi, _OUTPUT 			; write at least one platform word
+						; of signs at _OUTPUT+1*4	
 fa_bias_words:
 	add	esi, 4
 	mov	dword ptr [esi], ebx
 	add	ch, -1
-	jc	fa_bias_words
+	jc	fa_bias_words			; ch < 0 = enough
 
 	mov	ch, 32
 	sub	ch, cl
@@ -248,80 +343,79 @@ fa_bias_overlap:
 	cmp	esi, _OUTPUT+8*4
 	jae	fa_bias_cover
 
-	mov	ebx, [edi+4]
-	xchg	ch, cl
-	shl	ebx, cl
-	xchg	ch, cl
+	mov	eax, [edi+2*4]			; read lesser mantissa
 	add	edi, 4
-	mov	eax, [edi+4]
-	shr	eax, cl
-	or	eax, ebx
-	add	esp, 4
-	
-	mov	dword ptr [esi], eax
+	xchg	ch, cl
+	shl	ebx, cl				; demonstrate why we prefer
+	xchg	ch, cl				; architectures with 2-register shifts
+	mov	edx, eax
+	shr	edx, cl
+	or	ebx, edx
+	mov	dword ptr [esi], ebx
+	add	esi, 4
+	mov	ebx, eax
+
 	jmp	fa_bias_overlap
 
 fa_bias_cover:
 
 	pop	esi
+	pop	edx				; hand back the program counter 
 	mov	edi, _OUTPUT
 
 	mov	ebx, 4
 	mov	cl, 3
 
-	test	dword ptr [_psr], FP_R
-	jz	fa_round
-	mov	ebx, 7
-	mov	cl, 6
+	ror	ecx, 16				; get compute words
+	mov	ebx, ecx			; index / count
 
-fa_round:
-	mov	eax, dword ptr [__register+FP_GUARD]
-	xor	dword ptr [esi+ebx*4], eax
 	clc
 
 fa_action:
 	mov	eax, dword ptr [edi+ebx*4]
 	adc	dword ptr [esi+ebx*4], eax
+	add	ebx, -1				; process word 1
+	jnz	fa_action			; leave word 0 alone
+
+	mov	eax, dword ptr [_OUTPUT]	; signs of target before
+	xor	eax, dword ptr [esi+1*4]	;                 after
+	jns	fa_assign			; did not travel thru zero
+
+	not	eax
+	mov	dword ptr [_OUTPUT], eax	; update final signs
+
+	call	revision_carry			; get polarity + value + bias
+	add	dword ptr [esi+ebx*4+3*4], eax	; of 1st adusting word
+	sar	eax, 24				; subsequent adjusting words = signs
+						; ebx = mantissa words - 3
+fa_carry_round
+	adc	dword ptr [esi+ebx*4+2*4], eax
 	add	ebx, -1
-	add	cl, -1
-	jc	fa_action
+	jc	fa_carry_round
 
-	mov	eax, dword ptr [esi+1*4]	; did the result change polarity?
-	xor	eax, dword ptr [esi+2*4]
-	jns	fa_sign
+	xor	eax, dword ptr [esi+1*4]	; repeat signs XOR word 1
 
-	not	dword ptr [esi+1*4]
-	mov	eax, dword ptr [esi+1*4]
-	and	eax, eax
-	
-	mov	ebx, 4
-	mov	cl, 3
-	test	dword ptr [_psr], FP_R
-	jz	carry_thru
-	mov	ebx, 7
-	mov	cl, 6
+fa_assign:
+	and	eax, 1
+	jz	fa_normalise
+	mov	eax, dword ptr [esi+1*4]	; more than normal
+	rcr	eax, 1				; shift the unsign down the mantissa
+	rcr	dword ptr [esi+2*4], 1
+	rcr	dword ptr [esi+3*4], 1
+	rcr	dword ptr [esi+4*4], 1
+	rcr	dword ptr [esi+5*4], 1
+	rcr	dword ptr [esi+6*4], 1
+	rcr	dword ptr [esi+7*4], 1
+	add	dword ptr [esi], 1		; uprate the scale
+	jmp	fa_final_sign	
 
-carry_thru
-	and	eax, 255<<24
-	jnz	fa_adjust
-	mov	eax, 1<<24
+fa_normalise:
+	call	renormalise
 
-fa_adjust:
-	clc
-fa_adjust1:
-	adc	eax, dword ptr [esi+ebx*4]
-	mov	dword ptr [esi+ebx*4], eax
-	add	eax, dword ptr [esi+1*4]
-	add	ebx, -1
-	add	cl, -1
-	jc	fa_adjust1
-
-						; a bit more goes here
-fa_sign
-
-
-	jmp	_deliver_
-
+fa_final_sign
+	mov	eax, dword ptr [_OUTPUT]
+	mov	dword ptr [esi+1*4], eax
+	ret
 	
 
 
@@ -480,11 +574,16 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	mov	ebp, __register
 	mov	ebx, _input2
 	call	_burst_read4
+	mov	esi, _INPUT2
+	call	compress4to8
 	mov	eax, a
 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
 	push	eax				; save target register name
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
+	mov	esi, _INPUTR
+	call	compress4to8
+	call	round
 	call	fa
 	pop	ecx				; retrieve target register name
 	pop	ebp
@@ -494,11 +593,16 @@ _fan:	push	ebp
 	mov	ebp, __register			; _input2 is [register]+absolute
 	mov	ebx, _input2
 	call	_burst_read4
+	mov	esi, _INPUT2
+	call	compress4to8
 	mov	eax, a
 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
 	push	eax				; save target register name
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
+	mov	esi, _INPUTR
+	call	compress4to8
+	call	round
 	call	fan
 	pop	ecx				; retrieve target register name
 	pop	ebp
@@ -508,11 +612,18 @@ _fm:	push	ebp
 	mov	ebp, __register			; _input2 is [register]+absolute
 	mov	ebx, _input2
 	call	_burst_read4
+	mov	esi, _INPUT2
+	call	compress4to8
 	mov	eax, a
 	or	eax, dword ptr [_iselect]	; this application targets registers+a
 	push	eax				; save target register name
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
+	mov	esi, _INPUTR
+	call	compress4to8
+	mov	esi, _OUTPUT
+	call	zout
+	call	round
 	call	fm
 	pop	ecx				; retrieve target register name
 	pop	ebp
@@ -522,11 +633,18 @@ _fd:	push	ebp
 	mov	ebp, __register			; _input2 is [register]+absolute
 	mov	ebx, _input2
 	call	_burst_read4
+	mov	esi, _INPUT2
+	call	compress4to8
 	mov	eax, a
 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
 	push	eax				; save target register name
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
+	mov	esi, _INPUTR
+	call	compress4to8
+	mov	esi, _OUTPUT
+	call	zout
+;	call	round
 	call	fd
 	pop	ecx				; retrieve target register name
 	pop	ebp
