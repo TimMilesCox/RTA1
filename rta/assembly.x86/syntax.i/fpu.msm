@@ -63,13 +63,12 @@ compress4to8:			; readout floating operand
 _deliver_:
 	test	dword ptr [_psr], FP_R
 	jz	_deliver
-	mov	ebx, dword ptr [esi]
-	xor	ebx, dword ptr [esi+1*4]
-	and	ebx, 00FFFFFFh
-				; all results have been polarised
-				; but if you are here ebx =
-				; positive magnitude of major exponent
-_store_residue:			; deliver floating residue
+	mov	ebx, dword ptr [esi]		; read scale unsigned magnitude
+						; not yet signed
+
+				; all results except scale have been polarised
+				; ebx = positive magnitude of major exponent
+				; deliver floating residue
 	add	ebx, -72	; calculate exponent of residue
 	mov	cl, 72
 
@@ -85,34 +84,37 @@ _normalise_residue:
 	add	ebx, -1
 	add	cl, -1
 	jc	_normalise_residue
-	xor	ebx, ebx			; value is signed zero
+	xor	ebx, ebx			; residue all signs zero -> scale
 _residue_normalised:
 	mov	eax, dword ptr [esi+1*4]	; signs
-	xor	eax, ebx
-	and	eax, 00FFFFFFh
+	xor	eax, ebx			; sign residue exponent now
+	shl	eax, 8				; trim characteristic to RTA1 24-bit word
+	shr	eax, 8
+	mov	dword ptr [ebp+8*4], eax	; scale XOR signs -> residue characteristic
 
-	mov	dword ptr [ebp+8*4], eax	; scale XOR signs
-	mov	eax, dword ptr [esi+7*4]	; bits 31..24 of platform word please
-	mov	ebx, dword ptr [esi+6*4]	; next higher order 32 bits of mantissa
-	mov	ax, bx				; place 16 of them
-	rol	eax, 8				; immediately above mantissa LS 8 bits
-	and	eax, 00FFFFFFh
-	mov	dword ptr [ebp+11*4], eax	; store mantissa bits 23..0
-	mov	eax, dword ptr [esi+5*4]	; read mantissa bits 71..40
-	mov	bl, al				; place bits 47..40 above bits 39..24
-	ror	ebx, 8
+	mov	ebx, dword ptr [esi+6*4]	; platform word 1, platform bits 63..48
+	mov	eax, dword ptr [esi+5*4]	; platform word 2, platform bits 95..64
+	mov	bl, al				; low octet platform word 2
+	ror	ebx, 8				; becomes residue mantissa 23..16
 	shr	ebx, 8
-	mov	dword ptr [ebp+10*4], ebx	; store mantissa bits 47..24
-	shr	eax, 8				; store mantissa bits 71..48
-	mov	dword ptr [ebp+9*4], eax
+	mov	dword ptr [ebp+11*4], ebx	; store residue mantissa 23..0
+	shr	eax, 8
+	mov	dword ptr [ebp+10*4], eax	; store residue mantissa 47..24
+	mov	ebx, dword ptr [esi+4*4]	; platform word 3, platform bits 127..96
+	shl	ebx, 8
+	shr	ebx, 8
+	mov	dword ptr [ebp+9*4], ebx	; store residue mantissa 71..48
 
 _deliver:					; deliver floating result
-	ror	ecx, 16				; upper cx = target register index
-	movzx	ebx, cx				; result register[ebp+]
-	mov	eax, dword ptr [esi]		; characteristic already signed
+						; ebx = target register index
+						; result register[ebp+]
+	mov	eax, dword ptr [esi]		; unsigned scale magnitude
+	xor	eax, dword ptr [esi+1*4]	; sign it
+	shl	eax, 8
+	shr	eax, 8
 
 _store_float
-        mov     dword ptr [ebp+ebx*4], eax      ; that part wasn't hard
+        mov     dword ptr [ebp+ebx*4], eax      ; store characteristic = scale XOR signs
         mov     eax, dword ptr [esi+2*4]	; read bits 71..40 major mantissa
         movzx   ecx, al
         shr     eax, 8
@@ -171,21 +173,17 @@ round72:
 	mov	ecx, 00044747h			; 4 platform words 72 beats
 	ret
 
-revision_carry:
-	mov	ebx, ecx
-	add	ebx, -3
-	and	eax, eax
-	js	revision_carry_signs
-	mov	eax, 1
-revision_carry_signs:
-	cmp	ebx, 4
-	jnz	revision_carry_on
-	shl	eax, 16				; mantissa is platform words and a half
-	ret
-revision_carry_on:
-	shl	eax, 24				; mantissa is platform words and a quarter
-	ret
+initial_polar_carry:				; frame_mantissa has executed already
+	and	eax, eax			; eax contains new signs after polar switch
+	js	initial_polar_zone_south	; exactly -1 must be added to the mantissa
+	mov	eax, 1				; exactly +1 must be added to the mantissa
+	ror	eax, cl				; place 1 at low order mantissa position
+	ret					; of low-order containing platform word
 
+initial_polar_zone_south:			; leave so many 1s at register high order positions
+	shr	eax, cl				; as there are mantissa positions
+	not	eax				; in low-order containing platform word
+	ret
 
 restore_trailing_signs:				
 	push	ecx				; you might like that back again
@@ -217,7 +215,6 @@ frame_mantissa:
 renormalise:					; rule 1: restore sign fill in
 						; low-order containing platform word
 						; it was mashed by rounding and adding
-	call	frame_mantissa			; this measurement could be elsewhere or earlier
 	call	restore_trailing_signs
 
 	ror	ecx, 16				; the governing parameter is now
@@ -262,7 +259,39 @@ scale4:	rcl	[esi+ebx*4+5*4]
 scale3:	rcl	[esi+ebx*4+4*4]
 scale2:	rcl	[esi+ebx*4+3*4]	
 scale1:	rcl	[esi+ebx*4+2*4]
-scale0:	add	dword ptr [esi], -1		; scale decrement
+scale0:	add	dword ptr [esi], -1	; scale down
+	ret
+
+rotate32left:				; rotate all containing platform words of mantissa
+	push	edx			; 32 bit positions left and report if all signs
+	push	ecx
+	movzx	ebx, cx
+	xor	edx, edx		; initialise equality = all signs
+rotate32next:				; the word initially loaded in eax is all signs
+	xchg	eax, dword ptr [esi+ebx*4+2*4]
+	mov	ecx, eax
+	xor	ecx, dword ptr [esi+1*4] ; difference between this word and signs
+	or	edx, ecx		; sum of differences
+	add	ebx, -1
+	jc	rotate32next
+	add	dword ptr [esi], -32	; scale down
+	mov	eax, edx
+	pop	ecx
+	pop	edx
+	ret
+
+rotate8left:				; rotate all containing platform words of mantissa
+	push	ecx			; 8 bit positions left. 1st word is rotated already
+	movzx	ebx, cx
+rotate8next:
+	mov	ecx, dword ptr [esi+ebx*4+2*4]
+	rol	ecx, 8
+	xchg	al, cl
+	mov	dword ptr [esi+ebx*4+2*4], ecx
+	add	ebx, -1
+	jc	rotate8next
+	add	dword ptr [esi], -8	; scale down
+	pop	ecx
 	ret
 
 zover:	not	dword ptr [esi+2*4]
@@ -320,10 +349,11 @@ fa_promote_magnitude:
 
 fa_add:	cmp	eax, 223			; do they touch?
 	ja	fa_nop
-	shl	ax, 3				; sign fill platform words
-	shr	al, 3				; sign fill bits
+	shl	ax, 5				; platform words to be sign filled
+	shr	al, 3				; remaining bits to be sign filled
 
 	mov	ebx, dword ptr [edi+1*4]	; signs
+	push	ecx				; for later
 	mov	cx, ax
 
 	push	edx				; borrow the program counter
@@ -366,15 +396,17 @@ fa_bias_cover:
 	mov	ebx, 4
 	mov	cl, 3
 
+	pop	ecx
 	ror	ecx, 16				; get compute words
 	mov	ebx, ecx			; index / count
+	call	frame_mantissa			; swap ecx back again and measure
 
 	clc
 
 fa_action:
 	mov	eax, dword ptr [edi+ebx*4]
 	adc	dword ptr [esi+ebx*4], eax
-	add	ebx, -1				; process word 1
+	dec	ebx				; process word 1
 	jnz	fa_action			; leave word 0 alone
 
 	mov	eax, dword ptr [_OUTPUT]	; signs of target before
@@ -384,19 +416,19 @@ fa_action:
 	not	eax
 	mov	dword ptr [_OUTPUT], eax	; update final signs
 
-	call	revision_carry			; get polarity + value + bias
+	call	initial_polar_carry		; get polarity + value + bias
 	add	dword ptr [esi+ebx*4+3*4], eax	; of 1st adusting word
-	sar	eax, 24				; subsequent adjusting words = signs
+	sar	eax, 31				; subsequent adjusting words = signs
 						; ebx = mantissa words - 3
 fa_carry_round
 	adc	dword ptr [esi+ebx*4+2*4], eax
-	add	ebx, -1
-	jc	fa_carry_round
+	dec	ebx
+	jns	fa_carry_round
 
 	xor	eax, dword ptr [esi+1*4]	; repeat signs XOR word 1
 
 fa_assign:
-	and	eax, 1
+	and	eax, 1				; added mantissa 1 bit above fractional point?
 	jz	fa_normalise
 	mov	eax, dword ptr [esi+1*4]	; more than normal
 	rcr	eax, 1				; shift the unsign down the mantissa
@@ -407,14 +439,15 @@ fa_assign:
 	rcr	dword ptr [esi+6*4], 1
 	rcr	dword ptr [esi+7*4], 1
 	add	dword ptr [esi], 1		; uprate the scale
-	jmp	fa_final_sign	
+	mov     eax, dword ptr [_OUTPUT]
+	mov	dword ptr [esi+1*4], eax
+	jmp	fa_normalised
 
 fa_normalise:
-	call	renormalise
-
-fa_final_sign
 	mov	eax, dword ptr [_OUTPUT]
-	mov	dword ptr [esi+1*4], eax
+	mov	dword ptr [esi+1*4], eax	; renormalise needs signs
+	call	renormalise			; in case the sum is plenty positions
+fa_normalised			; below the fractional point
 	ret
 	
 
