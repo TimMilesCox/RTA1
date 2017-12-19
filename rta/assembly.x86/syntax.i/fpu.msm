@@ -61,6 +61,7 @@ compress4to8:			; readout floating operand
 ;	                 |--- 144-bit mantissa -->	                                    
 
 _deliver_:
+	push	ebx
 	test	dword ptr [_psr], FP_R
 	jz	_deliver
 	mov	ebx, dword ptr [esi]		; read scale unsigned magnitude
@@ -107,7 +108,7 @@ _residue_normalised:
 
 _deliver:					; deliver floating result
 						; ebx = target register index
-						; result register[ebp+]
+	pop	ebx				; result register[ebp+]
 	mov	eax, dword ptr [esi]		; unsigned scale magnitude
 	xor	eax, dword ptr [esi+1*4]	; sign it
 	shl	eax, 8
@@ -124,11 +125,11 @@ _store_float
         ror     eax, 16
         mov     cx, ax				; position mantissa bits 39..24
         mov     dword ptr [ebp+ebx*4+8], ecx	; store mantissa bits 47..24
-        mov     ecx, dword ptr [esi+8]		; read mantissa bits 7..0 plus 24
+        mov     ecx, dword ptr [esi+4*4]	; read mantissa bits 7..0 plus 24 trailing bits
         shr     ecx, 16				; position after mantissa 23..8
         mov     ax, cx
         shr     eax, 8				; store mantissa bits 23..0
-        mov     dword ptr [ebp+ebx*4+8], ecx
+        mov     dword ptr [ebp+ebx*4+12], eax
 	ret
 
 _output equ	272
@@ -473,24 +474,26 @@ fmp1:	mov	eax, dword ptr [_INPUT2]
 	call	zover
 
 fmadd:	clc
+
 	mov	esi, _INPUTR
-	rcr	dword ptr [esi+2*4], 1		; addend shifts sight
+	rcr	dword ptr [esi+2*4], 1		; addend shift right
 	rcr	dword ptr [esi+3*4], 1
 	rcr	dword ptr [esi+4*4], 1
 	rcr	dword ptr [esi+5*4], 1
 	rcr	dword ptr [esi+6*4], 1
 	rcr	dword ptr [esi+7*4], 1
 
-	mov	esi, _OUTPUT
-	rcl	dword ptr [esi+7*4], 1		; product shifts left
+	mov	esi, _INPUT2
+	rcl	dword ptr [esi+7*4], 1		; multiplier shift left
 	rcl	dword ptr [esi+6*4], 1
 	rcl	dword ptr [esi+5*4], 1
 	rcl	dword ptr [esi+4*4], 1
 	rcl	dword ptr [esi+3*4], 1
 	rcl	dword ptr [esi+2*4], 1
 
+	mov	esi, _OUTPUT
 	jnc	fmadx
-
+						; 1 shifted from multiplier
 fmadc:	mov	eax, dword ptr [_INPUTR+7*4]	
 	add	dword ptr [esi+7*4], eax	; do not use carry
 	mov	eax, dword ptr [_INPUTR+6*4]
@@ -511,7 +514,7 @@ fmadx:	dec	cl
 	rcl	eax, 1
 	jc	fm_normalised
 
-	add	dword ptr [esi], -1		; take 1 from scale
+	add	dword ptr [_INPUTR], -1		; take 1 from scale
 	rcl	dword ptr [esi+7*4], 1
 	rcl	dword ptr [esi+6*4], 1
 	rcl	dword ptr [esi+5*4], 1
@@ -525,7 +528,7 @@ fm_normalised
 	add	eax, dword ptr [_INPUT2]
 	add	eax, -00400000h
 	and	eax, 007FFFFFh
-;	mov	esi, _OUTPUT			; it should still be
+;	mov	esi, _OUTPUT			; esi should be pointing to _OUTPUT
 	mov	dword ptr [esi], eax		; insert unsigned magnitude product scale
 	mov	eax, [_INPUTR+1*4]		; calculate sign of product
 	xor	eax, [_INPUT2+1*4]
@@ -689,7 +692,7 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	call	compress4to8
 	call	round
 	call	fa
-	pop	ecx				; retrieve target register name
+	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
 
@@ -708,7 +711,7 @@ _fan:	push	ebp
 	call	compress4to8
 	call	round
 	call	fan
-	pop	ecx				; retrieve target register name
+	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
 
@@ -730,7 +733,7 @@ _fm:	push	ebp
 	call	round
 	mov	cx, 06060h			; override multiply beats
 	call	fm
-	pop	ecx				; retrieve target register name
+	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
 	
@@ -751,7 +754,7 @@ _fd:	push	ebp
 	call	zoutput
 ;	call	round
 	call	fd
-	pop	ecx				; retrieve target register name
+	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
 
