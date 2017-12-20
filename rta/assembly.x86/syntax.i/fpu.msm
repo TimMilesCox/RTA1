@@ -16,7 +16,7 @@ compress4to8:			; readout floating operand
 	mov	dword ptr [esi+5*4], eax
 	mov	ebx, dword ptr [esi+3*4]	; read low-order mantissa word
 	mov	al, bl				; low-order octet
-	ror	eax, 24				; is followed by 24 signs
+	ror	eax, 8				; is followed by 24 signs
 	mov	dword ptr [esi+4*4], eax	; ebx also contains mantissa 23..8
 	mov	eax, dword ptr [esi+2*4]	; eax now contains mantissa 47..24
 	shl	ebx, 8
@@ -205,6 +205,45 @@ restore_trailing_signs:
 						; It would then be unnecessary but harmless rewriting
 						; 32 signs to rounding field in next platform word
 	
+bias_addend:
+	push	edx
+	push	ecx
+
+	mov	ebx, 1				; output index
+	shr	ax, 5				; words sign fill
+	shr	al, 3				; bits sign fill
+	mov	cx, ax
+	add	edi, 4				; input pointer
+	mov	eax, dword ptr [edi]		; there shall be this word of signs at least
+
+bias32:	mov	dword ptr [ebx*4+_OUTPUT], eax	; write 1 word of signs
+	add	ebx, 1				; consider the next output word
+	add	ch, -1				; any more words of signs?
+	jc	bias32
+
+	mov	ch, 32				; demonstrate the missing advantage
+	sub	ch, cl				; of instruction architectures
+						; with 2-register shifts
+biasup2:
+	cmp	ebx, 8
+	jz	bias_addx
+	add	edi, 4				; read new mantissa word
+	mov	edx, dword ptr [edi]		; it becomes word # new in edx
+	xchg	ch, cl
+	shl	eax, cl
+	xchg	ch, cl
+	shr	edx, cl
+	or	eax, edx
+	mov	dword ptr [ebx*4+_OUTPUT], eax	; write 1 merged word
+	mov	eax, dword ptr [edi]		; read the same mantissa word again
+	add	ebx, 1				; it becomes word # previous in eax
+	jmp	biasup2
+
+bias_addx:
+	pop	ecx
+	pop	edx				; restore the program counter
+	ret
+
 frame_mantissa:
 	ror	ecx, 16				; swap words count up, beats index down
 	add	ch, 1				; up the beats index to beats count
@@ -217,7 +256,6 @@ renormalise:					; rule 1: restore sign fill in
 						; low-order containing platform word
 						; it was mashed by rounding and adding
 	call	restore_trailing_signs
-
 	ror	ecx, 16				; the governing parameter is now
 						; the containing words count in cx
 renormalise32:
@@ -249,19 +287,18 @@ renormalise1:
 	jmp	renormalise1
 
 bitwise_scale:
-	mov	eax, dword ptr [ebx*4+bitwise_scalex]
-	jmp	[eax]
+	mov	eax, esi
+	sub	eax, __register
+	shr	eax, 2
 
-bitwise_scalex:
-	dd	scale0, scale1, scale2, scale3, scale4, scale5, scale6
+	rcl	dword ptr [esi+ebx*4+7*4], 1
+	rcl	dword ptr [esi+ebx*4+6*4], 1
+	rcl	dword ptr [esi+ebx*4+5*4], 1
+	rcl	dword ptr [esi+ebx*4+4*4], 1
+	rcl	dword ptr [esi+ebx*4+3*4], 1
+	rcl	dword ptr [esi+ebx*4+2*4], 1
 
-scale6: rcl	dword ptr [esi+ebx*4+6*4], 1
-scale5:	rcl	dword ptr [esi+ebx*4+6*4], 1
-scale4:	rcl	dword ptr [esi+ebx*4+5*4], 1
-scale3:	rcl	dword ptr [esi+ebx*4+4*4], 1
-scale2:	rcl	dword ptr [esi+ebx*4+3*4], 1
-scale1:	rcl	dword ptr [esi+ebx*4+2*4], 1
-scale0:	add	dword ptr [esi], -1	; scale down
+	add	dword ptr [esi], -1	; scale down
 	ret
 
 rotate32left:				; rotate all containing platform words of mantissa
@@ -342,63 +379,25 @@ fa_addend_normalised:
 	ret					; storage addend zero-added
 
 fa_promote_magnitude:
-	mov	eax, dword ptr [_INPUTR+1*4]	; relate the exponent magnitudes
-	sub	eax, dword ptr [_INPUT2+1*4]
-	jae	fa_add				; register-side operand is higher
+	mov	eax, dword ptr [_INPUT2]
+	neg	eax
+	add	eax, dword ptr [_INPUTR]	; relate the exponent magnitudes
+
+	jc	fa_add				; register-side operand is not lower
 	mov	edi, _INPUTR			; not so, importance is reversed
 	mov	esi, _INPUT2
 	neg	eax
 
-fa_add:	cmp	eax, 223			; do they touch?
+fa_add:	push	eax
+	call	round
+	pop	eax
+
+	cmp	eax, 223			; do they touch?
 	ja	fa_nop
-	shl	ax, 5				; platform words to be sign filled
-	shr	al, 3				; remaining bits to be sign filled
 
-	mov	ebx, dword ptr [edi+1*4]	; signs
-	push	ecx				; for later
-	mov	cx, ax
-
-	push	edx				; borrow the program counter
-	push	esi
-	mov	esi, _OUTPUT 			; write at least one platform word
-						; of signs at _OUTPUT+1*4	
-fa_bias_words:
-	add	esi, 4
-	mov	dword ptr [esi], ebx
-	add	ch, -1
-	jc	fa_bias_words			; ch < 0 = enough
-
-	mov	ch, 32
-	sub	ch, cl
-
-fa_bias_overlap:
-	cmp	esi, _OUTPUT+8*4
-	jae	fa_bias_cover
-
-	mov	eax, [edi+2*4]			; read lesser mantissa
-	add	edi, 4
-	xchg	ch, cl
-	shl	ebx, cl				; demonstrate why we prefer
-	xchg	ch, cl				; architectures with 2-register shifts
-	mov	edx, eax
-	shr	edx, cl
-	or	ebx, edx
-	mov	dword ptr [esi], ebx
-	add	esi, 4
-	mov	ebx, eax
-
-	jmp	fa_bias_overlap
-
-fa_bias_cover:
-
-	pop	esi
-	pop	edx				; hand back the program counter 
+	call	bias_addend
 	mov	edi, _OUTPUT
 
-	mov	ebx, 4
-	mov	cl, 3
-
-	pop	ecx
 	ror	ecx, 16				; get compute words
 	mov	ebx, ecx			; index / count
 	call	frame_mantissa			; swap ecx back again and measure
@@ -690,7 +689,7 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
 	call	compress4to8
-	call	round
+;	call	round
 	call	fa
 	pop	ebx				; retrieve target register name
 	pop	ebp
@@ -709,7 +708,7 @@ _fan:	push	ebp
 	call	_burst_read4
 	mov	esi, _INPUTR
 	call	compress4to8
-	call	round
+;	call	round
 	call	fan
 	pop	ebx				; retrieve target register name
 	pop	ebp
