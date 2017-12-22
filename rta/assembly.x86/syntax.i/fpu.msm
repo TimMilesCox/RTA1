@@ -577,21 +577,15 @@ fd_upright:
 
 	push	edx
 
+	add	cx, 01818h		; a divide needs 24 more beats
+					; than a multiply
 	test	ch, 128
 	jz	near fd_72
 	mov	edi, esp
 
-fd_144:	stc		; shift divisor -mantissa 1 position right
-	rcr	dword ptr [_INPUT2+2*4], 1
-	rcr	dword ptr [_INPUT2+3*4], 1
-	rcr	dword ptr [_INPUT2+4*4], 1
-	rcr	dword ptr [_INPUT2+5*4], 1
-	rcr	dword ptr [_INPUT2+6*4], 1
-	rcr	dword ptr [_INPUT2+7*4], 1
-
-	stc			; add negative mantissa to positive dividend
-	call	_add_low	; save the low half in the stack
-	push	edx
+fd_144:	stc				; add negative mantissa
+	call	_add_low		; to positive dividend
+	push	edx			; save the low half in the stack
 	push	ebx
 	push	eax
 	call	_add_high			; add the high half in eax edx ebx
@@ -617,17 +611,20 @@ fd_144level:
 	rcl	dword ptr [_OUTPUT+3*4], 1
 	rcl	dword ptr [_OUTPUT+2*4], 1
 
+	stc
+	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+	rcr	dword ptr [_INPUT2+4*4], 1
+	rcr	dword ptr [_INPUT2+5*4], 1
+	rcr	dword ptr [_INPUT2+6*4], 1
+	rcr	dword ptr [_INPUT2+7*4], 1
+
 	add	cl, -1
 	jc	fd_144
 	jmp	fd_restore	
 
-fd_72:	stc					; quicker routine for 96-bit result
-	rcr     dword ptr [_INPUT2+2*4], 1	; shift -mantissa 1 position right
-	rcr	dword ptr [_INPUT2+3*4], 1	
-	rcr	dword ptr [_INPUT2+4*4], 1
-
-	stc					; add -mantissa to +dividend
-	call	_add_high
+fd_72:	stc					; add negative mantissa
+	call	_add_high			; to positive dividend
 	jnc	fd_72level			; no carry = drop the result
 
 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
@@ -637,11 +634,17 @@ fd_72level:
 	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
 	rcl	dword ptr [_OUTPUT+3*4], 1
 	rcl	dword ptr [_OUTPUT+2*4], 1
+
+	stc
+	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+	rcr	dword ptr [_INPUT2+4*4], 1	;
+
 	add	cl, -1
 	jc	fd_72
 
 fd_restore:
-	pop	edx		; hand the program counter back
+	pop	edx				; hand the program counter back
 
  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
@@ -653,8 +656,9 @@ fd_restore:
 	mov	cl, ch				; retrieve 2nd copy of beats count
 
 fd_normalise:					; quotient mantissa normalised?
-	test	dword ptr [_OUTPUT+2*4], 080000000h
-	jnz	fd_normalised
+	mov	eax, dword ptr [_OUTPUT+2*4]
+	and	eax, eax
+	js	fd_normalised
 	clc					; shift replacement value = 0
 	rcl	dword ptr [_OUTPUT+7*4], 1
 	rcl	dword ptr [_OUTPUT+6*4], 1
@@ -726,7 +730,7 @@ _fan:	push	ebp
 	mov	esi, _INPUTR
 	call	compress4to8
 	mov	edi, _INPUTR
-	call	round
+;	call	round
 	call	fan
 	pop	ebx				; retrieve target register name
 	pop	ebp
