@@ -176,6 +176,20 @@ round72:
 	mov	ecx, 00044747h			; 4 platform words 72 beats
 	ret
 
+surround:					; round the product already multiplied
+	add	ch, -7				; 71->64, 143->136, 167->160
+	shr	cx, 5				; input is beats count in ch
+	shr	cl, 3				; containing platform words minus 1 in ch
+	mov	eax, dword ptr [__register+FP_GUARD]
+	shr	eax, cl				; guard pattern shift in cl
+	movzx	ebx, ch
+	add	dword ptr [ds:edi+ebx*4+2*4], eax
+surround1:
+	adc	dword ptr [ds:edi+ebx*4+1*4], 0
+	dec	ebx
+	jnz	surround1
+	ret
+
 initial_polar_carry:				; frame_mantissa has executed already
 	and	eax, eax			; eax contains new signs after polar switch
 	js	initial_polar_zone_south	; exactly -1 must be added to the mantissa
@@ -222,16 +236,16 @@ biasfp:	push	edx
 	push	ecx
 
 	mov	ebx, 1				; output index
-	shl	ax, 5				; words sign fill
-	shr	al, 5				; bits sign fill
+	shl	ax, 3				; words sign fill
+	shr	al, 3				; bits sign fill
 	mov	cx, ax
 	add	esi, 4				; input pointer
 	mov	eax, dword ptr [esi]		; there shall be this word of signs at least
 
 bias32:	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 word of signs
-	add	ebx, 1				; consider the next output word
-	add	ch, -1				; any more words of signs?
-	jc	bias32
+	inc	ebx				; consider the next output word
+	dec	ch				; any more words of signs?
+	jns	bias32
 
 	mov	ch, 32				; demonstrate the missing advantage
 	sub	ch, cl				; of instruction architectures
@@ -400,7 +414,7 @@ fa_add:	push	eax
 	call	round
 	pop	eax
 
-	cmp	eax, 223			; do they touch?
+	cmp	eax, 160				; do they touch?
 	ja	fa_nop
 
 	call	bias_addend
@@ -482,6 +496,8 @@ fmp1:	mov	eax, dword ptr [_INPUT2]
 	mov	dword ptr [esi], eax
 	call	zover
 
+	mov 	cl, 96-1
+
 fmadd:	clc
 
 	mov	esi, _INPUTR
@@ -531,7 +547,9 @@ fmadx:	dec	cl
 	rcl	dword ptr [esi+3*4], 1
 	rcl	dword ptr [esi+2*4], 1
 
-fm_normalised
+fm_normalised:
+	mov	edi, _OUTPUT
+	call	surround			; now round it
 
 	mov	eax, dword ptr [_INPUTR]
 	add	eax, dword ptr [_INPUT2]
@@ -747,9 +765,11 @@ _fm:	push	ebp
 	call	compress4to8
 	mov	esi, _OUTPUT
 	call	zoutput
-;	call	round
-;	mov	cx, 06060h			; override multiply beats
-	call	fm
+	mov	ecx, 00044747h
+	test	dword ptr [_psr], FP_R
+	jz	_fm_
+	mov	cx, 08F8Fh
+_fm_:	call	fm
 	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
