@@ -247,6 +247,9 @@ bias32:	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 word of signs
 	dec	ch				; any more words of signs?
 	jns	bias32
 
+	and	cl, cl
+	jz	bias_fast			; there is no 32-bit shift
+
 	mov	ch, 32				; demonstrate the missing advantage
 	sub	ch, cl				; of instruction architectures
 						; with 2-register shifts
@@ -264,6 +267,15 @@ biasup2:
 	mov	eax, dword ptr [esi]		; read the same mantissa word again
 	add	ebx, 1				; it becomes word # previous in eax
 	jmp	biasup2
+
+bias_fast:
+	cmp	ebx, 8
+	jz	bias_addx
+	add	esi, 4
+	mov	eax, dword ptr [esi]
+	mov	dword ptr [ds:edi+ebx*4], eax
+	add	ebx, 1
+	jmp	bias_fast
 
 bias_addx:
 	pop	ecx
@@ -414,12 +426,16 @@ fa_add:	push	eax
 	call	round
 	pop	eax
 
-	cmp	eax, 160				; do they touch?
+	and	eax, eax
+	jz	fa_addfast
+
+	cmp	eax, 191			; do they touch?
 	ja	fa_nop
 
 	call	bias_addend
 	mov	esi, _BIAS			; shifted addend
 
+fa_addfast:
 	ror	ecx, 16				; get containing compute words
 	movzx	ebx, cx				; index / count
 	ror	ecx, 16
@@ -748,7 +764,7 @@ _fan:	push	ebp
 	call	fan
 	pop	ebx				; retrieve target register name
 	pop	ebp
-	jmp	_deliver_
+	jmp	_deliver_edi
 
 _fm:	push	ebp
 	mov	ebp, __register			; _input2 is [register]+absolute
