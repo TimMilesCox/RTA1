@@ -792,31 +792,48 @@ _dlsc24:				; different when high order word is all signs
 	ret
 
 _fpx:	call	_burst_read2
-	mov	esi, dword ptr [ebp+S_P]	; you can have esi now
-	add	esi, -4
-	mov	dword ptr [ebp+S_P], esi
+	mov	ecx, dword ptr [ebp+S_P]	; you can have edi now
+	add	dword ptr [ebp+S_P], -4
+	add	ecx, -4
+	shl	ecx, 2
+	mov	edi, __register
+	add	edi, ecx
+
 	mov	ecx, eax
-	rol	eax, 2+8
-	shl	ax, 12
-	sar	eax, 12
-	ror	eax, 2
-	shr	eax, 8
-	mov	[esi*4+__register], eax
-	shl	eax, 8
-	sar	eax, 24
-	shr	eax, 8
-	mov	[esi*4+__register+12], eax
-	ror	ecx, 12
-	shr	ecx, 4
-	ror	ebx, 8
-	mov	cx, bx
-	shr	ecx, 4
-	mov	[esi*4+__register+4], ecx
-	ror	ebx, 8
-	mov	bx, ax
-	shl	ebx, 4
-	shr	ebx, 8
-	mov	[esi*4+__register+4], ebx
+	shl	ecx, 8
+	sar	ecx, 24
+	test	eax, 00800800h			; normalised?
+	jpe	_fpx_allsigns
+
+	shr	ecx, 8				; 0000 0000 ssss ssss ssss ssss ssss ssss
+	mov	dword ptr [ds:edi+3*4], ecx
+	shl	ecx, 8				; ssss ssss ssss ssss ssss ssss 0000 0000
+	mov	cx, bx				; ssss ssss ssss ssss mmmm MMMM MMMM MMMM
+	ror	ecx, 12				; MMMM MMMM MMMM ssss ssss ssss ssss mmmm
+	shr	ecx, 8				; 0000 0000 MMMM MMMM MMMM ssss ssss ssss
+	mov	dword ptr [ds:edi+2*4], ecx
+	shl	ebx, 8				; mmmm mmmm mmmm mmmm mmmm mmmm 0000 0000
+	mov	bx, ax				; mmmm mmmm mmmm mmmm xxxx MMMM MMMM MMMM
+	ror	ebx, 12				; MMMM MMMM MMMM mmmm mmmm mmmm mmmm xxxx
+	shr	ebx, 8				; 0000 0000 MMMM MMMM MMMM mmmm mmmm mmmm
+	mov	dword ptr [ds:edi+1*4], ebx
+	rol	eax, 8+1			; midpoint bit to high
+						; Xxxx xxxx xxxm mmmm mmmm mmm0 0000 000s
+	shl	ax, 12				; Xxxx xxxx xxxm mmmm 000s 0000 0000 0000
+	sar	eax, 12				; XXXX XXXX XXXX Xxxx xxxx xxxm mmmm 000s
+	ror	eax, 1				; sXXX XXXX XXXX XXxx xxxx xxxx mmmm m000
+	shr	eax, 8				; 0000 0000 sXXX XXXX XXXX XXxx xxxx xxxx
+						; the fill bits are opposite polarity 
+						; to the bit at midpoint. There are 12
+	xor	eax, 003FFC00h			; 0000 0000 sXYY YYYY YYYY YYxx xxxx xxxx
+	mov	dword ptr [ds:edi], eax
+	ret
+
+_fpx_allsigns:
+	mov	dword ptr [ds:edi], ecx		; not normalised so push signed zero
+	mov	dword ptr [ds:edi+1*4], ecx
+	mov	dword ptr [ds:edi+2*4], ecx
+	mov	dword ptr [ds:edi+3*4], ecx
 	ret
 
 _fpp:	mov	esi, dword ptr [ebp+S_P]
