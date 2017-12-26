@@ -289,10 +289,10 @@
    289 0000012A 5F0C                <1>         dw      _ql-operations7
    290 0000012C 0B16                <1>         dw      _fpp-operations7
    291 0000012E 8E15                <1>         dw      _fpx-operations7
-   292 00000130 331D                <1>         dw      _fa-operations7
-   293 00000132 8F1D                <1>         dw      _fan-operations7
-   294 00000134 EB1D                <1>         dw      _fm-operations7
-   295 00000136 471E                <1>         dw      _fd-operations7
+   292 00000130 4F1D                <1>         dw      _fa-operations7
+   293 00000132 AB1D                <1>         dw      _fan-operations7
+   294 00000134 071E                <1>         dw      _fm-operations7
+   295 00000136 631E                <1>         dw      _fd-operations7
    296                              <1> 
    297 00000138 690C                <1>         dw      _qpop-operations7
    298 0000013A 800C                <1>         dw      _qpush-operations7
@@ -3085,7 +3085,7 @@
   3085 000018F6 B520                <1> 	mov	ch, 32				;
   3086 000018F8 28CD                <1> 	sub	ch, cl
   3087 000018FA 3E8B449F08          <1> 	mov	eax, dword ptr [ds:edi+ebx*4+2*4]
-  3088 000018FF D3FA                <1> 	sar	edx, cl				; turn [mantissa bits] signs off
+  3088 000018FF D3EA                <1> 	shr	edx, cl				; turn [mantissa bits] signs off
   3089 00001901 D3C0                <1> 	rol	eax, cl
   3090 00001903 88E9                <1> 	mov	cl, ch
   3091 00001905 D3E0                <1> 	shl	eax, cl
@@ -3465,236 +3465,246 @@
   3465 00001CB0 7801                <1> 	js	fdgo
   3466 00001CB2 C3                  <1> fdnop:	ret					; not normalised = zero divisor
   3467                              <1> 
-  3468 00001CB3 21DB                <1> fdgo:	and	ebx, ebx			; divisor either is negative magnitude
-  3469 00001CB5 780A                <1> 	js	fd_comp1	
-  3470 00001CB7 BE[00040000]        <1> 	mov	esi, _INPUT2			; or shall be
-  3471 00001CBC E893FDFFFF          <1> 	call	zover
-  3472                              <1> fd_comp1:
-  3473 00001CC1 F705[24040000]0000- <1> 	test	dword ptr [_INPUTR+1*4], 080000000h
-  3474 00001CC9 0080                <1>
-  3475 00001CCB 740A                <1> 	jz	fd_upright			; dividend must be positive magnitude
-  3476 00001CCD BE[20040000]        <1> 	mov	esi, _INPUTR
-  3477 00001CD2 E87DFDFFFF          <1> 	call	zover
-  3478                              <1> fd_upright:
-  3479 00001CD7 BF[20040000]        <1> 	mov	edi, _INPUTR
-  3480 00001CDC E8BCFBFFFF          <1> 	call	round				; this also sets counters
-  3481                              <1> 
-  3482 00001CE1 52                  <1> 	push	edx
-  3483                              <1> 
-  3484 00001CE2 6681C11818          <1> 	add	cx, 01818h		; a divide needs 24 more beats
-  3485                              <1> 					; than a multiply
-  3486 00001CE7 F6C580              <1> 	test	ch, 128
-  3487 00001CEA 0F848E000000        <1> 	jz	near fd_72
-  3488 00001CF0 89E7                <1> 	mov	edi, esp
-  3489                              <1> 
-  3490 00001CF2 F9                  <1> fd_144:	stc				; add negative mantissa
-  3491 00001CF3 E86FFDFFFF          <1> 	call	_add_low		; to positive dividend
-  3492 00001CF8 52                  <1> 	push	edx			; save the low half in the stack
-  3493 00001CF9 53                  <1> 	push	ebx
-  3494 00001CFA 50                  <1> 	push	eax
-  3495 00001CFB E88BFDFFFF          <1> 	call	_add_high			; add the high half in eax edx ebx
-  3496                              <1> 
-  3497 00001D00 7323                <1> 	jnc	fd_144level			; no carry = drop the result
-  3498                              <1> 
-  3499 00001D02 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
-  3500 00001D07 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
-  3501 00001D0D 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
+  3468 00001CB3 A1[24040000]        <1> fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
+  3469 00001CB8 3305[28040000]      <1> 	xor	eax, dword ptr [_INPUTR+2*4]
+  3470 00001CBE 79F2                <1> 	jns	fdnop				; no go after all
+  3471                              <1> 
+  3472 00001CC0 21DB                <1> 	and	ebx, ebx			; divisor either is negative magnitude
+  3473 00001CC2 780A                <1> 	js	fd_comp1	
+  3474 00001CC4 BE[00040000]        <1> 	mov	esi, _INPUT2			; or shall be
+  3475 00001CC9 E886FDFFFF          <1> 	call	zover
+  3476                              <1> fd_comp1:
+  3477 00001CCE F705[24040000]0000- <1> 	test	dword ptr [_INPUTR+1*4], 080000000h
+  3478 00001CD6 0080                <1>
+  3479 00001CD8 740A                <1> 	jz	fd_upright			; dividend must be positive magnitude
+  3480 00001CDA BE[20040000]        <1> 	mov	esi, _INPUTR
+  3481 00001CDF E870FDFFFF          <1> 	call	zover
+  3482                              <1> fd_upright:
+  3483 00001CE4 BF[20040000]        <1> 	mov	edi, _INPUTR
+  3484 00001CE9 E8AFFBFFFF          <1> 	call	round				; this also sets counters
+  3485                              <1> 
+  3486 00001CEE 52                  <1> 	push	edx
+  3487                              <1> 
+  3488 00001CEF 6681C11818          <1> 	add	cx, 01818h		; a divide needs 24 more beats
+  3489                              <1> 					; than a multiply
+  3490 00001CF4 F6C580              <1> 	test	ch, 128
+  3491 00001CF7 0F848E000000        <1> 	jz	near fd_72
+  3492 00001CFD 89E7                <1> 	mov	edi, esp
+  3493                              <1> 
+  3494 00001CFF F9                  <1> fd_144:	stc				; add negative mantissa
+  3495 00001D00 E862FDFFFF          <1> 	call	_add_low		; to positive dividend
+  3496 00001D05 52                  <1> 	push	edx			; save the low half in the stack
+  3497 00001D06 53                  <1> 	push	ebx
+  3498 00001D07 50                  <1> 	push	eax
+  3499 00001D08 E87EFDFFFF          <1> 	call	_add_high			; add the high half in eax edx ebx
+  3500                              <1> 
+  3501 00001D0D 7323                <1> 	jnc	fd_144level			; no carry = drop the result
   3502                              <1> 
-  3503 00001D13 58                  <1> 	pop	eax
-  3504 00001D14 A3[34040000]        <1> 	mov	dword ptr [_INPUTR+5*4], eax
-  3505 00001D19 58                  <1> 	pop	eax
-  3506 00001D1A A3[38040000]        <1> 	mov	dword ptr [_INPUTR+6*4], eax
-  3507 00001D1F 58                  <1> 	pop	eax
-  3508 00001D20 A3[3C040000]        <1> 	mov	dword ptr [_INPUTR+7*4], eax
-  3509                              <1> fd_144level:
-  3510 00001D25 89FC                <1> 	mov	esp, edi			; clear stack whether popped or not
-  3511 00001D27 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1	; shift value of carry into quotient
-  3512 00001D2D D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
-  3513 00001D33 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
-  3514 00001D39 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
-  3515 00001D3F D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3516 00001D45 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3517                              <1> 
-  3518 00001D4B F9                  <1> 	stc
-  3519 00001D4C D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
-  3520 00001D52 D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
-  3521 00001D58 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1
-  3522 00001D5E D11D[14040000]      <1> 	rcr	dword ptr [_INPUT2+5*4], 1
-  3523 00001D64 D11D[18040000]      <1> 	rcr	dword ptr [_INPUT2+6*4], 1
-  3524 00001D6A D11D[1C040000]      <1> 	rcr	dword ptr [_INPUT2+7*4], 1
-  3525                              <1> 
-  3526 00001D70 80C1FF              <1> 	add	cl, -1
-  3527 00001D73 0F8279FFFFFF        <1> 	jc	fd_144
-  3528 00001D79 E943000000          <1> 	jmp	fd_restore	
+  3503 00001D0F A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
+  3504 00001D14 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
+  3505 00001D1A 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
+  3506                              <1> 
+  3507 00001D20 58                  <1> 	pop	eax
+  3508 00001D21 A3[34040000]        <1> 	mov	dword ptr [_INPUTR+5*4], eax
+  3509 00001D26 58                  <1> 	pop	eax
+  3510 00001D27 A3[38040000]        <1> 	mov	dword ptr [_INPUTR+6*4], eax
+  3511 00001D2C 58                  <1> 	pop	eax
+  3512 00001D2D A3[3C040000]        <1> 	mov	dword ptr [_INPUTR+7*4], eax
+  3513                              <1> fd_144level:
+  3514 00001D32 89FC                <1> 	mov	esp, edi			; clear stack whether popped or not
+  3515 00001D34 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1	; shift value of carry into quotient
+  3516 00001D3A D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
+  3517 00001D40 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
+  3518 00001D46 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
+  3519 00001D4C D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3520 00001D52 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3521                              <1> 
+  3522 00001D58 F9                  <1> 	stc
+  3523 00001D59 D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+  3524 00001D5F D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+  3525 00001D65 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1
+  3526 00001D6B D11D[14040000]      <1> 	rcr	dword ptr [_INPUT2+5*4], 1
+  3527 00001D71 D11D[18040000]      <1> 	rcr	dword ptr [_INPUT2+6*4], 1
+  3528 00001D77 D11D[1C040000]      <1> 	rcr	dword ptr [_INPUT2+7*4], 1
   3529                              <1> 
-  3530 00001D7E F9                  <1> fd_72:	stc					; add negative mantissa
-  3531 00001D7F E807FDFFFF          <1> 	call	_add_high			; to positive dividend
-  3532 00001D84 7311                <1> 	jnc	fd_72level			; no carry = drop the result
+  3530 00001D7D 80C1FF              <1> 	add	cl, -1
+  3531 00001D80 0F8279FFFFFF        <1> 	jc	fd_144
+  3532 00001D86 E943000000          <1> 	jmp	fd_restore	
   3533                              <1> 
-  3534 00001D86 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
-  3535 00001D8B 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
-  3536 00001D91 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
-  3537                              <1> fd_72level:
-  3538 00001D97 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
-  3539 00001D9D D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3540 00001DA3 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3541                              <1> 
-  3542 00001DA9 F9                  <1> 	stc
-  3543 00001DAA D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
-  3544 00001DB0 D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
-  3545 00001DB6 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1	;
-  3546                              <1> 
-  3547 00001DBC 80C1FF              <1> 	add	cl, -1
-  3548 00001DBF 72BD                <1> 	jc	fd_72
-  3549                              <1> 
-  3550                              <1> fd_restore:
-  3551 00001DC1 5A                  <1> 	pop	edx				; hand the program counter back
-  3552                              <1> 
-  3553 00001DC2 A1[20040000]        <1>  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
-  3554 00001DC7 2B05[00040000]      <1> 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
-  3555 00001DCD 0501004000          <1> 	add	eax, 00400001h			; midpoint + 1
-  3556 00001DD2 25FFFF7F00          <1> 	and	eax, 007FFFFFh
-  3557 00001DD7 A3[40040000]        <1> 	mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
-  3558                              <1> 						; -> front of delivery string
-  3559                              <1> 
-  3560 00001DDC 88E9                <1> 	mov	cl, ch				; retrieve 2nd copy of beats count
-  3561                              <1> 
-  3562                              <1> fd_normalise:					; quotient mantissa normalised?
-  3563 00001DDE A1[48040000]        <1> 	mov	eax, dword ptr [_OUTPUT+2*4]
-  3564 00001DE3 21C0                <1> 	and	eax, eax
-  3565 00001DE5 783E                <1> 	js	fd_normalised
-  3566 00001DE7 F8                  <1> 	clc					; shift replacement value = 0
-  3567 00001DE8 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1
-  3568 00001DEE D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
-  3569 00001DF4 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
-  3570 00001DFA D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
-  3571 00001E00 D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3572 00001E06 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3573                              <1> 
-  3574 00001E0C 8105[40040000]FFFF- <1> 	add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
-  3575 00001E14 FFFF                <1>
-  3576 00001E16 80C1FF              <1> 	add	cl, -1
-  3577 00001E19 72C3                <1> 	jc	fd_normalise
-  3578 00001E1B C705[40040000]0000- <1> 	mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
-  3579 00001E23 0000                <1>
-  3580                              <1> 						; so is everything else
-  3581                              <1> fd_normalised:
-  3582 00001E25 BE[40040000]        <1> 	mov	esi, _OUTPUT			; tell rewrite where it is
-  3583 00001E2A A1[24040000]        <1> 	mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
-  3584 00001E2F 3305[04040000]      <1> 	xor	eax, dword ptr [_INPUT2+1*4]
-  3585 00001E35 894604              <1> 	mov	[esi+1*4], eax			; output 32 signs
-  3586                              <1> 						; _deliver_ polarises the quotient scale
-  3587 00001E38 314608              <1> 	xor	dword ptr [esi+2*4], eax	; switch quotient mantissa
-  3588 00001E3B 31460C              <1> 	xor	dword ptr [esi+3*4], eax
-  3589 00001E3E 314610              <1> 	xor	dword ptr [esi+4*4], eax
-  3590 00001E41 314614              <1> 	xor	dword ptr [esi+5*4], eax	; switch the long mantissa
-  3591 00001E44 314618              <1> 	xor	dword ptr [esi+6*4], eax
-  3592 00001E47 31461C              <1> 	xor	dword ptr [esi+7*4], eax
-  3593 00001E4A C3                  <1> 	ret
-  3594                              <1> 
-  3595                              <1> ;	these instructions take the left-side + target as
-  3596                              <1> ;	[register_set]->a:b:mantissa2:mantissa3
-  3597                              <1> ;	and the right side as [ea]
-  3598                              <1> 
-  3599                              <1> ;	after acquisition and before delivery they call modules
-  3600                              <1> ;	fa fan fm fd
-  3601                              <1> ;	which may be used in extended instruction sets
-  3602                              <1> ;	using source and target registers in the internal stack
-  3603                              <1> ;	with maximum mantissa size 168 bits
+  3534 00001D8B F9                  <1> fd_72:	stc					; add negative mantissa
+  3535 00001D8C E8FAFCFFFF          <1> 	call	_add_high			; to positive dividend
+  3536 00001D91 7311                <1> 	jnc	fd_72level			; no carry = drop the result
+  3537                              <1> 
+  3538 00001D93 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
+  3539 00001D98 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
+  3540 00001D9E 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
+  3541                              <1> fd_72level:
+  3542 00001DA4 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
+  3543 00001DAA D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3544 00001DB0 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3545                              <1> 
+  3546 00001DB6 F9                  <1> 	stc
+  3547 00001DB7 D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+  3548 00001DBD D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+  3549 00001DC3 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1	;
+  3550                              <1> 
+  3551 00001DC9 80C1FF              <1> 	add	cl, -1
+  3552 00001DCC 72BD                <1> 	jc	fd_72
+  3553                              <1> 
+  3554                              <1> fd_restore:
+  3555 00001DCE 5A                  <1> 	pop	edx				; hand the program counter back
+  3556                              <1> 
+  3557 00001DCF A1[20040000]        <1>  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
+  3558 00001DD4 2B05[00040000]      <1> 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
+  3559 00001DDA 0501004000          <1> 	add	eax, 00400001h			; midpoint + 1
+  3560 00001DDF 25FFFF7F00          <1> 	and	eax, 007FFFFFh
+  3561 00001DE4 A3[40040000]        <1> 	mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
+  3562                              <1> 						; -> front of delivery string
+  3563                              <1> 
+  3564 00001DE9 88E9                <1> 	mov	cl, ch				; retrieve 2nd copy of beats count
+  3565                              <1> 
+  3566                              <1> fd_normalise:					; quotient mantissa normalised?
+  3567 00001DEB A1[48040000]        <1> 	mov	eax, dword ptr [_OUTPUT+2*4]
+  3568 00001DF0 21C0                <1> 	and	eax, eax
+  3569 00001DF2 783E                <1> 	js	fd_normalised
+  3570 00001DF4 F8                  <1> 	clc					; shift replacement value = 0
+  3571 00001DF5 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1
+  3572 00001DFB D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
+  3573 00001E01 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
+  3574 00001E07 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
+  3575 00001E0D D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3576 00001E13 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3577                              <1> 
+  3578 00001E19 8105[40040000]FFFF- <1> 	add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
+  3579 00001E21 FFFF                <1>
+  3580 00001E23 80C1FF              <1> 	add	cl, -1
+  3581 00001E26 72C3                <1> 	jc	fd_normalise
+  3582 00001E28 C705[40040000]0000- <1> 	mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
+  3583 00001E30 0000                <1>
+  3584                              <1> 						; so is everything else
+  3585                              <1> fd_normalised:
+  3586 00001E32 BE[40040000]        <1> 	mov	esi, _OUTPUT			; tell rewrite where it is
+  3587 00001E37 A1[24040000]        <1> 	mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
+  3588 00001E3C 3305[04040000]      <1> 	xor	eax, dword ptr [_INPUT2+1*4]
+  3589 00001E42 894604              <1> 	mov	[esi+1*4], eax			; output 32 signs
+  3590                              <1> 						; _deliver_ polarises the quotient scale
+  3591 00001E45 314608              <1> 	xor	dword ptr [esi+2*4], eax	; switch quotient mantissa
+  3592 00001E48 31460C              <1> 	xor	dword ptr [esi+3*4], eax
+  3593 00001E4B 314610              <1> 	xor	dword ptr [esi+4*4], eax
+  3594 00001E4E 314614              <1> 	xor	dword ptr [esi+5*4], eax	; switch the long mantissa
+  3595 00001E51 314618              <1> 	xor	dword ptr [esi+6*4], eax
+  3596 00001E54 31461C              <1> 	xor	dword ptr [esi+7*4], eax
+  3597                              <1> 
+  3598 00001E57 80C5E8              <1> 	add	ch, -24
+  3599 00001E5A 89F7                <1> 	mov	edi, esi
+  3600 00001E5C E830FBFFFF          <1> 	call	frame_mantissa
+  3601 00001E61 E88AFAFFFF          <1> 	call	restore_trailing_signs
+  3602                              <1> 
+  3603 00001E66 C3                  <1> 	ret
   3604                              <1> 
-  3605                              <1> 
-  3606 00001E4B 55                  <1> _fa:	push	ebp				; _input2 is [register]+absolute
-  3607 00001E4C BD[00000000]        <1> 	mov	ebp, __register
-  3608 00001E51 BB00010000          <1> 	mov	ebx, _input2
-  3609 00001E56 E84BE3FFFF          <1> 	call	_burst_read4
-  3610 00001E5B BE[00040000]        <1> 	mov	esi, _INPUT2
-  3611 00001E60 E81CF9FFFF          <1> 	call	compress4to8
-  3612 00001E65 B804000000          <1> 	mov	eax, a
-  3613 00001E6A 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3614 00001E70 50                  <1> 	push	eax				; save target register name
-  3615 00001E71 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3616 00001E76 E82BE3FFFF          <1> 	call	_burst_read4
-  3617 00001E7B BE[20040000]        <1> 	mov	esi, _INPUTR
-  3618 00001E80 E8FCF8FFFF          <1> 	call	compress4to8
-  3619 00001E85 B947470400          <1> 	mov	ecx, 00044747h
-  3620 00001E8A F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3621 00001E92 0000                <1>
-  3622 00001E94 7405                <1> 	jz	_fa_
-  3623 00001E96 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3624 00001E9B E81FFCFFFF          <1> _fa_	call	fa
-  3625 00001EA0 5B                  <1> 	pop	ebx				; retrieve target register name
-  3626 00001EA1 5D                  <1> 	pop	ebp
-  3627 00001EA2 E923F9FFFF          <1> 	jmp	_deliver_edi
-  3628                              <1> 
-  3629 00001EA7 55                  <1> _fan:	push	ebp
-  3630 00001EA8 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3631 00001EAD BB00010000          <1> 	mov	ebx, _input2
-  3632 00001EB2 E8EFE2FFFF          <1> 	call	_burst_read4
-  3633 00001EB7 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3634 00001EBC E8C0F8FFFF          <1> 	call	compress4to8
-  3635 00001EC1 B804000000          <1> 	mov	eax, a
-  3636 00001EC6 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3637 00001ECC 50                  <1> 	push	eax				; save target register name
-  3638 00001ECD BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3639 00001ED2 E8CFE2FFFF          <1> 	call	_burst_read4
-  3640 00001ED7 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3641 00001EDC E8A0F8FFFF          <1> 	call	compress4to8
-  3642 00001EE1 B947470400          <1> 	mov	ecx, 00044747h
-  3643 00001EE6 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3644 00001EEE 0000                <1>
-  3645 00001EF0 7405                <1> 	jz	_fan_
-  3646 00001EF2 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3647 00001EF7 E8B3FBFFFF          <1> _fan_:	call	fan
-  3648 00001EFC 5B                  <1> 	pop	ebx				; retrieve target register name
-  3649 00001EFD 5D                  <1> 	pop	ebp
-  3650 00001EFE E9C7F8FFFF          <1> 	jmp	_deliver_edi
-  3651                              <1> 
-  3652 00001F03 55                  <1> _fm:	push	ebp
-  3653 00001F04 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3654 00001F09 BB00010000          <1> 	mov	ebx, _input2
-  3655 00001F0E E893E2FFFF          <1> 	call	_burst_read4
-  3656 00001F13 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3657 00001F18 E864F8FFFF          <1> 	call	compress4to8
-  3658 00001F1D B804000000          <1> 	mov	eax, a
-  3659 00001F22 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; this application targets registers+a
-  3660 00001F28 50                  <1> 	push	eax				; save target register name
-  3661 00001F29 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3662 00001F2E E873E2FFFF          <1> 	call	_burst_read4
-  3663 00001F33 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3664 00001F38 E844F8FFFF          <1> 	call	compress4to8
-  3665 00001F3D B947470400          <1> 	mov	ecx, 00044747h
-  3666 00001F42 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3667 00001F4A 0000                <1>
-  3668 00001F4C 7405                <1> 	jz	_fm_
-  3669 00001F4E B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3670 00001F53 E840FCFFFF          <1> _fm_:	call	fm
-  3671 00001F58 5B                  <1> 	pop	ebx				; retrieve target register name
-  3672 00001F59 5D                  <1> 	pop	ebp
-  3673 00001F5A E96DF8FFFF          <1> 	jmp	_deliver_
-  3674                              <1> 	
-  3675 00001F5F 55                  <1> _fd:	push	ebp
-  3676 00001F60 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3677 00001F65 BB00010000          <1> 	mov	ebx, _input2
-  3678 00001F6A E837E2FFFF          <1> 	call	_burst_read4
-  3679 00001F6F BE[00040000]        <1> 	mov	esi, _INPUT2
-  3680 00001F74 E808F8FFFF          <1> 	call	compress4to8
-  3681 00001F79 B804000000          <1> 	mov	eax, a
-  3682 00001F7E 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3683 00001F84 50                  <1> 	push	eax				; save target register name
-  3684 00001F85 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3685 00001F8A E817E2FFFF          <1> 	call	_burst_read4
-  3686 00001F8F BE[20040000]        <1> 	mov	esi, _INPUTR
-  3687 00001F94 E8E8F7FFFF          <1> 	call	compress4to8
-  3688 00001F99 B947470400          <1> 	mov	ecx, 00044747h
-  3689 00001F9E F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3690 00001FA6 0000                <1>
-  3691 00001FA8 7405                <1> 	jz	_fd_
-  3692 00001FAA B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3693 00001FAF E8E5FCFFFF          <1> _fd_:	call	fd
-  3694 00001FB4 5B                  <1> 	pop	ebx				; retrieve target register name
-  3695 00001FB5 5D                  <1> 	pop	ebp
-  3696 00001FB6 E911F8FFFF          <1> 	jmp	_deliver_
-  3697                              <1> 
-  3698                                  
-  3699                                  	end
-  3700                                  
+  3605                              <1> ;	these instructions take the left-side + target as
+  3606                              <1> ;	[register_set]->a:b:mantissa2:mantissa3
+  3607                              <1> ;	and the right side as [ea]
+  3608                              <1> 
+  3609                              <1> ;	after acquisition and before delivery they call modules
+  3610                              <1> ;	fa fan fm fd
+  3611                              <1> ;	which may be used in extended instruction sets
+  3612                              <1> ;	using source and target registers in the internal stack
+  3613                              <1> ;	with maximum mantissa size 168 bits
+  3614                              <1> 
+  3615                              <1> 
+  3616 00001E67 55                  <1> _fa:	push	ebp				; _input2 is [register]+absolute
+  3617 00001E68 BD[00000000]        <1> 	mov	ebp, __register
+  3618 00001E6D BB00010000          <1> 	mov	ebx, _input2
+  3619 00001E72 E82FE3FFFF          <1> 	call	_burst_read4
+  3620 00001E77 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3621 00001E7C E800F9FFFF          <1> 	call	compress4to8
+  3622 00001E81 B804000000          <1> 	mov	eax, a
+  3623 00001E86 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3624 00001E8C 50                  <1> 	push	eax				; save target register name
+  3625 00001E8D BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3626 00001E92 E80FE3FFFF          <1> 	call	_burst_read4
+  3627 00001E97 BE[20040000]        <1> 	mov	esi, _INPUTR
+  3628 00001E9C E8E0F8FFFF          <1> 	call	compress4to8
+  3629 00001EA1 B947470400          <1> 	mov	ecx, 00044747h
+  3630 00001EA6 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3631 00001EAE 0000                <1>
+  3632 00001EB0 7405                <1> 	jz	_fa_
+  3633 00001EB2 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3634 00001EB7 E803FCFFFF          <1> _fa_	call	fa
+  3635 00001EBC 5B                  <1> 	pop	ebx				; retrieve target register name
+  3636 00001EBD 5D                  <1> 	pop	ebp
+  3637 00001EBE E907F9FFFF          <1> 	jmp	_deliver_edi
+  3638                              <1> 
+  3639 00001EC3 55                  <1> _fan:	push	ebp
+  3640 00001EC4 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3641 00001EC9 BB00010000          <1> 	mov	ebx, _input2
+  3642 00001ECE E8D3E2FFFF          <1> 	call	_burst_read4
+  3643 00001ED3 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3644 00001ED8 E8A4F8FFFF          <1> 	call	compress4to8
+  3645 00001EDD B804000000          <1> 	mov	eax, a
+  3646 00001EE2 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3647 00001EE8 50                  <1> 	push	eax				; save target register name
+  3648 00001EE9 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3649 00001EEE E8B3E2FFFF          <1> 	call	_burst_read4
+  3650 00001EF3 BE[20040000]        <1> 	mov	esi, _INPUTR
+  3651 00001EF8 E884F8FFFF          <1> 	call	compress4to8
+  3652 00001EFD B947470400          <1> 	mov	ecx, 00044747h
+  3653 00001F02 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3654 00001F0A 0000                <1>
+  3655 00001F0C 7405                <1> 	jz	_fan_
+  3656 00001F0E B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3657 00001F13 E897FBFFFF          <1> _fan_:	call	fan
+  3658 00001F18 5B                  <1> 	pop	ebx				; retrieve target register name
+  3659 00001F19 5D                  <1> 	pop	ebp
+  3660 00001F1A E9ABF8FFFF          <1> 	jmp	_deliver_edi
+  3661                              <1> 
+  3662 00001F1F 55                  <1> _fm:	push	ebp
+  3663 00001F20 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3664 00001F25 BB00010000          <1> 	mov	ebx, _input2
+  3665 00001F2A E877E2FFFF          <1> 	call	_burst_read4
+  3666 00001F2F BE[00040000]        <1> 	mov	esi, _INPUT2
+  3667 00001F34 E848F8FFFF          <1> 	call	compress4to8
+  3668 00001F39 B804000000          <1> 	mov	eax, a
+  3669 00001F3E 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; this application targets registers+a
+  3670 00001F44 50                  <1> 	push	eax				; save target register name
+  3671 00001F45 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3672 00001F4A E857E2FFFF          <1> 	call	_burst_read4
+  3673 00001F4F BE[20040000]        <1> 	mov	esi, _INPUTR
+  3674 00001F54 E828F8FFFF          <1> 	call	compress4to8
+  3675 00001F59 B947470400          <1> 	mov	ecx, 00044747h
+  3676 00001F5E F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3677 00001F66 0000                <1>
+  3678 00001F68 7405                <1> 	jz	_fm_
+  3679 00001F6A B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3680 00001F6F E824FCFFFF          <1> _fm_:	call	fm
+  3681 00001F74 5B                  <1> 	pop	ebx				; retrieve target register name
+  3682 00001F75 5D                  <1> 	pop	ebp
+  3683 00001F76 E951F8FFFF          <1> 	jmp	_deliver_
+  3684                              <1> 	
+  3685 00001F7B 55                  <1> _fd:	push	ebp
+  3686 00001F7C BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3687 00001F81 BB00010000          <1> 	mov	ebx, _input2
+  3688 00001F86 E81BE2FFFF          <1> 	call	_burst_read4
+  3689 00001F8B BE[00040000]        <1> 	mov	esi, _INPUT2
+  3690 00001F90 E8ECF7FFFF          <1> 	call	compress4to8
+  3691 00001F95 B804000000          <1> 	mov	eax, a
+  3692 00001F9A 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3693 00001FA0 50                  <1> 	push	eax				; save target register name
+  3694 00001FA1 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3695 00001FA6 E8FBE1FFFF          <1> 	call	_burst_read4
+  3696 00001FAB BE[20040000]        <1> 	mov	esi, _INPUTR
+  3697 00001FB0 E8CCF7FFFF          <1> 	call	compress4to8
+  3698 00001FB5 B947470400          <1> 	mov	ecx, 00044747h
+  3699 00001FBA F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3700 00001FC2 0000                <1>
+  3701 00001FC4 7405                <1> 	jz	_fd_
+  3702 00001FC6 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3703 00001FCB E8C9FCFFFF          <1> _fd_:	call	fd
+  3704 00001FD0 5B                  <1> 	pop	ebx				; retrieve target register name
+  3705 00001FD1 5D                  <1> 	pop	ebp
+  3706 00001FD2 E9F5F7FFFF          <1> 	jmp	_deliver_
+  3707                              <1> 
+  3708                                  
+  3709                                  	end
+  3710                                  

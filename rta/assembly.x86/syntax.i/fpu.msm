@@ -250,7 +250,7 @@ restore_trailing_signs:
 	mov	ch, 32				;
 	sub	ch, cl
 	mov	eax, dword ptr [ds:edi+ebx*4+2*4]
-	sar	edx, cl				; turn [mantissa bits] signs off
+	shr	edx, cl				; turn [mantissa bits] signs off
 	rol	eax, cl
 	mov	cl, ch
 	shl	eax, cl
@@ -629,7 +629,11 @@ fd:	mov	esi, _OUTPUT
 	js	fdgo
 fdnop:	ret					; not normalised = zero divisor
 
-fdgo:	and	ebx, ebx			; divisor either is negative magnitude
+fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
+	xor	eax, dword ptr [_INPUTR+2*4]
+	jns	fdnop				; no go after all
+
+	and	ebx, ebx			; divisor either is negative magnitude
 	js	fd_comp1	
 	mov	esi, _INPUT2			; or shall be
 	call	zover
@@ -751,6 +755,12 @@ fd_normalised:
 	xor	dword ptr [esi+5*4], eax	; switch the long mantissa
 	xor	dword ptr [esi+6*4], eax
 	xor	dword ptr [esi+7*4], eax
+
+	add	ch, -24
+	mov	edi, esi
+	call	frame_mantissa
+	call	restore_trailing_signs
+
 	ret
 
 ;	these instructions take the left-side + target as
