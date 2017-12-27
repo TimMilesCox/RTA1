@@ -537,7 +537,12 @@ fa_normalised					; below the fractional point
 fm:	mov	esi, _OUTPUT			; initialise final accumulation
 	call	zoutput
 
-	mov	eax, dword ptr [_INPUTR+1*4]
+	mov	eax, dword ptr [_INPUT2+1*4]	; is the multiplier normalised?
+	xor	eax, dword ptr [_INPUT2+2*4]	; sign XOR normalising bit?
+	js	fmgo				; yes, proceed
+	ret					; no, effective zero multiplier
+
+fmgo:	mov	eax, dword ptr [_INPUTR+1*4]
 	and	eax, eax
 	jns	fmp1
 	mov	esi, _INPUTR
@@ -648,11 +653,15 @@ fd_upright:
 
 	push	edx
 
-	add	cx, 01818h		; a divide needs 24 more beats
+;	add	cx, 01818h		; a divide needs 24 more beats
 					; than a multiply
+	mov	cl, 95
+
 	test	ch, 128
 	jz	near fd_72
 	mov	edi, esp
+
+	mov	cl, 191			; remove maybe
 
 fd_144:	stc				; add negative mantissa
 	call	_add_low		; to positive dividend
@@ -716,7 +725,6 @@ fd_72level:
 
 fd_restore:
 	pop	edx				; hand the program counter back
-
  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
 	add	eax, 00400001h			; midpoint + 1
@@ -756,7 +764,7 @@ fd_normalised:
 	xor	dword ptr [esi+6*4], eax
 	xor	dword ptr [esi+7*4], eax
 
-	add	ch, -24
+;	add	ch, -24
 	mov	edi, esi
 	call	frame_mantissa
 	call	restore_trailing_signs
