@@ -289,10 +289,10 @@
    289 0000012A 5F0C                <1>         dw      _ql-operations7
    290 0000012C 0B16                <1>         dw      _fpp-operations7
    291 0000012E 8E15                <1>         dw      _fpx-operations7
-   292 00000130 5C1D                <1>         dw      _fa-operations7
-   293 00000132 B81D                <1>         dw      _fan-operations7
-   294 00000134 141E                <1>         dw      _fm-operations7
-   295 00000136 701E                <1>         dw      _fd-operations7
+   292 00000130 601D                <1>         dw      _fa-operations7
+   293 00000132 BC1D                <1>         dw      _fan-operations7
+   294 00000134 181E                <1>         dw      _fm-operations7
+   295 00000136 741E                <1>         dw      _fd-operations7
    296                              <1> 
    297 00000138 690C                <1>         dw      _qpop-operations7
    298 0000013A 800C                <1>         dw      _qpush-operations7
@@ -2900,7 +2900,7 @@
   2900                              <1> _deliver_:
   2901 000017CC F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
   2902 000017D4 0000                <1>
-  2903 000017D6 746E                <1> 	jz	_deliver
+  2903 000017D6 7472                <1> 	jz	_deliver
   2904 000017D8 53                  <1> 	push	ebx		; save result register index
   2905 000017D9 8B1E                <1> 	mov	ebx, dword ptr [esi]		; read scale unsigned magnitude
   2906                              <1> 						; not yet signed
@@ -2918,805 +2918,806 @@
   2918 000017ED 8B4614              <1> 	mov	eax, dword ptr [esi+5*4]
   2919 000017F0 50                  <1> 	push	eax
   2920 000017F1 8B4618              <1> 	mov	eax, dword ptr [esi+6*4]
-  2921 000017F4 50                  <1> 	push	eax
-  2922                              <1> 
-  2923                              <1> _normalise_residue:
-  2924 000017F5 8B442408            <1> 	mov	eax, dword ptr [esp+2*4]	; residual mantissa high-order word
-  2925 000017F9 334604              <1> 	xor	eax, dword ptr [esi+1*4]	; signs
-  2926 000017FC 2500008000          <1> 	and	eax, 00800000h			; normalising position
-  2927 00001801 751D                <1> 	jnz	_residue_normalised
-  2928 00001803 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; signs again
-  2929 00001806 D1D0                <1> 	rcl	eax, 1				; place a sign in carry				
-  2930 00001808 D11424              <1> 	rcl	dword ptr [esp], 1		; rotate 96 bits residual mantissa
-  2931 0000180B D1542404            <1> 	rcl	dword ptr [esp+1*4], 1
-  2932 0000180F D1542408            <1> 	rcl	dword ptr [esp+2*4], 1		; thirdly the high-order word
-  2933 00001813 81C3FFFFFFFF        <1> 	add	ebx, -1
-  2934 00001819 80C1FF              <1> 	add	cl, -1
-  2935 0000181C 72D7                <1> 	jc	_normalise_residue
-  2936 0000181E 31DB                <1> 	xor	ebx, ebx			; residue all signs zero -> scale
-  2937                              <1> _residue_normalised:
-  2938                              <1> 
-  2939                              <1> ;			residual mantissa on the stack now is
-  2940                              <1> ;			______________________________________________
-  2941                              <1> ;	sp------------->| mantissa bits 15..0 | 16 sign bits discard |
-  2942                              <1> ;			|_____________________|______________________|
-  2943                              <1> ;			|            mantissa bits 47..16            |
-  2944                              <1> ;			|____________________________________________| 
-  2945                              <1> ;			| 0000 0000  mantissa bits 71..48            |
-  2946                              <1> ;			|____________________________________________|
-  2947                              <1> 
-  2948 00001820 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; signs
-  2949 00001823 31D8                <1> 	xor	eax, ebx			; sign residue exponent now
-  2950 00001825 C1E008              <1> 	shl	eax, 8				; trim characteristic to RTA1 24-bit word
-  2951 00001828 C1E808              <1> 	shr	eax, 8
-  2952 0000182B 894520              <1> 	mov	dword ptr [ebp+8*4], eax	; scale XOR signs -> residue characteristic
-  2953                              <1> 
-  2954 0000182E 5B                  <1> 	pop	ebx				; low order mantissa part
-  2955 0000182F 58                  <1> 	pop	eax				; middle order mantissa part
-  2956 00001830 88C3                <1> 	mov	bl, al				; donate 8 bits
-  2957 00001832 C1CB08              <1> 	ror	ebx, 8				; distribute as RTA1 24-bit words
-  2958 00001835 C1EB08              <1> 	shr	ebx, 8
-  2959 00001838 C1E808              <1> 	shr	eax, 8
-  2960 0000183B 895D2C              <1> 	mov	dword ptr [ebp+11*4], ebx
-  2961 0000183E 894528              <1> 	mov	dword ptr [ebp+10*4], eax
-  2962 00001841 58                  <1> 	pop	eax				; high order residual mantissa part
-  2963 00001842 5B                  <1> 	pop	ebx				; saved result register index
-  2964 00001843 894524              <1> 	mov	dword ptr [ebp+9*4], eax
-  2965                              <1> 
-  2966                              <1> _deliver:					; deliver floating result
-  2967                              <1> 						; ebx = target register index
-  2968                              <1> 						; result register index [ebp+]ebx*4
-  2969 00001846 8B06                <1> 	mov	eax, dword ptr [esi]		; unsigned scale magnitude
-  2970 00001848 334604              <1> 	xor	eax, dword ptr [esi+1*4]	; sign it
-  2971 0000184B C1E008              <1> 	shl	eax, 8
-  2972 0000184E C1E808              <1> 	shr	eax, 8
-  2973                              <1> 
-  2974                              <1> _store_float
-  2975 00001851 89449D00            <1>         mov     dword ptr [ebp+ebx*4], eax      ; store characteristic = scale XOR signs
-  2976 00001855 8B4608              <1>         mov     eax, dword ptr [esi+2*4]	; read bits 71..40 major mantissa
-  2977 00001858 0FB6C8              <1>         movzx   ecx, al
-  2978 0000185B C1E808              <1>         shr     eax, 8
-  2979 0000185E 89449D04            <1>         mov     dword ptr [ebp+ebx*4+4], eax	; store mantissa bits 71..48
-  2980 00001862 8B460C              <1>         mov     eax, dword ptr [esi+3*4]	; read mantissa bits 39..8
-  2981 00001865 C1E110              <1>         shl     ecx, 16				; position mantissa bits 47..40
-  2982 00001868 C1C810              <1>         ror     eax, 16
-  2983 0000186B 6689C1              <1>         mov     cx, ax				; position mantissa bits 39..24
-  2984 0000186E 894C9D08            <1>         mov     dword ptr [ebp+ebx*4+8], ecx	; store mantissa bits 47..24
-  2985 00001872 8B4E10              <1>         mov     ecx, dword ptr [esi+4*4]	; read mantissa bits 7..0 plus 24 trailing bits
-  2986 00001875 C1E910              <1>         shr     ecx, 16				; position after mantissa 23..8
-  2987 00001878 6689C8              <1>         mov     ax, cx
-  2988 0000187B C1E808              <1>         shr     eax, 8				; store mantissa bits 23..0
-  2989 0000187E 89449D0C            <1>         mov     dword ptr [ebp+ebx*4+12], eax
-  2990 00001882 C3                  <1> 	ret
-  2991                              <1> 
-  2992                              <1> _output equ	272
-  2993                              <1> _inputr equ	264
-  2994                              <1> _input2 equ	256
-  2995                              <1> 
-  2996                              <1> _OUTPUT	equ	__register+_output*4
-  2997                              <1> _INPUTR equ	__register+_inputr*4
-  2998                              <1> _INPUT2 equ	__register+_input2*4
-  2999                              <1> _BIAS	equ	_OUTPUT
-  3000                              <1> 
-  3001                              <1> zoutput:
-  3002 00001883 31C0                <1> 	xor	eax, eax
-  3003 00001885 8906                <1> 	mov	dword ptr [esi], eax
-  3004 00001887 894604              <1> 	mov	dword ptr [esi+1*4], eax
-  3005 0000188A 894608              <1> 	mov	dword ptr [esi+2*4], eax
-  3006 0000188D 89460C              <1> 	mov	dword ptr [esi+3*4], eax
-  3007 00001890 894610              <1> 	mov	dword ptr [esi+4*4], eax
-  3008 00001893 894614              <1> 	mov	dword ptr [esi+5*4], eax
-  3009 00001896 894618              <1> 	mov	dword ptr [esi+6*4], eax
-  3010 00001899 89461C              <1> 	mov	dword ptr [esi+7*4], eax
-  3011 0000189C C3                  <1> 	ret
-  3012                              <1> 
+  2921 000017F4 668B4604            <1> 	mov	ax, word ptr [esi+1*4]		; change low-order half trailing word to signs
+  2922 000017F8 50                  <1> 	push	eax				; before normalising
+  2923                              <1> 
+  2924                              <1> _normalise_residue:
+  2925 000017F9 8B442408            <1> 	mov	eax, dword ptr [esp+2*4]	; residual mantissa high-order word
+  2926 000017FD 334604              <1> 	xor	eax, dword ptr [esi+1*4]	; signs
+  2927 00001800 2500008000          <1> 	and	eax, 00800000h			; normalising position
+  2928 00001805 751D                <1> 	jnz	_residue_normalised
+  2929 00001807 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; signs again
+  2930 0000180A D1D0                <1> 	rcl	eax, 1				; place a sign in carry				
+  2931 0000180C D11424              <1> 	rcl	dword ptr [esp], 1		; rotate 96 bits residual mantissa
+  2932 0000180F D1542404            <1> 	rcl	dword ptr [esp+1*4], 1
+  2933 00001813 D1542408            <1> 	rcl	dword ptr [esp+2*4], 1		; thirdly the high-order word
+  2934 00001817 81C3FFFFFFFF        <1> 	add	ebx, -1
+  2935 0000181D 80C1FF              <1> 	add	cl, -1
+  2936 00001820 72D7                <1> 	jc	_normalise_residue
+  2937 00001822 31DB                <1> 	xor	ebx, ebx			; residue all signs zero -> scale
+  2938                              <1> _residue_normalised:
+  2939                              <1> 
+  2940                              <1> ;			residual mantissa on the stack now is
+  2941                              <1> ;			______________________________________________
+  2942                              <1> ;	sp------------->| mantissa bits 15..0 | 16 sign bits discard |
+  2943                              <1> ;			|_____________________|______________________|
+  2944                              <1> ;			|            mantissa bits 47..16            |
+  2945                              <1> ;			|____________________________________________| 
+  2946                              <1> ;			| 0000 0000  mantissa bits 71..48            |
+  2947                              <1> ;			|____________________________________________|
+  2948                              <1> 
+  2949 00001824 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; signs
+  2950 00001827 31D8                <1> 	xor	eax, ebx			; sign residue exponent now
+  2951 00001829 C1E008              <1> 	shl	eax, 8				; trim characteristic to RTA1 24-bit word
+  2952 0000182C C1E808              <1> 	shr	eax, 8
+  2953 0000182F 894520              <1> 	mov	dword ptr [ebp+8*4], eax	; scale XOR signs -> residue characteristic
+  2954                              <1> 
+  2955 00001832 5B                  <1> 	pop	ebx				; low order mantissa part
+  2956 00001833 58                  <1> 	pop	eax				; middle order mantissa part
+  2957 00001834 88C3                <1> 	mov	bl, al				; donate 8 bits
+  2958 00001836 C1CB08              <1> 	ror	ebx, 8				; distribute as RTA1 24-bit words
+  2959 00001839 C1EB08              <1> 	shr	ebx, 8
+  2960 0000183C C1E808              <1> 	shr	eax, 8
+  2961 0000183F 895D2C              <1> 	mov	dword ptr [ebp+11*4], ebx
+  2962 00001842 894528              <1> 	mov	dword ptr [ebp+10*4], eax
+  2963 00001845 58                  <1> 	pop	eax				; high order residual mantissa part
+  2964 00001846 5B                  <1> 	pop	ebx				; saved result register index
+  2965 00001847 894524              <1> 	mov	dword ptr [ebp+9*4], eax
+  2966                              <1> 
+  2967                              <1> _deliver:					; deliver floating result
+  2968                              <1> 						; ebx = target register index
+  2969                              <1> 						; result register index [ebp+]ebx*4
+  2970 0000184A 8B06                <1> 	mov	eax, dword ptr [esi]		; unsigned scale magnitude
+  2971 0000184C 334604              <1> 	xor	eax, dword ptr [esi+1*4]	; sign it
+  2972 0000184F C1E008              <1> 	shl	eax, 8
+  2973 00001852 C1E808              <1> 	shr	eax, 8
+  2974                              <1> 
+  2975                              <1> _store_float
+  2976 00001855 89449D00            <1>         mov     dword ptr [ebp+ebx*4], eax      ; store characteristic = scale XOR signs
+  2977 00001859 8B4608              <1>         mov     eax, dword ptr [esi+2*4]	; read bits 71..40 major mantissa
+  2978 0000185C 0FB6C8              <1>         movzx   ecx, al
+  2979 0000185F C1E808              <1>         shr     eax, 8
+  2980 00001862 89449D04            <1>         mov     dword ptr [ebp+ebx*4+4], eax	; store mantissa bits 71..48
+  2981 00001866 8B460C              <1>         mov     eax, dword ptr [esi+3*4]	; read mantissa bits 39..8
+  2982 00001869 C1E110              <1>         shl     ecx, 16				; position mantissa bits 47..40
+  2983 0000186C C1C810              <1>         ror     eax, 16
+  2984 0000186F 6689C1              <1>         mov     cx, ax				; position mantissa bits 39..24
+  2985 00001872 894C9D08            <1>         mov     dword ptr [ebp+ebx*4+8], ecx	; store mantissa bits 47..24
+  2986 00001876 8B4E10              <1>         mov     ecx, dword ptr [esi+4*4]	; read mantissa bits 7..0 plus 24 trailing bits
+  2987 00001879 C1E910              <1>         shr     ecx, 16				; position after mantissa 23..8
+  2988 0000187C 6689C8              <1>         mov     ax, cx
+  2989 0000187F C1E808              <1>         shr     eax, 8				; store mantissa bits 23..0
+  2990 00001882 89449D0C            <1>         mov     dword ptr [ebp+ebx*4+12], eax
+  2991 00001886 C3                  <1> 	ret
+  2992                              <1> 
+  2993                              <1> _output equ	272
+  2994                              <1> _inputr equ	264
+  2995                              <1> _input2 equ	256
+  2996                              <1> 
+  2997                              <1> _OUTPUT	equ	__register+_output*4
+  2998                              <1> _INPUTR equ	__register+_inputr*4
+  2999                              <1> _INPUT2 equ	__register+_input2*4
+  3000                              <1> _BIAS	equ	_OUTPUT
+  3001                              <1> 
+  3002                              <1> zoutput:
+  3003 00001887 31C0                <1> 	xor	eax, eax
+  3004 00001889 8906                <1> 	mov	dword ptr [esi], eax
+  3005 0000188B 894604              <1> 	mov	dword ptr [esi+1*4], eax
+  3006 0000188E 894608              <1> 	mov	dword ptr [esi+2*4], eax
+  3007 00001891 89460C              <1> 	mov	dword ptr [esi+3*4], eax
+  3008 00001894 894610              <1> 	mov	dword ptr [esi+4*4], eax
+  3009 00001897 894614              <1> 	mov	dword ptr [esi+5*4], eax
+  3010 0000189A 894618              <1> 	mov	dword ptr [esi+6*4], eax
+  3011 0000189D 89461C              <1> 	mov	dword ptr [esi+7*4], eax
+  3012 000018A0 C3                  <1> 	ret
   3013                              <1> 
-  3014                              <1> ;	round before add or divide
-  3015                              <1> ;	XOR rounding pattern to guard field
-  3016                              <1> 
-  3017                              <1> 	%if	1
-  3018 0000189D 51                  <1> round:	push	ecx
-  3019 0000189E 80C5F9              <1> 	add	ch, -7				; bits - 1, round down
-  3020 000018A1 66C1E905            <1> 	shr	cx, 5				; 71->64, 143->136, 167->160
-  3021 000018A5 C0E903              <1> 	shr	cl, 3				; guard pattern shift in cl
-  3022 000018A8 A1[4C020000]        <1> 	mov	eax, dword ptr [__register+FP_GUARD]
-  3023 000018AD D3E8                <1> 	shr	eax, cl
-  3024 000018AF 0FB6DD              <1> 	movzx	ebx, ch				; mantissa containing platform words - 1
-  3025 000018B2 3E31449F08          <1> 	xor	dword ptr [ds:edi+ebx*4+2*4], eax
-  3026 000018B7 59                  <1> 	pop	ecx
-  3027 000018B8 C3                  <1> 	ret
-  3028                              <1> 
-  3029                              <1> 	%else
-  3030                              <1> 
-  3031                              <1> round_ultra:					; for 168-bit / 72-bit mantissa
-  3032                              <1> 	mov	eax, dword ptr [__register+FP_GUARD]
-  3033                              <1> 	test	dword ptr [_psr], FP_R		; if future stack instructions 
-  3034                              <1> 	jz	round72				; are not size-specific
-  3035                              <1> round168:					; and if instruction is size-specific
-  3036                              <1> 	xor	dword ptr [ds:edi+7*4], eax
-  3037                              <1> 	mov	ecx, 0007A7A7h			; 7 platform words 168 beats
-  3038                              <1> 	ret 
-  3039                              <1> 
-  3040                              <1> round:	mov	eax, dword ptr [__register+FP_GUARD]
-  3041                              <1> 	test	dword ptr [_psr], FP_R
-  3042                              <1> 	jz	round72
-  3043                              <1> 	sar	eax, 8				; position rounding to trailing edge
-  3044                              <1> 	xor	dword ptr [ds:edi+6*4], eax	; round a 144-bit mantissa
-  3045                              <1> 	mov	ecx, 00068F8Fh			; 6 platform words 144 beats
-  3046                              <1> 	ret
-  3047                              <1> round72:
-  3048                              <1> 	xor	dword ptr [ds:edi+4*4], eax	; round a 72-bit mantissa
-  3049                              <1> 	mov	ecx, 00044747h			; 4 platform words 72 beats
-  3050                              <1> 	ret
-  3051                              <1> 	%endif
-  3052                              <1> 
+  3014                              <1> 
+  3015                              <1> ;	round before add or divide
+  3016                              <1> ;	XOR rounding pattern to guard field
+  3017                              <1> 
+  3018                              <1> 	%if	1
+  3019 000018A1 51                  <1> round:	push	ecx
+  3020 000018A2 80C5F9              <1> 	add	ch, -7				; bits - 1, round down
+  3021 000018A5 66C1E905            <1> 	shr	cx, 5				; 71->64, 143->136, 167->160
+  3022 000018A9 C0E903              <1> 	shr	cl, 3				; guard pattern shift in cl
+  3023 000018AC A1[4C020000]        <1> 	mov	eax, dword ptr [__register+FP_GUARD]
+  3024 000018B1 D3E8                <1> 	shr	eax, cl
+  3025 000018B3 0FB6DD              <1> 	movzx	ebx, ch				; mantissa containing platform words - 1
+  3026 000018B6 3E31449F08          <1> 	xor	dword ptr [ds:edi+ebx*4+2*4], eax
+  3027 000018BB 59                  <1> 	pop	ecx
+  3028 000018BC C3                  <1> 	ret
+  3029                              <1> 
+  3030                              <1> 	%else
+  3031                              <1> 
+  3032                              <1> round_ultra:					; for 168-bit / 72-bit mantissa
+  3033                              <1> 	mov	eax, dword ptr [__register+FP_GUARD]
+  3034                              <1> 	test	dword ptr [_psr], FP_R		; if future stack instructions 
+  3035                              <1> 	jz	round72				; are not size-specific
+  3036                              <1> round168:					; and if instruction is size-specific
+  3037                              <1> 	xor	dword ptr [ds:edi+7*4], eax
+  3038                              <1> 	mov	ecx, 0007A7A7h			; 7 platform words 168 beats
+  3039                              <1> 	ret 
+  3040                              <1> 
+  3041                              <1> round:	mov	eax, dword ptr [__register+FP_GUARD]
+  3042                              <1> 	test	dword ptr [_psr], FP_R
+  3043                              <1> 	jz	round72
+  3044                              <1> 	sar	eax, 8				; position rounding to trailing edge
+  3045                              <1> 	xor	dword ptr [ds:edi+6*4], eax	; round a 144-bit mantissa
+  3046                              <1> 	mov	ecx, 00068F8Fh			; 6 platform words 144 beats
+  3047                              <1> 	ret
+  3048                              <1> round72:
+  3049                              <1> 	xor	dword ptr [ds:edi+4*4], eax	; round a 72-bit mantissa
+  3050                              <1> 	mov	ecx, 00044747h			; 4 platform words 72 beats
+  3051                              <1> 	ret
+  3052                              <1> 	%endif
   3053                              <1> 
-  3054                              <1> ; unsigned positive round after magnitude multiply
-  3055                              <1> ; add rounding pattern at product guard position
-  3056                              <1> 
-  3057                              <1> surround:					; round the product already multiplied
-  3058 000018B9 80C5F9              <1> 	add	ch, -7				; 71->64, 143->136, 167->160
-  3059 000018BC 66C1E905            <1> 	shr	cx, 5				; input is beats count in ch
-  3060 000018C0 C0E903              <1> 	shr	cl, 3				; containing platform words minus 1 in ch
-  3061 000018C3 A1[4C020000]        <1> 	mov	eax, dword ptr [__register+FP_GUARD]
-  3062 000018C8 D3E8                <1> 	shr	eax, cl				; guard pattern shift in cl
-  3063 000018CA 0FB6DD              <1> 	movzx	ebx, ch
-  3064 000018CD 3E01449F08          <1> 	add	dword ptr [ds:edi+ebx*4+2*4], eax
-  3065                              <1> surround1:
-  3066 000018D2 3E81549F0400000000  <1> 	adc	dword ptr [ds:edi+ebx*4+1*4], 0
-  3067 000018DB 4B                  <1> 	dec	ebx
-  3068 000018DC 75F4                <1> 	jnz	surround1
-  3069 000018DE C3                  <1> 	ret
-  3070                              <1> 
-  3071                              <1> initial_polar_carry:				; frame_mantissa has executed already
-  3072 000018DF 21C0                <1> 	and	eax, eax			; eax contains new signs after polar switch
-  3073 000018E1 7808                <1> 	js	initial_polar_zone_south	; exactly -1 must be added to the mantissa
-  3074 000018E3 B801000000          <1> 	mov	eax, 1				; exactly +1 must be added to the mantissa
-  3075 000018E8 D3C8                <1> 	ror	eax, cl				; place 1 at low order mantissa position
-  3076 000018EA C3                  <1> 	ret					; of low-order containing platform word
-  3077                              <1> 
-  3078                              <1> initial_polar_zone_south:			; leave so many 1s at register high order positions
-  3079 000018EB D3E8                <1> 	shr	eax, cl				; as there are mantissa positions
-  3080 000018ED F7D0                <1> 	not	eax				; in low-order containing platform word
-  3081 000018EF C3                  <1> 	ret
-  3082                              <1> 
-  3083                              <1> restore_trailing_signs:
-  3084 000018F0 51                  <1> 	push	ecx				; you might like that back again
-  3085 000018F1 52                  <1> 	push	edx				; borrow the program counter
-  3086 000018F2 3E8B5704            <1> 	mov	edx, dword ptr [ds:edi+1*4]	; read some signs
-  3087 000018F6 B520                <1> 	mov	ch, 32				;
-  3088 000018F8 28CD                <1> 	sub	ch, cl
-  3089 000018FA 3E8B449F08          <1> 	mov	eax, dword ptr [ds:edi+ebx*4+2*4]
-  3090 000018FF D3EA                <1> 	shr	edx, cl				; turn [mantissa bits] signs off
-  3091 00001901 D3C0                <1> 	rol	eax, cl
-  3092 00001903 88E9                <1> 	mov	cl, ch
-  3093 00001905 D3E0                <1> 	shl	eax, cl
-  3094 00001907 09D0                <1> 	or	eax, edx
-  3095 00001909 3E89449F08          <1> 	mov	dword ptr [ds:edi+ebx*4+2*4], eax
-  3096 0000190E 5A                  <1> 	pop	edx				; hand back the program counter
-  3097 0000190F 59                  <1> 	pop	ecx				; restore the counters
-  3098 00001910 C3                  <1> 	ret					; not yet any cases of mantissa exact platform words.
-  3099                              <1> 						; It would then be unnecessary but harmless rewriting
-  3100                              <1> 						; 32 signs to rounding field in next platform word
-  3101                              <1> 	
-  3102                              <1> bias_addend:					; input mantissa [esi] is biased into location _BIAS
-  3103 00001911 56                  <1> 	push	esi
-  3104 00001912 57                  <1> 	push	edi
-  3105                              <1> 
-  3106 00001913 BF[40040000]        <1> 	mov	edi, _BIAS
-  3107 00001918 E803000000          <1> 	call	biasfp
-  3108                              <1> 
-  3109 0000191D 5F                  <1> 	pop	edi
-  3110 0000191E 5E                  <1> 	pop	esi
-  3111 0000191F C3                  <1> 	ret
-  3112                              <1> 
-  3113 00001920 52                  <1> biasfp:	push	edx
-  3114 00001921 51                  <1> 	push	ecx
-  3115                              <1> 
-  3116 00001922 BB01000000          <1> 	mov	ebx, 1				; output index
-  3117 00001927 66C1E003            <1> 	shl	ax, 3				; words sign fill
-  3118 0000192B C0E803              <1> 	shr	al, 3				; bits sign fill
-  3119 0000192E 6689C1              <1> 	mov	cx, ax
-  3120 00001931 81C604000000        <1> 	add	esi, 4				; input pointer
-  3121 00001937 8B06                <1> 	mov	eax, dword ptr [esi]		; there shall be this word of signs at least
-  3122                              <1> 
-  3123 00001939 3E89049F            <1> bias32:	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 word of signs
-  3124 0000193D 43                  <1> 	inc	ebx				; consider the next output word
-  3125 0000193E FECD                <1> 	dec	ch				; any more words of signs?
-  3126 00001940 79F7                <1> 	jns	bias32
-  3127                              <1> 
-  3128 00001942 20C9                <1> 	and	cl, cl
-  3129 00001944 742C                <1> 	jz	bias_fast			; there is no 32-bit shift
-  3130                              <1> 
-  3131 00001946 B520                <1> 	mov	ch, 32				; demonstrate the missing advantage
-  3132 00001948 28CD                <1> 	sub	ch, cl				; of instruction architectures
-  3133                              <1> 						; with 2-register shifts
-  3134                              <1> biasup2:
-  3135 0000194A 81FB08000000        <1> 	cmp	ebx, 8
-  3136 00001950 743C                <1> 	jz	bias_addx
-  3137 00001952 81C604000000        <1> 	add	esi, 4				; read new mantissa word
-  3138 00001958 8B16                <1> 	mov	edx, dword ptr [esi]		; it becomes word # new in edx
-  3139 0000195A 86E9                <1> 	xchg	ch, cl
-  3140 0000195C D3E0                <1> 	shl	eax, cl				; shift buffered word left 32 - bit offset
-  3141 0000195E 86E9                <1> 	xchg	ch, cl
-  3142 00001960 D3EA                <1> 	shr	edx, cl				; shift new mantissa word right bit offset
-  3143 00001962 09D0                <1> 	or	eax, edx
-  3144 00001964 3E89049F            <1> 	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 merged word
-  3145 00001968 8B06                <1> 	mov	eax, dword ptr [esi]		; read the same mantissa word again
-  3146 0000196A 81C301000000        <1> 	add	ebx, 1				; it becomes word # previous in eax
-  3147 00001970 EBD8                <1> 	jmp	biasup2
-  3148                              <1> 
-  3149                              <1> bias_fast:
-  3150 00001972 81FB08000000        <1> 	cmp	ebx, 8
-  3151 00001978 7414                <1> 	jz	bias_addx
-  3152 0000197A 81C604000000        <1> 	add	esi, 4
-  3153 00001980 8B06                <1> 	mov	eax, dword ptr [esi]
-  3154 00001982 3E89049F            <1> 	mov	dword ptr [ds:edi+ebx*4], eax
-  3155 00001986 81C301000000        <1> 	add	ebx, 1
-  3156 0000198C EBE4                <1> 	jmp	bias_fast
-  3157                              <1> 
-  3158                              <1> bias_addx:
-  3159 0000198E 59                  <1> 	pop	ecx
-  3160 0000198F 5A                  <1> 	pop	edx				; restore the program counter
-  3161 00001990 C3                  <1> 	ret
-  3162                              <1> 
-  3163                              <1> frame_mantissa:
-  3164                              <1> ;	ror	ecx, 16				; words count is up, beats index down
-  3165 00001991 80C501              <1> 	add	ch, 1				; up the beats index to beats count
-  3166 00001994 66C1E905            <1> 	shr	cx, 5				; positions / 32 in ch
-  3167 00001998 C0E903              <1> 	shr	cl, 3				; positions /// 32 in cl
-  3168 0000199B 0FB6DD              <1> 	movzx	ebx, ch				; derive platform words rounded down
-  3169 0000199E C3                  <1> 	ret
-  3170                              <1> 
-  3171                              <1> renormalise:					; rule 1: restore sign fill in
-  3172                              <1> 						; low-order containing platform word
-  3173 0000199F E8EDFFFFFF          <1> 	call	frame_mantissa			; it was mashed by rounding and adding
-  3174 000019A4 E847FFFFFF          <1> 	call	restore_trailing_signs
-  3175 000019A9 C1C910              <1> 	ror	ecx, 16				; the governing parameter is now
-  3176                              <1> 						; the containing words count in cx
-  3177                              <1> renormalise32:
-  3178 000019AC 3E8B4708            <1> 	mov	eax, dword ptr [ds:edi+2*4]	; sample 32 mantissa bits
-  3179 000019B0 3E3B4704            <1> 	cmp	eax, dword ptr [ds:edi+1*4]	; compare it with 32 signs
-  3180 000019B4 750D                <1> 	jnz	renormalise8
-  3181 000019B6 E84D000000          <1> 	call	rotate32left			; this also discovers if it's ALL signs = 0
-  3182 000019BB 21C0                <1> 	and	eax, eax			; and is the only place that needs examined
-  3183 000019BD 75ED                <1> 	jnz	renormalise32
-  3184                              <1> 
-  3185 000019BF 3E8907              <1> 	mov	dword ptr [ds:edi], eax		; mantissa is signed zero, +0 -> scale
-  3186                              <1> renormalised:
-  3187 000019C2 C3                  <1> 	ret
-  3188                              <1> 
-  3189                              <1> renormalise8:					; from this point on the value is nonzero
-  3190 000019C3 C1C008              <1> 	rol	eax, 8				; are there 8 signs at head of mantissa?
-  3191 000019C6 3E3A4704            <1> 	cmp	al, byte ptr [ds:edi+1*4]
-  3192 000019CA 750B                <1> 	jnz	renormalise1			; you have found the 8 bits containing the
-  3193                              <1> 						; normalising bit
-  3194 000019CC E85F000000          <1> 	call	rotate8left			; or else you haven't
-  3195 000019D1 3E8B4708            <1> 	mov     eax, dword ptr [ds:edi+2*4]	; sample the moved mantissa
-  3196 000019D5 EBEC                <1> 	jmp	renormalise8
-  3197                              <1> 
-  3198                              <1> renormalise1:
-  3199 000019D7 3E8B4708            <1> 	mov	eax, dword ptr [ds:edi+2*4]	; is the bit at normalising position
-  3200 000019DB 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	; opposite polarity to the number?
-  3201 000019DF 78E1                <1> 	js	renormalised			; arrived
-  3202 000019E1 E802000000          <1> 	call	bitwise_scale			; almost arrived
-  3203 000019E6 EBEF                <1> 	jmp	renormalise1
-  3204                              <1> 
-  3205                              <1> bitwise_scale:					; we "know" the first 8 bits aren't all signs
-  3206 000019E8 3ED1571C            <1> 	rcl	dword ptr [ds:edi+7*4], 1	; so it doesn't matter whether 0 or 1
-  3207 000019EC 3ED15718            <1> 	rcl	dword ptr [ds:edi+6*4], 1	; gets shifted into the 192nd bit
-  3208 000019F0 3ED15714            <1> 	rcl	dword ptr [ds:edi+5*4], 1
-  3209 000019F4 3ED15710            <1> 	rcl	dword ptr [ds:edi+4*4], 1	; it's quicker to shift 6 words
-  3210 000019F8 3ED1570C            <1> 	rcl	dword ptr [ds:edi+3*4], 1	; than a counted loop of 4 or 5 or 6 words
-  3211 000019FC 3ED15708            <1> 	rcl	dword ptr [ds:edi+2*4], 1
-  3212                              <1> 
-  3213 00001A00 3E8107FFFFFFFF      <1> 	add	dword ptr [ds:edi], -1	; scale down
-  3214 00001A07 C3                  <1> 	ret
-  3215                              <1> 
-  3216                              <1> rotate32left:				; rotate all containing platform words of mantissa
-  3217 00001A08 52                  <1> 	push	edx			; 32 bit positions left and report if all signs
-  3218 00001A09 51                  <1> 	push	ecx
-  3219 00001A0A 0FB7D9              <1> 	movzx	ebx, cx
-  3220 00001A0D 31D2                <1> 	xor	edx, edx		; initialise equality = all signs
-  3221                              <1> rotate32next:				; the word initially loaded in eax is all signs
-  3222 00001A0F 3E87449F08          <1> 	xchg	eax, dword ptr [ds:edi+ebx*4+2*4]
-  3223 00001A14 89C1                <1> 	mov	ecx, eax
-  3224 00001A16 3E334F04            <1> 	xor	ecx, dword ptr [ds:edi+1*4] ; difference between this word and signs
-  3225 00001A1A 09CA                <1> 	or	edx, ecx		; sum of differences
-  3226 00001A1C 81C3FFFFFFFF        <1> 	add	ebx, -1
-  3227 00001A22 72EB                <1> 	jc	rotate32next
-  3228 00001A24 3E8107E0FFFFFF      <1> 	add	dword ptr [ds:edi], -32	; scale down
-  3229 00001A2B 89D0                <1> 	mov	eax, edx
-  3230 00001A2D 59                  <1> 	pop	ecx
-  3231 00001A2E 5A                  <1> 	pop	edx
-  3232 00001A2F C3                  <1> 	ret
-  3233                              <1> 
-  3234                              <1> rotate8left:				; rotate all containing platform words of mantissa
-  3235 00001A30 51                  <1> 	push	ecx			; 8 bit positions left. 1st word is rotated already
-  3236 00001A31 0FB7D9              <1> 	movzx	ebx, cx			; and contains signs in 8 low-order bit positions
-  3237                              <1> rotate8next:
-  3238 00001A34 3E8B4C9F08          <1> 	mov	ecx, dword ptr [ds:edi+ebx*4+2*4]
-  3239 00001A39 C1C108              <1> 	rol	ecx, 8
-  3240 00001A3C 86C1                <1> 	xchg	al, cl
-  3241 00001A3E 3E894C9F08          <1> 	mov	dword ptr [ds:edi+ebx*4+2*4], ecx
-  3242 00001A43 81C3FFFFFFFF        <1> 	add	ebx, -1
-  3243 00001A49 72E9                <1> 	jc	rotate8next
-  3244 00001A4B 3E8107F8FFFFFF      <1> 	add	dword ptr [ds:edi], -8	; scale down
-  3245 00001A52 59                  <1> 	pop	ecx
-  3246 00001A53 C3                  <1> 	ret
-  3247                              <1> 
-  3248 00001A54 F75608              <1> zover:	not	dword ptr [esi+2*4]
-  3249 00001A57 F7560C              <1> 	not	dword ptr [esi+3*4]
-  3250 00001A5A F75610              <1> 	not	dword ptr [esi+4*4]
-  3251 00001A5D F75614              <1> 	not	dword ptr [esi+5*4]
-  3252 00001A60 F75618              <1> 	not	dword ptr [esi+6*4]
-  3253 00001A63 F7561C              <1> 	not	dword ptr [esi+7*4]
-  3254 00001A66 C3                  <1> 	ret
-  3255                              <1> 
-  3256                              <1> _add_low:
-  3257 00001A67 8B15[1C040000]      <1>         mov     edx, dword ptr [_INPUT2+7*4]
-  3258 00001A6D 1315[3C040000]      <1>         adc     edx, dword ptr [_INPUTR+7*4]
-  3259 00001A73 8B1D[18040000]      <1>         mov     ebx, dword ptr [_INPUT2+6*4]
-  3260 00001A79 131D[38040000]      <1>         adc     ebx, dword ptr [_INPUTR+6*4]
-  3261 00001A7F A1[14040000]        <1>         mov     eax, dword ptr [_INPUT2+5*4]
-  3262 00001A84 1305[34040000]      <1>         adc     eax, dword ptr [_INPUTR+5*4]
-  3263 00001A8A C3                  <1>         ret
-  3264                              <1> 
-  3265                              <1> _add_high:
-  3266 00001A8B 8B15[10040000]      <1>         mov     edx, dword ptr [_INPUT2+4*4]
-  3267 00001A91 1315[30040000]      <1>         adc     edx, dword ptr [_INPUTR+4*4]
-  3268 00001A97 8B1D[0C040000]      <1>         mov     ebx, dword ptr [_INPUT2+3*4]
-  3269 00001A9D 131D[2C040000]      <1>         adc     ebx, dword ptr [_INPUTR+3*4]
-  3270 00001AA3 A1[08040000]        <1>         mov     eax, dword ptr [_INPUT2+2*4]
-  3271 00001AA8 1305[28040000]      <1>         adc     eax, dword ptr [_INPUTR+2*4]
-  3272 00001AAE C3                  <1>         ret
-  3273                              <1> 
-  3274 00001AAF BE[00040000]        <1> fan:	mov	esi, _INPUT2
-  3275 00001AB4 E89BFFFFFF          <1> 	call	zover				; mantissa
-  3276 00001AB9 F715[04040000]      <1> 	not	dword ptr [_INPUT2+1*4]		; 32 signs
-  3277                              <1> 
-  3278 00001ABF BE[00040000]        <1> fa:	mov	esi, _INPUT2
-  3279 00001AC4 BF[20040000]        <1> 	mov	edi, _INPUTR
-  3280                              <1> 
-  3281 00001AC9 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; normalised?
-  3282 00001ACC 334608              <1> 	xor	eax, dword ptr [esi+2*4]	; normalising bit must ^ signs
-  3283 00001ACF 7801                <1> 	js	fa_addend_normalised		; yes
-  3284 00001AD1 C3                  <1> fa_nop:	ret					; accumulator block unchanged
-  3285                              <1> 
-  3286                              <1> fa_addend_normalised:
-  3287 00001AD2 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; register side operand normalised?
-  3288 00001AD6 3E334708            <1> 	xor	eax, dword ptr [ds:edi+2*4]	; normalising bit must ^ signs
-  3289 00001ADA 7806                <1> 	js	fa_promote_magnitude		; normalised, get on with it
-  3290 00001ADC BF[00040000]        <1> 	mov	edi, _INPUT2			; accumulator block is not normalised
-  3291 00001AE1 C3                  <1> 	ret					; storage addend zero-added
-  3292                              <1> 
-  3293                              <1> fa_promote_magnitude:
-  3294 00001AE2 8B06                <1> 	mov	eax, dword ptr [esi]		; subtract addend2 scale magnitude
-  3295 00001AE4 F7D8                <1> 	neg	eax
-  3296 00001AE6 3E0307              <1> 	add	eax, dword ptr [ds:edi]		; from target scale magnitude
-  3297                              <1> 
-  3298 00001AE9 720C                <1> 	jc	fa_add				; register-side operand is not lower
-  3299 00001AEB BE[20040000]        <1> 	mov	esi, _INPUTR			; not so, importance is reversed
-  3300 00001AF0 BF[00040000]        <1> 	mov	edi, _INPUT2
-  3301 00001AF5 F7D8                <1> 	neg	eax
-  3302                              <1> 
-  3303 00001AF7 50                  <1> fa_add:	push	eax
-  3304 00001AF8 E8A0FDFFFF          <1> 	call	round
-  3305 00001AFD 58                  <1> 	pop	eax
-  3306                              <1> 
-  3307 00001AFE 21C0                <1> 	and	eax, eax
-  3308 00001B00 7411                <1> 	jz	fa_addfast
-  3309                              <1> 
-  3310 00001B02 3DBF000000          <1> 	cmp	eax, 191			; do they touch?
-  3311 00001B07 77C8                <1> 	ja	fa_nop
-  3312                              <1> 
-  3313 00001B09 E803FEFFFF          <1> 	call	bias_addend
-  3314 00001B0E BE[40040000]        <1> 	mov	esi, _BIAS			; shifted addend
-  3315                              <1> 
-  3316                              <1> fa_addfast:
-  3317 00001B13 C1C910              <1> 	ror	ecx, 16				; get containing compute words
-  3318 00001B16 0FB7D9              <1> 	movzx	ebx, cx				; index / count
-  3319 00001B19 C1C910              <1> 	ror	ecx, 16
-  3320                              <1> 
-  3321 00001B1C F8                  <1> 	clc
-  3322                              <1> 
-  3323 00001B1D 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; before state of target signs
-  3324 00001B21 50                  <1> 	push	eax
-  3325                              <1> 
-  3326                              <1> fa_action:
-  3327 00001B22 8B049E              <1> 	mov	eax, dword ptr [esi+ebx*4]
-  3328 00001B25 3E11049F            <1> 	adc	dword ptr [ds:edi+ebx*4], eax
-  3329 00001B29 4B                  <1> 	dec	ebx				; process word 1
-  3330 00001B2A 75F6                <1> 	jnz	fa_action			; leave word 0 alone
-  3331                              <1> 
-  3332 00001B2C 58                  <1> 	pop	eax				; target signs before
-  3333 00001B2D 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	;              after
-  3334 00001B31 792A                <1> 	jns	fa_assign			; did not travel thru zero
-  3335                              <1> 
-  3336 00001B33 F7D0                <1> 	not	eax
-  3337 00001B35 81C3FEFFFFFF        <1> 	add	ebx, -2
-  3338 00001B3B 3E894704            <1> 	mov	dword ptr [ds:edi+1*4], eax	; update final signs
-  3339                              <1> 
-  3340 00001B3F E84DFEFFFF          <1> 	call	frame_mantissa			; get platform words rounded down / bit offset 
-  3341 00001B44 E896FDFFFF          <1> 	call	initial_polar_carry		; get polarity + value + bias
-  3342 00001B49 3E01449F08          <1> 	add	dword ptr [ds:edi+ebx*4+2*4], eax	; adjust low-order mantissa word
-  3343 00001B4E C1F81F              <1> 	sar	eax, 31				; subsequent adjusting words = signs
-  3344                              <1> 						; ebx = mantissa words - 2
-  3345                              <1> fa_carry_round
-  3346 00001B51 3E11449F04          <1> 	adc	dword ptr [ds:edi+ebx*4+1*4], eax
-  3347 00001B56 4B                  <1> 	dec	ebx
-  3348 00001B57 75F8                <1> 	jnz	fa_carry_round
-  3349                              <1> 
-  3350 00001B59 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	; repeat signs XOR word 1
-  3351                              <1> 
-  3352                              <1> fa_assign:
-  3353 00001B5D 2501000000          <1> 	and	eax, 1				; added mantissa 1 bit above fractional point?
-  3354 00001B62 742E                <1> 	jz	fa_normalise
-  3355                              <1> 						
-  3356 00001B64 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; more than normal
-  3357 00001B68 D1F8                <1> 	sar	eax, 1				; shift the unsign down the mantissa
-  3358 00001B6A 3E894704            <1> 	mov	dword ptr [ds:edi+1*4], eax	; and make the sign all signs for future XOR
-  3359 00001B6E 3ED15F08            <1> 	rcr	dword ptr [ds:edi+2*4], 1
-  3360 00001B72 3ED15F0C            <1> 	rcr	dword ptr [ds:edi+3*4], 1
-  3361 00001B76 3ED15F10            <1> 	rcr	dword ptr [ds:edi+4*4], 1
-  3362 00001B7A 3ED15F14            <1> 	rcr	dword ptr [ds:edi+5*4], 1
-  3363 00001B7E 3ED15F18            <1> 	rcr	dword ptr [ds:edi+6*4], 1
-  3364 00001B82 3ED15F1C            <1> 	rcr	dword ptr [ds:edi+7*4], 1
-  3365 00001B86 3E810701000000      <1> 	add	dword ptr [ds:edi], 1		; uprate the scale
-  3366 00001B8D E905000000          <1> 	jmp	fa_normalised
-  3367                              <1> 
-  3368                              <1> fa_normalise:
-  3369 00001B92 E808FEFFFF          <1> 	call	renormalise			; in case the sum is plenty positions
-  3370                              <1> fa_normalised					; below the fractional point
-  3371 00001B97 C3                  <1> 	ret
-  3372                              <1> 	
-  3373                              <1> 
-  3374 00001B98 BE[40040000]        <1> fm:	mov	esi, _OUTPUT			; initialise final accumulation
-  3375 00001B9D E8E1FCFFFF          <1> 	call	zoutput
-  3376                              <1> 
-  3377 00001BA2 A1[04040000]        <1> 	mov	eax, dword ptr [_INPUT2+1*4]	; is the multiplier normalised?
-  3378 00001BA7 3305[08040000]      <1> 	xor	eax, dword ptr [_INPUT2+2*4]	; sign XOR normalising bit?
-  3379 00001BAD 7801                <1> 	js	fmgo				; yes, proceed
-  3380 00001BAF C3                  <1> 	ret					; no, effective zero multiplier
-  3381                              <1> 
-  3382 00001BB0 A1[24040000]        <1> fmgo:	mov	eax, dword ptr [_INPUTR+1*4]
-  3383 00001BB5 B15F                <1> 	mov	cl, 96-1
-  3384 00001BB7 21C0                <1> 	and	eax, eax
-  3385 00001BB9 790A                <1> 	jns	fmp1
-  3386 00001BBB BE[20040000]        <1> 	mov	esi, _INPUTR
-  3387 00001BC0 E88FFEFFFF          <1> 	call	zover
-  3388                              <1> 
-  3389 00001BC5 A1[04040000]        <1> fmp1:	mov	eax, dword ptr [_INPUT2+1*4]
-  3390 00001BCA 21C0                <1> 	and	eax, eax
-  3391 00001BCC 790A                <1> 	jns	fmadd
-  3392 00001BCE BE[00040000]        <1> 	mov	esi, _INPUT2
-  3393 00001BD3 E87CFEFFFF          <1> 	call	zover
-  3394                              <1> 
-  3395 00001BD8 F8                  <1> fmadd:	clc
-  3396                              <1> 
-  3397 00001BD9 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3398 00001BDE D15E08              <1> 	rcr	dword ptr [esi+2*4], 1		; addend shift right
-  3399 00001BE1 D15E0C              <1> 	rcr	dword ptr [esi+3*4], 1
-  3400 00001BE4 D15E10              <1> 	rcr	dword ptr [esi+4*4], 1
-  3401 00001BE7 D15E14              <1> 	rcr	dword ptr [esi+5*4], 1
-  3402 00001BEA D15E18              <1> 	rcr	dword ptr [esi+6*4], 1
-  3403 00001BED D15E1C              <1> 	rcr	dword ptr [esi+7*4], 1
-  3404                              <1> 
-  3405 00001BF0 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3406 00001BF5 D1561C              <1> 	rcl	dword ptr [esi+7*4], 1		; multiplier shift left
-  3407 00001BF8 D15618              <1> 	rcl	dword ptr [esi+6*4], 1
-  3408 00001BFB D15614              <1> 	rcl	dword ptr [esi+5*4], 1
-  3409 00001BFE D15610              <1> 	rcl	dword ptr [esi+4*4], 1
-  3410 00001C01 D1560C              <1> 	rcl	dword ptr [esi+3*4], 1
-  3411 00001C04 D15608              <1> 	rcl	dword ptr [esi+2*4], 1
-  3412                              <1> 
-  3413 00001C07 BE[40040000]        <1> 	mov	esi, _OUTPUT
-  3414 00001C0C 7330                <1> 	jnc	fmadx
-  3415                              <1> 						; 1 shifted from multiplier
-  3416 00001C0E A1[3C040000]        <1> fmadc:	mov	eax, dword ptr [_INPUTR+7*4]	
-  3417 00001C13 01461C              <1> 	add	dword ptr [esi+7*4], eax	; do not use carry
-  3418 00001C16 A1[38040000]        <1> 	mov	eax, dword ptr [_INPUTR+6*4]
-  3419 00001C1B 114618              <1> 	adc	dword ptr [esi+6*4], eax	; start using carry
-  3420 00001C1E A1[34040000]        <1> 	mov	eax, dword ptr [_INPUTR+5*4]
-  3421 00001C23 114614              <1> 	adc	dword ptr [esi+5*4], eax
-  3422 00001C26 A1[30040000]        <1> 	mov	eax, dword ptr [_INPUTR+4*4]
-  3423 00001C2B 114610              <1> 	adc	dword ptr [esi+4*4], eax
-  3424 00001C2E A1[2C040000]        <1> 	mov	eax, dword ptr [_INPUTR+3*4]
-  3425 00001C33 11460C              <1> 	adc	dword ptr [esi+3*4], eax
-  3426 00001C36 A1[28040000]        <1> 	mov	eax, dword ptr [_INPUTR+2*4]
-  3427 00001C3B 114608              <1> 	adc	dword ptr [esi+2*4], eax
-  3428                              <1> 
-  3429 00001C3E FEC9                <1> fmadx:	dec	cl
-  3430 00001C40 7596                <1> 	jnz	fmadd
-  3431                              <1> 
-  3432 00001C42 8B4608              <1> 	mov	eax, dword ptr [esi+2*4] 	; normalised?
-  3433 00001C45 D1D0                <1> 	rcl	eax, 1
-  3434 00001C47 721C                <1> 	jc	fm_normalised
-  3435                              <1> 
-  3436 00001C49 8105[20040000]FFFF- <1> 	add	dword ptr [_INPUTR], -1		; take 1 from scale
-  3437 00001C51 FFFF                <1>
-  3438 00001C53 D1561C              <1> 	rcl	dword ptr [esi+7*4], 1
-  3439 00001C56 D15618              <1> 	rcl	dword ptr [esi+6*4], 1
-  3440 00001C59 D15614              <1> 	rcl	dword ptr [esi+5*4], 1
-  3441 00001C5C D15610              <1> 	rcl	dword ptr [esi+4*4], 1
-  3442 00001C5F D1560C              <1> 	rcl	dword ptr [esi+3*4], 1
-  3443 00001C62 D15608              <1> 	rcl	dword ptr [esi+2*4], 1
-  3444                              <1> 
-  3445                              <1> fm_normalised:
-  3446 00001C65 BF[40040000]        <1> 	mov	edi, _OUTPUT
-  3447 00001C6A E84AFCFFFF          <1> 	call	surround			; now round it
-  3448                              <1> 
-  3449 00001C6F A1[20040000]        <1> 	mov	eax, dword ptr [_INPUTR]
-  3450 00001C74 0305[00040000]      <1> 	add	eax, dword ptr [_INPUT2]
-  3451 00001C7A 050000C0FF          <1> 	add	eax, -00400000h
-  3452 00001C7F 25FFFF7F00          <1> 	and	eax, 007FFFFFh
-  3453                              <1> ;	mov	esi, _OUTPUT			; esi should be pointing to _OUTPUT
-  3454 00001C84 8906                <1> 	mov	dword ptr [esi], eax		; insert unsigned magnitude product scale
-  3455 00001C86 A1[24040000]        <1> 	mov	eax, [_INPUTR+1*4]		; calculate sign of product
-  3456 00001C8B 3305[04040000]      <1> 	xor	eax, [_INPUT2+1*4]
-  3457 00001C91 894604              <1> 	mov	dword ptr [esi+1*4], eax	; _deliver_ will polarise the scale
-  3458 00001C94 314608              <1> 	xor	dword ptr [esi+2*4], eax	; the mantissa gets polarised here
-  3459 00001C97 31460C              <1> 	xor	dword ptr [esi+3*4], eax
-  3460 00001C9A 314610              <1> 	xor	dword ptr [esi+4*4], eax
-  3461 00001C9D 314614              <1> 	xor	dword ptr [esi+5*4], eax
-  3462 00001CA0 314618              <1> 	xor	dword ptr [esi+6*4], eax
-  3463 00001CA3 31461C              <1> 	xor	dword ptr [esi+7*4], eax
-  3464 00001CA6 C3                  <1> 	ret
-  3465                              <1> 
-  3466 00001CA7 BE[40040000]        <1> fd:	mov	esi, _OUTPUT
-  3467 00001CAC E8D2FBFFFF          <1> 	call	zoutput				; result which may stay zero
-  3468 00001CB1 A1[04040000]        <1> 	mov	eax, dword ptr [_INPUT2+1*4]	; signs
-  3469 00001CB6 89C3                <1> 	mov	ebx, eax
-  3470 00001CB8 3305[08040000]      <1> 	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit 31
-  3471 00001CBE 7801                <1> 	js	fdgo
-  3472 00001CC0 C3                  <1> fdnop:	ret					; not normalised = zero divisor
-  3473                              <1> 
-  3474 00001CC1 A1[24040000]        <1> fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
-  3475 00001CC6 3305[28040000]      <1> 	xor	eax, dword ptr [_INPUTR+2*4]
-  3476 00001CCC 79F2                <1> 	jns	fdnop				; no go after all
-  3477                              <1> 
-  3478 00001CCE 21DB                <1> 	and	ebx, ebx			; divisor either is negative magnitude
-  3479 00001CD0 780A                <1> 	js	fd_comp1	
-  3480 00001CD2 BE[00040000]        <1> 	mov	esi, _INPUT2			; or shall be
-  3481 00001CD7 E878FDFFFF          <1> 	call	zover
-  3482                              <1> fd_comp1:
-  3483 00001CDC F705[24040000]0000- <1> 	test	dword ptr [_INPUTR+1*4], 080000000h
-  3484 00001CE4 0080                <1>
-  3485 00001CE6 740A                <1> 	jz	fd_upright			; dividend must be positive magnitude
-  3486 00001CE8 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3487 00001CED E862FDFFFF          <1> 	call	zover
-  3488                              <1> fd_upright:
-  3489 00001CF2 BF[20040000]        <1> 	mov	edi, _INPUTR
-  3490 00001CF7 E8A1FBFFFF          <1> 	call	round				; this also sets counters
-  3491                              <1> 
-  3492 00001CFC 52                  <1> 	push	edx
-  3493                              <1> 
-  3494                              <1> ;	add	cx, 01818h		; a divide needs 24 more beats
-  3495                              <1> 					; than a multiply
-  3496 00001CFD B15F                <1> 	mov	cl, 95
-  3497                              <1> 
-  3498 00001CFF F6C580              <1> 	test	ch, 128
-  3499 00001D02 0F8490000000        <1> 	jz	near fd_72
-  3500 00001D08 89E7                <1> 	mov	edi, esp
-  3501                              <1> 
-  3502 00001D0A B1BF                <1> 	mov	cl, 191			; maybe
-  3503                              <1> 
-  3504 00001D0C F9                  <1> fd_144:	stc				; add negative mantissa
-  3505 00001D0D E855FDFFFF          <1> 	call	_add_low		; to positive dividend
-  3506 00001D12 52                  <1> 	push	edx			; save the low half in the stack
-  3507 00001D13 53                  <1> 	push	ebx
-  3508 00001D14 50                  <1> 	push	eax
-  3509 00001D15 E871FDFFFF          <1> 	call	_add_high			; add the high half in eax edx ebx
-  3510                              <1> 
-  3511 00001D1A 7323                <1> 	jnc	fd_144level			; no carry = drop the result
-  3512                              <1> 
-  3513 00001D1C A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
-  3514 00001D21 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
-  3515 00001D27 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
-  3516                              <1> 
-  3517 00001D2D 58                  <1> 	pop	eax
-  3518 00001D2E A3[34040000]        <1> 	mov	dword ptr [_INPUTR+5*4], eax
-  3519 00001D33 58                  <1> 	pop	eax
-  3520 00001D34 A3[38040000]        <1> 	mov	dword ptr [_INPUTR+6*4], eax
-  3521 00001D39 58                  <1> 	pop	eax
-  3522 00001D3A A3[3C040000]        <1> 	mov	dword ptr [_INPUTR+7*4], eax
-  3523                              <1> fd_144level:
-  3524 00001D3F 89FC                <1> 	mov	esp, edi			; clear stack whether popped or not
-  3525 00001D41 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1	; shift value of carry into quotient
-  3526 00001D47 D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
-  3527 00001D4D D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
-  3528 00001D53 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
-  3529 00001D59 D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3530 00001D5F D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3531                              <1> 
-  3532 00001D65 F9                  <1> 	stc
-  3533 00001D66 D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
-  3534 00001D6C D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
-  3535 00001D72 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1
-  3536 00001D78 D11D[14040000]      <1> 	rcr	dword ptr [_INPUT2+5*4], 1
-  3537 00001D7E D11D[18040000]      <1> 	rcr	dword ptr [_INPUT2+6*4], 1
-  3538 00001D84 D11D[1C040000]      <1> 	rcr	dword ptr [_INPUT2+7*4], 1
-  3539                              <1> 
-  3540 00001D8A 80C1FF              <1> 	add	cl, -1
-  3541 00001D8D 0F8279FFFFFF        <1> 	jc	fd_144
-  3542 00001D93 E943000000          <1> 	jmp	fd_restore	
-  3543                              <1> 
-  3544 00001D98 F9                  <1> fd_72:	stc					; add negative mantissa
-  3545 00001D99 E8EDFCFFFF          <1> 	call	_add_high			; to positive dividend
-  3546 00001D9E 7311                <1> 	jnc	fd_72level			; no carry = drop the result
-  3547                              <1> 
-  3548 00001DA0 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
-  3549 00001DA5 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
-  3550 00001DAB 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
-  3551                              <1> fd_72level:
-  3552 00001DB1 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
-  3553 00001DB7 D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3554 00001DBD D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3555                              <1> 
-  3556 00001DC3 F9                  <1> 	stc
-  3557 00001DC4 D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
-  3558 00001DCA D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
-  3559 00001DD0 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1	;
-  3560                              <1> 
-  3561 00001DD6 80C1FF              <1> 	add	cl, -1
-  3562 00001DD9 72BD                <1> 	jc	fd_72
-  3563                              <1> 
-  3564                              <1> fd_restore:
-  3565 00001DDB 5A                  <1> 	pop	edx				; hand the program counter back
-  3566 00001DDC A1[20040000]        <1>  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
-  3567 00001DE1 2B05[00040000]      <1> 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
-  3568 00001DE7 0501004000          <1> 	add	eax, 00400001h			; midpoint + 1
-  3569 00001DEC 25FFFF7F00          <1> 	and	eax, 007FFFFFh
-  3570 00001DF1 A3[40040000]        <1> 	mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
-  3571                              <1> 						; -> front of delivery string
-  3572                              <1> 
-  3573 00001DF6 88E9                <1> 	mov	cl, ch				; retrieve 2nd copy of beats count
-  3574 00001DF8 BF[40040000]        <1> 	mov	edi, _OUTPUT
-  3575 00001DFD E88FFBFFFF          <1> 	call	frame_mantissa
-  3576 00001E02 E8E9FAFFFF          <1> 	call	restore_trailing_signs
-  3577                              <1> 
-  3578                              <1> fd_normalise:					; quotient mantissa normalised?
-  3579 00001E07 A1[48040000]        <1> 	mov	eax, dword ptr [_OUTPUT+2*4]
-  3580 00001E0C 21C0                <1> 	and	eax, eax
-  3581 00001E0E 783E                <1> 	js	fd_normalised
-  3582 00001E10 F8                  <1> 	clc					; shift replacement value = 0
-  3583 00001E11 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1
-  3584 00001E17 D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
-  3585 00001E1D D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
-  3586 00001E23 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
-  3587 00001E29 D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
-  3588 00001E2F D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
-  3589                              <1> 
-  3590 00001E35 8105[40040000]FFFF- <1> 	add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
-  3591 00001E3D FFFF                <1>
-  3592 00001E3F 80C1FF              <1> 	add	cl, -1
-  3593 00001E42 72C3                <1> 	jc	fd_normalise
-  3594 00001E44 C705[40040000]0000- <1> 	mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
-  3595 00001E4C 0000                <1>
-  3596                              <1> 						; so is everything else
-  3597                              <1> fd_normalised:
-  3598 00001E4E BE[40040000]        <1> 	mov	esi, _OUTPUT			; tell rewrite where it is
-  3599 00001E53 A1[24040000]        <1> 	mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
-  3600 00001E58 3305[04040000]      <1> 	xor	eax, dword ptr [_INPUT2+1*4]
-  3601 00001E5E 894604              <1> 	mov	[esi+1*4], eax			; output 32 signs
-  3602                              <1> 						; _deliver_ polarises the quotient scale
-  3603 00001E61 314608              <1> 	xor	dword ptr [esi+2*4], eax	; switch quotient mantissa
-  3604 00001E64 31460C              <1> 	xor	dword ptr [esi+3*4], eax
-  3605 00001E67 314610              <1> 	xor	dword ptr [esi+4*4], eax
-  3606 00001E6A 314614              <1> 	xor	dword ptr [esi+5*4], eax	; switch the long mantissa
-  3607 00001E6D 314618              <1> 	xor	dword ptr [esi+6*4], eax
-  3608 00001E70 31461C              <1> 	xor	dword ptr [esi+7*4], eax
-  3609                              <1> 
-  3610                              <1> ;	add	ch, -24
-  3611                              <1> ;	mov	edi, esi
-  3612                              <1> ;	call	frame_mantissa
-  3613                              <1> ;	call	restore_trailing_signs
-  3614                              <1> 
-  3615 00001E73 C3                  <1> 	ret
-  3616                              <1> 
-  3617                              <1> ;	these instructions take the left-side + target as
-  3618                              <1> ;	[register_set]->a:b:mantissa2:mantissa3
-  3619                              <1> ;	and the right side as [ea]
-  3620                              <1> 
-  3621                              <1> ;	after acquisition and before delivery they call modules
-  3622                              <1> ;	fa fan fm fd
-  3623                              <1> ;	which may be used in extended instruction sets
-  3624                              <1> ;	using source and target registers in the internal stack
-  3625                              <1> ;	with maximum mantissa size 168 bits
-  3626                              <1> 
+  3054                              <1> 
+  3055                              <1> ; unsigned positive round after magnitude multiply
+  3056                              <1> ; add rounding pattern at product guard position
+  3057                              <1> 
+  3058                              <1> surround:					; round the product already multiplied
+  3059 000018BD 80C5F9              <1> 	add	ch, -7				; 71->64, 143->136, 167->160
+  3060 000018C0 66C1E905            <1> 	shr	cx, 5				; input is beats count in ch
+  3061 000018C4 C0E903              <1> 	shr	cl, 3				; containing platform words minus 1 in ch
+  3062 000018C7 A1[4C020000]        <1> 	mov	eax, dword ptr [__register+FP_GUARD]
+  3063 000018CC D3E8                <1> 	shr	eax, cl				; guard pattern shift in cl
+  3064 000018CE 0FB6DD              <1> 	movzx	ebx, ch
+  3065 000018D1 3E01449F08          <1> 	add	dword ptr [ds:edi+ebx*4+2*4], eax
+  3066                              <1> surround1:
+  3067 000018D6 3E81549F0400000000  <1> 	adc	dword ptr [ds:edi+ebx*4+1*4], 0
+  3068 000018DF 4B                  <1> 	dec	ebx
+  3069 000018E0 75F4                <1> 	jnz	surround1
+  3070 000018E2 C3                  <1> 	ret
+  3071                              <1> 
+  3072                              <1> initial_polar_carry:				; frame_mantissa has executed already
+  3073 000018E3 21C0                <1> 	and	eax, eax			; eax contains new signs after polar switch
+  3074 000018E5 7808                <1> 	js	initial_polar_zone_south	; exactly -1 must be added to the mantissa
+  3075 000018E7 B801000000          <1> 	mov	eax, 1				; exactly +1 must be added to the mantissa
+  3076 000018EC D3C8                <1> 	ror	eax, cl				; place 1 at low order mantissa position
+  3077 000018EE C3                  <1> 	ret					; of low-order containing platform word
+  3078                              <1> 
+  3079                              <1> initial_polar_zone_south:			; leave so many 1s at register high order positions
+  3080 000018EF D3E8                <1> 	shr	eax, cl				; as there are mantissa positions
+  3081 000018F1 F7D0                <1> 	not	eax				; in low-order containing platform word
+  3082 000018F3 C3                  <1> 	ret
+  3083                              <1> 
+  3084                              <1> restore_trailing_signs:
+  3085 000018F4 51                  <1> 	push	ecx				; you might like that back again
+  3086 000018F5 52                  <1> 	push	edx				; borrow the program counter
+  3087 000018F6 3E8B5704            <1> 	mov	edx, dword ptr [ds:edi+1*4]	; read some signs
+  3088 000018FA B520                <1> 	mov	ch, 32				;
+  3089 000018FC 28CD                <1> 	sub	ch, cl
+  3090 000018FE 3E8B449F08          <1> 	mov	eax, dword ptr [ds:edi+ebx*4+2*4]
+  3091 00001903 D3EA                <1> 	shr	edx, cl				; turn [mantissa bits] signs off
+  3092 00001905 D3C0                <1> 	rol	eax, cl
+  3093 00001907 88E9                <1> 	mov	cl, ch
+  3094 00001909 D3E0                <1> 	shl	eax, cl
+  3095 0000190B 09D0                <1> 	or	eax, edx
+  3096 0000190D 3E89449F08          <1> 	mov	dword ptr [ds:edi+ebx*4+2*4], eax
+  3097 00001912 5A                  <1> 	pop	edx				; hand back the program counter
+  3098 00001913 59                  <1> 	pop	ecx				; restore the counters
+  3099 00001914 C3                  <1> 	ret					; not yet any cases of mantissa exact platform words.
+  3100                              <1> 						; It would then be unnecessary but harmless rewriting
+  3101                              <1> 						; 32 signs to rounding field in next platform word
+  3102                              <1> 	
+  3103                              <1> bias_addend:					; input mantissa [esi] is biased into location _BIAS
+  3104 00001915 56                  <1> 	push	esi
+  3105 00001916 57                  <1> 	push	edi
+  3106                              <1> 
+  3107 00001917 BF[40040000]        <1> 	mov	edi, _BIAS
+  3108 0000191C E803000000          <1> 	call	biasfp
+  3109                              <1> 
+  3110 00001921 5F                  <1> 	pop	edi
+  3111 00001922 5E                  <1> 	pop	esi
+  3112 00001923 C3                  <1> 	ret
+  3113                              <1> 
+  3114 00001924 52                  <1> biasfp:	push	edx
+  3115 00001925 51                  <1> 	push	ecx
+  3116                              <1> 
+  3117 00001926 BB01000000          <1> 	mov	ebx, 1				; output index
+  3118 0000192B 66C1E003            <1> 	shl	ax, 3				; words sign fill
+  3119 0000192F C0E803              <1> 	shr	al, 3				; bits sign fill
+  3120 00001932 6689C1              <1> 	mov	cx, ax
+  3121 00001935 81C604000000        <1> 	add	esi, 4				; input pointer
+  3122 0000193B 8B06                <1> 	mov	eax, dword ptr [esi]		; there shall be this word of signs at least
+  3123                              <1> 
+  3124 0000193D 3E89049F            <1> bias32:	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 word of signs
+  3125 00001941 43                  <1> 	inc	ebx				; consider the next output word
+  3126 00001942 FECD                <1> 	dec	ch				; any more words of signs?
+  3127 00001944 79F7                <1> 	jns	bias32
+  3128                              <1> 
+  3129 00001946 20C9                <1> 	and	cl, cl
+  3130 00001948 742C                <1> 	jz	bias_fast			; there is no 32-bit shift
+  3131                              <1> 
+  3132 0000194A B520                <1> 	mov	ch, 32				; demonstrate the missing advantage
+  3133 0000194C 28CD                <1> 	sub	ch, cl				; of instruction architectures
+  3134                              <1> 						; with 2-register shifts
+  3135                              <1> biasup2:
+  3136 0000194E 81FB08000000        <1> 	cmp	ebx, 8
+  3137 00001954 743C                <1> 	jz	bias_addx
+  3138 00001956 81C604000000        <1> 	add	esi, 4				; read new mantissa word
+  3139 0000195C 8B16                <1> 	mov	edx, dword ptr [esi]		; it becomes word # new in edx
+  3140 0000195E 86E9                <1> 	xchg	ch, cl
+  3141 00001960 D3E0                <1> 	shl	eax, cl				; shift buffered word left 32 - bit offset
+  3142 00001962 86E9                <1> 	xchg	ch, cl
+  3143 00001964 D3EA                <1> 	shr	edx, cl				; shift new mantissa word right bit offset
+  3144 00001966 09D0                <1> 	or	eax, edx
+  3145 00001968 3E89049F            <1> 	mov	dword ptr [ds:edi+ebx*4], eax	; write 1 merged word
+  3146 0000196C 8B06                <1> 	mov	eax, dword ptr [esi]		; read the same mantissa word again
+  3147 0000196E 81C301000000        <1> 	add	ebx, 1				; it becomes word # previous in eax
+  3148 00001974 EBD8                <1> 	jmp	biasup2
+  3149                              <1> 
+  3150                              <1> bias_fast:
+  3151 00001976 81FB08000000        <1> 	cmp	ebx, 8
+  3152 0000197C 7414                <1> 	jz	bias_addx
+  3153 0000197E 81C604000000        <1> 	add	esi, 4
+  3154 00001984 8B06                <1> 	mov	eax, dword ptr [esi]
+  3155 00001986 3E89049F            <1> 	mov	dword ptr [ds:edi+ebx*4], eax
+  3156 0000198A 81C301000000        <1> 	add	ebx, 1
+  3157 00001990 EBE4                <1> 	jmp	bias_fast
+  3158                              <1> 
+  3159                              <1> bias_addx:
+  3160 00001992 59                  <1> 	pop	ecx
+  3161 00001993 5A                  <1> 	pop	edx				; restore the program counter
+  3162 00001994 C3                  <1> 	ret
+  3163                              <1> 
+  3164                              <1> frame_mantissa:
+  3165                              <1> ;	ror	ecx, 16				; words count is up, beats index down
+  3166 00001995 80C501              <1> 	add	ch, 1				; up the beats index to beats count
+  3167 00001998 66C1E905            <1> 	shr	cx, 5				; positions / 32 in ch
+  3168 0000199C C0E903              <1> 	shr	cl, 3				; positions /// 32 in cl
+  3169 0000199F 0FB6DD              <1> 	movzx	ebx, ch				; derive platform words rounded down
+  3170 000019A2 C3                  <1> 	ret
+  3171                              <1> 
+  3172                              <1> renormalise:					; rule 1: restore sign fill in
+  3173                              <1> 						; low-order containing platform word
+  3174 000019A3 E8EDFFFFFF          <1> 	call	frame_mantissa			; it was mashed by rounding and adding
+  3175 000019A8 E847FFFFFF          <1> 	call	restore_trailing_signs
+  3176 000019AD C1C910              <1> 	ror	ecx, 16				; the governing parameter is now
+  3177                              <1> 						; the containing words count in cx
+  3178                              <1> renormalise32:
+  3179 000019B0 3E8B4708            <1> 	mov	eax, dword ptr [ds:edi+2*4]	; sample 32 mantissa bits
+  3180 000019B4 3E3B4704            <1> 	cmp	eax, dword ptr [ds:edi+1*4]	; compare it with 32 signs
+  3181 000019B8 750D                <1> 	jnz	renormalise8
+  3182 000019BA E84D000000          <1> 	call	rotate32left			; this also discovers if it's ALL signs = 0
+  3183 000019BF 21C0                <1> 	and	eax, eax			; and is the only place that needs examined
+  3184 000019C1 75ED                <1> 	jnz	renormalise32
+  3185                              <1> 
+  3186 000019C3 3E8907              <1> 	mov	dword ptr [ds:edi], eax		; mantissa is signed zero, +0 -> scale
+  3187                              <1> renormalised:
+  3188 000019C6 C3                  <1> 	ret
+  3189                              <1> 
+  3190                              <1> renormalise8:					; from this point on the value is nonzero
+  3191 000019C7 C1C008              <1> 	rol	eax, 8				; are there 8 signs at head of mantissa?
+  3192 000019CA 3E3A4704            <1> 	cmp	al, byte ptr [ds:edi+1*4]
+  3193 000019CE 750B                <1> 	jnz	renormalise1			; you have found the 8 bits containing the
+  3194                              <1> 						; normalising bit
+  3195 000019D0 E85F000000          <1> 	call	rotate8left			; or else you haven't
+  3196 000019D5 3E8B4708            <1> 	mov     eax, dword ptr [ds:edi+2*4]	; sample the moved mantissa
+  3197 000019D9 EBEC                <1> 	jmp	renormalise8
+  3198                              <1> 
+  3199                              <1> renormalise1:
+  3200 000019DB 3E8B4708            <1> 	mov	eax, dword ptr [ds:edi+2*4]	; is the bit at normalising position
+  3201 000019DF 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	; opposite polarity to the number?
+  3202 000019E3 78E1                <1> 	js	renormalised			; arrived
+  3203 000019E5 E802000000          <1> 	call	bitwise_scale			; almost arrived
+  3204 000019EA EBEF                <1> 	jmp	renormalise1
+  3205                              <1> 
+  3206                              <1> bitwise_scale:					; we "know" the first 8 bits aren't all signs
+  3207 000019EC 3ED1571C            <1> 	rcl	dword ptr [ds:edi+7*4], 1	; so it doesn't matter whether 0 or 1
+  3208 000019F0 3ED15718            <1> 	rcl	dword ptr [ds:edi+6*4], 1	; gets shifted into the 192nd bit
+  3209 000019F4 3ED15714            <1> 	rcl	dword ptr [ds:edi+5*4], 1
+  3210 000019F8 3ED15710            <1> 	rcl	dword ptr [ds:edi+4*4], 1	; it's quicker to shift 6 words
+  3211 000019FC 3ED1570C            <1> 	rcl	dword ptr [ds:edi+3*4], 1	; than a counted loop of 4 or 5 or 6 words
+  3212 00001A00 3ED15708            <1> 	rcl	dword ptr [ds:edi+2*4], 1
+  3213                              <1> 
+  3214 00001A04 3E8107FFFFFFFF      <1> 	add	dword ptr [ds:edi], -1	; scale down
+  3215 00001A0B C3                  <1> 	ret
+  3216                              <1> 
+  3217                              <1> rotate32left:				; rotate all containing platform words of mantissa
+  3218 00001A0C 52                  <1> 	push	edx			; 32 bit positions left and report if all signs
+  3219 00001A0D 51                  <1> 	push	ecx
+  3220 00001A0E 0FB7D9              <1> 	movzx	ebx, cx
+  3221 00001A11 31D2                <1> 	xor	edx, edx		; initialise equality = all signs
+  3222                              <1> rotate32next:				; the word initially loaded in eax is all signs
+  3223 00001A13 3E87449F08          <1> 	xchg	eax, dword ptr [ds:edi+ebx*4+2*4]
+  3224 00001A18 89C1                <1> 	mov	ecx, eax
+  3225 00001A1A 3E334F04            <1> 	xor	ecx, dword ptr [ds:edi+1*4] ; difference between this word and signs
+  3226 00001A1E 09CA                <1> 	or	edx, ecx		; sum of differences
+  3227 00001A20 81C3FFFFFFFF        <1> 	add	ebx, -1
+  3228 00001A26 72EB                <1> 	jc	rotate32next
+  3229 00001A28 3E8107E0FFFFFF      <1> 	add	dword ptr [ds:edi], -32	; scale down
+  3230 00001A2F 89D0                <1> 	mov	eax, edx
+  3231 00001A31 59                  <1> 	pop	ecx
+  3232 00001A32 5A                  <1> 	pop	edx
+  3233 00001A33 C3                  <1> 	ret
+  3234                              <1> 
+  3235                              <1> rotate8left:				; rotate all containing platform words of mantissa
+  3236 00001A34 51                  <1> 	push	ecx			; 8 bit positions left. 1st word is rotated already
+  3237 00001A35 0FB7D9              <1> 	movzx	ebx, cx			; and contains signs in 8 low-order bit positions
+  3238                              <1> rotate8next:
+  3239 00001A38 3E8B4C9F08          <1> 	mov	ecx, dword ptr [ds:edi+ebx*4+2*4]
+  3240 00001A3D C1C108              <1> 	rol	ecx, 8
+  3241 00001A40 86C1                <1> 	xchg	al, cl
+  3242 00001A42 3E894C9F08          <1> 	mov	dword ptr [ds:edi+ebx*4+2*4], ecx
+  3243 00001A47 81C3FFFFFFFF        <1> 	add	ebx, -1
+  3244 00001A4D 72E9                <1> 	jc	rotate8next
+  3245 00001A4F 3E8107F8FFFFFF      <1> 	add	dword ptr [ds:edi], -8	; scale down
+  3246 00001A56 59                  <1> 	pop	ecx
+  3247 00001A57 C3                  <1> 	ret
+  3248                              <1> 
+  3249 00001A58 F75608              <1> zover:	not	dword ptr [esi+2*4]
+  3250 00001A5B F7560C              <1> 	not	dword ptr [esi+3*4]
+  3251 00001A5E F75610              <1> 	not	dword ptr [esi+4*4]
+  3252 00001A61 F75614              <1> 	not	dword ptr [esi+5*4]
+  3253 00001A64 F75618              <1> 	not	dword ptr [esi+6*4]
+  3254 00001A67 F7561C              <1> 	not	dword ptr [esi+7*4]
+  3255 00001A6A C3                  <1> 	ret
+  3256                              <1> 
+  3257                              <1> _add_low:
+  3258 00001A6B 8B15[1C040000]      <1>         mov     edx, dword ptr [_INPUT2+7*4]
+  3259 00001A71 1315[3C040000]      <1>         adc     edx, dword ptr [_INPUTR+7*4]
+  3260 00001A77 8B1D[18040000]      <1>         mov     ebx, dword ptr [_INPUT2+6*4]
+  3261 00001A7D 131D[38040000]      <1>         adc     ebx, dword ptr [_INPUTR+6*4]
+  3262 00001A83 A1[14040000]        <1>         mov     eax, dword ptr [_INPUT2+5*4]
+  3263 00001A88 1305[34040000]      <1>         adc     eax, dword ptr [_INPUTR+5*4]
+  3264 00001A8E C3                  <1>         ret
+  3265                              <1> 
+  3266                              <1> _add_high:
+  3267 00001A8F 8B15[10040000]      <1>         mov     edx, dword ptr [_INPUT2+4*4]
+  3268 00001A95 1315[30040000]      <1>         adc     edx, dword ptr [_INPUTR+4*4]
+  3269 00001A9B 8B1D[0C040000]      <1>         mov     ebx, dword ptr [_INPUT2+3*4]
+  3270 00001AA1 131D[2C040000]      <1>         adc     ebx, dword ptr [_INPUTR+3*4]
+  3271 00001AA7 A1[08040000]        <1>         mov     eax, dword ptr [_INPUT2+2*4]
+  3272 00001AAC 1305[28040000]      <1>         adc     eax, dword ptr [_INPUTR+2*4]
+  3273 00001AB2 C3                  <1>         ret
+  3274                              <1> 
+  3275 00001AB3 BE[00040000]        <1> fan:	mov	esi, _INPUT2
+  3276 00001AB8 E89BFFFFFF          <1> 	call	zover				; mantissa
+  3277 00001ABD F715[04040000]      <1> 	not	dword ptr [_INPUT2+1*4]		; 32 signs
+  3278                              <1> 
+  3279 00001AC3 BE[00040000]        <1> fa:	mov	esi, _INPUT2
+  3280 00001AC8 BF[20040000]        <1> 	mov	edi, _INPUTR
+  3281                              <1> 
+  3282 00001ACD 8B4604              <1> 	mov	eax, dword ptr [esi+1*4]	; normalised?
+  3283 00001AD0 334608              <1> 	xor	eax, dword ptr [esi+2*4]	; normalising bit must ^ signs
+  3284 00001AD3 7801                <1> 	js	fa_addend_normalised		; yes
+  3285 00001AD5 C3                  <1> fa_nop:	ret					; accumulator block unchanged
+  3286                              <1> 
+  3287                              <1> fa_addend_normalised:
+  3288 00001AD6 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; register side operand normalised?
+  3289 00001ADA 3E334708            <1> 	xor	eax, dword ptr [ds:edi+2*4]	; normalising bit must ^ signs
+  3290 00001ADE 7806                <1> 	js	fa_promote_magnitude		; normalised, get on with it
+  3291 00001AE0 BF[00040000]        <1> 	mov	edi, _INPUT2			; accumulator block is not normalised
+  3292 00001AE5 C3                  <1> 	ret					; storage addend zero-added
+  3293                              <1> 
+  3294                              <1> fa_promote_magnitude:
+  3295 00001AE6 8B06                <1> 	mov	eax, dword ptr [esi]		; subtract addend2 scale magnitude
+  3296 00001AE8 F7D8                <1> 	neg	eax
+  3297 00001AEA 3E0307              <1> 	add	eax, dword ptr [ds:edi]		; from target scale magnitude
+  3298                              <1> 
+  3299 00001AED 720C                <1> 	jc	fa_add				; register-side operand is not lower
+  3300 00001AEF BE[20040000]        <1> 	mov	esi, _INPUTR			; not so, importance is reversed
+  3301 00001AF4 BF[00040000]        <1> 	mov	edi, _INPUT2
+  3302 00001AF9 F7D8                <1> 	neg	eax
+  3303                              <1> 
+  3304 00001AFB 50                  <1> fa_add:	push	eax
+  3305 00001AFC E8A0FDFFFF          <1> 	call	round
+  3306 00001B01 58                  <1> 	pop	eax
+  3307                              <1> 
+  3308 00001B02 21C0                <1> 	and	eax, eax
+  3309 00001B04 7411                <1> 	jz	fa_addfast
+  3310                              <1> 
+  3311 00001B06 3DBF000000          <1> 	cmp	eax, 191			; do they touch?
+  3312 00001B0B 77C8                <1> 	ja	fa_nop
+  3313                              <1> 
+  3314 00001B0D E803FEFFFF          <1> 	call	bias_addend
+  3315 00001B12 BE[40040000]        <1> 	mov	esi, _BIAS			; shifted addend
+  3316                              <1> 
+  3317                              <1> fa_addfast:
+  3318 00001B17 C1C910              <1> 	ror	ecx, 16				; get containing compute words
+  3319 00001B1A 0FB7D9              <1> 	movzx	ebx, cx				; index / count
+  3320 00001B1D C1C910              <1> 	ror	ecx, 16
+  3321                              <1> 
+  3322 00001B20 F8                  <1> 	clc
+  3323                              <1> 
+  3324 00001B21 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; before state of target signs
+  3325 00001B25 50                  <1> 	push	eax
+  3326                              <1> 
+  3327                              <1> fa_action:
+  3328 00001B26 8B049E              <1> 	mov	eax, dword ptr [esi+ebx*4]
+  3329 00001B29 3E11049F            <1> 	adc	dword ptr [ds:edi+ebx*4], eax
+  3330 00001B2D 4B                  <1> 	dec	ebx				; process word 1
+  3331 00001B2E 75F6                <1> 	jnz	fa_action			; leave word 0 alone
+  3332                              <1> 
+  3333 00001B30 58                  <1> 	pop	eax				; target signs before
+  3334 00001B31 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	;              after
+  3335 00001B35 792A                <1> 	jns	fa_assign			; did not travel thru zero
+  3336                              <1> 
+  3337 00001B37 F7D0                <1> 	not	eax
+  3338 00001B39 81C3FEFFFFFF        <1> 	add	ebx, -2
+  3339 00001B3F 3E894704            <1> 	mov	dword ptr [ds:edi+1*4], eax	; update final signs
+  3340                              <1> 
+  3341 00001B43 E84DFEFFFF          <1> 	call	frame_mantissa			; get platform words rounded down / bit offset 
+  3342 00001B48 E896FDFFFF          <1> 	call	initial_polar_carry		; get polarity + value + bias
+  3343 00001B4D 3E01449F08          <1> 	add	dword ptr [ds:edi+ebx*4+2*4], eax	; adjust low-order mantissa word
+  3344 00001B52 C1F81F              <1> 	sar	eax, 31				; subsequent adjusting words = signs
+  3345                              <1> 						; ebx = mantissa words - 2
+  3346                              <1> fa_carry_round
+  3347 00001B55 3E11449F04          <1> 	adc	dword ptr [ds:edi+ebx*4+1*4], eax
+  3348 00001B5A 4B                  <1> 	dec	ebx
+  3349 00001B5B 75F8                <1> 	jnz	fa_carry_round
+  3350                              <1> 
+  3351 00001B5D 3E334704            <1> 	xor	eax, dword ptr [ds:edi+1*4]	; repeat signs XOR word 1
+  3352                              <1> 
+  3353                              <1> fa_assign:
+  3354 00001B61 2501000000          <1> 	and	eax, 1				; added mantissa 1 bit above fractional point?
+  3355 00001B66 742E                <1> 	jz	fa_normalise
+  3356                              <1> 						
+  3357 00001B68 3E8B4704            <1> 	mov	eax, dword ptr [ds:edi+1*4]	; more than normal
+  3358 00001B6C D1F8                <1> 	sar	eax, 1				; shift the unsign down the mantissa
+  3359 00001B6E 3E894704            <1> 	mov	dword ptr [ds:edi+1*4], eax	; and make the sign all signs for future XOR
+  3360 00001B72 3ED15F08            <1> 	rcr	dword ptr [ds:edi+2*4], 1
+  3361 00001B76 3ED15F0C            <1> 	rcr	dword ptr [ds:edi+3*4], 1
+  3362 00001B7A 3ED15F10            <1> 	rcr	dword ptr [ds:edi+4*4], 1
+  3363 00001B7E 3ED15F14            <1> 	rcr	dword ptr [ds:edi+5*4], 1
+  3364 00001B82 3ED15F18            <1> 	rcr	dword ptr [ds:edi+6*4], 1
+  3365 00001B86 3ED15F1C            <1> 	rcr	dword ptr [ds:edi+7*4], 1
+  3366 00001B8A 3E810701000000      <1> 	add	dword ptr [ds:edi], 1		; uprate the scale
+  3367 00001B91 E905000000          <1> 	jmp	fa_normalised
+  3368                              <1> 
+  3369                              <1> fa_normalise:
+  3370 00001B96 E808FEFFFF          <1> 	call	renormalise			; in case the sum is plenty positions
+  3371                              <1> fa_normalised					; below the fractional point
+  3372 00001B9B C3                  <1> 	ret
+  3373                              <1> 	
+  3374                              <1> 
+  3375 00001B9C BE[40040000]        <1> fm:	mov	esi, _OUTPUT			; initialise final accumulation
+  3376 00001BA1 E8E1FCFFFF          <1> 	call	zoutput
+  3377                              <1> 
+  3378 00001BA6 A1[04040000]        <1> 	mov	eax, dword ptr [_INPUT2+1*4]	; is the multiplier normalised?
+  3379 00001BAB 3305[08040000]      <1> 	xor	eax, dword ptr [_INPUT2+2*4]	; sign XOR normalising bit?
+  3380 00001BB1 7801                <1> 	js	fmgo				; yes, proceed
+  3381 00001BB3 C3                  <1> 	ret					; no, effective zero multiplier
+  3382                              <1> 
+  3383 00001BB4 A1[24040000]        <1> fmgo:	mov	eax, dword ptr [_INPUTR+1*4]
+  3384 00001BB9 B15F                <1> 	mov	cl, 96-1
+  3385 00001BBB 21C0                <1> 	and	eax, eax
+  3386 00001BBD 790A                <1> 	jns	fmp1
+  3387 00001BBF BE[20040000]        <1> 	mov	esi, _INPUTR
+  3388 00001BC4 E88FFEFFFF          <1> 	call	zover
+  3389                              <1> 
+  3390 00001BC9 A1[04040000]        <1> fmp1:	mov	eax, dword ptr [_INPUT2+1*4]
+  3391 00001BCE 21C0                <1> 	and	eax, eax
+  3392 00001BD0 790A                <1> 	jns	fmadd
+  3393 00001BD2 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3394 00001BD7 E87CFEFFFF          <1> 	call	zover
+  3395                              <1> 
+  3396 00001BDC F8                  <1> fmadd:	clc
+  3397                              <1> 
+  3398 00001BDD BE[20040000]        <1> 	mov	esi, _INPUTR
+  3399 00001BE2 D15E08              <1> 	rcr	dword ptr [esi+2*4], 1		; addend shift right
+  3400 00001BE5 D15E0C              <1> 	rcr	dword ptr [esi+3*4], 1
+  3401 00001BE8 D15E10              <1> 	rcr	dword ptr [esi+4*4], 1
+  3402 00001BEB D15E14              <1> 	rcr	dword ptr [esi+5*4], 1
+  3403 00001BEE D15E18              <1> 	rcr	dword ptr [esi+6*4], 1
+  3404 00001BF1 D15E1C              <1> 	rcr	dword ptr [esi+7*4], 1
+  3405                              <1> 
+  3406 00001BF4 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3407 00001BF9 D1561C              <1> 	rcl	dword ptr [esi+7*4], 1		; multiplier shift left
+  3408 00001BFC D15618              <1> 	rcl	dword ptr [esi+6*4], 1
+  3409 00001BFF D15614              <1> 	rcl	dword ptr [esi+5*4], 1
+  3410 00001C02 D15610              <1> 	rcl	dword ptr [esi+4*4], 1
+  3411 00001C05 D1560C              <1> 	rcl	dword ptr [esi+3*4], 1
+  3412 00001C08 D15608              <1> 	rcl	dword ptr [esi+2*4], 1
+  3413                              <1> 
+  3414 00001C0B BE[40040000]        <1> 	mov	esi, _OUTPUT
+  3415 00001C10 7330                <1> 	jnc	fmadx
+  3416                              <1> 						; 1 shifted from multiplier
+  3417 00001C12 A1[3C040000]        <1> fmadc:	mov	eax, dword ptr [_INPUTR+7*4]	
+  3418 00001C17 01461C              <1> 	add	dword ptr [esi+7*4], eax	; do not use carry
+  3419 00001C1A A1[38040000]        <1> 	mov	eax, dword ptr [_INPUTR+6*4]
+  3420 00001C1F 114618              <1> 	adc	dword ptr [esi+6*4], eax	; start using carry
+  3421 00001C22 A1[34040000]        <1> 	mov	eax, dword ptr [_INPUTR+5*4]
+  3422 00001C27 114614              <1> 	adc	dword ptr [esi+5*4], eax
+  3423 00001C2A A1[30040000]        <1> 	mov	eax, dword ptr [_INPUTR+4*4]
+  3424 00001C2F 114610              <1> 	adc	dword ptr [esi+4*4], eax
+  3425 00001C32 A1[2C040000]        <1> 	mov	eax, dword ptr [_INPUTR+3*4]
+  3426 00001C37 11460C              <1> 	adc	dword ptr [esi+3*4], eax
+  3427 00001C3A A1[28040000]        <1> 	mov	eax, dword ptr [_INPUTR+2*4]
+  3428 00001C3F 114608              <1> 	adc	dword ptr [esi+2*4], eax
+  3429                              <1> 
+  3430 00001C42 FEC9                <1> fmadx:	dec	cl
+  3431 00001C44 7596                <1> 	jnz	fmadd
+  3432                              <1> 
+  3433 00001C46 8B4608              <1> 	mov	eax, dword ptr [esi+2*4] 	; normalised?
+  3434 00001C49 D1D0                <1> 	rcl	eax, 1
+  3435 00001C4B 721C                <1> 	jc	fm_normalised
+  3436                              <1> 
+  3437 00001C4D 8105[20040000]FFFF- <1> 	add	dword ptr [_INPUTR], -1		; take 1 from scale
+  3438 00001C55 FFFF                <1>
+  3439 00001C57 D1561C              <1> 	rcl	dword ptr [esi+7*4], 1
+  3440 00001C5A D15618              <1> 	rcl	dword ptr [esi+6*4], 1
+  3441 00001C5D D15614              <1> 	rcl	dword ptr [esi+5*4], 1
+  3442 00001C60 D15610              <1> 	rcl	dword ptr [esi+4*4], 1
+  3443 00001C63 D1560C              <1> 	rcl	dword ptr [esi+3*4], 1
+  3444 00001C66 D15608              <1> 	rcl	dword ptr [esi+2*4], 1
+  3445                              <1> 
+  3446                              <1> fm_normalised:
+  3447 00001C69 BF[40040000]        <1> 	mov	edi, _OUTPUT
+  3448 00001C6E E84AFCFFFF          <1> 	call	surround			; now round it
+  3449                              <1> 
+  3450 00001C73 A1[20040000]        <1> 	mov	eax, dword ptr [_INPUTR]
+  3451 00001C78 0305[00040000]      <1> 	add	eax, dword ptr [_INPUT2]
+  3452 00001C7E 050000C0FF          <1> 	add	eax, -00400000h
+  3453 00001C83 25FFFF7F00          <1> 	and	eax, 007FFFFFh
+  3454                              <1> ;	mov	esi, _OUTPUT			; esi should be pointing to _OUTPUT
+  3455 00001C88 8906                <1> 	mov	dword ptr [esi], eax		; insert unsigned magnitude product scale
+  3456 00001C8A A1[24040000]        <1> 	mov	eax, [_INPUTR+1*4]		; calculate sign of product
+  3457 00001C8F 3305[04040000]      <1> 	xor	eax, [_INPUT2+1*4]
+  3458 00001C95 894604              <1> 	mov	dword ptr [esi+1*4], eax	; _deliver_ will polarise the scale
+  3459 00001C98 314608              <1> 	xor	dword ptr [esi+2*4], eax	; the mantissa gets polarised here
+  3460 00001C9B 31460C              <1> 	xor	dword ptr [esi+3*4], eax
+  3461 00001C9E 314610              <1> 	xor	dword ptr [esi+4*4], eax
+  3462 00001CA1 314614              <1> 	xor	dword ptr [esi+5*4], eax
+  3463 00001CA4 314618              <1> 	xor	dword ptr [esi+6*4], eax
+  3464 00001CA7 31461C              <1> 	xor	dword ptr [esi+7*4], eax
+  3465 00001CAA C3                  <1> 	ret
+  3466                              <1> 
+  3467 00001CAB BE[40040000]        <1> fd:	mov	esi, _OUTPUT
+  3468 00001CB0 E8D2FBFFFF          <1> 	call	zoutput				; result which may stay zero
+  3469 00001CB5 A1[04040000]        <1> 	mov	eax, dword ptr [_INPUT2+1*4]	; signs
+  3470 00001CBA 89C3                <1> 	mov	ebx, eax
+  3471 00001CBC 3305[08040000]      <1> 	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit 31
+  3472 00001CC2 7801                <1> 	js	fdgo
+  3473 00001CC4 C3                  <1> fdnop:	ret					; not normalised = zero divisor
+  3474                              <1> 
+  3475 00001CC5 A1[24040000]        <1> fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
+  3476 00001CCA 3305[28040000]      <1> 	xor	eax, dword ptr [_INPUTR+2*4]
+  3477 00001CD0 79F2                <1> 	jns	fdnop				; no go after all
+  3478                              <1> 
+  3479 00001CD2 21DB                <1> 	and	ebx, ebx			; divisor either is negative magnitude
+  3480 00001CD4 780A                <1> 	js	fd_comp1	
+  3481 00001CD6 BE[00040000]        <1> 	mov	esi, _INPUT2			; or shall be
+  3482 00001CDB E878FDFFFF          <1> 	call	zover
+  3483                              <1> fd_comp1:
+  3484 00001CE0 F705[24040000]0000- <1> 	test	dword ptr [_INPUTR+1*4], 080000000h
+  3485 00001CE8 0080                <1>
+  3486 00001CEA 740A                <1> 	jz	fd_upright			; dividend must be positive magnitude
+  3487 00001CEC BE[20040000]        <1> 	mov	esi, _INPUTR
+  3488 00001CF1 E862FDFFFF          <1> 	call	zover
+  3489                              <1> fd_upright:
+  3490 00001CF6 BF[20040000]        <1> 	mov	edi, _INPUTR
+  3491 00001CFB E8A1FBFFFF          <1> 	call	round				; this also sets counters
+  3492                              <1> 
+  3493 00001D00 52                  <1> 	push	edx
+  3494                              <1> 
+  3495                              <1> ;	add	cx, 01818h		; a divide needs 24 more beats
+  3496                              <1> 					; than a multiply
+  3497 00001D01 B15F                <1> 	mov	cl, 95
+  3498                              <1> 
+  3499 00001D03 F6C580              <1> 	test	ch, 128
+  3500 00001D06 0F8490000000        <1> 	jz	near fd_72
+  3501 00001D0C 89E7                <1> 	mov	edi, esp
+  3502                              <1> 
+  3503 00001D0E B1BF                <1> 	mov	cl, 191			; maybe
+  3504                              <1> 
+  3505 00001D10 F9                  <1> fd_144:	stc				; add negative mantissa
+  3506 00001D11 E855FDFFFF          <1> 	call	_add_low		; to positive dividend
+  3507 00001D16 52                  <1> 	push	edx			; save the low half in the stack
+  3508 00001D17 53                  <1> 	push	ebx
+  3509 00001D18 50                  <1> 	push	eax
+  3510 00001D19 E871FDFFFF          <1> 	call	_add_high			; add the high half in eax edx ebx
+  3511                              <1> 
+  3512 00001D1E 7323                <1> 	jnc	fd_144level			; no carry = drop the result
+  3513                              <1> 
+  3514 00001D20 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
+  3515 00001D25 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
+  3516 00001D2B 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
+  3517                              <1> 
+  3518 00001D31 58                  <1> 	pop	eax
+  3519 00001D32 A3[34040000]        <1> 	mov	dword ptr [_INPUTR+5*4], eax
+  3520 00001D37 58                  <1> 	pop	eax
+  3521 00001D38 A3[38040000]        <1> 	mov	dword ptr [_INPUTR+6*4], eax
+  3522 00001D3D 58                  <1> 	pop	eax
+  3523 00001D3E A3[3C040000]        <1> 	mov	dword ptr [_INPUTR+7*4], eax
+  3524                              <1> fd_144level:
+  3525 00001D43 89FC                <1> 	mov	esp, edi			; clear stack whether popped or not
+  3526 00001D45 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1	; shift value of carry into quotient
+  3527 00001D4B D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
+  3528 00001D51 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
+  3529 00001D57 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
+  3530 00001D5D D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3531 00001D63 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3532                              <1> 
+  3533 00001D69 F9                  <1> 	stc
+  3534 00001D6A D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+  3535 00001D70 D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+  3536 00001D76 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1
+  3537 00001D7C D11D[14040000]      <1> 	rcr	dword ptr [_INPUT2+5*4], 1
+  3538 00001D82 D11D[18040000]      <1> 	rcr	dword ptr [_INPUT2+6*4], 1
+  3539 00001D88 D11D[1C040000]      <1> 	rcr	dword ptr [_INPUT2+7*4], 1
+  3540                              <1> 
+  3541 00001D8E 80C1FF              <1> 	add	cl, -1
+  3542 00001D91 0F8279FFFFFF        <1> 	jc	fd_144
+  3543 00001D97 E943000000          <1> 	jmp	fd_restore	
+  3544                              <1> 
+  3545 00001D9C F9                  <1> fd_72:	stc					; add negative mantissa
+  3546 00001D9D E8EDFCFFFF          <1> 	call	_add_high			; to positive dividend
+  3547 00001DA2 7311                <1> 	jnc	fd_72level			; no carry = drop the result
+  3548                              <1> 
+  3549 00001DA4 A3[28040000]        <1> 	mov	dword ptr [_INPUTR+2*4], eax	; carry = update the dividend
+  3550 00001DA9 891D[2C040000]      <1> 	mov	dword ptr [_INPUTR+3*4], ebx
+  3551 00001DAF 8915[30040000]      <1> 	mov	dword ptr [_INPUTR+4*4], edx
+  3552                              <1> fd_72level:
+  3553 00001DB5 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1	; shift value of carry into quotient
+  3554 00001DBB D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3555 00001DC1 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3556                              <1> 
+  3557 00001DC7 F9                  <1> 	stc
+  3558 00001DC8 D11D[08040000]      <1> 	rcr	dword ptr [_INPUT2+2*4], 1	; shift negative addend
+  3559 00001DCE D11D[0C040000]      <1> 	rcr	dword ptr [_INPUT2+3*4], 1	; 1 position starboard
+  3560 00001DD4 D11D[10040000]      <1> 	rcr	dword ptr [_INPUT2+4*4], 1	;
+  3561                              <1> 
+  3562 00001DDA 80C1FF              <1> 	add	cl, -1
+  3563 00001DDD 72BD                <1> 	jc	fd_72
+  3564                              <1> 
+  3565                              <1> fd_restore:
+  3566 00001DDF 5A                  <1> 	pop	edx				; hand the program counter back
+  3567 00001DE0 A1[20040000]        <1>  	mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
+  3568 00001DE5 2B05[00040000]      <1> 	sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
+  3569 00001DEB 0501004000          <1> 	add	eax, 00400001h			; midpoint + 1
+  3570 00001DF0 25FFFF7F00          <1> 	and	eax, 007FFFFFh
+  3571 00001DF5 A3[40040000]        <1> 	mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
+  3572                              <1> 						; -> front of delivery string
+  3573                              <1> 
+  3574 00001DFA 88E9                <1> 	mov	cl, ch				; retrieve 2nd copy of beats count
+  3575 00001DFC BF[40040000]        <1> 	mov	edi, _OUTPUT
+  3576 00001E01 E88FFBFFFF          <1> 	call	frame_mantissa
+  3577 00001E06 E8E9FAFFFF          <1> 	call	restore_trailing_signs
+  3578                              <1> 
+  3579                              <1> fd_normalise:					; quotient mantissa normalised?
+  3580 00001E0B A1[48040000]        <1> 	mov	eax, dword ptr [_OUTPUT+2*4]
+  3581 00001E10 21C0                <1> 	and	eax, eax
+  3582 00001E12 783E                <1> 	js	fd_normalised
+  3583 00001E14 F8                  <1> 	clc					; shift replacement value = 0
+  3584 00001E15 D115[5C040000]      <1> 	rcl	dword ptr [_OUTPUT+7*4], 1
+  3585 00001E1B D115[58040000]      <1> 	rcl	dword ptr [_OUTPUT+6*4], 1
+  3586 00001E21 D115[54040000]      <1> 	rcl	dword ptr [_OUTPUT+5*4], 1
+  3587 00001E27 D115[50040000]      <1> 	rcl	dword ptr [_OUTPUT+4*4], 1
+  3588 00001E2D D115[4C040000]      <1> 	rcl	dword ptr [_OUTPUT+3*4], 1
+  3589 00001E33 D115[48040000]      <1> 	rcl	dword ptr [_OUTPUT+2*4], 1
+  3590                              <1> 
+  3591 00001E39 8105[40040000]FFFF- <1> 	add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
+  3592 00001E41 FFFF                <1>
+  3593 00001E43 80C1FF              <1> 	add	cl, -1
+  3594 00001E46 72C3                <1> 	jc	fd_normalise
+  3595 00001E48 C705[40040000]0000- <1> 	mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
+  3596 00001E50 0000                <1>
+  3597                              <1> 						; so is everything else
+  3598                              <1> fd_normalised:
+  3599 00001E52 BE[40040000]        <1> 	mov	esi, _OUTPUT			; tell rewrite where it is
+  3600 00001E57 A1[24040000]        <1> 	mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
+  3601 00001E5C 3305[04040000]      <1> 	xor	eax, dword ptr [_INPUT2+1*4]
+  3602 00001E62 894604              <1> 	mov	[esi+1*4], eax			; output 32 signs
+  3603                              <1> 						; _deliver_ polarises the quotient scale
+  3604 00001E65 314608              <1> 	xor	dword ptr [esi+2*4], eax	; switch quotient mantissa
+  3605 00001E68 31460C              <1> 	xor	dword ptr [esi+3*4], eax
+  3606 00001E6B 314610              <1> 	xor	dword ptr [esi+4*4], eax
+  3607 00001E6E 314614              <1> 	xor	dword ptr [esi+5*4], eax	; switch the long mantissa
+  3608 00001E71 314618              <1> 	xor	dword ptr [esi+6*4], eax
+  3609 00001E74 31461C              <1> 	xor	dword ptr [esi+7*4], eax
+  3610                              <1> 
+  3611                              <1> ;	add	ch, -24
+  3612                              <1> ;	mov	edi, esi
+  3613                              <1> ;	call	frame_mantissa
+  3614                              <1> ;	call	restore_trailing_signs
+  3615                              <1> 
+  3616 00001E77 C3                  <1> 	ret
+  3617                              <1> 
+  3618                              <1> ;	these instructions take the left-side + target as
+  3619                              <1> ;	[register_set]->a:b:mantissa2:mantissa3
+  3620                              <1> ;	and the right side as [ea]
+  3621                              <1> 
+  3622                              <1> ;	after acquisition and before delivery they call modules
+  3623                              <1> ;	fa fan fm fd
+  3624                              <1> ;	which may be used in extended instruction sets
+  3625                              <1> ;	using source and target registers in the internal stack
+  3626                              <1> ;	with maximum mantissa size 168 bits
   3627                              <1> 
-  3628 00001E74 55                  <1> _fa:	push	ebp				; _input2 is [register]+absolute
-  3629 00001E75 BD[00000000]        <1> 	mov	ebp, __register
-  3630 00001E7A BB00010000          <1> 	mov	ebx, _input2
-  3631 00001E7F E822E3FFFF          <1> 	call	_burst_read4
-  3632 00001E84 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3633 00001E89 E8F3F8FFFF          <1> 	call	compress4to8
-  3634 00001E8E B804000000          <1> 	mov	eax, a
-  3635 00001E93 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3636 00001E99 50                  <1> 	push	eax				; save target register name
-  3637 00001E9A BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3638 00001E9F E802E3FFFF          <1> 	call	_burst_read4
-  3639 00001EA4 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3640 00001EA9 E8D3F8FFFF          <1> 	call	compress4to8
-  3641 00001EAE B947470400          <1> 	mov	ecx, 00044747h
-  3642 00001EB3 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3643 00001EBB 0000                <1>
-  3644 00001EBD 7405                <1> 	jz	_fa_
-  3645 00001EBF B98F8F0600          <1> 	mov	ecx, 00068F8Fh
-  3646 00001EC4 E8F6FBFFFF          <1> _fa_	call	fa
-  3647 00001EC9 5B                  <1> 	pop	ebx				; retrieve target register name
-  3648 00001ECA 5D                  <1> 	pop	ebp
-  3649 00001ECB E9FAF8FFFF          <1> 	jmp	_deliver_edi
-  3650                              <1> 
-  3651 00001ED0 55                  <1> _fan:	push	ebp
-  3652 00001ED1 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3653 00001ED6 BB00010000          <1> 	mov	ebx, _input2
-  3654 00001EDB E8C6E2FFFF          <1> 	call	_burst_read4
-  3655 00001EE0 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3656 00001EE5 E897F8FFFF          <1> 	call	compress4to8
-  3657 00001EEA B804000000          <1> 	mov	eax, a
-  3658 00001EEF 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3659 00001EF5 50                  <1> 	push	eax				; save target register name
-  3660 00001EF6 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3661 00001EFB E8A6E2FFFF          <1> 	call	_burst_read4
-  3662 00001F00 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3663 00001F05 E877F8FFFF          <1> 	call	compress4to8
-  3664 00001F0A B947470400          <1> 	mov	ecx, 00044747h
-  3665 00001F0F F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3666 00001F17 0000                <1>
-  3667 00001F19 7405                <1> 	jz	_fan_
-  3668 00001F1B B98F8F0600          <1> 	mov	ecx, 00068F8Fh
-  3669 00001F20 E88AFBFFFF          <1> _fan_:	call	fan
-  3670 00001F25 5B                  <1> 	pop	ebx				; retrieve target register name
-  3671 00001F26 5D                  <1> 	pop	ebp
-  3672 00001F27 E99EF8FFFF          <1> 	jmp	_deliver_edi
-  3673                              <1> 
-  3674 00001F2C 55                  <1> _fm:	push	ebp
-  3675 00001F2D BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3676 00001F32 BB00010000          <1> 	mov	ebx, _input2
-  3677 00001F37 E86AE2FFFF          <1> 	call	_burst_read4
-  3678 00001F3C BE[00040000]        <1> 	mov	esi, _INPUT2
-  3679 00001F41 E83BF8FFFF          <1> 	call	compress4to8
-  3680 00001F46 B804000000          <1> 	mov	eax, a
-  3681 00001F4B 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; this application targets registers+a
-  3682 00001F51 50                  <1> 	push	eax				; save target register name
-  3683 00001F52 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3684 00001F57 E84AE2FFFF          <1> 	call	_burst_read4
-  3685 00001F5C BE[20040000]        <1> 	mov	esi, _INPUTR
-  3686 00001F61 E81BF8FFFF          <1> 	call	compress4to8
-  3687 00001F66 B947470400          <1> 	mov	ecx, 00044747h
-  3688 00001F6B F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3689 00001F73 0000                <1>
-  3690 00001F75 7405                <1> 	jz	_fm_
-  3691 00001F77 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3692 00001F7C E817FCFFFF          <1> _fm_:	call	fm
-  3693 00001F81 5B                  <1> 	pop	ebx				; retrieve target register name
-  3694 00001F82 5D                  <1> 	pop	ebp
-  3695 00001F83 E944F8FFFF          <1> 	jmp	_deliver_
-  3696                              <1> 	
-  3697 00001F88 55                  <1> _fd:	push	ebp
-  3698 00001F89 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
-  3699 00001F8E BB00010000          <1> 	mov	ebx, _input2
-  3700 00001F93 E80EE2FFFF          <1> 	call	_burst_read4
-  3701 00001F98 BE[00040000]        <1> 	mov	esi, _INPUT2
-  3702 00001F9D E8DFF7FFFF          <1> 	call	compress4to8
-  3703 00001FA2 B804000000          <1> 	mov	eax, a
-  3704 00001FA7 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-  3705 00001FAD 50                  <1> 	push	eax				; save target register name
-  3706 00001FAE BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
-  3707 00001FB3 E8EEE1FFFF          <1> 	call	_burst_read4
-  3708 00001FB8 BE[20040000]        <1> 	mov	esi, _INPUTR
-  3709 00001FBD E8BFF7FFFF          <1> 	call	compress4to8
-  3710 00001FC2 B947470400          <1> 	mov	ecx, 00044747h
-  3711 00001FC7 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
-  3712 00001FCF 0000                <1>
-  3713 00001FD1 7405                <1> 	jz	_fd_
-  3714 00001FD3 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
-  3715 00001FD8 E8CAFCFFFF          <1> _fd_:	call	fd
-  3716 00001FDD 5B                  <1> 	pop	ebx				; retrieve target register name
-  3717 00001FDE 5D                  <1> 	pop	ebp
-  3718 00001FDF E9E8F7FFFF          <1> 	jmp	_deliver_
-  3719                              <1> 
-  3720                                  
-  3721                                  	end
-  3722                                  
+  3628                              <1> 
+  3629 00001E78 55                  <1> _fa:	push	ebp				; _input2 is [register]+absolute
+  3630 00001E79 BD[00000000]        <1> 	mov	ebp, __register
+  3631 00001E7E BB00010000          <1> 	mov	ebx, _input2
+  3632 00001E83 E81EE3FFFF          <1> 	call	_burst_read4
+  3633 00001E88 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3634 00001E8D E8EFF8FFFF          <1> 	call	compress4to8
+  3635 00001E92 B804000000          <1> 	mov	eax, a
+  3636 00001E97 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3637 00001E9D 50                  <1> 	push	eax				; save target register name
+  3638 00001E9E BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3639 00001EA3 E8FEE2FFFF          <1> 	call	_burst_read4
+  3640 00001EA8 BE[20040000]        <1> 	mov	esi, _INPUTR
+  3641 00001EAD E8CFF8FFFF          <1> 	call	compress4to8
+  3642 00001EB2 B947470400          <1> 	mov	ecx, 00044747h
+  3643 00001EB7 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3644 00001EBF 0000                <1>
+  3645 00001EC1 7405                <1> 	jz	_fa_
+  3646 00001EC3 B98F8F0600          <1> 	mov	ecx, 00068F8Fh
+  3647 00001EC8 E8F6FBFFFF          <1> _fa_	call	fa
+  3648 00001ECD 5B                  <1> 	pop	ebx				; retrieve target register name
+  3649 00001ECE 5D                  <1> 	pop	ebp
+  3650 00001ECF E9F6F8FFFF          <1> 	jmp	_deliver_edi
+  3651                              <1> 
+  3652 00001ED4 55                  <1> _fan:	push	ebp
+  3653 00001ED5 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3654 00001EDA BB00010000          <1> 	mov	ebx, _input2
+  3655 00001EDF E8C2E2FFFF          <1> 	call	_burst_read4
+  3656 00001EE4 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3657 00001EE9 E893F8FFFF          <1> 	call	compress4to8
+  3658 00001EEE B804000000          <1> 	mov	eax, a
+  3659 00001EF3 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3660 00001EF9 50                  <1> 	push	eax				; save target register name
+  3661 00001EFA BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3662 00001EFF E8A2E2FFFF          <1> 	call	_burst_read4
+  3663 00001F04 BE[20040000]        <1> 	mov	esi, _INPUTR
+  3664 00001F09 E873F8FFFF          <1> 	call	compress4to8
+  3665 00001F0E B947470400          <1> 	mov	ecx, 00044747h
+  3666 00001F13 F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3667 00001F1B 0000                <1>
+  3668 00001F1D 7405                <1> 	jz	_fan_
+  3669 00001F1F B98F8F0600          <1> 	mov	ecx, 00068F8Fh
+  3670 00001F24 E88AFBFFFF          <1> _fan_:	call	fan
+  3671 00001F29 5B                  <1> 	pop	ebx				; retrieve target register name
+  3672 00001F2A 5D                  <1> 	pop	ebp
+  3673 00001F2B E99AF8FFFF          <1> 	jmp	_deliver_edi
+  3674                              <1> 
+  3675 00001F30 55                  <1> _fm:	push	ebp
+  3676 00001F31 BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3677 00001F36 BB00010000          <1> 	mov	ebx, _input2
+  3678 00001F3B E866E2FFFF          <1> 	call	_burst_read4
+  3679 00001F40 BE[00040000]        <1> 	mov	esi, _INPUT2
+  3680 00001F45 E837F8FFFF          <1> 	call	compress4to8
+  3681 00001F4A B804000000          <1> 	mov	eax, a
+  3682 00001F4F 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; this application targets registers+a
+  3683 00001F55 50                  <1> 	push	eax				; save target register name
+  3684 00001F56 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3685 00001F5B E846E2FFFF          <1> 	call	_burst_read4
+  3686 00001F60 BE[20040000]        <1> 	mov	esi, _INPUTR
+  3687 00001F65 E817F8FFFF          <1> 	call	compress4to8
+  3688 00001F6A B947470400          <1> 	mov	ecx, 00044747h
+  3689 00001F6F F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3690 00001F77 0000                <1>
+  3691 00001F79 7405                <1> 	jz	_fm_
+  3692 00001F7B B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3693 00001F80 E817FCFFFF          <1> _fm_:	call	fm
+  3694 00001F85 5B                  <1> 	pop	ebx				; retrieve target register name
+  3695 00001F86 5D                  <1> 	pop	ebp
+  3696 00001F87 E940F8FFFF          <1> 	jmp	_deliver_
+  3697                              <1> 	
+  3698 00001F8C 55                  <1> _fd:	push	ebp
+  3699 00001F8D BD[00000000]        <1> 	mov	ebp, __register			; _input2 is [register]+absolute
+  3700 00001F92 BB00010000          <1> 	mov	ebx, _input2
+  3701 00001F97 E80AE2FFFF          <1> 	call	_burst_read4
+  3702 00001F9C BE[00040000]        <1> 	mov	esi, _INPUT2
+  3703 00001FA1 E8DBF7FFFF          <1> 	call	compress4to8
+  3704 00001FA6 B804000000          <1> 	mov	eax, a
+  3705 00001FAB 0B05[00000000]      <1> 	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
+  3706 00001FB1 50                  <1> 	push	eax				; save target register name
+  3707 00001FB2 BB08010000          <1> 	mov	ebx, _inputr			; _inputr is [register]+absolute
+  3708 00001FB7 E8EAE1FFFF          <1> 	call	_burst_read4
+  3709 00001FBC BE[20040000]        <1> 	mov	esi, _INPUTR
+  3710 00001FC1 E8BBF7FFFF          <1> 	call	compress4to8
+  3711 00001FC6 B947470400          <1> 	mov	ecx, 00044747h
+  3712 00001FCB F705[00000000]0800- <1> 	test	dword ptr [_psr], FP_R
+  3713 00001FD3 0000                <1>
+  3714 00001FD5 7405                <1> 	jz	_fd_
+  3715 00001FD7 B98F8F0500          <1> 	mov	ecx, 00058F8Fh
+  3716 00001FDC E8CAFCFFFF          <1> _fd_:	call	fd
+  3717 00001FE1 5B                  <1> 	pop	ebx				; retrieve target register name
+  3718 00001FE2 5D                  <1> 	pop	ebp
+  3719 00001FE3 E9E4F7FFFF          <1> 	jmp	_deliver_
+  3720                              <1> 
+  3721                                  
+  3722                                  	end
+  3723                                  
