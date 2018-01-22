@@ -278,11 +278,11 @@ int main(int argc, char *argv[])
 
 void *emulate()	/* thread start */
 {
-   #ifdef METRIC
-   struct timeval	time2;
-   #endif
-
+   struct timeval	 time2;
+   
    printf("emulation start\n");
+   gettimeofday(&time2, NULL);
+   delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
 
    for (;;)
    {
@@ -290,11 +290,6 @@ void *emulate()	/* thread start */
       if (flag['e'-'a']) printf("[%x %p %x %p %x]\n",
                                  indication, register_set, psr, apc,
                                  apc - memory.array);
-
-      #ifdef METRIC
-      gettimeofday(&time2, NULL);
-      delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
-      #endif
 
       #ifdef X86_MSW
       __masm {
@@ -400,6 +395,11 @@ void *emulate()	/* thread start */
 
          indication &= -1 ^ CHILLDOWN;
          usleep(base[103]);
+
+         #ifdef METRIC
+         gettimeofday(&time2, NULL);
+         delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+         #endif
       }
 
       if (indication & TIME_UPDATE)
@@ -451,11 +451,16 @@ static void action(char request[])
 
 
    #ifdef METRIC
+   double		 average,
+                         quantum;
+
    if (symbol == 'i')
    {
-      xx = (int) total_metric / total_delta;
-      printf("instructions %lld usecs %lld approximate MIPS %d\n",
-              total_metric, total_delta, xx);
+      average = total_metric;
+      quantum = total_delta;
+      average /= quantum;
+      printf("instructions %lld usecs %lld approximate MIPS %f\n",
+              total_metric, total_delta, average);
       return;
    }
    #endif
@@ -924,6 +929,11 @@ static int device_array_read(int index, int offset)
 #ifdef METRIC
 static void accumulate_metric()
 {
+   /*******************************************************
+	this happens at leading edge of emulation sleep
+	requested by I/O chilldown indication
+   *******************************************************/
+
    struct timeval	 time3;
    unsigned long long	 trailing_edge;
 
