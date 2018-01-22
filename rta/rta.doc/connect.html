@@ -30,7 +30,6 @@ See also the licensing notice at the foot of this document
 		<li><a href="#address plan">Network Address Plan</a></li>
 		<li><a href="#zeroconf">Autoconf and Multihomed Routes</a></li>
 		<li><a href="#windows">Network Considerations with Windows 10</a></li>
-		<li><a href="#locostwifi">Performance Considerations with Low-Cost Home Wifi</a></li>
 		<li><a href="#loopback">Special Considerations Networking from Emulator Platform to Emulated Machine</a></li>
 		<li><a href="#repair">Checksum Repair using OSX Software Loopback</a></li>
 		<li><a href="#build">How to build the Emulated Machine</a></li>
@@ -167,6 +166,70 @@ The interface process uses Berkely Packet Filter (BPF) kernel calls
 to receive and send.<br>The materials for running this interface process
 are in directory <b>rta/portal</b>
 
+<p>
+BPF serves a separate filter program for each interface
+<pre>
+
+	osserv / RTA1 Network Interfaces Initialisation
+	_______________________________________________
+
+	_________________
+	|	osserv	|
+	|_______________|
+	|writes macro	|
+	|assembly source|
+	|from arguments	|
+	|_______________|	_________________
+	|launches masmx	|	|   masmx.7R3A	|
+	|process script	|	|_______________|
+	|for each I/F	|------>|assembles BPF	|
+	|_______________|	|filter program |
+	|initialises	|<------|_______________|	
+	|buffer shared	|					_________________
+	|with RTA1	|					|	RTA1	|
+	|_______________|					|_______________|
+	|sends interface|					| awaits traffic|
+	|configuration	|					|---------------|
+	|PDUs to RTA1	|-------------------------------------->|configures	|
+	|_______________|					|network I/Fs	|
+	|assigns filter	|					|_______________|
+	|programs to BPF|
+	|_______________|
+
+
+
+	Live Example WiFi or Ethernet Packet Filter Program in Dump Format
+	__________________________________________________________________
+
+	Little-Endian Emulator Platform
+	_______________________________
+
+
+	[:280000000c000000]	. examine 16 bits at frame offset octet 12 = protocol discriminator
+	[:1500040006080000]	. ARP protocol field reverse byte order, if so jump to YES
+	[:1500000200080000]	. IP protocol field reverse byte order, if not jump to NO
+	[:200000001e000000]	. examine 32 bits at frame offset octet 30 = IP destination
+	[:1500010042071dac]	. acceptable destination in reverse byte order? Jump to YES
+	[:0600000000000000]	. return NO = drop
+	[:06000000ffff0000]	. return YES = BPF assign this frame to osserv
+
+	masmx.7r3a Macro Assembly can do any amount of variation on this minimal path
+
+
+
+	Running after Initialisation
+	____________________________
+
+	________________					_________________
+	|osserv receives|					| RTA1 IP stack	|
+------->|IP/ARP from BPF|-------------------------------------->| receives	|
+	|_______________|					|_______________|
+	|osserv	xmits on|					| RTA1 IP stack	|
+<-------|network via BPF|<--------------------------------------| transmits	|
+	|_______________|					|_______________|
+
+	
+</pre>
 <p>
 An earlier network access method for RTA1 used IPFW Divert Socket,
 but that is not available on any recent personal computer.<br>
@@ -495,42 +558,6 @@ The actions of <b>portal/osserv</b> are
 
 
 </pre>
-<a	name="locostwifi"/>
-<h3>Performance Considerations with Low-Cost Home Wifi</h3>
-
-        Some performance restrictions have been encountered
-        using low-cost home WiFi to transmit data in quantity
-        between RTA1 and other locally networked hosts
-
-	<p>
-        Excellent network performance has been regained by
-	transmitting over wired Ethernet instead
-
-	<P>
-        The WiFi products associated with problems appear to treat
-        intranet traffic as upload and drop hundreds of presumably
-        over-budget segments. At any rate packet loss is large.
-
-	<P>
-        RTA1 uses an aggressive TCP resend policy to maintain
-        performance. Aggressive resends are switched on via telnet
-	<pre>
-
-                telnet -s 172.29.7.6 172.29.7.7
-                aggress
-
-	</pre>
-        this command is a flipflop so repeating it turns aggressive
-        resends off again
-
-	<p>
-        This is not considered best practice but an emergency method
-
-	<p>
-        A performant network is present in the form of wired Ethernet
-        wherever WiFi is present
-
-
 <a	name="loopback"/>
 <h3>Special Considerations Networking from Emulator Platform to Emulated Machine</h3>
 

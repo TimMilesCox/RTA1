@@ -446,6 +446,12 @@ L18:
 	movl	%eax, (%esp)
 	call	_load_fs
 L19:
+	leal	_start_time-"L00000000001$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	leal	_delta_base-"L00000000001$pb"(%ebx), %ecx
+	movl	%eax, (%ecx)
+	movl	%edx, 4(%ecx)
 	leal	-52(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_pthread_attr_init
@@ -507,7 +513,7 @@ L27:
 	movl	%eax, (%esp)
 	call	_printf
 L28:
-	movl	$1000, 8(%esp)
+	movl	$3, 8(%esp)
 	movl	$1, 4(%esp)
 	leal	_attention-"L00000000001$pb"(%ebx), %eax
 	movl	%eax, (%esp)
@@ -525,9 +531,6 @@ L28:
 L29:
 	cmpl	$0, -128(%ebp)
 	je	L32
-	leal	L_flag$non_lazy_ptr-"L00000000001$pb"(%ebx), %eax
-	movl	(%eax), %eax
-	movb	$1, 18(%eax)
 	leal	L___stdinp$non_lazy_ptr-"L00000000001$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -606,6 +609,8 @@ LC16:
 	.ascii "emulation start\0"
 LC17:
 	.ascii "[%x %p %x %p %x]\12\0"
+LC18:
+	.ascii "[%x]\0"
 	.text
 _emulate:
 	pushl	%ebp
@@ -613,10 +618,10 @@ _emulate:
 	pushl	%edi
 	pushl	%esi
 	pushl	%ebx
-	subl	$60, %esp
-	call	L60
+	subl	$44, %esp
+	call	L62
 "L00000000002$pb":
-L60:
+L62:
 	popl	%ebx
 	leal	LC16-"L00000000002$pb"(%ebx), %eax
 	movl	%eax, (%esp)
@@ -672,90 +677,112 @@ L44:
 	L46: # LASM$engage
 	# top of block
 	.file "tipt.c"
-	.line 304
+	.line 341
 	pushl %ebp
 	.file "tipt.c"
-	.line 305
+	.line 342
 	movl %esi, %ebp
 	.file "tipt.c"
-	.line 306
+	.line 343
 	pushl %ebp
 	.file "tipt.c"
-	.line 311
+	.line 348
 	pushl %edi
 	.file "tipt.c"
-	.line 312
+	.line 349
 	pushl %edx
 	.file "tipt.c"
-	.line 313
+	.line 350
 	pushl %ecx
 	.file "tipt.c"
-	.line 314
+	.line 351
 	pushl %ebx
 	.file "tipt.c"
-	.line 315
+	.line 352
 	pushl %eax
 	.file "tipt.c"
-	.line 320
+	.line 357
 	movl _register_set, %ebp
 	.file "tipt.c"
-	.line 321
+	.line 358
 	movl _apc, %edx
 	L47: # LASM$next
 	.file "tipt.c"
-	.line 322
+	.line 359
 	movl 0(%edx), %eax
 	.file "tipt.c"
-	.line 323
+	.line 360
 	addl $4, %edx
 	.file "tipt.c"
-	.line 324
+	.line 361
 	bswapl %eax
 	.file "tipt.c"
-	.line 325
+	.line 362
 	call _execute
 	.file "tipt.c"
-	.line 326
+	.line 365
+	incl _metric
+	.file "tipt.c"
+	.line 368
 	testl $15, _indication
 	.file "tipt.c"
-	.line 327
+	.line 369
 	jz L47
 	.file "tipt.c"
-	.line 328
+	.line 370
 	movl %ebp, _register_set
 	.file "tipt.c"
-	.line 329
+	.line 371
 	movl %edx, _apc
 	.file "tipt.c"
-	.line 331
+	.line 373
 	popl %eax
 	.file "tipt.c"
-	.line 332
+	.line 374
 	popl %ebx
 	.file "tipt.c"
-	.line 333
+	.line 375
 	popl %ecx
 	.file "tipt.c"
-	.line 334
+	.line 376
 	popl %edx
 	.file "tipt.c"
-	.line 335
+	.line 377
 	popl %edi
 	.file "tipt.c"
-	.line 338
+	.line 380
 	popl %ebp
 	.file "tipt.c"
-	.line 339
+	.line 381
 	movl %ebp, %esi
 	.file "tipt.c"
-	.line 340
+	.line 382
 	popl %ebp
+	leal	L_flag$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movzbl	8(%eax), %eax
+	testb	%al, %al
+	je	L48
+	leal	L_metric$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax), %eax
+	movl	%eax, 4(%esp)
+	leal	LC18-"L00000000002$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	leal	L___stdoutp$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax), %eax
+	movl	%eax, (%esp)
+	call	_fflush
+L48:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	andl	$8, %eax
 	testl	%eax, %eax
-	je	L48
+	je	L50
+	call	_accumulate_metric
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -768,25 +795,13 @@ L44:
 	movl	412(%eax), %eax
 	movl	%eax, (%esp)
 	call	_usleep
-L48:
+L50:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	andl	$1, %eax
 	testb	%al, %al
-	je	L50
-	leal	_u-"L00000000002$pb"(%ebx), %eax
-	movl	4(%eax), %edx
-	movl	(%eax), %eax
-	andl	$16777215, %eax
-	movl	%eax, -28(%ebp)
-	leal	_u-"L00000000002$pb"(%ebx), %eax
-	movl	4(%eax), %edx
-	movl	(%eax), %eax
-	shrdl	$24, %edx, %eax
-	sarl	$24, %edx
-	andl	$16777215, %eax
-	movl	%eax, -32(%ebp)
+	je	L52
 	leal	_u-"L00000000002$pb"(%ebx), %eax
 	movl	4(%eax), %edx
 	movl	(%eax), %eax
@@ -818,19 +833,19 @@ L48:
 	movl	(%eax), %eax
 	testl	%eax, %eax
 	je	L41
-L50:
+L52:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	andl	$4, %eax
 	testl	%eax, %eax
-	je	L53
+	je	L55
 	leal	_apc-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %edx
 	leal	_breakpoint-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	cmpl	%eax, %edx
-	jne	L53
+	jne	L55
 	leal	L_flag$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movb	$1, 18(%eax)
@@ -842,7 +857,7 @@ L50:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%edx, (%eax)
-L53:
+L55:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -857,218 +872,267 @@ L53:
 	movl	(%eax), %eax
 	movl	%eax, (%esp)
 	call	_fflush
-	jmp	L57
-L58:
+	jmp	L59
+L60:
 	movl	$10000, (%esp)
 	call	_usleep
-L57:
+L59:
 	leal	L_indication$non_lazy_ptr-"L00000000002$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	andl	$2, %eax
 	testl	%eax, %eax
-	jne	L58
+	jne	L60
 	jmp	L41
 	.cstring
-LC18:
-	.ascii "key s for single step\0"
+	.align 2
 LC19:
-	.ascii "%x:%x\0"
+	.ascii "instructions %lld millisecs %lld approximate MIPS %d\12\0"
 LC20:
-	.ascii "[>%x,%x]\0"
+	.ascii "key s for single step\0"
 LC21:
-	.ascii "[@%p:%p]\0"
+	.ascii "%x:%x\0"
 LC22:
-	.ascii "%x\0"
+	.ascii "[>%x,%x]\0"
 LC23:
-	.ascii "%d\0"
+	.ascii "[@%p:%p]\0"
 LC24:
-	.ascii "%6.6x :\0"
+	.ascii "%x\0"
 LC25:
-	.ascii " %2.2x%2.2x%2.2x\0"
+	.ascii "%d\0"
 LC26:
-	.ascii "%6.6x:%6.6x :\0"
+	.ascii "%6.6x :\0"
 LC27:
-	.ascii " %6.6x\0"
+	.ascii " %2.2x%2.2x%2.2x\0"
 LC28:
-	.ascii "\12%2.2x:\0"
+	.ascii "%6.6x:%6.6x :\0"
 LC29:
+	.ascii " %6.6x\0"
+LC30:
+	.ascii "\12%2.2x:\0"
+LC31:
 	.ascii "\12\12"
 	.ascii "60:\0"
 	.align 2
-LC30:
+LC32:
 	.ascii "\12\12"
 	.ascii "7c                             \0"
-LC31:
+LC33:
 	.ascii "%lld\0"
-LC32:
+LC34:
 	.ascii "%s\0"
 	.align 2
-LC33:
+LC35:
 	.ascii "LF\11execute one instruction and display new state\0"
 	.align 2
-LC34:
+LC36:
 	.ascii "+\11display more internal stack registers\0"
 	.align 2
-LC35:
+LC37:
 	.ascii "0n\11display registers starting at hex address\0"
 	.align 2
-LC36:
+LC38:
 	.ascii "r n\11display registers starting at decimal address\0"
 	.align 2
-LC37:
+LC39:
 	.ascii "b\11display relocation / configuration ports\12\0"
 	.align 2
-LC38:
+LC40:
 	.ascii "m [[page:]offset]\11display system memory\0"
 	.align 2
-LC39:
+LC41:
 	.ascii "\11default page[s] in current address space\12\0"
 	.align 2
-LC40:
+LC42:
 	.ascii "d [[device:]offset]\11display peripheral memory array[s]\0"
 	.align 2
-LC41:
+LC43:
 	.ascii "\11default device[s] in current address space\12\0"
 	.align 2
-LC42:
+LC44:
 	.ascii "g [[page:]breakpoint]\11run [to breakpoint]\0"
 	.align 2
-LC43:
-	.ascii "\11default page is current instruction section\0"
-LC44:
-	.ascii "\11to remove breakpoint g0:0\12\0"
 LC45:
+	.ascii "\11default page is current instruction section\0"
+LC46:
+	.ascii "\11to remove breakpoint g0:0\12\0"
+LC47:
 	.ascii ".\11exit emulator\0"
 	.text
 _action:
 	pushl	%ebp
 	movl	%esp, %ebp
+	pushl	%edi
+	pushl	%esi
 	pushl	%ebx
-	subl	$452, %esp
-	call	L150
+	subl	$492, %esp
+	call	L156
 "L00000000003$pb":
-L150:
+L156:
 	popl	%ebx
 	movl	8(%ebp), %eax
-	movl	%eax, -428(%ebp)
+	movl	%eax, -444(%ebp)
 	leal	L___stack_chk_guard$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %edx
-	movl	%edx, -12(%ebp)
+	movl	%edx, -28(%ebp)
 	xorl	%edx, %edx
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movzbl	(%eax), %eax
 	movsbl	%al,%eax
-	movl	%eax, -408(%ebp)
-	movl	$0, -412(%ebp)
+	movl	%eax, -424(%ebp)
+	movl	$0, -428(%ebp)
+	cmpl	$105, -424(%ebp)
+	jne	L64
+	leal	_total_metric-"L00000000003$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	movl	%eax, -456(%ebp)
+	movl	%eax, %ecx
+	sarl	$31, %ecx
+	movl	%ecx, -452(%ebp)
+	leal	_total_delta-"L00000000003$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	imull	$1000, %edx, %ecx
+	imull	$0, %eax, %esi
+	addl	%esi, %ecx
+	movl	$1000, %esi
+	mull	%esi
+	addl	%edx, %ecx
+	movl	%ecx, %edx
+	movl	%eax, 8(%esp)
+	movl	%edx, 12(%esp)
+	movl	-456(%ebp), %eax
+	movl	-452(%ebp), %edx
+	movl	%eax, (%esp)
+	movl	%edx, 4(%esp)
+	call	___udivdi3
+	movl	%eax, -400(%ebp)
+	leal	_total_delta-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax), %esi
+	movl	4(%eax), %edi
+	leal	_total_metric-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax), %edx
+	movl	4(%eax), %ecx
+	movl	-400(%ebp), %eax
+	movl	%eax, 20(%esp)
+	movl	%esi, 12(%esp)
+	movl	%edi, 16(%esp)
+	movl	%edx, 4(%esp)
+	movl	%ecx, 8(%esp)
+	leal	LC19-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	jmp	L154
+L64:
 	leal	L_flag$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	18(%eax), %eax
 	testb	%al, %al
-	jne	L62
-	cmpl	$115, -408(%ebp)
-	je	L62
-	leal	LC18-"L00000000003$pb"(%ebx), %eax
+	jne	L67
+	cmpl	$115, -424(%ebp)
+	je	L67
+	leal	LC20-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_puts
-	jmp	L148
-L62:
-	movl	$1, -412(%ebp)
-	movl	-408(%ebp), %ecx
-	subl	$43, %ecx
-	movl	%ecx, -432(%ebp)
-	cmpl	$79, -432(%ebp)
-	ja	L66
-	movl	-432(%ebp), %edx
+	jmp	L154
+L67:
+	movl	$1, -428(%ebp)
+	movl	-424(%ebp), %edx
+	subl	$43, %edx
+	movl	%edx, -460(%ebp)
+	cmpl	$79, -460(%ebp)
+	ja	L70
+	movl	-460(%ebp), %edx
 	sall	$2, %edx
-	leal	L78-"L00000000003$pb"(%ebx), %eax
+	leal	L82-"L00000000003$pb"(%ebx), %eax
 	movl	(%edx,%eax), %eax
 	addl	%ebx, %eax
 	jmp	*%eax
 	.align 2,0x90
-L78:
-	.long	L67-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L68-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L69-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L70-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
+L82:
 	.long	L71-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
 	.long	L72-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
 	.long	L73-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
 	.long	L74-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
 	.long	L75-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L69-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
 	.long	L76-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
-	.long	L66-"L00000000003$pb"
 	.long	L77-"L00000000003$pb"
-L76:
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L78-"L00000000003$pb"
+	.long	L79-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L73-"L00000000003$pb"
+	.long	L80-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L70-"L00000000003$pb"
+	.long	L81-"L00000000003$pb"
+L80:
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -1080,44 +1144,44 @@ L76:
 	leal	L_flag$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movb	$1, 18(%eax)
-	jmp	L79
-L72:
-	movl	-428(%ebp), %edx
+	jmp	L83
+L76:
+	movl	-444(%ebp), %edx
 	incl	%edx
-	leal	-400(%ebp), %eax
+	leal	-416(%ebp), %eax
 	movl	%eax, 12(%esp)
-	leal	-388(%ebp), %eax
+	leal	-404(%ebp), %eax
 	movl	%eax, 8(%esp)
-	leal	LC19-"L00000000003$pb"(%ebx), %eax
+	leal	LC21-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, 4(%esp)
 	movl	%edx, (%esp)
 	call	_sscanf
-	movl	%eax, -384(%ebp)
-	cmpl	$1, -384(%ebp)
-	jne	L80
+	movl	%eax, -400(%ebp)
+	cmpl	$1, -400(%ebp)
+	jne	L84
 	leal	_b0p-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, %edx
-	movl	-388(%ebp), %eax
+	movl	-404(%ebp), %eax
 	sall	$2, %eax
 	addl	%eax, %edx
 	leal	_breakpoint-"L00000000003$pb"(%ebx), %eax
 	movl	%edx, (%eax)
-L80:
-	cmpl	$2, -384(%ebp)
-	jne	L82
-	movl	-388(%ebp), %eax
+L84:
+	cmpl	$2, -400(%ebp)
+	jne	L86
+	movl	-404(%ebp), %eax
 	movl	%eax, %edx
 	sall	$14, %edx
 	leal	L_memory$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	addl	%eax, %edx
-	movl	-400(%ebp), %eax
+	movl	-416(%ebp), %eax
 	sall	$2, %eax
 	addl	%eax, %edx
 	leal	_breakpoint-"L00000000003$pb"(%ebx), %eax
 	movl	%edx, (%eax)
-L82:
+L86:
 	leal	L_flag$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movb	$0, 18(%eax)
@@ -1129,8 +1193,12 @@ L82:
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%edx, (%eax)
-	cmpl	$0, -384(%ebp)
-	je	L84
+	cmpl	$0, -400(%ebp)
+	jg	L88
+	movl	$0, -400(%ebp)
+L88:
+	cmpl	$0, -400(%ebp)
+	je	L90
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -1139,16 +1207,16 @@ L82:
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%edx, (%eax)
-L84:
+L90:
 	leal	_breakpoint-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	testl	%eax, %eax
-	je	L86
+	je	L92
 	leal	L_flag$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	21(%eax), %eax
 	testb	%al, %al
-	je	L88
+	je	L94
 	leal	_breakpoint-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, %edx
@@ -1164,26 +1232,26 @@ L84:
 	movl	(%eax), %eax
 	movl	%edx, 8(%esp)
 	movl	%eax, 4(%esp)
-	leal	LC20-"L00000000003$pb"(%ebx), %eax
+	leal	LC22-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L88:
+L94:
 	leal	L_flag$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	4(%eax), %eax
 	testb	%al, %al
-	je	L86
+	je	L92
 	leal	_breakpoint-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, 8(%esp)
 	leal	L_memory$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, 4(%esp)
-	leal	LC21-"L00000000003$pb"(%ebx), %eax
+	leal	LC23-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L86:
-	movl	$0, -412(%ebp)
+L92:
+	movl	$0, -428(%ebp)
 	movl	$58, (%esp)
 	call	_putchar
 	leal	L___stdoutp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
@@ -1191,8 +1259,8 @@ L86:
 	movl	(%eax), %eax
 	movl	%eax, (%esp)
 	call	_fflush
-	jmp	L79
-L67:
+	jmp	L83
+L71:
 	leal	_iselect-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, %edx
@@ -1200,236 +1268,236 @@ L67:
 	leal	L__register$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax,%edx,4), %eax
-	movl	%eax, -388(%ebp)
-	movl	-388(%ebp), %eax
+	movl	%eax, -404(%ebp)
+	movl	-404(%ebp), %eax
 	addl	$23, %eax
-	movl	%eax, -388(%ebp)
-L69:
-	cmpl	$43, -408(%ebp)
-	je	L91
+	movl	%eax, -404(%ebp)
+L73:
+	cmpl	$43, -424(%ebp)
+	je	L97
 	leal	_iselect-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	orl	$24, %eax
-	movl	%eax, -388(%ebp)
-L91:
-	cmpl	$48, -408(%ebp)
-	jne	L93
-	leal	-388(%ebp), %eax
+	movl	%eax, -404(%ebp)
+L97:
+	cmpl	$48, -424(%ebp)
+	jne	L99
+	leal	-404(%ebp), %eax
 	movl	%eax, 8(%esp)
-	leal	LC22-"L00000000003$pb"(%ebx), %eax
+	leal	LC24-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, 4(%esp)
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_sscanf
-	jmp	L97
-L93:
-	cmpl	$114, -408(%ebp)
-	jne	L97
-	movl	-428(%ebp), %eax
+	jmp	L103
+L99:
+	cmpl	$114, -424(%ebp)
+	jne	L103
+	movl	-444(%ebp), %eax
 	incl	%eax
-	leal	-388(%ebp), %edx
+	leal	-404(%ebp), %edx
 	movl	%edx, 8(%esp)
-	leal	LC23-"L00000000003$pb"(%ebx), %edx
+	leal	LC25-"L00000000003$pb"(%ebx), %edx
 	movl	%edx, 4(%esp)
 	movl	%eax, (%esp)
 	call	_sscanf
-	jmp	L97
-L98:
-	movl	-388(%ebp), %eax
-	movl	%eax, (%esp)
-	call	_print_register_row
-	movl	-388(%ebp), %eax
-	addl	$8, %eax
-	movl	%eax, -388(%ebp)
-	leal	L___stdinp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
-	movl	(%eax), %eax
-	movl	(%eax), %eax
-	movl	%eax, 8(%esp)
-	movl	$48, 4(%esp)
-	movl	-428(%ebp), %eax
-	movl	%eax, (%esp)
-	call	_fgets
-	movl	-428(%ebp), %eax
-	movzbl	(%eax), %eax
-	cmpb	$46, %al
-	je	L79
-L97:
-	movl	-388(%ebp), %eax
-	cmpl	$279, %eax
-	jle	L98
-	jmp	L79
-L75:
-	movl	-428(%ebp), %edx
-	incl	%edx
-	leal	-400(%ebp), %eax
-	movl	%eax, 12(%esp)
-	leal	-396(%ebp), %eax
-	movl	%eax, 8(%esp)
-	leal	LC19-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, 4(%esp)
-	movl	%edx, (%esp)
-	call	_sscanf
-	movl	%eax, -384(%ebp)
-	cmpl	$1, -384(%ebp)
-	jg	L100
-	movl	-396(%ebp), %eax
-	movl	%eax, -400(%ebp)
-L102:
-	movl	-400(%ebp), %eax
-	addl	$8, %eax
-	movl	%eax, -388(%ebp)
-	movl	-400(%ebp), %eax
-	movl	%eax, 4(%esp)
-	leal	LC24-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
 	jmp	L103
 L104:
-	movl	-400(%ebp), %eax
-	movl	%eax, %edx
-	incl	%eax
-	movl	%eax, -400(%ebp)
-	movl	%edx, (%esp)
-	call	_memory_read
-	movl	%eax, -376(%ebp)
-	movzbl	-373(%ebp), %eax
-	movzbl	%al, %edx
-	movzbl	-374(%ebp), %eax
-	movzbl	%al, %ecx
-	movzbl	-375(%ebp), %eax
-	movzbl	%al, %eax
-	movl	%edx, 12(%esp)
-	movl	%ecx, 8(%esp)
-	movl	%eax, 4(%esp)
-	leal	LC25-"L00000000003$pb"(%ebx), %eax
+	movl	-404(%ebp), %eax
 	movl	%eax, (%esp)
-	call	_printf
-L103:
-	movl	-400(%ebp), %edx
-	movl	-388(%ebp), %eax
-	cmpl	%eax, %edx
-	jl	L104
+	call	_print_register_row
+	movl	-404(%ebp), %eax
+	addl	$8, %eax
+	movl	%eax, -404(%ebp)
 	leal	L___stdinp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	movl	%eax, 8(%esp)
 	movl	$48, 4(%esp)
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_fgets
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movzbl	(%eax), %eax
 	cmpb	$46, %al
-	je	L79
-	jmp	L102
-L100:
-	movl	-396(%ebp), %eax
-	movl	%eax, %edx
-	sall	$12, %edx
-	movl	-400(%ebp), %eax
-	leal	(%edx,%eax), %eax
-	movl	%eax, -404(%ebp)
-L109:
+	je	L83
+L103:
 	movl	-404(%ebp), %eax
-	addl	$8, %eax
-	movl	%eax, -388(%ebp)
-	movl	-400(%ebp), %eax
-	movl	-396(%ebp), %edx
+	cmpl	$279, %eax
+	jle	L104
+	jmp	L83
+L79:
+	movl	-444(%ebp), %edx
+	incl	%edx
+	leal	-416(%ebp), %eax
+	movl	%eax, 12(%esp)
+	leal	-412(%ebp), %eax
 	movl	%eax, 8(%esp)
-	movl	%edx, 4(%esp)
+	leal	LC21-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, 4(%esp)
+	movl	%edx, (%esp)
+	call	_sscanf
+	movl	%eax, -400(%ebp)
+	cmpl	$1, -400(%ebp)
+	jg	L106
+	movl	-412(%ebp), %eax
+	movl	%eax, -416(%ebp)
+L108:
+	movl	-416(%ebp), %eax
+	addl	$8, %eax
+	movl	%eax, -404(%ebp)
+	movl	-416(%ebp), %eax
+	movl	%eax, 4(%esp)
 	leal	LC26-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	movl	-400(%ebp), %eax
-	addl	$8, %eax
-	movl	%eax, -400(%ebp)
-	jmp	L110
-L111:
-	movl	-404(%ebp), %eax
-	cmpl	$524287, %eax
-	jg	L112
-	movl	-404(%ebp), %edx
-	leal	L_memory$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
-	movl	(%eax), %eax
-	movl	(%eax,%edx,4), %eax
-	movl	%eax, -376(%ebp)
-	leal	1(%edx), %eax
-	movl	%eax, -404(%ebp)
-	movzbl	-373(%ebp), %eax
+	jmp	L109
+L110:
+	movl	-416(%ebp), %eax
+	movl	%eax, %edx
+	incl	%eax
+	movl	%eax, -416(%ebp)
+	movl	%edx, (%esp)
+	call	_memory_read
+	movl	%eax, -392(%ebp)
+	movzbl	-389(%ebp), %eax
 	movzbl	%al, %edx
-	movzbl	-374(%ebp), %eax
+	movzbl	-390(%ebp), %eax
 	movzbl	%al, %ecx
-	movzbl	-375(%ebp), %eax
+	movzbl	-391(%ebp), %eax
 	movzbl	%al, %eax
 	movl	%edx, 12(%esp)
 	movl	%ecx, 8(%esp)
 	movl	%eax, 4(%esp)
-	leal	LC25-"L00000000003$pb"(%ebx), %eax
+	leal	LC27-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L110:
-	movl	-404(%ebp), %edx
-	movl	-388(%ebp), %eax
+L109:
+	movl	-416(%ebp), %edx
+	movl	-404(%ebp), %eax
 	cmpl	%eax, %edx
-	jl	L111
-L112:
+	jl	L110
 	leal	L___stdinp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	movl	%eax, 8(%esp)
 	movl	$48, 4(%esp)
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_fgets
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movzbl	(%eax), %eax
 	cmpb	$46, %al
-	je	L79
-	jmp	L109
-L71:
-	movl	$0, -404(%ebp)
-	movl	$0, -400(%ebp)
-	movl	$0, -392(%ebp)
-	movl	-428(%ebp), %edx
-	incl	%edx
-	leal	-400(%ebp), %eax
-	movl	%eax, 12(%esp)
-	leal	-404(%ebp), %eax
+	je	L83
+	jmp	L108
+L106:
+	movl	-412(%ebp), %eax
+	movl	%eax, %edx
+	sall	$12, %edx
+	movl	-416(%ebp), %eax
+	leal	(%edx,%eax), %eax
+	movl	%eax, -420(%ebp)
+L115:
+	movl	-420(%ebp), %eax
+	addl	$8, %eax
+	movl	%eax, -404(%ebp)
+	movl	-416(%ebp), %eax
+	movl	-412(%ebp), %edx
 	movl	%eax, 8(%esp)
-	leal	LC19-"L00000000003$pb"(%ebx), %eax
+	movl	%edx, 4(%esp)
+	leal	LC28-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	movl	-416(%ebp), %eax
+	addl	$8, %eax
+	movl	%eax, -416(%ebp)
+	jmp	L116
+L117:
+	movl	-420(%ebp), %eax
+	cmpl	$524287, %eax
+	jg	L118
+	movl	-420(%ebp), %edx
+	leal	L_memory$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax,%edx,4), %eax
+	movl	%eax, -392(%ebp)
+	leal	1(%edx), %eax
+	movl	%eax, -420(%ebp)
+	movzbl	-389(%ebp), %eax
+	movzbl	%al, %edx
+	movzbl	-390(%ebp), %eax
+	movzbl	%al, %ecx
+	movzbl	-391(%ebp), %eax
+	movzbl	%al, %eax
+	movl	%edx, 12(%esp)
+	movl	%ecx, 8(%esp)
+	movl	%eax, 4(%esp)
+	leal	LC27-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+L116:
+	movl	-420(%ebp), %edx
+	movl	-404(%ebp), %eax
+	cmpl	%eax, %edx
+	jl	L117
+L118:
+	leal	L___stdinp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax), %eax
+	movl	%eax, 8(%esp)
+	movl	$48, 4(%esp)
+	movl	-444(%ebp), %eax
+	movl	%eax, (%esp)
+	call	_fgets
+	movl	-444(%ebp), %eax
+	movzbl	(%eax), %eax
+	cmpb	$46, %al
+	je	L83
+	jmp	L115
+L75:
+	movl	$0, -420(%ebp)
+	movl	$0, -416(%ebp)
+	movl	$0, -408(%ebp)
+	movl	-444(%ebp), %edx
+	incl	%edx
+	leal	-416(%ebp), %eax
+	movl	%eax, 12(%esp)
+	leal	-420(%ebp), %eax
+	movl	%eax, 8(%esp)
+	leal	LC21-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, 4(%esp)
 	movl	%edx, (%esp)
 	call	_sscanf
-	movl	%eax, -384(%ebp)
-	cmpl	$1, -384(%ebp)
-	jg	L115
-	movl	-404(%ebp), %eax
 	movl	%eax, -400(%ebp)
-	movl	$0, -404(%ebp)
-	movl	-400(%ebp), %eax
+	cmpl	$1, -400(%ebp)
+	jg	L121
+	movl	-420(%ebp), %eax
+	movl	%eax, -416(%ebp)
+	movl	$0, -420(%ebp)
+	movl	-416(%ebp), %eax
 	andl	$16515072, %eax
-	movl	%eax, -392(%ebp)
-	cmpl	$0, -392(%ebp)
-	je	L117
-	sarl	$18, -392(%ebp)
-	movl	-400(%ebp), %eax
+	movl	%eax, -408(%ebp)
+	cmpl	$0, -408(%ebp)
+	je	L123
+	sarl	$18, -408(%ebp)
+	movl	-416(%ebp), %eax
 	andl	$262143, %eax
-	movl	%eax, -400(%ebp)
-	jmp	L119
-L117:
-	movl	-400(%ebp), %eax
+	movl	%eax, -416(%ebp)
+	jmp	L125
+L123:
+	movl	-416(%ebp), %eax
 	andl	$258048, %eax
-	movl	%eax, -392(%ebp)
-	sarl	$12, -392(%ebp)
-	movl	-400(%ebp), %eax
+	movl	%eax, -408(%ebp)
+	sarl	$12, -408(%ebp)
+	movl	-416(%ebp), %eax
 	andl	$4095, %eax
-	movl	%eax, -400(%ebp)
-L119:
-	cmpl	$0, -392(%ebp)
-	je	L120
-	cmpl	$7, -392(%ebp)
-	jg	L120
-	movl	-392(%ebp), %ecx
+	movl	%eax, -416(%ebp)
+L125:
+	cmpl	$0, -408(%ebp)
+	je	L126
+	cmpl	$7, -408(%ebp)
+	jg	L126
+	movl	-408(%ebp), %ecx
 	movl	$32768, %eax
 	sarl	%cl, %eax
 	movl	%eax, %edx
@@ -1437,177 +1505,169 @@ L119:
 	movl	(%eax), %eax
 	andl	%edx, %eax
 	testl	%eax, %eax
-	je	L120
-	addl	$64, -392(%ebp)
-L120:
-	movl	-392(%ebp), %edx
+	je	L126
+	addl	$64, -408(%ebp)
+L126:
+	movl	-408(%ebp), %edx
 	leal	_base-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax,%edx,4), %eax
-	movl	%eax, -396(%ebp)
-	movl	-396(%ebp), %eax
+	movl	%eax, -412(%ebp)
+	movl	-412(%ebp), %eax
 	andl	$4194304, %eax
 	testl	%eax, %eax
-	je	L126
-	movl	-396(%ebp), %eax
+	je	L132
+	movl	-412(%ebp), %eax
 	andl	$63, %eax
-	movl	%eax, -404(%ebp)
-	jmp	L126
-L115:
-	movl	-404(%ebp), %eax
+	movl	%eax, -420(%ebp)
+	jmp	L132
+L121:
+	movl	-420(%ebp), %eax
 	orl	$4194304, %eax
-	movl	%eax, -396(%ebp)
-L126:
-	movl	-400(%ebp), %eax
-	movl	-396(%ebp), %edx
+	movl	%eax, -412(%ebp)
+L132:
+	movl	-416(%ebp), %eax
+	movl	-412(%ebp), %edx
 	movl	%eax, 8(%esp)
 	movl	%edx, 4(%esp)
-	leal	LC26-"L00000000003$pb"(%ebx), %eax
+	leal	LC28-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	movl	-400(%ebp), %eax
+	movl	-416(%ebp), %eax
 	addl	$8, %eax
-	movl	%eax, -388(%ebp)
-	jmp	L127
-L128:
-	movl	-400(%ebp), %eax
-	movl	%eax, %ecx
+	movl	%eax, -404(%ebp)
+	jmp	L133
+L134:
+	movl	-416(%ebp), %eax
+	movl	%eax, %edx
 	incl	%eax
+	movl	%eax, -416(%ebp)
+	movl	-412(%ebp), %eax
+	movl	%edx, 4(%esp)
+	movl	%eax, (%esp)
+	call	_device_array_read
 	movl	%eax, -400(%ebp)
-	movl	-396(%ebp), %eax
-	movl	-404(%ebp), %edx
-	movl	%ecx, 8(%esp)
+	movl	-400(%ebp), %eax
 	movl	%eax, 4(%esp)
-	movl	%edx, (%esp)
-	call	_device_read
-	movl	%eax, -384(%ebp)
-	movl	-384(%ebp), %eax
-	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000003$pb"(%ebx), %eax
+	leal	LC29-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L127:
-	movl	-400(%ebp), %edx
-	movl	-388(%ebp), %eax
+L133:
+	movl	-416(%ebp), %edx
+	movl	-404(%ebp), %eax
 	cmpl	%eax, %edx
-	jl	L128
+	jl	L134
 	leal	L___stdinp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
 	movl	%eax, 8(%esp)
 	movl	$48, 4(%esp)
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_fgets
-	movl	-428(%ebp), %eax
+	movl	-444(%ebp), %eax
 	movzbl	(%eax), %eax
 	cmpb	$46, %al
-	je	L79
-	jmp	L126
-L70:
-	movl	$0, -384(%ebp)
+	je	L83
 	jmp	L132
-L133:
-	movl	-384(%ebp), %eax
+L74:
+	movl	$0, -400(%ebp)
+	jmp	L138
+L139:
+	movl	-400(%ebp), %eax
 	andl	$7, %eax
 	testl	%eax, %eax
-	jne	L134
-	movl	-384(%ebp), %eax
+	jne	L140
+	movl	-400(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC28-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-L134:
-	movl	-384(%ebp), %edx
-	leal	_base-"L00000000003$pb"(%ebx), %eax
-	movl	(%eax,%edx,4), %eax
-	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-	incl	-384(%ebp)
-L132:
-	cmpl	$71, -384(%ebp)
-	jle	L133
-	leal	LC29-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-	movl	$96, -384(%ebp)
-	jmp	L137
-L138:
-	movl	-384(%ebp), %edx
-	leal	_base-"L00000000003$pb"(%ebx), %eax
-	movl	(%eax,%edx,4), %eax
-	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-	incl	-384(%ebp)
-L137:
-	cmpl	$103, -384(%ebp)
-	jle	L138
 	leal	LC30-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	movl	$124, -384(%ebp)
-	jmp	L140
-L141:
-	movl	-384(%ebp), %eax
-	andl	$7, %eax
-	testl	%eax, %eax
-	jne	L142
-	movl	-384(%ebp), %eax
-	movl	%eax, 4(%esp)
-	leal	LC28-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-L142:
-	movl	-384(%ebp), %edx
+L140:
+	movl	-400(%ebp), %edx
 	leal	_base-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax,%edx,4), %eax
 	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000003$pb"(%ebx), %eax
+	leal	LC29-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	incl	-384(%ebp)
-L140:
-	cmpl	$191, -384(%ebp)
-	jle	L141
+	incl	-400(%ebp)
+L138:
+	cmpl	$71, -400(%ebp)
+	jle	L139
+	leal	LC31-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	movl	$96, -400(%ebp)
+	jmp	L143
+L144:
+	movl	-400(%ebp), %edx
+	leal	_base-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax,%edx,4), %eax
+	movl	%eax, 4(%esp)
+	leal	LC29-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	incl	-400(%ebp)
+L143:
+	cmpl	$103, -400(%ebp)
+	jle	L144
+	leal	LC32-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	movl	$124, -400(%ebp)
+	jmp	L146
+L147:
+	movl	-400(%ebp), %eax
+	andl	$7, %eax
+	testl	%eax, %eax
+	jne	L148
+	movl	-400(%ebp), %eax
+	movl	%eax, 4(%esp)
+	leal	LC30-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+L148:
+	movl	-400(%ebp), %edx
+	leal	_base-"L00000000003$pb"(%ebx), %eax
+	movl	(%eax,%edx,4), %eax
+	movl	%eax, 4(%esp)
+	leal	LC29-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	incl	-400(%ebp)
+L146:
+	cmpl	$191, -400(%ebp)
+	jle	L147
 	movl	$10, (%esp)
 	call	_putchar
-	jmp	L79
-L77:
-	movl	-428(%ebp), %eax
+	jmp	L83
+L81:
+	movl	-444(%ebp), %eax
 	incl	%eax
 	leal	_start_time-"L00000000003$pb"(%ebx), %edx
 	movl	%edx, 8(%esp)
-	leal	LC31-"L00000000003$pb"(%ebx), %edx
+	leal	LC33-"L00000000003$pb"(%ebx), %edx
 	movl	%edx, 4(%esp)
 	movl	%eax, (%esp)
 	call	_sscanf
-	jmp	L79
-L74:
-	movl	-428(%ebp), %edx
+	jmp	L83
+L78:
+	movl	-444(%ebp), %edx
 	incl	%edx
-	leal	-372(%ebp), %eax
+	leal	-388(%ebp), %eax
 	movl	%eax, 8(%esp)
-	leal	LC32-"L00000000003$pb"(%ebx), %eax
+	leal	LC34-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, 4(%esp)
 	movl	%edx, (%esp)
 	call	_sscanf
-	movl	%eax, -384(%ebp)
-	cmpl	$1, -384(%ebp)
-	jne	L79
-	leal	-372(%ebp), %eax
+	movl	%eax, -400(%ebp)
+	cmpl	$1, -400(%ebp)
+	jne	L83
+	leal	-388(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_load_fs
-	jmp	L79
-L73:
-	leal	LC33-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_puts
-	leal	LC34-"L00000000003$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_puts
+	jmp	L83
+L77:
 	leal	LC35-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_puts
@@ -1641,9 +1701,15 @@ L73:
 	leal	LC45-"L00000000003$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_puts
-	jmp	L79
-L68:
-	movl	$0, -412(%ebp)
+	leal	LC46-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_puts
+	leal	LC47-"L00000000003$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_puts
+	jmp	L83
+L72:
+	movl	$0, -428(%ebp)
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -1652,9 +1718,9 @@ L68:
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%edx, (%eax)
-	jmp	L79
-L66:
-	movl	$0, -412(%ebp)
+	jmp	L83
+L70:
+	movl	$0, -428(%ebp)
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax), %eax
@@ -1663,9 +1729,9 @@ L66:
 	leal	L_indication$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%edx, (%eax)
-L79:
-	cmpl	$0, -412(%ebp)
-	je	L148
+L83:
+	cmpl	$0, -428(%ebp)
+	je	L154
 	movl	$62, (%esp)
 	call	_putchar
 	leal	L___stdoutp$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
@@ -1673,39 +1739,41 @@ L79:
 	movl	(%eax), %eax
 	movl	%eax, (%esp)
 	call	_fflush
-L148:
+L154:
 	leal	L___stack_chk_guard$non_lazy_ptr-"L00000000003$pb"(%ebx), %eax
 	movl	(%eax), %eax
-	movl	-12(%ebp), %edx
+	movl	-28(%ebp), %edx
 	xorl	(%eax), %edx
-	je	L149
+	je	L155
 	call	___stack_chk_fail
-L149:
-	addl	$452, %esp
+L155:
+	addl	$492, %esp
 	popl	%ebx
+	popl	%esi
+	popl	%edi
 	leave
 	ret
 	.cstring
 	.align 2
-LC46:
+LC48:
 	.ascii "file system image %s error %d\12\0"
-LC47:
+LC49:
 	.ascii "loading file system image %s\12\0"
 	.align 2
-LC48:
-	.ascii "volume header read unsuccessful\0"
-LC49:
-	.ascii "[%2.2x%2.2x%2.2x]\12\0"
 LC50:
-	.ascii "\12%4.4x: \0"
+	.ascii "volume header read unsuccessful\0"
 LC51:
-	.ascii "%2.2x\0"
+	.ascii "[%2.2x%2.2x%2.2x]\12\0"
 LC52:
+	.ascii "\12%4.4x: \0"
+LC53:
+	.ascii "%2.2x\0"
+LC54:
 	.ascii "%.*s %d storage banks\12\0"
 	.align 2
-LC53:
+LC55:
 	.ascii "%d unable to cache file system\12\0"
-LC54:
+LC56:
 	.ascii "%d granules loaded\12\0"
 	.text
 _load_fs:
@@ -1713,9 +1781,9 @@ _load_fs:
 	movl	%esp, %ebp
 	pushl	%ebx
 	subl	$3124, %esp
-	call	L181
+	call	L187
 "L00000000004$pb":
-L181:
+L187:
 	popl	%ebx
 	movl	$0, -20(%ebp)
 	leal	_devices-"L00000000004$pb"(%ebx), %eax
@@ -1728,20 +1796,20 @@ L181:
 	call	_open$UNIX2003
 	movl	%eax, -28(%ebp)
 	cmpl	$0, -28(%ebp)
-	jns	L152
+	jns	L158
 	call	___error
 	movl	(%eax), %eax
 	movl	%eax, 8(%esp)
 	movl	8(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC46-"L00000000004$pb"(%ebx), %eax
+	leal	LC48-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	jmp	L180
-L152:
+	jmp	L186
+L158:
 	movl	8(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC47-"L00000000004$pb"(%ebx), %eax
+	leal	LC49-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	movl	$3072, 8(%esp)
@@ -1752,17 +1820,17 @@ L152:
 	call	_read
 	movl	%eax, -12(%ebp)
 	cmpl	$3072, -12(%ebp)
-	je	L155
-	leal	LC48-"L00000000004$pb"(%ebx), %eax
+	je	L161
+	leal	LC50-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_puts
-	jmp	L180
-L155:
+	jmp	L186
+L161:
 	leal	L_flag$non_lazy_ptr-"L00000000004$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	21(%eax), %eax
 	testb	%al, %al
-	je	L157
+	je	L163
 	movzbl	-3053(%ebp), %eax
 	movzbl	%al, %edx
 	movzbl	-3054(%ebp), %eax
@@ -1772,50 +1840,50 @@ L155:
 	movl	%edx, 12(%esp)
 	movl	%ecx, 8(%esp)
 	movl	%eax, 4(%esp)
-	leal	LC49-"L00000000004$pb"(%ebx), %eax
+	leal	LC51-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L157:
+L163:
 	movzbl	-3055(%ebp), %eax
 	cmpb	$86, %al
-	je	L159
+	je	L165
 	leal	L_flag$non_lazy_ptr-"L00000000004$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	21(%eax), %eax
 	testb	%al, %al
-	je	L180
+	je	L186
 	movl	$0, -20(%ebp)
 	leal	-3100(%ebp), %eax
 	movl	%eax, -24(%ebp)
-	jmp	L163
-L164:
+	jmp	L169
+L170:
 	movl	-20(%ebp), %eax
 	andl	$15, %eax
 	testl	%eax, %eax
-	jne	L165
+	jne	L171
 	movl	-20(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC50-"L00000000004$pb"(%ebx), %eax
+	leal	LC52-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L165:
+L171:
 	movl	-24(%ebp), %eax
 	movzbl	(%eax), %eax
 	movsbl	%al,%eax
 	incl	-24(%ebp)
 	movl	%eax, 4(%esp)
-	leal	LC51-"L00000000004$pb"(%ebx), %eax
+	leal	LC53-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	incl	-20(%ebp)
-L163:
+L169:
 	decl	-12(%ebp)
 	cmpl	$-1, -12(%ebp)
-	jne	L164
+	jne	L170
 	movl	$10, (%esp)
 	call	_putchar
-	jmp	L180
-L159:
+	jmp	L186
+L165:
 	movzbl	-3053(%ebp), %eax
 	movzbl	%al, %edx
 	movl	%edx, %eax
@@ -1836,32 +1904,32 @@ L159:
 	movl	%eax, 8(%esp)
 	movl	-12(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC52-"L00000000004$pb"(%ebx), %eax
+	leal	LC54-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	cmpl	$0, -16(%ebp)
-	je	L180
+	je	L186
 	cmpl	$0, -24(%ebp)
-	je	L169
+	je	L175
 	movl	-24(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_free
-L169:
+L175:
 	movl	-16(%ebp), %eax
 	movl	$786432, 4(%esp)
 	movl	%eax, (%esp)
 	call	_calloc
 	movl	%eax, -24(%ebp)
 	cmpl	$0, -24(%ebp)
-	jne	L171
+	jne	L177
 	call	___error
 	movl	(%eax), %eax
 	movl	%eax, 4(%esp)
-	leal	LC53-"L00000000004$pb"(%ebx), %eax
+	leal	LC55-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	jmp	L180
-L171:
+	jmp	L186
+L177:
 	movl	-24(%ebp), %edx
 	leal	_devices-"L00000000004$pb"(%ebx), %eax
 	movl	%edx, 12(%eax)
@@ -1871,7 +1939,7 @@ L171:
 	movl	%edx, 516(%eax)
 	movl	$-1, %eax
 	cmpl	$-1, %eax
-	je	L173
+	je	L179
 	movl	$-1, %eax
 	movl	%eax, 12(%esp)
 	movl	$3072, 8(%esp)
@@ -1880,18 +1948,18 @@ L171:
 	movl	-24(%ebp), %eax
 	movl	%eax, (%esp)
 	call	___memcpy_chk
-	jmp	L175
-L173:
+	jmp	L181
+L179:
 	movl	$3072, 8(%esp)
 	leal	-3100(%ebp), %eax
 	movl	%eax, 4(%esp)
 	movl	-24(%ebp), %eax
 	movl	%eax, (%esp)
 	call	___inline_memcpy_chk
-L175:
+L181:
 	addl	$3072, -24(%ebp)
 	movl	$16, -20(%ebp)
-L176:
+L182:
 	movl	$192, 8(%esp)
 	movl	-24(%ebp), %eax
 	movl	%eax, 4(%esp)
@@ -1900,22 +1968,22 @@ L176:
 	call	_read
 	movl	%eax, -12(%ebp)
 	cmpl	$0, -12(%ebp)
-	js	L177
+	js	L183
 	cmpl	$0, -12(%ebp)
-	je	L177
+	je	L183
 	incl	-20(%ebp)
 	addl	$192, -24(%ebp)
-	jmp	L176
-L177:
+	jmp	L182
+L183:
 	movl	-28(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_close
 	movl	-20(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC54-"L00000000004$pb"(%ebx), %eax
+	leal	LC56-"L00000000004$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L180:
+L186:
 	addl	$3124, %esp
 	popl	%ebx
 	leave
@@ -1936,13 +2004,13 @@ ___inline_memcpy_chk:
 	leave
 	ret
 	.cstring
-LC55:
-	.ascii "[RP %p]\0"
-LC56:
-	.ascii "%6.6x %8.8x\12\0"
 LC57:
-	.ascii "[%6.6x]->\0"
+	.ascii "[RP %p]\0"
 LC58:
+	.ascii "%6.6x %8.8x\12\0"
+LC59:
+	.ascii "[%6.6x]->\0"
+LC60:
 	.ascii "\12   \0"
 	.text
 _statement:
@@ -1950,9 +2018,9 @@ _statement:
 	movl	%esp, %ebp
 	pushl	%ebx
 	subl	$36, %esp
-	call	L203
+	call	L209
 "L00000000005$pb":
-L203:
+L209:
 	popl	%ebx
 	leal	_iselect-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
@@ -1972,14 +2040,14 @@ L203:
 	movl	(%eax), %eax
 	movzbl	4(%eax), %eax
 	testb	%al, %al
-	je	L185
+	je	L191
 	leal	_register_set-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, 4(%esp)
-	leal	LC55-"L00000000005$pb"(%ebx), %eax
+	leal	LC57-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L185:
+L191:
 	leal	_apc-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, %edx
@@ -1994,7 +2062,7 @@ L185:
 	movl	(%eax), %eax
 	movl	%edx, 8(%esp)
 	movl	%eax, 4(%esp)
-	leal	LC56-"L00000000005$pb"(%ebx), %eax
+	leal	LC58-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	leal	L_flag$non_lazy_ptr-"L00000000005$pb"(%ebx), %eax
@@ -2007,20 +2075,20 @@ L185:
 	movl	$6, 4(%esp)
 	movl	%eax, (%esp)
 	call	_instruction_display
-	jmp	L187
-L188:
+	jmp	L193
+L194:
 	movl	-12(%ebp), %eax
 	movl	%eax, (%esp)
 	call	_print_register_row
 	movl	$10, (%esp)
 	call	_putchar
 	addl	$8, -12(%ebp)
-L187:
+L193:
 	leal	_iselect-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	orl	$24, %eax
 	cmpl	-12(%ebp), %eax
-	jg	L188
+	jg	L194
 	leal	_iselect-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, %edx
@@ -2031,72 +2099,72 @@ L187:
 	movl	%eax, -12(%ebp)
 	movl	-12(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC57-"L00000000005$pb"(%ebx), %eax
+	leal	LC59-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	movl	$7, -16(%ebp)
-	jmp	L190
-L191:
+	jmp	L196
+L197:
 	cmpl	$255, -12(%ebp)
-	jg	L192
+	jg	L198
 	movl	-12(%ebp), %edx
 	leal	L__register$non_lazy_ptr-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax,%edx,4), %eax
 	incl	-12(%ebp)
 	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000005$pb"(%ebx), %eax
+	leal	LC29-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L190:
-	decl	-16(%ebp)
-	cmpl	$-1, -16(%ebp)
-	jne	L191
-L192:
-	leal	LC58-"L00000000005$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-	movl	$8, -16(%ebp)
-	jmp	L194
-L195:
-	cmpl	$255, -12(%ebp)
-	jg	L196
-	movl	-12(%ebp), %edx
-	leal	L__register$non_lazy_ptr-"L00000000005$pb"(%ebx), %eax
-	movl	(%eax), %eax
-	movl	(%eax,%edx,4), %eax
-	incl	-12(%ebp)
-	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000005$pb"(%ebx), %eax
-	movl	%eax, (%esp)
-	call	_printf
-L194:
-	decl	-16(%ebp)
-	cmpl	$-1, -16(%ebp)
-	jne	L195
 L196:
-	leal	LC58-"L00000000005$pb"(%ebx), %eax
+	decl	-16(%ebp)
+	cmpl	$-1, -16(%ebp)
+	jne	L197
+L198:
+	leal	LC60-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
 	movl	$8, -16(%ebp)
-	jmp	L198
-L199:
+	jmp	L200
+L201:
 	cmpl	$255, -12(%ebp)
-	jg	L200
+	jg	L202
 	movl	-12(%ebp), %edx
 	leal	L__register$non_lazy_ptr-"L00000000005$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax,%edx,4), %eax
 	incl	-12(%ebp)
 	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000005$pb"(%ebx), %eax
+	leal	LC29-"L00000000005$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L198:
+L200:
 	decl	-16(%ebp)
 	cmpl	$-1, -16(%ebp)
-	jne	L199
-L200:
+	jne	L201
+L202:
+	leal	LC60-"L00000000005$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+	movl	$8, -16(%ebp)
+	jmp	L204
+L205:
+	cmpl	$255, -12(%ebp)
+	jg	L206
+	movl	-12(%ebp), %edx
+	leal	L__register$non_lazy_ptr-"L00000000005$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax,%edx,4), %eax
+	incl	-12(%ebp)
+	movl	%eax, 4(%esp)
+	leal	LC29-"L00000000005$pb"(%ebx), %eax
+	movl	%eax, (%esp)
+	call	_printf
+L204:
+	decl	-16(%ebp)
+	cmpl	$-1, -16(%ebp)
+	jne	L205
+L206:
 	movl	$10, (%esp)
 	call	_putchar
 	addl	$36, %esp
@@ -2121,9 +2189,9 @@ _msw2i:
 	leave
 	ret
 	.cstring
-LC59:
+LC61:
 	.ascii "[%p]\0"
-LC60:
+LC62:
 	.ascii "%2.2x:\0"
 	.text
 _print_register_row:
@@ -2131,46 +2199,46 @@ _print_register_row:
 	movl	%esp, %ebp
 	pushl	%ebx
 	subl	$36, %esp
-	call	L214
+	call	L220
 "L00000000006$pb":
-L214:
+L220:
 	popl	%ebx
 	movl	$8, -12(%ebp)
 	leal	L_flag$non_lazy_ptr-"L00000000006$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movzbl	4(%eax), %eax
 	testb	%al, %al
-	je	L207
+	je	L213
 	leal	L__register$non_lazy_ptr-"L00000000006$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	%eax, 4(%esp)
-	leal	LC59-"L00000000006$pb"(%ebx), %eax
+	leal	LC61-"L00000000006$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L207:
+L213:
 	movl	8(%ebp), %eax
 	movl	%eax, 4(%esp)
-	leal	LC60-"L00000000006$pb"(%ebx), %eax
+	leal	LC62-"L00000000006$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-	jmp	L209
-L210:
+	jmp	L215
+L216:
 	movl	8(%ebp), %edx
 	leal	L__register$non_lazy_ptr-"L00000000006$pb"(%ebx), %eax
 	movl	(%eax), %eax
 	movl	(%eax,%edx,4), %eax
 	incl	8(%ebp)
 	movl	%eax, 4(%esp)
-	leal	LC27-"L00000000006$pb"(%ebx), %eax
+	leal	LC29-"L00000000006$pb"(%ebx), %eax
 	movl	%eax, (%esp)
 	call	_printf
-L209:
+L215:
 	decl	-12(%ebp)
 	cmpl	$-1, -12(%ebp)
-	je	L213
+	je	L219
 	cmpl	$279, 8(%ebp)
-	jle	L210
-L213:
+	jle	L216
+L219:
 	addl	$36, %esp
 	popl	%ebx
 	leave
@@ -2183,16 +2251,142 @@ _memory_read:
 	subl	$16, %esp
 	# top of block
 	.file "tipt.c"
-	.line 810
+	.line 879
 	movl 8(%ebp), %eax
 	.file "tipt.c"
-	.line 811
+	.line 880
+	pushl %ecx
+	.file "tipt.c"
+	.line 881
+	movl $0, %ecx
+	.file "tipt.c"
+	.line 882
 	call _bus_read
 	.file "tipt.c"
-	.line 812
+	.line 883
+	popl %ecx
+	.file "tipt.c"
+	.line 884
+	bswapl %eax
+	.file "tipt.c"
+	.line 885
 	movl %eax, -12(%ebp)
 	movl	-12(%ebp), %eax
 	addl	$16, %esp
+	popl	%esi
+	popl	%edi
+	leave
+	ret
+_device_array_read:
+	pushl	%ebp
+	movl	%esp, %ebp
+	pushl	%edi
+	pushl	%esi
+	subl	$16, %esp
+	movl	8(%ebp), %eax
+	movl	%eax, -16(%ebp)
+	movl	12(%ebp), %eax
+	movl	%eax, -20(%ebp)
+	# top of block
+	.file "tipt.c"
+	.line 906
+	pushl %ecx
+	.file "tipt.c"
+	.line 907
+	movl %esi, %ecx
+	.file "tipt.c"
+	.line 908
+	pushl %ecx
+	.file "tipt.c"
+	.line 909
+	xorl %ecx, %ecx
+	.file "tipt.c"
+	.line 910
+	movl -16(%ebp), %eax
+	.file "tipt.c"
+	.line 911
+	movl -20(%ebp), %esi
+	.file "tipt.c"
+	.line 912
+	call _device_read
+	.file "tipt.c"
+	.line 913
+	popl %ecx
+	.file "tipt.c"
+	.line 914
+	movl %ecx, %esi
+	.file "tipt.c"
+	.line 915
+	popl %ecx
+	.file "tipt.c"
+	.line 916
+	movl %eax, -12(%ebp)
+	movl	-12(%ebp), %eax
+	addl	$16, %esp
+	popl	%esi
+	popl	%edi
+	leave
+	ret
+_accumulate_metric:
+	pushl	%ebp
+	movl	%esp, %ebp
+	pushl	%edi
+	pushl	%esi
+	pushl	%ebx
+	subl	$12, %esp
+	call	L227
+"L00000000007$pb":
+L227:
+	popl	%ebx
+	leal	_u-"L00000000007$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	movl	%eax, %ecx
+	leal	_delta_base-"L00000000007$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	movl	%ecx, %edx
+	subl	%eax, %edx
+	leal	L_delta$non_lazy_ptr-"L00000000007$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	%edx, (%eax)
+	leal	_u-"L00000000007$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	leal	_delta_base-"L00000000007$pb"(%ebx), %ecx
+	movl	%eax, (%ecx)
+	movl	%edx, 4(%ecx)
+	leal	L_metric$non_lazy_ptr-"L00000000007$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax), %eax
+	movl	%eax, %esi
+	movl	$0, %edi
+	leal	_total_metric-"L00000000007$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	addl	%esi, %eax
+	adcl	%edi, %edx
+	leal	_total_metric-"L00000000007$pb"(%ebx), %ecx
+	movl	%eax, (%ecx)
+	movl	%edx, 4(%ecx)
+	leal	L_metric$non_lazy_ptr-"L00000000007$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	$0, (%eax)
+	leal	L_delta$non_lazy_ptr-"L00000000007$pb"(%ebx), %eax
+	movl	(%eax), %eax
+	movl	(%eax), %eax
+	movl	%eax, %esi
+	movl	$0, %edi
+	leal	_total_delta-"L00000000007$pb"(%ebx), %eax
+	movl	4(%eax), %edx
+	movl	(%eax), %eax
+	addl	%esi, %eax
+	adcl	%edi, %edx
+	leal	_total_delta-"L00000000007$pb"(%ebx), %ecx
+	movl	%eax, (%ecx)
+	movl	%edx, 4(%ecx)
+	addl	$12, %esp
+	popl	%ebx
 	popl	%esi
 	popl	%edi
 	leave
@@ -2201,10 +2395,15 @@ _memory_read:
 .lcomm _start_time,8,3
 .lcomm _u,8,3
 .lcomm _time1,8,2
+.lcomm _delta_base,8,3
+.lcomm _total_delta,8,3
+.lcomm _total_metric,8,3
 .comm _indication,4,2
 .comm _memory,2097152,5
 .comm _b0_name,4,2
 .comm __register,1120,5
+.comm _delta,4,2
+.comm _metric,4,2
 	.section __IMPORT,__pointers,non_lazy_symbol_pointers
 L___stdoutp$non_lazy_ptr:
 	.indirect_symbol ___stdoutp
@@ -2226,6 +2425,12 @@ L_indication$non_lazy_ptr:
 	.long	0
 L_flag$non_lazy_ptr:
 	.indirect_symbol _flag
+	.long	0
+L_metric$non_lazy_ptr:
+	.indirect_symbol _metric
+	.long	0
+L_delta$non_lazy_ptr:
+	.indirect_symbol _delta
 	.long	0
 L_argument$non_lazy_ptr:
 	.indirect_symbol _argument

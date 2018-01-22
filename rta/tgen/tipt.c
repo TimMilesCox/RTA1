@@ -109,6 +109,17 @@ static void		 load_fs(char *path);
 static int		 msw2i(msw w);
 static void		 print_register_row(int index);
 
+#ifdef METRIC
+unsigned int		 delta,
+			 metric;
+
+static unsigned long long	 delta_base,
+				 total_delta,
+				 total_metric;
+
+static void		 accumulate_metric();
+#endif
+
 int main(int argc, char *argv[])
 {
    int			 _x;
@@ -224,7 +235,7 @@ int main(int argc, char *argv[])
          #if 0
          /************************************************
             this is examined properly in function action()
-            and somtimes poll() produces an unimportant event 
+            sometimes poll() produces an unimportant event 
          ************************************************/
          flag['s'-'a'] = 1;
          #endif
@@ -267,6 +278,10 @@ int main(int argc, char *argv[])
 
 void *emulate()	/* thread start */
 {
+   #ifdef METRIC
+   struct timeval	time2;
+   #endif
+
    printf("emulation start\n");
 
    for (;;)
@@ -275,6 +290,12 @@ void *emulate()	/* thread start */
       if (flag['e'-'a']) printf("[%x %p %x %p %x]\n",
                                  indication, register_set, psr, apc,
                                  apc - memory.array);
+
+      #ifdef METRIC
+      gettimeofday(&time2, NULL);
+      delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+      #endif
+
       #ifdef X86_MSW
       __masm {
         engage:
@@ -311,6 +332,9 @@ void *emulate()	/* thread start */
       for (;;)
       {
          execute(*apc++);
+         #ifdef METRIC
+         metric++;
+         #endif
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
       #else
@@ -345,6 +369,11 @@ void *emulate()	/* thread start */
 		add	edx, 4
 		bswap	eax
 		call	execute
+
+		#ifdef	METRIC
+		inc	metric
+		#endif
+
 		test	indication, CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT
 		jz	next
 		mov	register_set, ebp
@@ -363,14 +392,12 @@ void *emulate()	/* thread start */
       }
       #endif
 
-      #if 0
-      if (flag['e'-'a'])
-      printf("[0:%8.8x 1:%8.8x 2:%8.8x 3:%8.8x]\n",
-              trace, trace1, trace2, trace3);
-      #endif
-
       if (indication & CHILLDOWN)
       {
+         #ifdef METRIC
+         accumulate_metric();
+         #endif
+
          indication &= -1 ^ CHILLDOWN;
          usleep(base[103]);
       }
@@ -422,6 +449,16 @@ static void action(char request[])
 
    char			 path[360];
 
+
+   #ifdef METRIC
+   if (symbol == 'i')
+   {
+      xx = (int) total_metric / total_delta;
+      printf("instructions %lld usecs %lld approximate MIPS %d\n",
+              total_metric, total_delta, xx);
+      return;
+   }
+   #endif
 
    if (flag['s'-'a'] == 0)
    {
@@ -884,3 +921,18 @@ static int device_array_read(int index, int offset)
 }
 #endif
 
+#ifdef METRIC
+static void accumulate_metric()
+{
+   struct timeval	 time3;
+   unsigned long long	 trailing_edge;
+
+   gettimeofday(&time3, NULL);
+   trailing_edge = time3.tv_sec * 1000000 + time3.tv_usec;
+
+   delta = trailing_edge -  delta_base;
+   total_metric += metric;
+   metric = 0;
+   total_delta += delta;
+}
+#endif
