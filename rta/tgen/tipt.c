@@ -278,11 +278,16 @@ int main(int argc, char *argv[])
 
 void *emulate()	/* thread start */
 {
+   #ifdef METRIC
    struct timeval	 time2;
+   #endif
    
    printf("emulation start\n");
+
+   #ifdef METRIC
    gettimeofday(&time2, NULL);
    delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+   #endif
 
    for (;;)
    {
