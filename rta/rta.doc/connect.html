@@ -139,8 +139,8 @@ For choosing emulated machine memory capacity and constructing variants see
 <a href="#tiptoe">Memory Sizes</a>
 
 <p>
-rta/rta.run/run is a script which executes the emulator binary <b>tiptoe</b>.<br>
-tiptoe loads in turn an RTA1 target system image, identified in this example as
+emulator binary <b>tipt{2|0|1|4|8|32|64}</b> or tipc{...} or tiptoe{...}.<br>
+loads an RTA1 target system image, by default the supplied system image
 <pre>
 
 	rta/target.rta/rta.gen/minimal.rom
@@ -157,12 +157,12 @@ Loadable filestore image rand7 contains web hosting pages and currently takes 1 
 24-bit computer words in filestore images are packed into 3 bytes each of emulator host storage
 
 <p>
-Each 262144-word filestore bank takes 768K bytes of emulator host memory. That is the total amount required for<br>
-filestore image rand7. The addition of more online documentation is expected to reach two filestore banks altogether
+Standard application protocols and a floating pount client program communicate network hosts with
+emulated RTA1 with over real networks. These application protocols include http, snmp, and telnet
 
 <p>
-rta/portal/runL sets the external network environment. A third shell is usually
-opened for network connectivity over the emulator host software loopback interface
+A third shell is opened to run PC programs communicating over platform loopback with emulated RTA1
+and to set and test the routing to make that possible
 <pre>
 
 	cd rta/client
@@ -171,7 +171,7 @@ opened for network connectivity over the emulator host software loopback interfa
 </pre>
 rta/client/prun installs connectivity between the emulator platform and emulated RTA1,
 then sets default addresses which PC client program
- <a href="#fp">fp</a> uses to operate the RTA1 96/192-bit floating point server
+ <a href="#fp">fp</a> uses to operate the <a href="#fp192">RTA1 96/192-bit floating point server</a>
 
 <p>
 There are some <a href="#loopback">special addressing considerations</a> for running
@@ -624,10 +624,12 @@ telnet can also be guided on the command line
 
 </div>
 </pre>
+<a	name="fp"/>
+<h3>Floating Point</h3>
 The floating point interactor <b>client/fp</b> calls the
-floating server on RTA1. <b>fp</b> is commanded with
-argument 2 to come from somewhere different from the
-destination
+floating server on RTA1. <b>fp</b> on emulator platform loopback
+is commanded with argument 2 to come from somewhere different
+from the destination
 <pre>
 
 	fp 172.29.7.7 172.29.7.6
@@ -665,6 +667,24 @@ numbers in ASCII because it can't otherwise represent them
         
 
 </div>
+</pre>
+directory rta/client has a test script and list of checked results for 96-bit floating point
+
+<p>
+Flags -QR resend on timeout and confine printing to result values
+<pre>
+
+rta/client>
+
+	fp -QR < fpscript.txt > 4th.txt
+	diff ../fp_bench.mk/scripted.txt 4th.txt
+
+</pre>
+<a	name="fp192"/>
+<h3>192-bit Floating Point</h3>
+<p>
+fp with option -U calls RTA1 192-bit floating server instead of RTA1 96-bit floating server
+<pre>
 <div	style="color:#FF0000">
 
 	$ fp -U
@@ -676,6 +696,18 @@ numbers in ASCII because it can't otherwise represent them
 
 </div>
 </pre>
+192-bit floating point has a test script and list of checked results in directory rta/client
+<pre>
+
+rta/client>
+
+	fp -QRU < 192.txt > 7th.txt
+	diff provisio.txt 7th.txt
+
+</pre>
+
+<a	name="netsnmp"/>
+<h3>netsnmp</h3>
 netsnmp manager has a configuration file to say where it's
 coming from
 <pre>
@@ -684,7 +716,8 @@ coming from
 	 clientaddr	172.29.7.6
 
 </pre>
-Then you can interact from the emulator host
+Then you can interact from the emulator host, but do not configure clientaddr
+doing netsnmp from a separate host
 <pre>
 <div    style="color:#FF0000">
 
@@ -799,8 +832,43 @@ then enter directory portal and run script <b>./make</B> or for a big-endian tar
 <a	name="buildrta">
 <h3>Building the RTA1 Emulator</h3>
 
-cd to <b>rta.run</b>. That's where you run the emulator.
-The script <b>tipgen</b> constructs the emulator framework
+Choose the emulated machine size in banks of 262144 24-bit words
+<pre>
+
+	export	RTA_MBANKS=0	# factually half a bank or 131072 words
+				# image for testing resiliency on tight resources
+				# half the memory of an 8086 PC of year 1983
+
+				# or
+
+	export	RTA_MBANKS=16	# for example
+
+</pre>
+<h3>High Speed Emulation on x86</h3>
+
+cd to rta/tgen to generate an emulated RTA1 machine running a hard
+loop of emulated instructions<br>except when entering powersave, debug
+or instrumentation. Run Script <b>tgen</b> or <b>tgenc</b>
+
+<pre>
+
+	cd rta/tgen
+
+	tgen			# emulated instructions coded in x86 Assembler
+	tgenc			# emulated insrtuctions coded in gcc
+
+</pre>
+
+This construction is also intended for PowerPC but is not currently
+available in OSX PowerPC platforms.<br>The earlier prototype emulation
+is equally available on OSX PowerPC and Intel
+
+
+<h3>Prototype Emulation on PowerPC and x86</h3>
+
+
+cd to <b>rta.run</b>. 
+Script <b>tipgen</b> constructs the emulator framework
 around the instruction set emulations
 <pre>
 
@@ -816,9 +884,9 @@ The emulator platform is x86 unless you say it is PowerPC
 	./tipgen powerpc
 
 </pre>
-Default path x86 inlines some 80x86 machine code which will not assemble
-and is not needed on a PowerPC platform. The only emulator platforms
-developed so far are OSX PowerPC and OSX x86. Projects are in progress
+Default path x86 inlines some 80x86 machine code which 
+is not needed on a PowerPC platform.<br>The only emulator platforms
+developed so far are OSX PowerPC and OSX x86.<br>Projects are in progress
 for emulator platforms on Linux and Windows 10
 
 
@@ -864,9 +932,8 @@ rta/rta.run>
 
 </pre>
 
-An emulations tipt0 tipc0 tiptoe0 contain only half a bank (131072 24-bit words) is also supplied and runs everything
-in the RTA1 code image <b>minimal.rom</b>, which are the smaragd7 kernel and network stack plus http server,
-snmp v 1 agent, telnet daemon, and floating-point server
+Supplied emulations tipt0 tipc0 tiptoe0 with only half a bank (131072 24-bit words) run
+smaragd7 kernel and network stack plus http server, snmp, telnet daemon, and floating-point server
 
 <p>
 tipt0 /tipc0 /tiptoe0 are run to verify the resiliency of RTA1 target
@@ -889,8 +956,6 @@ rta/tgen>
 </pre>
 The default emulated machine has two banks and emulates an RTA1 with 524288 words of system memory
 
-<p>
-If a larger or smaller emulated machine is required, either copy tiptoe[1|2|8|32|64] to $RTA_BINARY/tiptoe or change which binary is executed in script rta/rta.run/run
 
 </pre>
 <a      name="operate"/>
