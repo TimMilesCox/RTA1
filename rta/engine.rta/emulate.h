@@ -475,10 +475,30 @@ ea &= 0x00FFFFFF;
 
 #define usleep(US)	Sleep(US / 900)
 
+#elif	defined(X86_LLVM)
+
+	/**********************************************
+		these are for any little-endian
+		100% in C
+
+		predict the swap before store
+		unpick the swap after load
+	**********************************************/
+
+ 
+#define STORE(X) (((X & 0xFF) << 24) | ((X & 0xFF00) << 8) | ((X >> 8) & 0xFF00))
+#define LOADL(X) (((X >> 24) & 0xFF) | ((X >> 8) & 0xFF00) | ((X & 0xFF00) << 8))
+#define LOADU(X) (((X >> 16) & 0xFF00) | (X & 0xFF0000) | ((X & 0xFF00) << 16))
+
+#define ORDER32(TO, FROM) TO = STORE(FROM);
+#define LOAD24(TO, FROM)  TO = LOADL(FROM);
+#define L24SL(TO, FROM)   TO = LOADU(FROM);
+
 #else
 
 	/**********************************************
 		these are for any big-endian
+		100% in C
 	**********************************************/
 
 #define ORDER32(TO, FROM) TO = FROM & 0x00FFFFFF;

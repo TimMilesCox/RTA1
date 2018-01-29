@@ -10,6 +10,7 @@
 #else
 #include <poll.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <memory.h>
 #include <sys/fcntl.h>
 #include <sys/time.h>
@@ -87,6 +88,7 @@ device			*pdevice = devices;
 
 #ifdef	GCC
 extern word		 memory_read(int ea);
+extern int		 device_read(int device_index, int relocation_base, int offset);
 #else
 static word		 memory_read(int ea);
 static int device_array_read(int descriptor, int offset);
@@ -99,7 +101,7 @@ extern void              netbank();
 #ifdef	GCC
 extern void		 execute(word instruction);
 #else
-extern void		 execute(int instruction);
+extern void		 leloup();
 #endif
 
 static void		*emulate();
@@ -296,39 +298,7 @@ void *emulate()	/* thread start */
                                  indication, register_set, psr, apc,
                                  apc - memory.array);
 
-      #ifdef X86_MSW
-      __masm {
-        engage:
-		push	eax
-		push	ebx
-		push	ecx
-		push	edx
-		push	ebp
-		push	esi
-		push	edi
-
-                mov     ebp, dword ptr [register_set]
-                mov     edx, dword ptr [apc]
-
-        next:   mov     eax, dword ptr [edx]
-                add     edx, 4
-                bswap   eax
-                call    execute
-                test    word ptr [indication], CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT
-                jz      next
-
-		mov	dword ptr [apc], edx
-		mov	dword ptr [register_set], ebp
-
-		pop	edi
-		pop	esi
-		pop	ebp
-		pop	edx
-		pop	ecx
-		pop	ebx
-		pop	eax
-      }
-      #elif	defined	GCC
+      #ifdef GCC
       for (;;)
       {
          execute(*apc++);
@@ -339,56 +309,8 @@ void *emulate()	/* thread start */
       }
       #else
       __asm__
-      { 
-	engage:
-;		OSX PIC
-;		reference no extern variables in asm block
-;		compiler injects instructions which use an index register
-;		it was ebx but could change any compiler release
-;		if things go wrong gcc -S tipt.c
-
-		push	ebp
-		mov	ebp, esi
-		push	ebp
-
-;		compiler does not allow pop esi
-;		so don't push it
-
-		push	edi
-		push	edx
-		push	ecx
-		push	ebx
-		push	eax
-
-;		compiler does not allow pop esi
-;		so don't push it
-
-		mov	ebp, register_set
-		mov	edx, apc
-	next:	mov	eax, [edx]
-		add	edx, 4
-		bswap	eax
-		call	execute
-
-		#ifdef	METRIC
-		inc	metric
-		#endif
-
-		test	indication, CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT
-		jz	next
-		mov	register_set, ebp
-		mov	apc, edx
-
-		pop	eax
-		pop	ebx
-		pop	ecx
-		pop	edx
-		pop	edi
-
-;		compiler does not allow pop esi
-		pop	ebp
-		mov	esi, ebp
-		pop	ebp
+      {
+		call	leloup 
       }
       #endif
 

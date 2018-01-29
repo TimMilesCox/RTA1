@@ -63,6 +63,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <memory.h>
 #include <sys/fcntl.h>
 #include <signal.h>
@@ -256,6 +257,7 @@ int main(int argc, char *argv[])
    int			 imask;
    #endif
 
+   int			 _x;
    int			 time_pointer;
 
    char			 command[84];
@@ -367,7 +369,6 @@ int main(int argc, char *argv[])
    if (arguments > 1) load_fs(argument[1]);
 
    #ifdef SIGALERT
-
    /**********************************************************
 
 	if you turn SIGALERT on
@@ -389,20 +390,20 @@ int main(int argc, char *argv[])
 
    #ifdef X86_MSW
 
-   x = _beginthread(async, 0, NULL);
-   if (x < 0) printf("async thread start %d %d\n", x, errno);
-   else       printf("async thread ID %x\n", x);
+   _x = _beginthread(async, 0, NULL);
+   if (_x < 0) printf("async thread start %d %d\n", _x, errno);
+   else        printf("async thread ID %x\n", _x);
 
    #else
 
-   x = pthread_attr_init(&asyncb);
+   _x = pthread_attr_init(&asyncb);
 
-   if (x < 0) printf("threadcbinit %d e %d\n", x, errno);
+   if (_x < 0) printf("threadcbinit %d e %d\n", _x, errno);
    else
    {
-      x = pthread_create(&asyncid, &asyncb, &async, NULL);
-      if (x < 0) printf("async thread start %d %d\n", x, errno);
-      else       printf("async thread ID %p\n", asyncid);
+      _x = pthread_create(&asyncid, &asyncb, &async, NULL);
+      if (_x < 0) printf("async thread start %d %d\n", _x, errno);
+      else        printf("async thread ID %p\n", asyncid);
    }
 
    #endif
