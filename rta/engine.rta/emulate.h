@@ -422,12 +422,13 @@ ea &= 0x00FFFFFF;
 #ifdef	X86
 
 	/************************************************
+		inline X86 instructions in GCC
+
 		not for all little-endian platforms !
 		these will work for 80486+ and compatible
 
 		copies between different endian
 
-		avoiding extra register copies of __builtins
 		specific to gcc, embedded assembly will need
 		different macros for other compilers
 	************************************************/
@@ -469,13 +470,17 @@ ea &= 0x00FFFFFF;
 
 #elif	defined(X86_MSW)
 
+	/*********************************************
+		specific to Microsoft CL compiler
+	*********************************************/
+
 #define	ORDER32(TO, FROM)	TO = _byteswap_ulong(FROM & 0x00FFFFFF)
 #define	LOAD24(TO, FROM)	TO = _byteswap_ulong(FROM) & 0x00FFFFFF
 #define	L24SL(TO, FROM)		TO = _byteswap_ulong(FROM) << 8
 
 #define usleep(US)	Sleep(US / 900)
 
-#elif	defined(X86_LLVM)
+#elif	defined(LLVM_LE)
 
 	/**********************************************
 		these are for any little-endian
