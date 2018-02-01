@@ -421,6 +421,12 @@ ea &= 0x00FFFFFF;
 
 #ifdef	X86
 
+#if	defined(__llvm__) || defined(__clang__)
+	#error inline assembly not current for LLVM / clang
+	#error do './tgenc' or './tgenc intel -DMETRIC'
+	#error not 'tgenc x86'
+#endif
+
 	/************************************************
 		inline X86 instructions in GCC
 
