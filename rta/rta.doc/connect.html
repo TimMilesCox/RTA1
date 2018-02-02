@@ -13,6 +13,10 @@ The RTA1 Architecture is freeware licensed with the GNU General Public Licence V
 The same licence encompasses all accompanying software and documentation <br>
 The full licence text is included with these materials<br>
 See also the licensing notice at the foot of this document
+<br>
+<br>
+This acronym MIPS in this document means millions of instructions per second
+
 </i>
 
 </center>
@@ -49,6 +53,7 @@ See also the licensing notice at the foot of this document
                 <li><a href="#targetc">Target Code Compiler to front Existing Macro Assembly</a></li>
                 <li><a href="#large">A Large Model via Soft Core</a></li>
                 <li><a href="#morems">More Emulations</a></li>
+                <li><a href="#metric">Emulated MIPS Performance Metric</a></li>
 	</ol>
 	<li><a href="#ipfw">Appendix B: netifx Datagram Divert Service</a></li>
 	<ol>
@@ -298,7 +303,7 @@ The earlier datagram divert service <b>netifx</b> is implemented entirely via <b
 <p>
 Materials for running IPFW Divert are still delivered in directory
 <b>rta/netifx</b> and run on Mac PowerPC and x86 up to Snow Leopard,<br>
-see <a href="#ipfw">Appendix A</a>. However BPF-based <b>portal</b> also
+see <a href="#ipfw">Appendix B</a>. However BPF-based <b>portal</b> also
 runs on these slightly venerable Apple platforms, and additionally is specific<br>
 for new Apple platforms and intended for other platforms including Linux
 
@@ -864,8 +869,13 @@ or instrumentation. Run Script <b>tgen</b> or <b>tgenc</b>
 
 	cd rta/tgen
 
-	tgen			# emulated instructions coded in x86 Assembler
-	tgenc			# emulated insrtuctions coded in gcc
+	./tgen			# emulated instructions coded in x86 Assembler
+	./tgenc			# emulated instructions coded in gcc for any little-endian platform
+	./tgenc x86		# emulated instructions in gcc with x86 inlines for accelerated operand access
+	./tgenc x86 -DMETRIC	# with MIPS performance metric
+	./tgenc any -DMETRIC	# all-gcc, no inline assembler, any little-endian platform
+
+	./tgen x86 -DMETRIC	# instruction emulations in x86 Assembler, with MIPS performance metric
 
 </pre>
 
@@ -1309,23 +1319,55 @@ connected with a dislike of static links at Apple Computer. There is an enthusia
 Anything written all in c with no inline assembler and no called assembler either can build with<br>
 LLVM and clang. However old tools build a quicker emulator as long as they remain available on<br>
 some build platform. Instrumentation shows a third more emulated MIPS for builds on Snow Leopard<br>
-executing on High Sierra than for High Sierra builds on High Sierra
+executing on High Sierra than for High Sierra builds running on High Sierra
 
 <p>
-Instrumentation is optional and built in with a second build script parameter
+There is some possibility that the MIPS performance metric is distorted in PC emulations, because
+elapsed time other than emulated powersave is measured. The instruction execution thread may be timesliced
+when it is supposedly active.
+
+
+<a	name="metric"/>
+<h3>Emulated MIPS Performance Metric</h4>
+
+The acronym MIPS means millions of emulated instructions per second
+
+<p>
+Instrumentation is optional. Of the 21 emulator images shipped for OSX Intel, three are built with instrumentation
+<ul>
+
+	<li>tipt0 is constructed with x86 assembler-written hard-loop execution thread</li>
+	<li>tipc0 is all gcc with no assembler inlines</li>
+	<li>tipc1 is gcc with assembler inlines to accelerate operand access</li>
+
+</ul>
+The digit at the end of the binary name is the number of executable space banks the image has.<br>
+A bank is 262144 RTA1 words. No banks means half a bank. Scripts tgen/r and tgen/rc run tiptX or tipcX<br>
+according to the value of $RTA_MBANKS. Shipped emulators have [ 0 | 1 | 2 | 4 | 8 | 32 | 64 ] banks
+
+<p>
+To run for example tipc1
 
 <pre>
 
-	export	RTA_MBANKS=4	# pick a memory size for the emulated machine
-	./tgenc	le -DMETRIC	# le means nothing to the script. It just isn't powerpc or x86
-				# so the default is taken: all-gcc build, no inline asm, little endian
-				# you just can't have a 2nd argument without a 1st one
+	export	RTA_MBANKS=1	# this selects tipt1 or tipc1 or tiptoe1 depending what script you run
 	./rc			# script rc: tipc$RTA_MBANKS must be started without -s flag
 				# and single-step command s must not be entered
 				# waiting for keyboard distorts the MIPs metric millions downward 
 	i			# key i and return for MIPS metric on the fly
 
 </pre>
+
+$RTA_MBANKS also sets the executable space size for <a href="#buildrta">emulator builds</a>
+<pre>
+	tgenc	any_little_endian -DMETRIC
+</pre>
+METRIC build constructs an instrumented binary for any size you set. But executable space does not effect MIP rate at all,<br>
+and anything built on High Sierra/LLVM/clang instruments itself as slower than the shipped emulators. This shows<br>
+the importance of sourcing an independent fast-code-generating ANSI-c multi-architecture compiler for
+OSX and Linux:<br>especially for Linux, because Linux SBCs are the projected host for for a value-added market product
+
+<p>
 OSX PowerPC runs an earlier emulator
 <pre>
 
@@ -1335,7 +1377,6 @@ OSX PowerPC runs an earlier emulator
 					# rand7 is a file system image containing these web pages
 
 </pre>
-OSX Intel platforms also run tiptoe, but tiptoe is less instrumented than tipt and tipc
 
 <p>
 Next emulation should be Linux if anyone likes to play IPTables to get the firewall rules right<br>
@@ -1348,7 +1389,7 @@ Emulator build on Linux aso needs a better compiler than gcc
 A Windows 10 compilation of the emulator runs, but there is no satisfactory way of filtering<br>
 network traffic into RTA1's shared buffer. Win10Pcap isn't sufficiently documented to use, and<br>
 does not support LoopBack interface. It would be good to obtain a fix removing all restrictions<br>
-from IP Raw Socket Protocol
+from IP Raw Socket Protocol. Very few problems are encountered programming with Visual Studio CL command prompt
 
 
 <a	name="ipfw"/>
