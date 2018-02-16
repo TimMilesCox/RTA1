@@ -110,6 +110,7 @@ portcb		$res 1
 $(0)
 fp_server1	$head_far	scalars(response_axw,	int	;		
 					operator,	int	;
+					fp_narrow,	int	;
 					left,		float	;
 					right,		float	)
 
@@ -171,15 +172,20 @@ fp_rx1	lb	s:udp:socket_inq.head, b
 	la	LAST_BYTE_READ	.	LAST_BYTE_READ
 	aa, xi	-','
 
-	jnza	fp_again
+	jnza	fp_agate?
 	call	(iscan_skip)
 	lb, xi	1		.	nothing scanned
 	ab, xi	-1
-	jnb	fp_again
+	jnb	fp_agate?
 	lr	b
 
-fp_again
+fp_agate?
+	la	LAST_BYTE_READ
+	aa	-'|',,xi
+	jnza	fp_again
+	n	fp_narrow
 
+fp_again
 	la	operator
 
 	anu, xi	'+'
@@ -221,7 +227,9 @@ fp_divide_again
 	j	fp_edit
 
 fp_nop
-fp_edit
+fp_edit	tp	fp_narrow
+	lcal	fp_gate
+
 	z	BYTES
 	call	(floating_iedit)
 
@@ -251,6 +259,26 @@ fp_error
 	sx	sp
 	fret	0
 
+	$if	0			. edge case generation
+fp_gate	fpx	(^07FFFFFFFFFFFL)	. don't worry about it
+	qpop	a
+	lret	0
+	$else
+fp_gate	dpush	(0:d)			. a buffer to store
+	qpush	a			. compress is stacktop -> buffer
+	fpp	4, sp			. the buffer has moved
+	fpx	0, sp			. the buffer has moved again
+
+	lk	4, sp			. jpo test
+	la	5, sp
+	jpo	$+2
+	n	4, sp
+
+	qpop	a			. pop the re-expanded value
+	pop	0, sp
+	pop	0, sp			. take away the number
+	lret	0			. you first thought of
+	$endif
 
 	$include	fpser192
 

@@ -665,7 +665,7 @@ void execute(word instruction)
                *************************************************/
 
                fpp(ea, &_register[sp]);
-	       sp+= 2;
+	       sp += 4;			/* 4 stack words -> 2 stored words */
 
                if (psr & 0x00800000)
                {

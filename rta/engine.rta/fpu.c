@@ -973,11 +973,15 @@ void fd(int ea)
 
 	computation format is 96 bits
 
-	if the number is normalised, 12 sign bits are
-	added to the left of the lower 10 exponent bits
-	unless the exponent is lower than midpoint: then
-	12 reverse-sign bits are inserted to maintain
-	the same proximity to midpoint
+	12 bits opposite polarity to midpoint bit are inserted
+	after midpoint bit
+
+		s1[00 0000 0000 00] xx xxxx xxxx...
+		s0[11 1111 1111 11] xx xxxx xxxx...
+
+ 	Effect is they are 12 sign bits unless the
+	exponent is lower than midpoint: then they are
+	12 reverse-sign bits giving
 
 		Sign
 		 Midpoint
@@ -987,8 +991,15 @@ void fd(int ea)
 		10 [11 1111 1111 11] yy yyyy yyyy...	1s complement number
 		11 [00 0000 0000 00] yy yyyy yyyy...	1s complement number
 
+	exponents in range 3FFC00..4003FF / C003FF..BFFCOO
+	or -1024 / +1023 shift positions representing decimal
+	exponent +- around 300 can be compressed and recovered
+
 	if the number is zero or otherwise unnormalised
 	then 12 sign bits are inserted in the 11-bit exponent
+	to avoid making zero inputs into untidy outputs
+
+	or better still the whole thing is output as signed zero
 
 		0x [00 0000 0000 00] xx xxxx xxxx...
 		1y [11 1111 1111 11] yy yyyy yyyy...
@@ -1005,6 +1016,47 @@ void fpx(int ea, int _stack_top[])
    unsigned int			 signs;
 
    burst_read2(temp, ea);
+
+   #if 1
+   /***************************************************
+	switch this on for testing / acceptance
+	midpoint ^ 1 is the same thing as
+	signs ^ midpoint ^ 1 ^ signs
+   ***************************************************/
+
+   signs      = (temp[0] & 0x00800000) ? 0x00FFFFFF : 0;
+
+   if (2048 & (temp[0] ^ signs))
+   {
+      /************************************************
+	normalised: extra exponent bits are
+	reverse midpoint bit
+      ************************************************/
+
+      extrascale = (temp[0] & 0x00400000) ? 0 : 0x003FFC00;
+
+      _stack_top[0] =  (temp[0] & 0x00C00000)
+                    | ((temp[0] >> 12) & 1023)
+                    | extrascale;
+      _stack_top[1] = ((temp[0] & 4095) << 12)
+                    | ((temp[1] >> 12) & 4095);
+      _stack_top[2] = ((temp[1] & 4095) << 12) | (signs & 4095);
+      _stack_top[3] = signs;
+   }
+   else
+   {
+      /************************************************
+	unnormalised = zero = don't mess around
+      ************************************************/
+
+      _stack_top[0] = signs;
+      _stack_top[1] = signs;
+      _stack_top[2] = signs;
+      _stack_top[3] = signs;
+   }
+
+   #else
+
    extrascale = (temp[0] & 0x00800000) ? 0x003FFC00 : 0;
    signs      = (temp[0] & 0x00800000) ? 0x00FFFFFF : 0;
 
@@ -1027,6 +1079,8 @@ void fpx(int ea, int _stack_top[])
    _stack_top[1] = temp[1];
    _stack_top[2] = temp[2];
    _stack_top[3] = temp[3];
+
+   #endif
 }
 
 

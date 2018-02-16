@@ -793,18 +793,33 @@ _dlsc24:				; different when high order word is all signs
 
 _fpx:	call	_burst_read2
 	mov	ecx, dword ptr [ebp+S_P]	; you can have edi now
-	add	dword ptr [ebp+S_P], -4
-	add	ecx, -4
+	add	ecx, -4				; start pushing
+	mov	dword ptr [ebp+S_P], ecx
 	shl	ecx, 2
-	mov	edi, __register
-	add	edi, ecx
+	mov	edi, __register;		; edi -> emulated registers
+	add	edi, ecx			; edi -> emulated stack top
 
 	mov	ecx, eax
-	shl	ecx, 8
-	sar	ecx, 24
-	shr	ecx, 8
-	test	eax, 00800800h			; normalised?
-	jpe	_fpx_allsigns
+	shl	ecx, 8				; sxxx xxxx xxxx mmmm mmmm mmmm 0000 0000
+	sar	ecx, 16				; ssss ssss ssss ssss sxxx xxxx xxxx mmmm
+	ror	cx, 8-1				; ssss ssss ssss ssss xxxm mmms xxxx xxxx
+	sar	ecx, 8				; ssss ssss ssss ssss ssss ssss xxxm mmms
+
+	test	cl, 16+1			; normalising bit + 1 sign
+	jpe	_fpx_allsigns			; reputedly parity may be tested on LS octet
+	shr	ecx, 8				; do that after whatever the manual says
+						; and do it separately if you took the jump
+
+;	mov	ecx, eax			; should be 1st of 2 operand words
+;	shl	ecx, 8				; make 24 sign bits
+;	sar	ecx, 24
+;	shr	ecx, 8
+
+
+
+
+;	test	eax, 00800800h			; normalised? bit 11 must ^ bit 23
+;	jpe	_fpx_allsigns			; you can only do parity in LS octet !
 
 ;	shr	ecx, 8				; 0000 0000 ssss ssss ssss ssss ssss ssss
 	mov	dword ptr [ds:edi+3*4], ecx
@@ -831,6 +846,7 @@ _fpx:	call	_burst_read2
 	ret
 
 _fpx_allsigns:
+	shr	ecx, 8
 	mov	dword ptr [ds:edi], ecx		; not normalised so push signed zero
 	mov	dword ptr [ds:edi+1*4], ecx
 	mov	dword ptr [ds:edi+2*4], ecx
