@@ -231,6 +231,18 @@ surround1:
 	adc	dword ptr [ds:edi+ebx*4+1*4], 0
 	dec	ebx
 	jnz	surround1
+
+	%if	1				; a rare case
+	jnc	surroundx			; rounding outflowed
+surroundl:
+	rcr	dword ptr [ds:edi+ebx*4+2*4], 1
+	inc	ebx
+	cmp	bl, ch
+	jle	surroundl			; 1 more than ch
+	add	dword ptr [ds:edi], 1		; exponent++
+surroundx:
+	%endif
+
 	ret
 
 initial_polar_carry:				; frame_mantissa has executed already
@@ -545,7 +557,7 @@ fm:	mov	esi, _OUTPUT			; initialise final accumulation
 	ret					; no, effective zero multiplier
 
 fmgo:	mov	eax, dword ptr [_INPUTR+1*4]
-	mov	cl, 96-1
+	mov	cl, 72				; beats count exactly 72
 	and	eax, eax
 	jns	fmp1
 	mov	esi, _INPUTR
@@ -568,9 +580,9 @@ fmadd:	clc
 	rcr	dword ptr [esi+7*4], 1
 
 	mov	esi, _INPUT2
-	rcl	dword ptr [esi+7*4], 1		; multiplier shift left
-	rcl	dword ptr [esi+6*4], 1
-	rcl	dword ptr [esi+5*4], 1
+;	rcl	dword ptr [esi+7*4], 1		; multiplier shift left
+;	rcl	dword ptr [esi+6*4], 1
+;	rcl	dword ptr [esi+5*4], 1		; multiplier mantissa is only 72 bits
 	rcl	dword ptr [esi+4*4], 1
 	rcl	dword ptr [esi+3*4], 1
 	rcl	dword ptr [esi+2*4], 1
@@ -594,11 +606,21 @@ fmadc:	mov	eax, dword ptr [_INPUTR+7*4]
 fmadx:	dec	cl
 	jnz	fmadd
 
+	%if	0
+	mov	edi, _OUTPUT
+	push	ecx
+	call	frame_mantissa
+	call	restore_trailing_signs
+	pop	ecx
+	call	surround
+	%endif
+
 	mov	eax, dword ptr [esi+2*4] 	; normalised?
 	rcl	eax, 1
 	jc	fm_normalised
 
 	add	dword ptr [_INPUTR], -1		; take 1 from scale
+	clc
 	rcl	dword ptr [esi+7*4], 1
 	rcl	dword ptr [esi+6*4], 1
 	rcl	dword ptr [esi+5*4], 1
@@ -616,7 +638,9 @@ fm_normalised:
 	pop	ecx
 	%endif
 
+	%if 1
 	call	surround			; now round it
+	%endif
 
 	mov	eax, dword ptr [_INPUTR]
 	add	eax, dword ptr [_INPUT2]
