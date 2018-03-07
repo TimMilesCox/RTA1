@@ -324,7 +324,6 @@ void *emulate()	/* thread start */
       leloup();
       #else
 
-      printf("iza jumpin in liza\n");
       caller = &leloup;
 
       __asm__
@@ -333,8 +332,7 @@ void *emulate()	/* thread start */
 		call	eax
       }
 
-      printf("iza back liza\n");
-      printf("[%x]\n", _register[279]);
+      printf("r279[%x]\n", _register[279]);
       #endif
       #endif
 
