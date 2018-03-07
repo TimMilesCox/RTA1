@@ -55,7 +55,7 @@ static long long	 u;
 static struct timeval	 time1;
 #endif
 
-#if	defined(GCC) || defined(ASLAB)
+#if	defined(GCC) || defined(LLVM)
 
 extern int		 iselect;
 extern word		*apc;
@@ -125,9 +125,6 @@ static unsigned long long	 delta_base,
 static void		 accumulate_metric();
 #endif
 
-#if 1
-static void (*caller)();
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -293,12 +290,7 @@ void *emulate()	/* thread start */
    struct timeval	 time2;
    #endif
   
-   #if 0
    printf("emulation start %p\n", leloup);
-   #else
-   caller = &leloup; 
-   printf("emulation start %p\n", caller);
-   #endif
 
    #ifdef METRIC
    gettimeofday(&time2, NULL);
@@ -312,7 +304,7 @@ void *emulate()	/* thread start */
                                  indication, register_set, psr, apc,
                                  apc - memory.array);
 
-      #ifdef GCC
+      #if defined(GCC)
       for (;;)
       {
          execute(*apc++);
@@ -321,22 +313,16 @@ void *emulate()	/* thread start */
          #endif
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
-      #else
 
-      #if 1
+      #elif defined(LLVM)
       leloup();
       #else
 
-      caller = &leloup;
-
       __asm__
       {
-		mov	eax, dword ptr [L_leloup$non_lazy_ptr-L3$pb, ecx]
-		call	eax
+		call	leloup
       }
 
-      printf("r279[%x]\n", _register[279]);
-      #endif
       #endif
 
       if (indication & CHILLDOWN)
@@ -361,6 +347,8 @@ void *emulate()	/* thread start */
          indication &= -1 ^ TIME_UPDATE;
          if (indication == 0) continue;
       }
+
+      if (indication & LOCKSTEP) flag['s'-'a'] = 1;
 
       if (indication & BREAKPOINT)
       {
@@ -840,7 +828,7 @@ static void print_register_row(int index)
 ********************************************/
 
 #ifndef	GCC
-#if 1
+#ifdef	LLVM
 static word memory_read(int ea)
 {
    readoutp = ea;
