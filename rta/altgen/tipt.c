@@ -824,6 +824,18 @@ static void print_register_row(int index)
 
 
 /********************************************
+	following two routines are
+	baby-style programming
+	for writing request parameters
+	from debug console to
+	x86 assembler-written bus manager
+
+	some compilers have been enhanced
+	so much that a call from embedded
+	__asm__ won't get there
+********************************************/
+
+/********************************************
 	readout target current address space
 ********************************************/
 
