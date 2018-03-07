@@ -36,10 +36,13 @@
 
 static word		*breakpoint;
 
-int			 indication;
-
-#if 0
-int			 trace, trace1, trace2, trace3;
+#ifdef GCC
+int		 indication;
+#else
+extern int	 indication;
+extern word	 readout;
+extern int	 readoutx,
+		 readoutp; 
 #endif
 
 #ifndef	X86_MSW
@@ -92,8 +95,8 @@ extern int		 device_read(int device_index, int relocation_base, int offset);
 #else
 static word		 memory_read(int ea);
 static int device_array_read(int descriptor, int offset);
-extern void		 device_read();
-extern void		 bus_read();
+extern void		 device_readp();
+extern void		 bus_readp();
 #endif
 //	extern int               bus_read(int device, int pointer);
 extern void              netbank();
@@ -825,6 +828,27 @@ static void print_register_row(int index)
 ********************************************/
 
 #ifndef	GCC
+#if 1
+static word memory_read(int ea)
+{
+   readoutp = ea;
+   bus_readp();
+   return readout;
+}
+
+/*******************************************
+	read device array at offset
+*******************************************/
+
+static int device_array_read(int index, int offset)
+{  
+   readoutx = index;
+   readoutp = offset;
+   device_readp();
+   return readoutx;
+}
+     
+#else
 static word memory_read(int ea)
 {
    word		 data;
@@ -873,6 +897,7 @@ static int device_array_read(int index, int offset)
 
    return data;
 }
+#endif
 #endif
 
 #ifdef METRIC
