@@ -166,6 +166,13 @@
 
 ****************************************************************************/
 
+#define TIME_UPDATE     1
+#define LOCKSTEP        2
+#define BREAKPOINT      4
+#define CHILLDOWN       8
+
+#define chilldown       base[103]
+
 #define	IO_PORTS	192
 #define	BASE_TABLE	64
 

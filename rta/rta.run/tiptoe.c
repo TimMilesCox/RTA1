@@ -83,7 +83,6 @@
 #include "settings.h"
 
 #define	ARGUMENTS	3
-#define	CHILLDOWN	8
 
 int			 indication;
 
@@ -101,8 +100,7 @@ char			 flag[26];
 unsigned short		 arguments;
 char			*argument[ARGUMENTS];
 
-static int		 runout,
-			 lockstep;
+static int		 runout;
 
 extern void		 execute(word instruction);
 extern word		 memory_read(int ea);
@@ -164,7 +162,7 @@ static void *async()
       else printf("please key console input again\n");
 
       if (flag['v'-'a'])
-      printf("[%x %p %x %x]\n", flag['s'-'a'], _p, runout, lockstep);
+      printf("[%x %p %x %x]\n", flag['s'-'a'], _p, runout, indication);
    }
 }
 
@@ -442,21 +440,25 @@ int main(int argc, char *argv[])
 
       #endif
 
+      if (indication & LOCKSTEP) flag['s'-'a'] = 1;
 
-      if (apc == breakpoint)
+      if (indication & BREAKPOINT)
       {
-         flag['s'-'a'] = 1;
+         if (apc == breakpoint)
+         {
+            flag['s'-'a'] = 1;
+         }
       }
 
       if (flag['s'-'a'])
       {
-         lockstep = 1;
+         indication |= LOCKSTEP;
          statement();
          putchar('>');
          fflush(stdout);
       }
 
-      while (lockstep) usleep(10000);
+      while (indication & LOCKSTEP) usleep(10000);
 
       if (psr & 0x00800000)
       {
@@ -555,7 +557,7 @@ static void action(char request[])
          if (xx == 2) breakpoint = &memory.p4k[index].w[offset];
 
          flag['s'-'a'] = 0;
-         lockstep = 0;
+         indication &= -1 ^ LOCKSTEP;
          putchar(':');
          fflush(stdout);
          break;
@@ -730,11 +732,11 @@ static void action(char request[])
 
       case '.':
          runout = -1;
-         lockstep = 0;
+         indication &= -1 ^ LOCKSTEP;
          break;
 
       default:
-         lockstep = 0;
+         indication &= -1 ^ LOCKSTEP;
          break;
    }
 }

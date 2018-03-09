@@ -55,6 +55,7 @@ extern page		*b0p;
 extern word		*apc;
 extern system_memory	 memory;
 
+extern int		 indication;
 extern char		 flag[];
 
 void ii(int ea)
@@ -86,7 +87,7 @@ void ii(int ea)
 
    psr |= 0x00800000;
 
-   if (ea == XBASE_U) flag['s'-'a'] = 1;
+   if (ea == XBASE_U) indication |= LOCKSTEP;
 
    b0_name = (ea >> 6) & 0x0000FFFF;
    base[0] = b0_name;

@@ -55,7 +55,7 @@ static long long	 u;
 static struct timeval	 time1;
 #endif
 
-#if	defined(GCC) || defined(LLVM)
+#if	defined(GCC) || defined(LLVM_LE)
 
 extern int		 iselect;
 extern word		*apc;
@@ -156,8 +156,6 @@ int main(int argc, char *argv[])
       #else
       f = open(argument[0], O_RDONLY, 0444);
       #endif
-
-      printf("addresses[%p %p %8.8x]\n", &leloup, &memory, *((long int *) &leloup));
 
       if (f < 0)
       {
@@ -314,7 +312,7 @@ void *emulate()	/* thread start */
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
 
-      #elif defined(LLVM)
+      #elif defined(LLVM_LE)
       leloup();
       #else
 
@@ -828,7 +826,7 @@ static void print_register_row(int index)
 ********************************************/
 
 #ifndef	GCC
-#ifdef	LLVM
+#ifdef	LLVM_LE
 static word memory_read(int ea)
 {
    readoutp = ea;

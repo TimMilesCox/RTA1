@@ -25,22 +25,11 @@
 #include "../rta.run/idisplay.h"
 #include "../rta.run/settings.h"
 
-#define	TIME_UPDATE	1
-#define	LOCKSTEP	2
-#define	BREAKPOINT	4
-#define	CHILLDOWN	8
-
-#define	chilldown	base[103]
-
 #define ROM_PAGE	&memory.p4k[0].w[0]
 
 static word		*breakpoint;
 
 int			 indication;
-
-#if 0
-int			 trace, trace1, trace2, trace3;
-#endif
 
 #ifndef	X86_MSW
 static struct pollfd	 attention = { 0, POLLIN } ;
@@ -336,6 +325,8 @@ void *emulate()	/* thread start */
          indication &= -1 ^ TIME_UPDATE;
          if (indication == 0) continue;
       }
+
+      if (indication & LOCKSTEP) flag['s'-'a'] = 1;
 
       if (indication & BREAKPOINT)
       {
