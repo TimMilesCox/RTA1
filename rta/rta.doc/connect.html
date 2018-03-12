@@ -24,12 +24,21 @@ This acronym MIPS in this document means millions of instructions per second
 <ol>
 	<li><a href="#rungo">Running and Building Emulated RTA1</a></li>
 	<ol>
+		<li><a href="#star">Starting Out</a></li>
 		<li><a href="#readies">Ready Emulation Images</a></li>
 		<li><a href="#running">Running RTA1</a></li>
 		<ol>
 			<li><a href="#runnet">Starting a Real Network Service for Emulated RTA1</a></li>
 			<li><a href="#runrta">Starting the Emulated RTA1 Machine</a></li>
 		</ol>
+
+		<li><a href="#rta_active">RTA1 Active in your Real Network</a></li>
+		<ol>
+			<li><a href="#config_rta">Configuring RTA1 Addresses</a></li>
+			<li><a href="#peer_rta">Peer Host to RTA1 Address Configureation</a></li>
+			<li><a href="#loop_rta">Communication from Emulator Platform to RTA1</a></li>
+		</ol>
+
 		<li><a href="#osserv">portal/osserv Networking</a></li>
 		<li><a href="#address plan">Network Address Plan and Configuration</a></li>
 		<li><a href="#zeroconf">Autoconf and Multihomed Routes</a></li>
@@ -48,7 +57,6 @@ This acronym MIPS in this document means millions of instructions per second
 	<li><a href="#work">Appendix A: Developer Notes for Projected RTA1 Products</a></li>
 	<ol>
 		<li><a href="#locy">A Low-Cycle-Rate Low-Power High-Effect Architecture</a></li>
-		<li><a href="#free">Freedom of Action and Progress by Agreement</a></li>
                 <li><a href="#hard">Hard-Cased Value-Added Low-Cost Single-Board Computer</a></li>
                 <li><a href="#platformc">Obtaining a Hard-Edged Compiler for Emulators</a></li>
                 <li><a href="#targetc">Compiler to front Existing RTA1 Target Macro Assembly</a></li>
@@ -70,6 +78,89 @@ This acronym MIPS in this document means millions of instructions per second
 
 <a	name="rungo"/a>
 <h2>Running and Building Emulated RTA1</h2>
+
+
+<a	name="star"/>
+<h3>Starting Out</h3>
+
+You have downloaded RTA1 materials <a href="https://TimMilesCox.github.io/RTA/">https://TimMilesCox.github.io/RTA/rta.zip</a> to <a style="color:0000FF">$HOME/somewhere</a>
+
+<p>
+Or cloned git repository <a href="https://www.github.com/TimMilesCox/RTA1">https://www.github.com/TimMilesCox/RTA1</a> to <a style="color:0000FF">$HOME/somewhere</a>
+
+<p>
+Start a terminal shell. Go to  directory <a style="color:0000FF">somewhere/RTA1/rta/portal</a> and key in <a style="color:0000FF">./runL</a>
+<pre>
+
+	cd somewhere/RTA1/rta/portal
+	./runL
+
+</pre>
+
+If you haven't done this before, <a style="color:0000FF">./runL</a> will ask to to copy a configuration file <a style="color:0000FF">.rta_net</a> to <a style="color:0000FF">$HOME</a> and possibly update it
+
+<p>
+A process starts which connects emulated RTA1 to your real networks
+
+<p>
+Start another terminal shell. Type <a style="color:0000FF">echo $RTA_MBANKS</a>. That will tell you what size emulated RTA1 you are about to run. Change it if you like
+
+<p>
+Go to directory <a style="color:0000FF">somewhere/RTA1/rta/altgen</a>. Key in <a style="color:0000FF">./r</a>
+<pre>
+
+	cd somewhere/RTA1/rta/altgen
+	./r
+
+</pre>
+
+Now two processes are running, emulated RTA and its network interfaces
+
+<p>
+
+start a third terminal shell. Go to directory <a style="color:0000FF">somewhere/RTA1/rta/client</a>. Start a script called <a style="color:0000FF">./prun</a>
+<pre>
+
+	cd somewhere/RTA1/rta/client
+	./prun
+
+</pre>
+
+That sets some addressing and pings RTA1 over platform loopback
+
+<p>
+Now you can go to a browser and call up http://172.29.7.6
+
+<p>
+or key in fp and do some floating point sums
+
+or key in fp -U and do some 192-bit floating point sums
+
+<p>
+or key in snmpwalk and see the MIB. If you do this from the emulator platform, you have to give snmpwalk a come-from address 
+<pre>
+
+	pushd $HOME
+	mkdir .snmp
+	vi .snmp/snmp.conf
+	i
+	clientaddr 172.29.7.6
+	<ESC>
+	wq
+	popd
+
+	snmpwalk -v 1 -c public -Ir -Os 172.29.7.7
+
+</pre>
+If you do snmpwalk from another computer you don't need the come-from address<br>
+But then RTA1's address isn't 172.29.7.7. It's an address in .rta_net
+
+<p>
+See <a href="#rta_active">RTA1 Active in your Real Network</a> to have the other computers talk to emulated RTA1
+
+<p>
+Then you can call up RTA1 webhost, floating point server, snmp agent and telnet server from other hosts
+
 
 <a	name="readies"/a>
 <h3>Ready Emulation Images</h3>
@@ -101,7 +192,7 @@ An emulator host process is run from a shell to provide network connectivity
 <pre>
 
 	cd	<a href="#osserv">rta/portal</a>
-	./runL	[ ipfw ]
+	./runL
 
 </pre>
 rta/portal/runL is a script which configures networks and runs binary osserv.<br>
@@ -235,6 +326,131 @@ over the software loopback interface of the emulator host. Traffic for RTA1 arri
 from the software loopback interface of an OSX platform also needs
 <a href="#repair">checksum repair</a> which osserv applies with option -z 
 
+<a	name="rta_active"/>
+<h3>RTA1 Active in your Real Network</h3>
+
+<a	name="config_rta"/>
+<h4>Configuring RTA1 Network Addresses</h4>
+<pre>
+
+	If an emulator host has not previously been set up for RTA1 network participation
+	then emulator interface process script portal/runL prompts configuration steps
+
+        If there is only one RTA emulator in your network
+        then the defaults in .rta_net are available for immediate use
+
+	WiFi and wired ethernet addresses for one emulated RTA1 are automatically configured
+	when the file .rta_net is copied from rta/portal to user $HOME directory. The
+	configuration commands in .rta_net are
+
+		export RTA_ENET=172.29.7.8
+		export RTA_WIFI=172.29.7.66
+		export SLOOP=lo0
+		export ENET=en0
+		export WIFI=en1
+
+	If more than one emulated RTA1 is present in one network they must have different addresses.
+	$HOME/.rta_net should be altered to assign unique addresses within the LAN to each RTA1
+
+	RTA_ENET should be a network address in the range
+
+		172.29.7.8 to 172.29.7.62
+
+	RTA_WIFI should be a network address in the range
+
+		172.29.7.65 to 172.29.7.254
+
+	Default interface labels are the ones found in OSX.
+	linux has different interface names for lo0, en0 and en1,
+	typically lo, eth0 and eth1. Text lines equating ENET and WIFI
+	need changing for linux
+
+	The defaults wired ethernet on en0 or eth0 and WiFi on en1 or eth1
+	are customary on platforms which have both WiFi and wired ethernet
+
+	Certain platforms do not have a wired ethernet socket. WiFi may
+	then be interface en0 or eth0. The names assigned to ENET and WIFI
+	should be exchanged 
+
+		export  WIFI=en0        # or eth0
+
+	It should always be ascertained what interface is really attached
+	to each interface name
+
+		ifconfig -a
+
+</pre>
+<a	name="peer_rta"/>
+<h4>Peer Host to RTA1 Address Configuration</h4>
+<pre>
+
+	Another host in your network communicating with emulated RTA1
+	needs to add an address in RTA1 ethernet or WiFi subnet range
+	to its own interface, which will then route to emulated RTA1
+
+	The command on POSIX platforms is variously something like
+
+		sudo ifconfig lo0 inet 172.29.60/26 alias
+
+	You need to look at ifconfig manual pages to get this right
+
+	Alternatively have a host route via the emulator platform address,
+	for example
+
+		sudo route -nv delete -host 172.29.7.8
+		sudo route -nv add -host 172.29.7.8 192.168.1.15
+
+	where the example 192.168.1.15 represents the address DHCP
+	assigned to the emulator platform
+
+	On Windows 10 setting a route is more problem-free than
+	aliasing an interface. Use the administrator command prompt
+
+
+</pre>
+<a	name="loop_rta"/>
+<h4>Communication from Emulator Platform to RTA1</h4>
+<pre>
+
+	Interaction between emulator platform and emulated RTA1
+	needs no address reconfiguration. Script rta/client/prun
+	on the emulator host takes necessary action and is called
+	the first time that the emulator runs in platform runtime
+
+		cd rta/client
+		./prun
+
+	Commands to RTA1  come from platform address 172.29.7.6 
+	and go to emulated RTA1 address 172.29.7.7, for examples
+
+		ping -c 5 -S 172.29.7.6 172.29.7.7
+		telnet -s 172.29.7.6 172.29.7.7
+
+		snmpwalk -v 1 -c public -Ir -Os 172.29.7.7
+
+	For contacting RTA1 snmnp agent from the emulator host
+	netsnmp needs in file ~/.snmp/snmp.conf the line
+
+		clientaddr	172.29.7.6
+
+	Sending to webhost on emulated RTA1 from the emulator host
+	you go to address 172.29.7.6. Firewall then takes your traffic
+	to emulated RTA1. Browsers mostly can't opt a come-from address
+
+		http://172.29.7.6
+
+	Platform-to-emulator addresses are preconfigured for
+	client-to-server 96-bit and 192-bit RTA1 floating point servers
+	if client fp is executed from rta/client
+
+		cd rta/client
+		fp [-OPTIONS]
+
+	Running fp client to another platform uses an address argument 1
+	which overrides client/config.fp
+
+
+</pre>
 <a	name="osserv"/>
 <h3>portal/osserv Networking</h3>
 
@@ -1246,16 +1462,6 @@ These things are proved in emulation, which is not a low-power affair at all.<br
 The target of a semiconductor RTA1 package is distant, but some immediate projects<br>
 planned here in outline can bring the target nearer
 
-<a      name="free"/>
-<h3>Freedom of Action and Progress by Agreement</h3>
-
-There are no chiefs in freeware. The author has made RTA1 freeware.<br>
-Any work done in collaboration is done by agreement. The following ideas<br>
-are wishes of RTA1 project's initial author. I requested your attention<br>
-to the project. Your ideas are welcome. I hope my ideas are welcome too.<br>
-Knowledge which I don't myself have will be needed to carry some of these ideas through
-
-
 <a      name="hard"/>
 <h3>Hard-Cased Value-Added Low-Cost Single-Board Computer</h3>
 
@@ -1440,7 +1646,7 @@ $RTA_MBANKS also sets the executable space size for <a href="#buildrta">emulator
 
 	cd tgen
 	./tgen		./r		tipt		Intel
-							gcc static linked tox86 assembly hard loop
+							gcc static linked to x86 assembly hard loop
 							no build with LLVM / clang
 
 	cd altgen
@@ -1450,7 +1656,11 @@ $RTA_MBANKS also sets the executable space size for <a href="#buildrta">emulator
 							clang builds not backwards executable
 
 </pre>
-All these emulators perform alike, but only emulators tipo can be updated on platforms with LLVM / clang
+All these emulators appear to perform alike although time-slice distortion of performance metrication is not eliminated.<br>
+The emulators emulate powersave via usleep() for 90% to 98% of elapsed time
+
+<p>
+Only emulators tipo can be updated on platforms with LLVM / clang
 
 
 <a      name="morems"/>
