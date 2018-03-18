@@ -1,3 +1,8 @@
+tcp_event1_acknowledged?
+	dl	transmission:sequence_ackx
+	andB	(0FF0000s)		. ls 16 bits aren't used yet, but...
+	dan	6			. is the new remote ACK
+	lret	0
 
 tcp_restart_timer2
 	$if	TCP_TIMER2<32768
@@ -29,14 +34,34 @@ tcp_store_timer1
 	sa	transmission:timer(1)
 	lret	0
 
+tcp4_reset_dq_lx
+	lx	TP_HEADER
+tcp4_reset_dq
+	la	transfer:hl_code
+	and	TCP_RST,,xi
+	jnza	tcp4_reset_dqx		. don't answer a reset
+	lcal	tcp_reject
+tcp4_reset_dqx
+	lret	0
+
+tcp4_ripdown_reset
+	la	transmission:state
+	aa	-TCP_CLOSED,,xi
+	jza	tcp4_ripped
+	aa	TCP_CLOSED-TCP_DELETETCB,,xi
+	jza	tcp4_ripped
+	lcal	tcp_reset
+	j	$+1			. return was to here if it could not send RST
+	lcal	tcp_ripdown
+tcp4_ripped
+	lret	0
+
+
 tcp4_connected	$tree
 
-	$head_near	scalars(connection,	int	x	;
-				ACK_AWAITED,	int		)
-
-tcp_connection_located
-	sx	connection		. keep the connection pointer
-					. in the internal stack
+	$head_near	scalars(connection,	int,	x	;
+				ACK_AWAITED,	int		;
+				received_seq,	long		)
 
 	tz	transmission:timer(1)	. restart the big timer
 	lcal	tcp_restart_timer1	. unless it's switched off
@@ -516,16 +541,6 @@ tcp_syn_ack_acked
 	la, xi	TCP_ESTABLISHED
 	sa	transmission:state
         j	tcp_stepover_response
-
-tcp_reset_dq_lx
-	lx	TP_HEADER
-tcp_reset_dq				. and the descriptor for tcp_reject
-					. is still in fp
-	la	transfer:hl_code
-	and, xi	TCP_RST
-	jnza	tcp_stepover_response	. don't answer an incoming RST please
-	lcal	tcp_reject		. no connection
-	j	tcp_stepover_response
 
 tcp_ripdown_reset
 	lx	connection
