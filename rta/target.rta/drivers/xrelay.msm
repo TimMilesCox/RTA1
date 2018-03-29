@@ -161,22 +161,25 @@ txq_ift1_relay
 txq_ift1_otraffic1?
 	dl	this_if:hvoq:head, x
 	jzb	txq_ift1_otraffic2?
-	sabr	A$BUFFB
+	sabr	A$BUFFB			. base containing bank qhead buffer + descriptor
 
 	tz	xframe:flag, fp		. test interface buffer available
 	j	txq_next_interface	. or not
 
-	push	x
+	push	x			. save the interface pointer
 
-	lx, i	xframe:frame, fp
+	lx, i	xframe:frame, fp	. interface buffer txframe header
+	la	descriptor:i_f, b	. translate RTA  interface number to osserv interface number
+	aa	-2,,xi
+	sa	xframe:interface, fp
 
-        la      descriptor:frame, b
+        la      descriptor:frame, b	. transmission frame from socket
         push    nframe:llh:generic:protocol, a
 
 	pop	xframe:protocol, fp
 
-	call	(if_dualport_txwrite)
-        pop     x               . the interface
+	call	(if_dualport_txwrite)	. socket buffer to interface buffer
+        pop     x               	. retrieve interface pointer
 
         push	this_if:llhl
         pop      xframe:ll_hl, fp
@@ -184,11 +187,11 @@ txq_ift1_otraffic1?
         push    TX_DATAGRAML
         pop     xframe:frame_length, fp
         push    (008000)
-        pop     xframe:flag, fp
+        pop     xframe:flag, fp		. release for transmission
 
-        lcal    txq_ift1_next_frame
+        lcal    txq_ift1_next_frame	. point to next interface frame buffer
 
-        call	(if_readq2)
+        call	(if_readq2)		. dequeue transmission frame from socket
 
         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
         MIB_ICOUNT48    this_if:outpackets
@@ -196,34 +199,35 @@ txq_ift1_otraffic1?
 
 
 	tp	descriptor:bytes, b	. test the retain bit
-	j	txq_ift1_otraffic1?
+	j	txq_ift1_otraffic1?	. retaining for socket use, don't delete
 
-	push	x
-	lx	(A$BUFFB*/18:s)
-	call	(if_sell1)
-	pop	x
+	push	x			. save interface pointer
+	lx	(A$BUFFB*/18:s)		. pool address is window[A$BUFFB] * 262144
+	la	b			. descriptor address in b
+	call	(if_sell1)		. descriptor address in a
+	pop	x			. retrieve interface pointer
 
-	j	txq_ift1_otraffic1?
+	j	txq_ift1_otraffic1?	. next please
 
 	$endif
 
 
 	
-txq_ift1_otraffic2?
-
-	la	this_if:oq:head, x
-	jza	txq_next_interface
-
-
-	tz	xframe:flag, fp
-	j	txq_next_interface
-
-	push	x	. the interface
+txq_ift1_otraffic2?			. this is a thread of IP, therefore
+					. all the default socket buffer pool is based
+	la	this_if:oq:head, x	. and that's where this descriptor is
+	jza	txq_next_interface	. unless it isn't
 
 
-	lx, i	xframe:frame, fp
+	tz	xframe:flag, fp		. interface buffer available
+	j	txq_next_interface	. not yet, next device array
 
-	lb	descriptor:i_f, a
+	push	x			. save interface pointer a moment
+
+
+	lx, i	xframe:frame, fp	. point x to frame buffer after control header
+
+	lb	descriptor:i_f, a	. translate RTA  interface number to osserv interface number
 	ab	-2,,xi
 	sb	xframe:interface, fp
 
@@ -234,47 +238,46 @@ txq_ift1_otraffic2?
 	pop	xframe:ll_hl, sp
 	$endif
 	
-	la	descriptor:frame, a
+	la	descriptor:frame, a	. transfer protocol tag to interface buffer header
 	push	nframe:llh:generic:protocol, a
-	pop	xframe:protocol, fp
+	pop	xframe:protocol, fp	. leaving frame pointer in a
 
 
 	call	(if_dualport_txwrite)
 
 
-	pop	x		. the interface
+	pop	x			. retrieve  interface pointer
 
 	$if	1
-	z	this_if:llhl	. this is not used on output
-				. dualport_txwrite has
-				. constructed the frame
+	z	this_if:llhl		. llhl is not used on output
+					. dualport_txwrite constructs the whole frame
 	$else
 	push	this_if:llhl
 	pop	xframe:ll_hl, fp
 	$endif
 
-	push	TX_DATAGRAML
+	push	TX_DATAGRAML		. release interface buffer for transmission
 	pop	xframe:frame_length, fp
 	push	(008000)
 	pop	xframe:flag, fp
 
-	lcal	txq_ift1_next_frame
+	lcal	txq_ift1_next_frame	. point next interface buffer
 
-	call	(if_readq1)
+	call	(if_readq1)		. dequeue socket output frame, descriptor -> a
 
         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
         MIB_ICOUNT48    this_if:outpackets
 
-	tp	descriptor:bytes, a
-	j	txq_ift1_otraffic2?
+	tp	descriptor:bytes, a	. retain or pool socket buffer?
+	j	txq_ift1_otraffic2?	. retain, so next output please
 
-	push	x
+	push	x			. save interface pointer
 
-	lx	tx_buffers
-	call	(if_sell1)
-	pop	x
+	lx	tx_buffers		. pool socket buffer in default transmission pool
+	call	(if_sell1)		. descriptor pointer is a
+	pop	x			. retrieve interface pointer
 
-	j	txq_ift1_otraffic2?
+	j	txq_ift1_otraffic2?	. next output from sockets please
 
 txq_next_interface
 	fret	0

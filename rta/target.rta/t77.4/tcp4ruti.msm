@@ -44,25 +44,68 @@ tcp4_reset_dq
 tcp4_reset_dqx
 	lret	0
 
-tcp4_ripdown_reset
-	la	transmission:state
-	aa	-TCP_CLOSED,,xi
-	jza	tcp4_ripped
-	aa	TCP_CLOSED-TCP_DELETETCB,,xi
-	jza	tcp4_ripped
-	lcal	tcp_reset
-	j	$+1			. return was to here if it could not send RST
-	lcal	tcp_ripdown
-tcp4_ripped
+	$if	HVBANK
+tcp4_net_free_txdatagram
+	tn	*(A$BUFFB*/12++tlist:flags)
+	j	net_free_txdatagram		. no, in default buffer pool
+	lcal	readq				. q address in y
+	jza	tcp4_net_free_txdatagramx	. in case new code does this with an empty queue
+	push	x				. expected to be the connection pointer
+	lx	(A$BUFFB*/18:s)			. buffer pool address
+	lcal	sell1
+	pop	x
+tcp4_net_free_txdatagramx
 	lret	0
+	$endif
 
-
-tcp4_connected	$tree
+tcp4_rxaction	$tree
 
 	$head_near	scalars(connection,	int,	x	;
 				ACK_AWAITED,	int		;
 				received_seq,	long		)
 
+	sa	fp
+	dl	descriptor:sobdi
+	sabr	BSOCKET
+	la	s:tcp:tbase, b
+	sabr	BSOCKET
+	lcal	tcp_locate_connection
+	tz	x
+	j	tcp_connection_located	.
+
+					. so is it an incoming connect?
+	lx	descriptor:uproto
+	sx	TP_HEADER
+	la	transfer:hl_code, x
+	sa	HL_FLAGS
+
+	and, xi	TCP_SYN++TCP_ACK++TCP_RST
+	xor, xi	TCP_SYN
+	jza	tcp4_accept
+
+tcp_reset_dq_lx
+	lcal	tcp4_reset_dq_lx	. similar case to IP input loop
+	j	tcp_stepover_response		. nothing listening, but we must
+					. dq from tcpq and drop, send RST
+					. and continue in this loop here
+tcp_accept_fail2
+	sx	connection
+	j	tcp_ripdown_reset
+
+.	lcal	tcp4_ripdown_reset
+.	j	tcp_stepover_response
+					. either q the request to
+					. the listening socket owner
+					. or do this automatic accept
+tcp4_accept
+	lcal	tcp_auto_accept
+	j	tcp_reset_dq_lx		. connection not assigned
+	j	tcp_accept_fail2	. connection assigned but not working
+					. connection SYN_ACK, 3rd return
+	j	tcp_stepover_response	. SYN pdu consumed
+
+tcp_connection_located
+	sx	connection
 	tz	transmission:timer(1)	. restart the big timer
 	lcal	tcp_restart_timer1	. unless it's switched off
 
@@ -234,46 +277,48 @@ tcp_tx_segments_acked?
 	la	transmission:q4ack:head
 	jza	tcp_rx_in_range?
 
-	lb	descriptor:uproto, a	.	negative header length
-	ly	a
-	la	b			.	keep the segment pointer
-	anb	descriptor:apdata, y
+	lb	descriptor:uproto, a	.	segment pointer
+	lx	b			.	segment pointer
+	ly	a			.	descriptor
+
+	anb	descriptor:apdata, y	.	zero minus header length
 	sbl	1			.	in bytes
 
-	ab	descriptor:bytes, y	.	-header+segment=payload length
+	la	transfer:hl_code	.	include weight of SYN or FIN if present
+	and	TCP_SYN++TCP_FIN,,xi	.	to avoid discard on ACK at exact sequence
+	jza	tcp_flags_weighed	.	not at all likely on SYN
+	ab	1,,xi			.	just possible on FIN
+tcp_flags_weighed			.	don't xmit a segment with both
+
+	ab	descriptor:bytes, y	.	-header+segment=payload length [+ SYN | FIN]
 
 					.	       80FFFF
 	sbl	8			.	align, drop retain flag
 	sb	9
 	z	8			.	000000 FFFF00
 
-	dl	transfer:seq, a
+	dl	transfer:seq		.	sequence leading edge segment awaiting ACK
+	lx	connection		.	retrieve connection pointer
 	sbl	8			.	00FFFF FFFF00
 
-	da	8
+	da	8			.	sequence after trailing edge
 	dsl	8			.	FFFFFF FF0000
 
-	dan	6
+	dan	6			.	minus received ACK
 
 	jdz	tcp_q4a_slip?
 	jpa	tcp_promote_resends	.	segment trailing edge
 					.	> remote ACK
-tcp_q4a_slip?
-
-	$if	HVBANK
-	lb	*(BSOCKET*/18++tlist:hvbuffer:s)
-	jzb	tcp_free_from_pool
-	drr	24
-	sabr	A$BUFFB
-	drr	24
-	ly	(A$BUFFB*/18:s)		. in any case is it in
-	lk	(63*/18:s)		. A$BUFFB address space?
-	mta	y
-tcp_free_from_pool
-	$endif
+tcp_q4a_slip?				.	segment within received ACK
 
 	ly	transmission:q4ack,,i
+
+	$if	HVBANK
+	lcal	tcp4_net_free_txdatagram	.
+	$else
 	lcal	net_free_txdatagram
+	$endif
+
 	j	tcp_tx_segments_acked?
 
 	.	2:1	send waiting segments as
@@ -443,7 +488,8 @@ tcp_rx_rechain			. look for any deferred segment
 	. ACK is summed in the segment header
 
 tcp_ack_point
-	lcal	tcp_send_on_window
+	lcal	tcp_send_on_window	. should not be necessary here
+					. ACK may be carried on traffic
 				. then see if ACK is still needed
 	jnza	tcp4xreact	. tx traffic contained ACKs
 	tz	ACK_AWAITED
@@ -463,22 +509,23 @@ tcp_rx_above_ack	. 48-bit positive difference SEQ > ACK is in A:B
 
 	jnc	tcp_rx_above_range
 
-	la	fp
-	ly, i	transmission:deferq
-	lcal	q2
+	ly	tcpq,,xi
+	la, i	transmission:deferq
+	lcal	net_transfer
+				. now fit this segment in deferq
 
-			. now fit this segment in deferq
-
-	j	tcp_ack_point
+	j	tcp4xreact	. only stay for 1 segment
+				. the next one may be for any connection
 
 tcp_rx_already_acked
 tcp_rx_above_range
 	la, xi	1
 	sa	ACK_AWAITED
 tcp_rx_ack_nopayload
-	ly, xi	tcpq
-	lcal	net_drop
-	j	tcp_ack_point
+	j	tcp_stepover_response
+.	ly, xi	tcpq
+.	lcal	net_drop
+.	j	tcp_ack_point
 
 tcp_finwait1
 	la	HL_FLAGS
@@ -566,10 +613,10 @@ tcp_deletetcb
 	push,xi	TCP_CLOSED
 	pop	transmission:state
 tcp_closed				. the TCB may already be reassigned
-tcp_stepover_response
-	ly, xi	tcpq
-	lcal	net_drop
-	j	tcp4xreact
+	j	tcp_stepover_response	. this PDU wasn't added to an input chain
+.	ly, xi	tcpq
+.	lcal	net_drop
+.	j	tcp4xreact
 
 tcp_synsent
 	lcal	tcp_event1_acknowledged?
@@ -583,6 +630,10 @@ tcp_synsent1
 	la, xi	TCP_ESTABLISHED
 	sa	transmission:state
 .	j	tcp4xreact
+
+tcp_stepover_response
+	ly	tcpq,,xi
+	lcal	net_drop
 
 tcp4xreact
 	$ret

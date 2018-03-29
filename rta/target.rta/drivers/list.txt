@@ -414,185 +414,188 @@ MASMX 7r3A
   :                            161 txq_ift1_otraffic1?
   :                            162 	dl	this_if:hvoq:head, x
   :                            163 	jzb	txq_ift1_otraffic2?
-  :                            164 	sabr	A$BUFFB
+  :                            164 	sabr	A$BUFFB			. base containing bank qhead buffer + descriptor
   :                            165 
   :                            166 	tz	xframe:flag, fp		. test interface buffer available
   :                            167 	j	txq_next_interface	. or not
   :                            168 
-  :                            169 	push	x
+  :                            169 	push	x			. save the interface pointer
   :                            170 
-  :                            171 	lx, i	xframe:frame, fp
-  :                            172 
-  :                            173         la      descriptor:frame, b
-  :                            174         push    nframe:llh:generic:protocol, a
+  :                            171 	lx, i	xframe:frame, fp	. interface buffer txframe header
+  :                            172 	la	descriptor:i_f, b	. translate RTA  interface number to osserv interface number
+  :                            173 	aa	-2,,xi
+  :                            174 	sa	xframe:interface, fp
   :                            175 
-  :                            176 	pop	xframe:protocol, fp
-  :                            177 
-  :                            178 	call	(if_dualport_txwrite)
-  :                            179         pop     x               . the interface
+  :                            176         la      descriptor:frame, b	. transmission frame from socket
+  :                            177         push    nframe:llh:generic:protocol, a
+  :                            178 
+  :                            179 	pop	xframe:protocol, fp
   :                            180 
-  :                            181         push	this_if:llhl
-  :                            182         pop      xframe:ll_hl, fp
+  :                            181 	call	(if_dualport_txwrite)	. socket buffer to interface buffer
+  :                            182         pop     x               	. retrieve interface pointer
   :                            183 
-  :                            184         push    TX_DATAGRAML
-  :                            185         pop     xframe:frame_length, fp
-  :                            186         push    (008000)
-  :                            187         pop     xframe:flag, fp
-  :                            188 
-  :                            189         lcal    txq_ift1_next_frame
-  :                            190 
-  :                            191         call	(if_readq2)
-  :                            192 
-  :                            193         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
-  :                            194         MIB_ICOUNT48    this_if:outpackets
+  :                            184         push	this_if:llhl
+  :                            185         pop      xframe:ll_hl, fp
+  :                            186 
+  :                            187         push    TX_DATAGRAML
+  :                            188         pop     xframe:frame_length, fp
+  :                            189         push    (008000)
+  :                            190         pop     xframe:flag, fp		. release for transmission
+  :                            191 
+  :                            192         lcal    txq_ift1_next_frame	. point to next interface frame buffer
+  :                            193 
+  :                            194         call	(if_readq2)		. dequeue transmission frame from socket
   :                            195 
-  :                            196 
-  :                            197 
-  :                            198 	tp	descriptor:bytes, b	. test the retain bit
-  :                            199 	j	txq_ift1_otraffic1?
+  :                            196         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+  :                            197         MIB_ICOUNT48    this_if:outpackets
+  :                            198 
+  :                            199 
   :                            200 
-  :                            201 	push	x
-  :                            202 	lx	(A$BUFFB*/18:s)
-  :                            203 	call	(if_sell1)
-  :                            204 	pop	x
-  :                            205 
-  :                            206 	j	txq_ift1_otraffic1?
-  :                            207 
-  :                            208 	$endif
+  :                            201 	tp	descriptor:bytes, b	. test the retain bit
+  :                            202 	j	txq_ift1_otraffic1?	. retaining for socket use, don't delete
+  :                            203 
+  :                            204 	push	x			. save interface pointer
+  :                            205 	lx	(A$BUFFB*/18:s)		. pool address is window[A$BUFFB] * 262144
+  :                            206 	la	b			. descriptor address in b
+  :                            207 	call	(if_sell1)		. descriptor address in a
+  :                            208 	pop	x			. retrieve interface pointer
   :                            209 
-  :                            210 
-  :                            211 	
-  :                            212 txq_ift1_otraffic2?
+  :                            210 	j	txq_ift1_otraffic1?	. next please
+  :                            211 
+  :                            212 	$endif
   :                            213 
-00:004088 60A02E              +214 	la	this_if:oq:head, x
-00:004089 C600AC              +215 	jza	txq_next_interface
-  :                            216 
-  :                            217 
-00:00408A 70E000              +218 	tz	xframe:flag, fp
-00:00408B B600AC              +219 	j	txq_next_interface
+  :                            214 
+  :                            215 	
+  :                            216 txq_ift1_otraffic2?			. this is a thread of IP, therefore
+  :                            217 					. all the default socket buffer pool is based
+00:004088 60A02E              +218 	la	this_if:oq:head, x	. and that's where this descriptor is
+00:004089 C600AC              +219 	jza	txq_next_interface	. unless it isn't
   :                            220 
-00:00408C F80002              +221 	push	x	. the interface
-  :                            222 
-  :                            223 
-00:00408D 54E005              +224 	lx, i	xframe:frame, fp
-  :                            225 
-00:00408E 68C002              +226 	lb	descriptor:i_f, a
-00:00408F CDFFFE              +227 	ab	-2,,xi
-00:004090 28E003              +228 	sb	xframe:interface, fp
+  :                            221 
+00:00408A 70E000              +222 	tz	xframe:flag, fp		. interface buffer available
+00:00408B B600AC              +223 	j	txq_next_interface	. not yet, next device array
+  :                            224 
+00:00408C F80002              +225 	push	x			. save interface pointer a moment
+  :                            226 
+  :                            227 
+00:00408D 54E005              +228 	lx, i	xframe:frame, fp	. point x to frame buffer after control header
   :                            229 
-  :                            230 	$if	0
-  :                            231 	ab	$if2p,,xi
-  :                            232 	lb	0,b
-  :                            233 	push	this_if:llhl, b
-  :                            234 	pop	xframe:ll_hl, sp
-  :                            235 	$endif
-  :                            236 	
-00:004091 60C001              +237 	la	descriptor:frame, a
-00:004092 F8C006              +238 	push	nframe:llh:generic:protocol, a
-00:004093 38E004              +239 	pop	xframe:protocol, fp
-  :                            240 
-  :                            241 
-00:004094 FF0106              +242 	call	(if_dualport_txwrite)
-  :                            243 
+00:00408E 68C002              +230 	lb	descriptor:i_f, a	. translate RTA  interface number to osserv interface number
+00:00408F CDFFFE              +231 	ab	-2,,xi
+00:004090 28E003              +232 	sb	xframe:interface, fp
+  :                            233 
+  :                            234 	$if	0
+  :                            235 	ab	$if2p,,xi
+  :                            236 	lb	0,b
+  :                            237 	push	this_if:llhl, b
+  :                            238 	pop	xframe:ll_hl, sp
+  :                            239 	$endif
+  :                            240 	
+00:004091 60C001              +241 	la	descriptor:frame, a	. transfer protocol tag to interface buffer header
+00:004092 F8C006              +242 	push	nframe:llh:generic:protocol, a
+00:004093 38E004              +243 	pop	xframe:protocol, fp	. leaving frame pointer in a
   :                            244 
-00:004095 380002              +245 	pop	x		. the interface
-  :                            246 
-  :                            247 	$if	1
-00:004096 30A033              +248 	z	this_if:llhl	. this is not used on output
-  :                            249 				. dualport_txwrite has
-  :                            250 				. constructed the frame
-  :                            251 	$else
-  :                            252 	push	this_if:llhl
-  :                            253 	pop	xframe:ll_hl, fp
-  :                            254 	$endif
-  :                            255 
-00:004097 F8000B              +256 	push	TX_DATAGRAML
-00:004098 38E001              +257 	pop	xframe:frame_length, fp
-00:004099 F80103              +258 	push	(008000)
-00:00409A 38E000              +259 	pop	xframe:flag, fp
-  :                            260 
-00:00409B 3E00AD              +261 	lcal	txq_ift1_next_frame
-  :                            262 
-00:00409C FF0101              +263 	call	(if_readq1)
-  :                            264 
-00:00409D F8000B              +265         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
-00:00409E 2FA00F              +265 
-00:00409F 5E00A1              +265 
-00:0040A0 17A00E              +265 
-00:0040A1 FD0001              +266         MIB_ICOUNT48    this_if:outpackets
-00:0040A2 2FA013              +266 
-00:0040A3 5E00A5              +266 
-00:0040A4 17A012              +266 
+  :                            245 
+00:004094 FF0106              +246 	call	(if_dualport_txwrite)
+  :                            247 
+  :                            248 
+00:004095 380002              +249 	pop	x			. retrieve  interface pointer
+  :                            250 
+  :                            251 	$if	1
+00:004096 30A033              +252 	z	this_if:llhl		. llhl is not used on output
+  :                            253 					. dualport_txwrite constructs the whole frame
+  :                            254 	$else
+  :                            255 	push	this_if:llhl
+  :                            256 	pop	xframe:ll_hl, fp
+  :                            257 	$endif
+  :                            258 
+00:004097 F8000B              +259 	push	TX_DATAGRAML		. release interface buffer for transmission
+00:004098 38E001              +260 	pop	xframe:frame_length, fp
+00:004099 F80103              +261 	push	(008000)
+00:00409A 38E000              +262 	pop	xframe:flag, fp
+  :                            263 
+00:00409B 3E00AD              +264 	lcal	txq_ift1_next_frame	. point next interface buffer
+  :                            265 
+00:00409C FF0101              +266 	call	(if_readq1)		. dequeue socket output frame, descriptor -> a
   :                            267 
-00:0040A5 78C003              +268 	tp	descriptor:bytes, a
-00:0040A6 B60088              +269 	j	txq_ift1_otraffic2?
+00:00409D F8000B              +268         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+00:00409E 2FA00F              +268 
+00:00409F 5E00A1              +268 
+00:0040A0 17A00E              +268 
+00:0040A1 FD0001              +269         MIB_ICOUNT48    this_if:outpackets
+00:0040A2 2FA013              +269 
+00:0040A3 5E00A5              +269 
+00:0040A4 17A012              +269 
   :                            270 
-00:0040A7 F80002              +271 	push	x
-  :                            272 
-00:0040A8 502201              +273 	lx	tx_buffers
-00:0040A9 FF0102              +274 	call	(if_sell1)
-00:0040AA 380002              +275 	pop	x
-  :                            276 
-00:0040AB B60088              +277 	j	txq_ift1_otraffic2?
-  :                            278 
-  :                            279 txq_next_interface
-00:0040AC 3D0000              +280 	fret	0
+00:0040A5 78C003              +271 	tp	descriptor:bytes, a	. retain or pool socket buffer?
+00:0040A6 B60088              +272 	j	txq_ift1_otraffic2?	. retain, so next output please
+  :                            273 
+00:0040A7 F80002              +274 	push	x			. save interface pointer
+  :                            275 
+00:0040A8 502201              +276 	lx	tx_buffers		. pool socket buffer in default transmission pool
+00:0040A9 FF0102              +277 	call	(if_sell1)		. descriptor pointer is a
+00:0040AA 380002              +278 	pop	x			. retrieve interface pointer
+  :                            279 
+00:0040AB B60088              +280 	j	txq_ift1_otraffic2?	. next output from sockets please
   :                            281 
-  :                            282 
-  :                            283 txq_ift1_next_frame
-00:0040AD 6D0400              +284 	lb, xi	IFT1_TPAGEW
-00:0040AE C8000E              +285 	ab	fp
-00:0040AF A80107              +286 	andB	(IFT1_TPAGES*IFT1_TPAGEW-IFT1_TPAGEW:s)
-00:0040B0 980104              +287 	orB	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
-  :                            288 	
-00:0040B1 28000E              +289 	sb	fp
-00:0040B2 28A03C              +290 	sb	this_if:ift1:tx_cursor, x
-  :                            291 
-  :                            292 	$if	0
+  :                            282 txq_next_interface
+00:0040AC 3D0000              +283 	fret	0
+  :                            284 
+  :                            285 
+  :                            286 txq_ift1_next_frame
+00:0040AD 6D0400              +287 	lb, xi	IFT1_TPAGEW
+00:0040AE C8000E              +288 	ab	fp
+00:0040AF A80107              +289 	andB	(IFT1_TPAGES*IFT1_TPAGEW-IFT1_TPAGEW:s)
+00:0040B0 980104              +290 	orB	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+  :                            291 	
+00:0040B1 28000E              +292 	sb	fp
+00:0040B2 28A03C              +293 	sb	this_if:ift1:tx_cursor, x
+  :                            294 
+  :                            295 	$if	0
                                 	anb	((IFT1_TX_BASE*/18);
                                 		+IFT1_RPAGES*IFT1_RPAGEW;
-  :                            295 		+IFT1_TPAGES*IFT1_TPAGEW:s)
-  :                            296 
-  :                            297 	jnc	$+2
-  :                            298 	ly	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+  :                            298 		+IFT1_TPAGES*IFT1_TPAGEW:s)
   :                            299 
-  :                            300 	sy	fp
-  :                            301 	sy	this_if:ift1:tx_cursor, x
-  :                            302 	$endif
-  :                            303 
-  :                            304 
-00:0040B3 350000              +305 	lret	0
+  :                            300 	jnc	$+2
+  :                            301 	ly	(IFT1_TX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+  :                            302 
+  :                            303 	sy	fp
+  :                            304 	sy	this_if:ift1:tx_cursor, x
+  :                            305 	$endif
   :                            306 
-  :                            307 rxq_ift1_next_frame
-00:0040B4 5D0400              +308 	ly, xi	IFT1_RPAGEW
-00:0040B5 88000E              +309 	ay	fp
-00:0040B6 680003              +310 	lb	y
-00:0040B7 D80104              +311 	anb	(IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
-00:0040B8 5E00BA              +312 	jnc	$+2
-00:0040B9 580105              +313 	ly	(IFT1_RX_BASE*/18:s)
-00:0040BA 18000E              +314 	sy	fp
-00:0040BB 18A03A              +315 	sy	this_if:ift1:rx_cursor, x
-00:0040BC 350000              +316 	lret	0
-  :                            317 
-  :                            318 start_ift1
-00:0040BD 20A001              +319 	sa	this_if:flags
-00:0040BE 680108              +320 	lb	(0400000)
-00:0040BF 980003              +321 	orB	y
-00:0040C0 28A039              +322 	sb	this_if:ift1:base_rx
-00:0040C1 28A03B              +323 	sb	this_if:ift1:base_tx
-  :                            324 
-  :                            325 	$if	0
-  :                            326 	la, xi	FIREWALL_RELAY
-  :                            327 	sa	this_if:type
-  :                            328 	dl	(IFT1_RX_BASE*/18, IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:d)
-  :                            329 	sa	this_if:ift1:rx_cursor
-  :                            330 	sb	this_if:ift1:tx_cursor
-  :                            331 	z	this_if:oq:head
-  :                            332 	z	this_if:hvoq:head+1
-  :                            333 	$endif
-  :                            334 
-00:0040C2 3D0000              +335 	fret	0
-  :                            336 
+  :                            307 
+00:0040B3 350000              +308 	lret	0
+  :                            309 
+  :                            310 rxq_ift1_next_frame
+00:0040B4 5D0400              +311 	ly, xi	IFT1_RPAGEW
+00:0040B5 88000E              +312 	ay	fp
+00:0040B6 680003              +313 	lb	y
+00:0040B7 D80104              +314 	anb	(IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:s)
+00:0040B8 5E00BA              +315 	jnc	$+2
+00:0040B9 580105              +316 	ly	(IFT1_RX_BASE*/18:s)
+00:0040BA 18000E              +317 	sy	fp
+00:0040BB 18A03A              +318 	sy	this_if:ift1:rx_cursor, x
+00:0040BC 350000              +319 	lret	0
+  :                            320 
+  :                            321 start_ift1
+00:0040BD 20A001              +322 	sa	this_if:flags
+00:0040BE 680108              +323 	lb	(0400000)
+00:0040BF 980003              +324 	orB	y
+00:0040C0 28A039              +325 	sb	this_if:ift1:base_rx
+00:0040C1 28A03B              +326 	sb	this_if:ift1:base_tx
+  :                            327 
+  :                            328 	$if	0
+  :                            329 	la, xi	FIREWALL_RELAY
+  :                            330 	sa	this_if:type
+  :                            331 	dl	(IFT1_RX_BASE*/18, IFT1_RX_BASE*/18++IFT1_RPAGES*IFT1_RPAGEW:d)
+  :                            332 	sa	this_if:ift1:rx_cursor
+  :                            333 	sb	this_if:ift1:tx_cursor
+  :                            334 	z	this_if:oq:head
+  :                            335 	z	this_if:hvoq:head+1
+  :                            336 	$endif
+  :                            337 
+00:0040C2 3D0000              +338 	fret	0
+  :                            339 
   :                            42 	$list
   :                            43 
   :                            44 if_detachq1                     . take the whole queue somewhere else

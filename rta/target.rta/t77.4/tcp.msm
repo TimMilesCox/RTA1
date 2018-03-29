@@ -43,7 +43,9 @@ AP_DATA		$equ	HEADER_LONGWORDS
 RX_APDATA	$equ	AP_DATA
 HL_FLAGS	$equ	SOCKET_CALL_FLAGS
 
-MSS	$equ	26
+MSS		$equ	26
+RXPOOL		$equ	9		. these registers may be reused
+SOCKETP		$equ	10		. if a TX reset folows RX segment
 
 $(67::,y)
 tlist	tbank
@@ -67,53 +69,38 @@ $(0)
 xtcp4
 tcp4	la	tcpq.head
 	jza	tcp4_high_volume
-	sa	fp
-	dl	descriptor:sobdi
-	sabr	BSOCKET
-	la	s:tcp:tbase, b
-	sabr	BSOCKET
-	lcal	tcp_locate_connection
-	tz	x
-	j	tcp_connection_located	.
-
-					. so is it an incoming connect?
-	lx	descriptor:uproto
-	sx	TP_HEADER
-	la	transfer:hl_code, x
-	sa	HL_FLAGS
-
-	and, xi	TCP_SYN++TCP_ACK++TCP_RST
-	xor, xi	TCP_SYN
-	jza	tcp4_accept
-
-tcp_reset_dq_lx
-	lcal	tcp4_reset_dq_lx	. similar case to IP input loop
-	j	tcp4_dropover		. nothing listening, but we must
-					. dq from tcpq and drop, send RST
-					. and continue in this loop here
-tcp_accept_fail2
-	lcal	tcp4_ripdown_reset
-	j	tcp4_dropover
-					. either q the request to
-					. the listening socket owner
-					. or do this automatic accept
-tcp4_accept
-	lcal	tcp_auto_accept
-	j	tcp_reset_dq_lx		. connection not assigned
-	j	tcp_accept_fail2	. connection assigned but not working
-					. connection SYN_ACK, 3rd return
-tcp4_dropover
-	ly, xi	tcpq
-	lcal	net_drop
-	j	tcp4
-
-
-
-tcp_connection_located
-	lcal	tcp4_connected
+	lcal	tcp4_rxaction
 	j	tcp4
 
 tcp4_high_volume
+	$if	HVBANK
+	la	tcx_v4(1)
+	sabr	BSOCKET
+tcp4_hv	la	*(BSOCKET*/12++tlist:next)
+	jza	tcp4_routine
+	sabr	BSOCKET
+	la	*(BSOCKET*/12++tlist:rxq:head)
+	jza	tcp4_hv
+	dl	*(BSOCKET*/12++tlist:hvbuffer)
+	sabr	A$RXBUFFB
+	la	b
+	sabr	A$BUFFB
+
+	lcal	tcp_locate_connection_hv
+	tz	x
+	j	tcp4_hvrequest
+
+tcp4_hvsegment
+	la	*(BSOCKET*/12++tlist:rxq:head)
+	jza	tcp4_hv
+
+	lcal	tcp4_connection_hv
+	tz	x
+	j	tcp4_hvrequest
+tcp4_hvserve
+		
+
+	$endif
 
 tcp4_routine				. walk and maintain all connections
 
@@ -703,7 +690,9 @@ tcp_reset_deflect
 	and, xi	TCP_RST		.	no, repool the buffer
 	jnza	ipv4_drop	.	don't try to reset a reset
 
+	push	RXPOOL		.	output TCP_RST will overload that
 	lcal	tcp_reject
+	pop	RXPOOL
 				.	send a reset
 	j	ipv4_drop	.	and drop the input
 
