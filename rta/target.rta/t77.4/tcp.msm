@@ -60,47 +60,56 @@ $(1)
 tcpq	dq
 
 	$if	HVBANK
-tcpqx	hvdq
+tcpqlist	$do	2,	0
 	$endif
 
 
 $(0)
 
 xtcp4
+	$if	HVBANK
+	la	tcx_v4(1)		. because it's likely to be unbased
+	sabr	BSOCKET			. if many blocks of connections are active
+	$endif
+
 tcp4	la	tcpq.head
 	jza	tcp4_high_volume
-	lcal	tcp4_rxaction
+	lcal	tcp4_rxaction		. requeues payload to target connection
 	j	tcp4
 
 tcp4_high_volume
 	$if	HVBANK
-	la	tcx_v4(1)
-	sabr	BSOCKET
-tcp4_hv	la	*(BSOCKET*/12++tlist:next)
-	jza	tcp4_routine
-	sabr	BSOCKET
-	la	*(BSOCKET*/12++tlist:rxq:head)
-	jza	tcp4_hv
-	dl	*(BSOCKET*/12++tlist:hvbuffer)
-	sabr	A$RXBUFFB
+	la	tcpqlist
+
+tcp4_next_connection_block
+	jza	tcp4_routine		. the list has never been loaded
+	jna	tcp4_routine		. next-value of 800000 = nowhere
+	sabr	BSOCKET			. base the block of connections
+
+	dl	 *(BSOCKET*/12++tlist:hvbuffer)
+	sabr	A$RXBUFFB		. base input and output banks for TCP port
 	la	b
-	sabr	A$BUFFB
+	sabr	A$TXBUFFB
 
-	lcal	tcp_locate_connection_hv
-	tz	x
-	j	tcp4_hvrequest
-
-tcp4_hvsegment
+tcp4_next_segment
 	la	*(BSOCKET*/12++tlist:rxq:head)
-	jza	tcp4_hv
+	jza	tcp4_multiplex_payloadq
+	lcal	tcp4_rxaction		. requeues payload to multiplex(1)
+	j	tcp4_next_segment
 
-	lcal	tcp4_connection_hv
-	tz	x
-	j	tcp4_hvrequest
-tcp4_hvserve
-		
+tcp4_multiplex_payloadq
+	tz	*(BSOCKET*/12++tlist:connection_block(1):receiveq:head)
+	ii	HV$Q			. if any payload queue connections block
+					. for the attention of its owner
 
-	$endif
+	la	*(BSOCKET*/12++tlist:attentionlist_next)
+	sa	tcpqlist		. from this point any restart
+					. is at the next block of connections
+					. zero attention list membership
+	z	*(BSOCKET*/12++tlist:attentionlist_next)
+	j	tcp4_next_connection_block
+
+	$endif	HVBANK
 
 tcp4_routine				. walk and maintain all connections
 

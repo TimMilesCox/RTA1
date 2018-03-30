@@ -6946,1564 +6946,1573 @@ Note: ../t77.4/i_f.msm Line 323: void section: discarding relocation tuple
 01:000304 000000              +60 
   :                            61 
   :                            62 	$if	HVBANK
-  :                            63 tcpqx	hvdq
+  :                            63 tcpqlist	$do	2,	0
   :                            64 	$endif
   :                            65 
   :                            66 
   :                            67 $(0)
   :                            68 
   :                            69 xtcp4
-(+01)0f
-00:002526 600303              +70 tcp4	la	tcpq.head
-00:002527 C6052A              +71 	jza	tcp4_high_volume
-00:002528 3E0853              +72 	lcal	tcp4_rxaction
-00:002529 B60526              +73 	j	tcp4
+  :                            70 	$if	HVBANK
+  :                            71 	la	tcx_v4(1)		. because it's likely to be unbased
+  :                            72 	sabr	BSOCKET			. if many blocks of connections are active
+  :                            73 	$endif
   :                            74 
-  :                            75 tcp4_high_volume
-  :                            76 	$if	HVBANK
-  :                            77 	la	tcx_v4(1)
-  :                            78 	sabr	BSOCKET
-  :                            79 tcp4_hv	la	*(BSOCKET*/12++tlist:next)
-  :                            80 	jza	tcp4_routine
-  :                            81 	sabr	BSOCKET
-  :                            82 	la	*(BSOCKET*/12++tlist:rxq:head)
-  :                            83 	jza	tcp4_hv
-  :                            84 	dl	*(BSOCKET*/12++tlist:hvbuffer)
-  :                            85 	sabr	A$RXBUFFB
-  :                            86 	la	b
-  :                            87 	sabr	A$BUFFB
+(+01)0f
+00:002526 600303              +75 tcp4	la	tcpq.head
+00:002527 C6052A              +76 	jza	tcp4_high_volume
+00:002528 3E0853              +77 	lcal	tcp4_rxaction		. requeues payload to target connection
+00:002529 B60526              +78 	j	tcp4
+  :                            79 
+  :                            80 tcp4_high_volume
+  :                            81 	$if	HVBANK
+  :                            82 	la	tcpqlist
+  :                            83 
+  :                            84 tcp4_next_connection_block
+  :                            85 	jza	tcp4_routine		. the list has never been loaded
+  :                            86 	jna	tcp4_routine		. next-value of 800000 = nowhere
+  :                            87 	sabr	BSOCKET			. base the block of connections
   :                            88 
-  :                            89 	lcal	tcp_locate_connection_hv
-  :                            90 	tz	x
-  :                            91 	j	tcp4_hvrequest
-  :                            92 
-  :                            93 tcp4_hvsegment
-  :                            94 	la	*(BSOCKET*/12++tlist:rxq:head)
-  :                            95 	jza	tcp4_hv
-  :                            96 
-  :                            97 	lcal	tcp4_connection_hv
-  :                            98 	tz	x
-  :                            99 	j	tcp4_hvrequest
-  :                            100 tcp4_hvserve
-  :                            101 		
-  :                            102 
-  :                            103 	$endif
+  :                            89 	dl	 *(BSOCKET*/12++tlist:hvbuffer)
+  :                            90 	sabr	A$RXBUFFB		. base input and output banks for TCP port
+  :                            91 	la	b
+  :                            92 	sabr	A$TXBUFFB
+  :                            93 
+  :                            94 tcp4_next_segment
+  :                            95 	la	*(BSOCKET*/12++tlist:rxq:head)
+  :                            96 	jza	tcp4_multiplex_payloadq
+  :                            97 	lcal	tcp4_rxaction		. requeues payload to multiplex(1)
+  :                            98 	j	tcp4_next_segment
+  :                            99 
+  :                            100 tcp4_multiplex_payloadq
+  :                            101 	tz	*(BSOCKET*/12++tlist:connection_block(1):receiveq:head)
+  :                            102 	ii	HV$Q			. if any payload queue connections block
+  :                            103 					. for the attention of its owner
   :                            104 
-  :                            105 tcp4_routine				. walk and maintain all connections
-  :                            106 
-  :                            107 					. default connections bank is serviced
-  :                            108 					. first and separately
-  :                            109 
-00:00252A 602FFF              +110 	la	tcx_v4(1)
-00:00252B 700004              +111 	tz	a
-00:00252C 3E052E              +112 	lcal	tcp4_service_connection_list
+  :                            105 	la	*(BSOCKET*/12++tlist:attentionlist_next)
+  :                            106 	sa	tcpqlist		. from this point any restart
+  :                            107 					. is at the next block of connections
+  :                            108 					. zero attention list membership
+  :                            109 	z	*(BSOCKET*/12++tlist:attentionlist_next)
+  :                            110 	j	tcp4_next_connection_block
+  :                            111 
+  :                            112 	$endif	HVBANK
   :                            113 
-  :                            114 	$if	HVBANK
-  :                            115 					. high volume connection banks are chained
-  :                            116 					. search by chain is quicker than
-  :                            117 					. walking all the port socket banks
+  :                            114 tcp4_routine				. walk and maintain all connections
+  :                            115 
+  :                            116 					. default connections bank is serviced
+  :                            117 					. first and separately
   :                            118 
-  :                            119 	la	tcx_v4(2)		. in the kernel vector bank, index
-  :                            120 					. of first HV connections bank in
-  :                            121 					. linked list
-  :                            122 					. one 4Kword bank per HV-assigned port
-  :                            123 tcp4_routine1
-  :                            124 	jza	tcp4x
-  :                            125 
-  :                            126 	lcal	tcp4_service_connection_list
+00:00252A 602FFF              +119 	la	tcx_v4(1)
+00:00252B 700004              +120 	tz	a
+00:00252C 3E052E              +121 	lcal	tcp4_service_connection_list
+  :                            122 
+  :                            123 	$if	HVBANK
+  :                            124 					. high volume connection banks are chained
+  :                            125 					. search by chain is quicker than
+  :                            126 					. walking all the port socket banks
   :                            127 
-  :                            128 	la	*(BSOCKET*/12++tlist:link)
-  :                            129 	j	tcp4_routine1
-  :                            130 
-  :                            131 	$endif
-  :                            132 
-00:00252D 350000              +133 tcp4x	lret	0
+  :                            128 	la	tcx_v4(2)		. in the kernel vector bank, index
+  :                            129 					. of first HV connections bank in
+  :                            130 					. linked list
+  :                            131 					. one 4Kword bank per HV-assigned port
+  :                            132 tcp4_routine1
+  :                            133 	jza	tcp4x
   :                            134 
-  :                            135 tcp4_service_connection_list
-00:00252E 34002F              +136 	sabr	BSOCKET
-00:00252F 500E4E              +137 	lx	(BSOCKET*/12++tlist:chain(1))
-  :                            138 tcp4_process_list
-00:002530 F80002              +139 	push	x
-00:002531 B605A2              +140 	j	tcp4_locate_next_connection
+  :                            135 	lcal	tcp4_service_connection_list
+  :                            136 
+  :                            137 	la	*(BSOCKET*/12++tlist:link)
+  :                            138 	j	tcp4_routine1
+  :                            139 
+  :                            140 	$endif
   :                            141 
-  :                            142 tcp4_service_next_connection
+00:00252D 350000              +142 tcp4x	lret	0
   :                            143 
-00:002532 60A001              +144 	la	transmission:state
-00:002533 A5003F              +145 	and, xi	63
-  :                            146 	
-  :                            147 
-00:002534 680004              +148 	anu, xi	TCP_ESTABLISHED
-00:002535 DD0005              +148 
-00:002536 CE0539              +149 	jzb	tcp4_established!
-00:002537 CDFFFD              +150 	ab, xi	TCP_ESTABLISHED-TCP_CLOSEWAIT
-00:002538 DE0542              +151 	jnzb	tcp4_synreceived?
+  :                            144 tcp4_service_connection_list
+00:00252E 34002F              +145 	sabr	BSOCKET
+00:00252F 500E4E              +146 	lx	(BSOCKET*/12++tlist:chain(1))
+  :                            147 tcp4_process_list
+00:002530 F80002              +148 	push	x
+00:002531 B605A2              +149 	j	tcp4_locate_next_connection
+  :                            150 
+  :                            151 tcp4_service_next_connection
   :                            152 
-  :                            153 tcp4_established!
-  :                            154 .	lcal	tcp_send_on_window
-  :                            155 
-00:002539 60A016              +156 	la	transmission:q4ack:head
-00:00253A C60540              +157 	jza	tcp4_new_traffic?	. (tcp4_globaltime?)
-  :                            158 
-  :                            159 
-00:00253B 600097              +160 	la	DAYCLOCK$
-00:00253C D0A005              +161 	ana	transmission:timer(2)
-00:00253D E60540              +162 	jna	tcp4_new_traffic?	. (tcp4_globaltime?)
-  :                            163 					. the top bit of the result
-  :                            164 					. is reliable
-00:00253E 3E0564              +165 	lcal	tcp4_retransmit1
-00:00253F 3E0841              +166 	lcal	tcp_restart_timer2	. (30.11.2017) ? an oversight
-  :                            167 					. this was not here?
-  :                            168 tcp4_new_traffic?
-00:002540 3E06E7              +169 	lcal	tcp_send_on_window
-00:002541 B6054C              +170 	j	tcp4_globaltime?
-  :                            171 
-  :                            172 tcp4_synreceived?
-00:002542 680004              +173 	anu, xi	TCP_SYNRECEIVED
-00:002543 DD0004              +173 
-00:002544 DE0553              +174 	jnzb	tcp4_state?
-  :                            175 
-00:002545 3E06E7              +176 	lcal	tcp_send_on_window
-  :                            177 
-00:002546 600097              +178 	la	DAYCLOCK$
-00:002547 D0A005              +179 	ana	transmission:timer(2)
-00:002548 E6054C              +180 	jna	tcp4_globaltime?
-  :                            181 
-  :                            182 	$if	1			. adult time now!
-00:002549 70A016              +183 	tz	transmission:q4ack:head	. a local socket replied?
-00:00254A 3E0564              +184 	lcal	tcp4_retransmit1	. resend if so
-00:00254B 3E0841              +185 	lcal	tcp_restart_timer2	. no more completely automatic accepts
+00:002532 60A001              +153 	la	transmission:state
+00:002533 A5003F              +154 	and, xi	63
+  :                            155 	
+  :                            156 
+00:002534 680004              +157 	anu, xi	TCP_ESTABLISHED
+00:002535 DD0005              +157 
+00:002536 CE0539              +158 	jzb	tcp4_established!
+00:002537 CDFFFD              +159 	ab, xi	TCP_ESTABLISHED-TCP_CLOSEWAIT
+00:002538 DE0542              +160 	jnzb	tcp4_synreceived?
+  :                            161 
+  :                            162 tcp4_established!
+  :                            163 .	lcal	tcp_send_on_window
+  :                            164 
+00:002539 60A016              +165 	la	transmission:q4ack:head
+00:00253A C60540              +166 	jza	tcp4_new_traffic?	. (tcp4_globaltime?)
+  :                            167 
+  :                            168 
+00:00253B 600097              +169 	la	DAYCLOCK$
+00:00253C D0A005              +170 	ana	transmission:timer(2)
+00:00253D E60540              +171 	jna	tcp4_new_traffic?	. (tcp4_globaltime?)
+  :                            172 					. the top bit of the result
+  :                            173 					. is reliable
+00:00253E 3E0564              +174 	lcal	tcp4_retransmit1
+00:00253F 3E0841              +175 	lcal	tcp_restart_timer2	. (30.11.2017) ? an oversight
+  :                            176 					. this was not here?
+  :                            177 tcp4_new_traffic?
+00:002540 3E06E7              +178 	lcal	tcp_send_on_window
+00:002541 B6054C              +179 	j	tcp4_globaltime?
+  :                            180 
+  :                            181 tcp4_synreceived?
+00:002542 680004              +182 	anu, xi	TCP_SYNRECEIVED
+00:002543 DD0004              +182 
+00:002544 DE0553              +183 	jnzb	tcp4_state?
+  :                            184 
+00:002545 3E06E7              +185 	lcal	tcp_send_on_window
   :                            186 
-  :                            187 	$else
-  :                            188 
-  :                            189 	lcal	tcp_restart_timer2
-  :                            190 	call	(tcp_accept)
-  :                            191 	j	tcp4_globaltime?	. there are 2 comebacks from accept
-  :                            192 
-  :                            193 	$endif
-  :                            194 
-  :                            195 tcp4_globaltime?
-00:00254C 60A004              +196 	la	transmission:timer(1)
-00:00254D C605A2              +197 	jza	tcp4_locate_next_connection
-  :                            198 
-00:00254E D00097              +199 	ana	DAYCLOCK$
-00:00254F A605A2              +200 	jpa	tcp4_locate_next_connection
+00:002546 600097              +187 	la	DAYCLOCK$
+00:002547 D0A005              +188 	ana	transmission:timer(2)
+00:002548 E6054C              +189 	jna	tcp4_globaltime?
+  :                            190 
+  :                            191 	$if	1			. adult time now!
+00:002549 70A016              +192 	tz	transmission:q4ack:head	. a local socket replied?
+00:00254A 3E0564              +193 	lcal	tcp4_retransmit1	. resend if so
+00:00254B 3E0841              +194 	lcal	tcp_restart_timer2	. no more completely automatic accepts
+  :                            195 
+  :                            196 	$else
+  :                            197 
+  :                            198 	lcal	tcp_restart_timer2
+  :                            199 	call	(tcp_accept)
+  :                            200 	j	tcp4_globaltime?	. there are 2 comebacks from accept
   :                            201 
-00:002550 3E0847              +202 	lcal	tcp_restart_timer1	. don't repeat the same timeout
-  :                            203 					. during final state transitions
-  :                            204 
-  :                            205 		. an inactivity timeout is not part of TCP protocol except
-  :                            206 		. in state TCP_TIMEWAIT during outgoing close.
-  :                            207 		. However t77.4 provides inactivity timeout as an optional
-  :                            208 		. socket service in states
-  :                            209 
-  :                            210 		.	TCP_ESTABLISHED
-  :                            211 		.	TCP_FINWAIT2
-  :                            212 		.	TCP_CLOSEWAIT
+  :                            202 	$endif
+  :                            203 
+  :                            204 tcp4_globaltime?
+00:00254C 60A004              +205 	la	transmission:timer(1)
+00:00254D C605A2              +206 	jza	tcp4_locate_next_connection
+  :                            207 
+00:00254E D00097              +208 	ana	DAYCLOCK$
+00:00254F A605A2              +209 	jpa	tcp4_locate_next_connection
+  :                            210 
+00:002550 3E0847              +211 	lcal	tcp_restart_timer1	. don't repeat the same timeout
+  :                            212 					. during final state transitions
   :                            213 
-  :                            214 		. because many application protocols use an inactivity timeout.
-  :                            215 		. The timeout is signalled upwards by connection state change
-  :                            216 		.
-  :                            217 
-  :                            218 		. The timeout is not active if connection:timer(1) is zero
-  :                            219 
-00:002551 FF0E4F              +220 	call	(xdisco)
-  :                            221 
-00:002552 B605A2              +222 	j	tcp4_locate_next_connection
-  :                            223 
-  :                            224 tcp4_state?
-  :                            225 tcp4_closed?
-00:002553 680004              +226 	anu, xi	TCP_CLOSED
-00:002554 DD0001              +226 
-00:002555 CE0559              +227 	jzb	tcp4_free_block
-00:002556 680004              +228 	anu, xi	TCP_DELETETCB
-00:002557 DD000C              +228 
-00:002558 DE054C              +229 	jnzb	tcp4_globaltime?
-  :                            230 	
-  :                            231 tcp4_free_block
-  :                            232 				. free all buffers attached
-  :                            233 				. first
-  :                            234 
-00:002559 3E0583              +235 	lcal	tcp_free_rxtx
-  :                            236 
-00:00255A 68A000              +237 	lb	transmission:next, x
-00:00255B 28B000              +238 	sb	transmission:next, y
-00:00255C F88E50              +239 	push	*(BSOCKET*/12++tlist:free)
-00:00255D 38A000              +240 	pop	0, x
-00:00255E 108E50              +241 	sx	*(BSOCKET*/12++tlist:free)
-00:00255F 708E51              +242 	tz	*(BSOCKET*/12++tlist:hvbuffer)
-00:002560 B60562              +243 	j	$+2
-00:002561 FF0E52              +244 	call	(tcp_agent_free)
-00:002562 500005              +245 	lx	b
-00:002563 B605A4              +246 	j	tcp4_located_next_connection
-  :                            247 
-  :                            248 tcp4_retransmit1
-00:002564 600097              +249 	la	DAYCLOCK$
-00:002565 C502EE              +250 	aa, xi	TCP_TIMER2
-00:002566 20A005              +251 	sa	transmission:timer(2)
-  :                            252 
-00:002567 60A016              +253 	la	transmission:q4ack:head
-  :                            254 
-00:002568 F80002              +255 	push	x
-00:002569 F80004              +256 	push	a
-00:00256A 68C005              +257 	lb	descriptor:uproto, a
-00:00256B 280012              +258 	sb	TP_HEADER
-  :                            259 
-00:00256C 60D004              +260 	la	transfer:ack, b		. subtract the old +ack+window
-00:00256D C0D005              +261 	aa	transfer:ack+1, b	. by adding them to the -checksum
-00:00256E C0D007              +262 	aa	transfer:window, b
-00:00256F C0D008              +263 	aa	transfer:checksum, b
-  :                            264 
-00:002570 160010              +265 	dsr	16
-00:002571 0E0008              +266 	sbr	8
-00:002572 C00005              +267 	aa	b
+  :                            214 		. an inactivity timeout is not part of TCP protocol except
+  :                            215 		. in state TCP_TIMEWAIT during outgoing close.
+  :                            216 		. However t77.4 provides inactivity timeout as an optional
+  :                            217 		. socket service in states
+  :                            218 
+  :                            219 		.	TCP_ESTABLISHED
+  :                            220 		.	TCP_FINWAIT2
+  :                            221 		.	TCP_CLOSEWAIT
+  :                            222 
+  :                            223 		. because many application protocols use an inactivity timeout.
+  :                            224 		. The timeout is signalled upwards by connection state change
+  :                            225 		.
+  :                            226 
+  :                            227 		. The timeout is not active if connection:timer(1) is zero
+  :                            228 
+00:002551 FF0E4F              +229 	call	(xdisco)
+  :                            230 
+00:002552 B605A2              +231 	j	tcp4_locate_next_connection
+  :                            232 
+  :                            233 tcp4_state?
+  :                            234 tcp4_closed?
+00:002553 680004              +235 	anu, xi	TCP_CLOSED
+00:002554 DD0001              +235 
+00:002555 CE0559              +236 	jzb	tcp4_free_block
+00:002556 680004              +237 	anu, xi	TCP_DELETETCB
+00:002557 DD000C              +237 
+00:002558 DE054C              +238 	jnzb	tcp4_globaltime?
+  :                            239 	
+  :                            240 tcp4_free_block
+  :                            241 				. free all buffers attached
+  :                            242 				. first
+  :                            243 
+00:002559 3E0583              +244 	lcal	tcp_free_rxtx
+  :                            245 
+00:00255A 68A000              +246 	lb	transmission:next, x
+00:00255B 28B000              +247 	sb	transmission:next, y
+00:00255C F88E50              +248 	push	*(BSOCKET*/12++tlist:free)
+00:00255D 38A000              +249 	pop	0, x
+00:00255E 108E50              +250 	sx	*(BSOCKET*/12++tlist:free)
+00:00255F 708E51              +251 	tz	*(BSOCKET*/12++tlist:hvbuffer)
+00:002560 B60562              +252 	j	$+2
+00:002561 FF0E52              +253 	call	(tcp_agent_free)
+00:002562 500005              +254 	lx	b
+00:002563 B605A4              +255 	j	tcp4_located_next_connection
+  :                            256 
+  :                            257 tcp4_retransmit1
+00:002564 600097              +258 	la	DAYCLOCK$
+00:002565 C502EE              +259 	aa, xi	TCP_TIMER2
+00:002566 20A005              +260 	sa	transmission:timer(2)
+  :                            261 
+00:002567 60A016              +262 	la	transmission:q4ack:head
+  :                            263 
+00:002568 F80002              +264 	push	x
+00:002569 F80004              +265 	push	a
+00:00256A 68C005              +266 	lb	descriptor:uproto, a
+00:00256B 280012              +267 	sb	TP_HEADER
   :                            268 
-00:002573 B00E3F              +269 	xor	(00FFFF)
-  :                            270 
-00:002574 680012              +271 	lb	TP_HEADER
-00:002575 20D008              +272 	sa	transfer:checksum, b
+00:00256C 60D004              +269 	la	transfer:ack, b		. subtract the old +ack+window
+00:00256D C0D005              +270 	aa	transfer:ack+1, b	. by adding them to the -checksum
+00:00256E C0D007              +271 	aa	transfer:window, b
+00:00256F C0D008              +272 	aa	transfer:checksum, b
   :                            273 
-00:002576 3E06D8              +274 	lcal	tcp_award_window
-00:002577 CFA00E              +275 	dl	transmission:ack_window
-00:002578 160008              +276 	dsr	8
-00:002579 0E0008              +277 	sbr	8
-00:00257A C7000A              +278 	ds	10
+00:002570 160010              +274 	dsr	16
+00:002571 0E0008              +275 	sbr	8
+00:002572 C00005              +276 	aa	b
+  :                            277 
+00:002573 B00E3F              +278 	xor	(00FFFF)
   :                            279 
-00:00257B 3E071D              +280 	lcal	tcp_xmit
-  :                            281 
-00:00257C 380004              +282 	pop	a
-00:00257D 380002              +283 	pop	x
-  :                            284 
-00:00257E FD0001              +285 	MIB_ICOUNT48	tcpRetransSegs:i
-(+01)0f
-00:00257F 2F0424              +285 
-00:002580 5E0582              +285 
-(+01)0f
-00:002581 170423              +285 
-  :                            286 
-00:002582 350000              +287 	lret	0
+00:002574 680012              +280 	lb	TP_HEADER
+00:002575 20D008              +281 	sa	transfer:checksum, b
+  :                            282 
+00:002576 3E06D8              +283 	lcal	tcp_award_window
+00:002577 CFA00E              +284 	dl	transmission:ack_window
+00:002578 160008              +285 	dsr	8
+00:002579 0E0008              +286 	sbr	8
+00:00257A C7000A              +287 	ds	10
   :                            288 
-00:002583 9F0002              +289 tcp_free_rxtx $head_near	scalars(xy, long, x)
-00:002584 5CA010              +290 	ly, i	transmission:receiveq
-00:002585 3E0592              +291 	lcal	tcp_freerxq
-00:002586 50F000              +292 	lx	xy
-00:002587 5CA012              +293 	ly, i	transmission:deferq
-00:002588 3E0592              +294 	lcal	tcp_freerxq
-00:002589 50F000              +295 	lx	xy
-00:00258A 5CA014              +296 	ly, i	transmission:q4window
-00:00258B 3E059A              +297 	lcal	tcp_freetxq
-00:00258C 50F000              +298 	lx	xy
-00:00258D 5CA016              +299 	ly, i	transmission:q4ack
-00:00258E 3E059A              +300 	lcal	tcp_freetxq
-00:00258F 380002              +301 	pop	x
-00:002590 380003              +302 	pop	y
-00:002591 350000              +303 	lret	0
-  :                            304 
-  :                            305 tcp_freerxq $tree
-00:002592 F80003              +306 	$head_near	scalars(qtuple, int, y)
-00:002593 3E0CAE              +307 sample	lcal	readq
-00:002594 C60598              +308 	jza	clear
-00:002595 3E015C              +309 	lcal	net_free
-00:002596 58F000              +310 	ly	qtuple
-00:002597 B60593              +311 	j	sample
-00:002598 380003              +312 clear	pop	y
-00:002599 350000              +313 	lret	0
-  :                            314 	$root
-  :                            315 
-  :                            316 tcp_freetxq $tree
-00:00259A F80003              +317 	$head_near	scalars(qtuple, int, y)
-00:00259B 3E0CAE              +318 sample	lcal	readq
-00:00259C C605A0              +319 	jza	clear
-00:00259D 3E02B1              +320 	lcal	net_free_txbx
-00:00259E 58F000              +321 	ly	qtuple
-00:00259F B6059B              +322 	j	sample
-00:0025A0 380003              +323 clear	pop	y
-00:0025A1 350000              +324 	lret	0
-  :                            325 	$root
-  :                            326 
-  :                            327 tcp4_locate_next_connection
-00:0025A2 580002              +328 	ly	x
-00:0025A3 50A000              +329 	lx	0, x
-  :                            330 tcp4_located_next_connection
-00:0025A4 700002              +331 	tz	x
-00:0025A5 B60532              +332 	j	tcp4_service_next_connection
-00:0025A6 380002              +333 	pop	x
-00:0025A7 850001              +334 	ax, xi	1
+00:00257B 3E071D              +289 	lcal	tcp_xmit
+  :                            290 
+00:00257C 380004              +291 	pop	a
+00:00257D 380002              +292 	pop	x
+  :                            293 
+00:00257E FD0001              +294 	MIB_ICOUNT48	tcpRetransSegs:i
+(+01)0f
+00:00257F 2F0424              +294 
+00:002580 5E0582              +294 
+(+01)0f
+00:002581 170423              +294 
+  :                            295 
+00:002582 350000              +296 	lret	0
+  :                            297 
+00:002583 9F0002              +298 tcp_free_rxtx $head_near	scalars(xy, long, x)
+00:002584 5CA010              +299 	ly, i	transmission:receiveq
+00:002585 3E0592              +300 	lcal	tcp_freerxq
+00:002586 50F000              +301 	lx	xy
+00:002587 5CA012              +302 	ly, i	transmission:deferq
+00:002588 3E0592              +303 	lcal	tcp_freerxq
+00:002589 50F000              +304 	lx	xy
+00:00258A 5CA014              +305 	ly, i	transmission:q4window
+00:00258B 3E059A              +306 	lcal	tcp_freetxq
+00:00258C 50F000              +307 	lx	xy
+00:00258D 5CA016              +308 	ly, i	transmission:q4ack
+00:00258E 3E059A              +309 	lcal	tcp_freetxq
+00:00258F 380002              +310 	pop	x
+00:002590 380003              +311 	pop	y
+00:002591 350000              +312 	lret	0
+  :                            313 
+  :                            314 tcp_freerxq $tree
+00:002592 F80003              +315 	$head_near	scalars(qtuple, int, y)
+00:002593 3E0CAE              +316 sample	lcal	readq
+00:002594 C60598              +317 	jza	clear
+00:002595 3E015C              +318 	lcal	net_free
+00:002596 58F000              +319 	ly	qtuple
+00:002597 B60593              +320 	j	sample
+00:002598 380003              +321 clear	pop	y
+00:002599 350000              +322 	lret	0
+  :                            323 	$root
+  :                            324 
+  :                            325 tcp_freetxq $tree
+00:00259A F80003              +326 	$head_near	scalars(qtuple, int, y)
+00:00259B 3E0CAE              +327 sample	lcal	readq
+00:00259C C605A0              +328 	jza	clear
+00:00259D 3E02B1              +329 	lcal	net_free_txbx
+00:00259E 58F000              +330 	ly	qtuple
+00:00259F B6059B              +331 	j	sample
+00:0025A0 380003              +332 clear	pop	y
+00:0025A1 350000              +333 	lret	0
+  :                            334 	$root
   :                            335 
-  :                            336 	$do	tlist:chain()<32,	$flag	connections bank insufficient chain head space
-00:0025A8 400E53              +337 	lr	(BSOCKET*/12++tlist:chain(32)+1)
-00:0025A9 F605AB              +338 	jxge	tcp4_list_processed
-00:0025AA B60530              +339 	j	tcp4_process_list
-  :                            340 
-  :                            341 tcp4_list_processed
-00:0025AB 350000              +342 	lret	0
-  :                            343 
-  :                            344 tcp4_construct_connections_bank
-00:0025AC 651000              +345 	la, xi	4096
-00:0025AD 750043              +346 	ii	BANK$
-00:0025AE C605D8              +347 	jza	tcp4_construct_x
-00:0025AF 34002F              +348 	sabr	BSOCKET
-00:0025B0 580E40              +349 	ly	(BSOCKET*/12)
-00:0025B1 30B008              +350 ?	$do	32,	z	tlist:chain(?)
-00:0025B2 30B009              +350 
-00:0025B3 30B00A              +350 
-00:0025B4 30B00B              +350 
-00:0025B5 30B00C              +350 
-00:0025B6 30B00D              +350 
-00:0025B7 30B00E              +350 
-00:0025B8 30B00F              +350 
-00:0025B9 30B010              +350 
-00:0025BA 30B011              +350 
-00:0025BB 30B012              +350 
-00:0025BC 30B013              +350 
-00:0025BD 30B014              +350 
-00:0025BE 30B015              +350 
-00:0025BF 30B016              +350 
-00:0025C0 30B017              +350 
-00:0025C1 30B018              +350 
-00:0025C2 30B019              +350 
-00:0025C3 30B01A              +350 
-00:0025C4 30B01B              +350 
-00:0025C5 30B01C              +350 
-00:0025C6 30B01D              +350 
-00:0025C7 30B01E              +350 
-00:0025C8 30B01F              +350 
-00:0025C9 30B020              +350 
-00:0025CA 30B021              +350 
-00:0025CB 30B022              +350 
-00:0025CC 30B023              +350 
-00:0025CD 30B024              +350 
-00:0025CE 30B025              +350 
-00:0025CF 30B026              +350 
-00:0025D0 30B027              +350 
-00:0025D1 30B001              +351 	z	tlist:free
-00:0025D2 F80E53              +352 	push	(BSOCKET*/12++tlist:connection_block(1))
-00:0025D3 38B002              +353 	pop	tlist:top
-00:0025D4 30B003              +354 	z	tlist:hvbuffer
-00:0025D5 F82201              +355 	push	tx_buffers
-00:0025D6 38B004              +356 	pop	tlist:obuffer
-00:0025D7 30B000              +357 	z	tlist:link
-  :                            358 tcp4_construct_x
-00:0025D8 350000              +359 	lret	0
-  :                            360 
-  :                            361 tcp_auto_accept
-00:0025D9 3E05FF              +362 	lcal	tcp_add_connection
-00:0025DA 350000              +363 	lret	0			. no connection block
-00:0025DB 3E062E              +364 	lcal	tcp_add_incoming_defaults
-00:0025DC 350001              +365 	lret	1			. input segment bad
-  :                            366 
-00:0025DD FD0001              +367 	MIB_ICOUNT48	tcpPassiveOpens:i
+  :                            336 tcp4_locate_next_connection
+00:0025A2 580002              +337 	ly	x
+00:0025A3 50A000              +338 	lx	0, x
+  :                            339 tcp4_located_next_connection
+00:0025A4 700002              +340 	tz	x
+00:0025A5 B60532              +341 	j	tcp4_service_next_connection
+00:0025A6 380002              +342 	pop	x
+00:0025A7 850001              +343 	ax, xi	1
+  :                            344 
+  :                            345 	$do	tlist:chain()<32,	$flag	connections bank insufficient chain head space
+00:0025A8 400E53              +346 	lr	(BSOCKET*/12++tlist:chain(32)+1)
+00:0025A9 F605AB              +347 	jxge	tcp4_list_processed
+00:0025AA B60530              +348 	j	tcp4_process_list
+  :                            349 
+  :                            350 tcp4_list_processed
+00:0025AB 350000              +351 	lret	0
+  :                            352 
+  :                            353 tcp4_construct_connections_bank
+00:0025AC 651000              +354 	la, xi	4096
+00:0025AD 750043              +355 	ii	BANK$
+00:0025AE C605D8              +356 	jza	tcp4_construct_x
+00:0025AF 34002F              +357 	sabr	BSOCKET
+00:0025B0 580E40              +358 	ly	(BSOCKET*/12)
+00:0025B1 30B008              +359 ?	$do	32,	z	tlist:chain(?)
+00:0025B2 30B009              +359 
+00:0025B3 30B00A              +359 
+00:0025B4 30B00B              +359 
+00:0025B5 30B00C              +359 
+00:0025B6 30B00D              +359 
+00:0025B7 30B00E              +359 
+00:0025B8 30B00F              +359 
+00:0025B9 30B010              +359 
+00:0025BA 30B011              +359 
+00:0025BB 30B012              +359 
+00:0025BC 30B013              +359 
+00:0025BD 30B014              +359 
+00:0025BE 30B015              +359 
+00:0025BF 30B016              +359 
+00:0025C0 30B017              +359 
+00:0025C1 30B018              +359 
+00:0025C2 30B019              +359 
+00:0025C3 30B01A              +359 
+00:0025C4 30B01B              +359 
+00:0025C5 30B01C              +359 
+00:0025C6 30B01D              +359 
+00:0025C7 30B01E              +359 
+00:0025C8 30B01F              +359 
+00:0025C9 30B020              +359 
+00:0025CA 30B021              +359 
+00:0025CB 30B022              +359 
+00:0025CC 30B023              +359 
+00:0025CD 30B024              +359 
+00:0025CE 30B025              +359 
+00:0025CF 30B026              +359 
+00:0025D0 30B027              +359 
+00:0025D1 30B001              +360 	z	tlist:free
+00:0025D2 F80E53              +361 	push	(BSOCKET*/12++tlist:connection_block(1))
+00:0025D3 38B002              +362 	pop	tlist:top
+00:0025D4 30B003              +363 	z	tlist:hvbuffer
+00:0025D5 F82201              +364 	push	tx_buffers
+00:0025D6 38B004              +365 	pop	tlist:obuffer
+00:0025D7 30B000              +366 	z	tlist:link
+  :                            367 tcp4_construct_x
+00:0025D8 350000              +368 	lret	0
+  :                            369 
+  :                            370 tcp_auto_accept
+00:0025D9 3E05FF              +371 	lcal	tcp_add_connection
+00:0025DA 350000              +372 	lret	0			. no connection block
+00:0025DB 3E062E              +373 	lcal	tcp_add_incoming_defaults
+00:0025DC 350001              +374 	lret	1			. input segment bad
+  :                            375 
+00:0025DD FD0001              +376 	MIB_ICOUNT48	tcpPassiveOpens:i
 (+01)0f
-00:0025DE 2F0418              +367 
-00:0025DF 5E05E1              +367 
+00:0025DE 2F0418              +376 
+00:0025DF 5E05E1              +376 
 (+01)0f
-00:0025E0 170417              +367 
-  :                            368 
-00:0025E1 CFA00E              +369 	dl	transmission:ack_window, x
-00:0025E2 D70E54              +370 	da	(1*/16:d)
-00:0025E3 C7A00E              +371 	ds	transmission:ack_window, x
-00:0025E4 8F0008              +372 	qpush	8
-00:0025E5 87A006              +373 	qpop	transmission:socket_address, x
-00:0025E6 708E56              +374 	tz	*(BSOCKET*/18++tlist:hvbuffer:s)
-00:0025E7 B605EC              +375 	j	tcp_hv_accept
-00:0025E8 FD0004              +376 	push,xi	TCP_SYNRECEIVED
-00:0025E9 38A001              +377 	pop	transmission:state
-00:0025EA FF0E57              +378 	call	(tcp_agent_add)
-00:0025EB 350002              +379 	lret	2
-  :                            380 
-  :                            381 tcp_hv_accept
-00:0025EC 3E0841              +382 	lcal	tcp_restart_timer2
-00:0025ED FF0E58              +383 	call	(tcp_accept)
-00:0025EE 350001              +384 	lret	1			. could not respond yet
-00:0025EF CFA00C              +385         dl      transmission:sequence_ackx, x
-00:0025F0 D70E54              +386         da      (1*/16:d)
-00:0025F1 C7A00C              +387         ds      transmission:sequence_ackx, x
-00:0025F2 350002              +388 	lret	2			. good
+00:0025E0 170417              +376 
+  :                            377 
+00:0025E1 CFA00E              +378 	dl	transmission:ack_window, x
+00:0025E2 D70E54              +379 	da	(1*/16:d)
+00:0025E3 C7A00E              +380 	ds	transmission:ack_window, x
+00:0025E4 8F0008              +381 	qpush	8
+00:0025E5 87A006              +382 	qpop	transmission:socket_address, x
+00:0025E6 708E56              +383 	tz	*(BSOCKET*/18++tlist:hvbuffer:s)
+00:0025E7 B605EC              +384 	j	tcp_hv_accept
+00:0025E8 FD0004              +385 	push,xi	TCP_SYNRECEIVED
+00:0025E9 38A001              +386 	pop	transmission:state
+00:0025EA FF0E57              +387 	call	(tcp_agent_add)
+00:0025EB 350002              +388 	lret	2
   :                            389 
-  :                            390 tcp_xaccept
-00:0025F3 60A016              +391 	la	transmission:q4ack:head
-00:0025F4 90A014              +392 	or	transmission:q4window.head
-00:0025F5 D605FC              +393 	jnza	tcp_e0_accept
-00:0025F6 F8A002              +394 	push	transmission:mss	. this may be happening
-00:0025F7 38001A              +395 	pop	MSS			. many circuits later than
-  :                            396 					. SYNC receive
-  :                            397 
-00:0025F8 3E05EC              +398 	lcal	tcp_hv_accept
-00:0025F9 B605FD              +399 	j	tcp_e1_accept
-00:0025FA B605FD              +400 	j	tcp_e2_accept
-00:0025FB 650000              +401 	la, xi	0			. generate a handle!
-  :                            402 
-  :                            403 tcp_e0_accept
-00:0025FC 3D0000              +404 	fret	0
-  :                            405 tcp_e1_accept
-  :                            406 tcp_e2_accept
-00:0025FD 65FFFF              +407 	la, xi	-1
-00:0025FE 3D0000              +408 	fret	0
-  :                            409 	
-  :                            410 .	prior pointer is in y
-  :                            411 .	actual pointer is NULL
-  :                            412 
-  :                            413 tcp_add_connection
-00:0025FF 60B000              +414 	la	0, y		. insert point forward pointer
-00:002600 680E40              +415 	lb	(BSOCKET*/12)
-00:002601 50D001              +416 	lx	tlist:free, b
-00:002602 700002              +417 	tz	x
-00:002603 B6060A              +418 	j	tcp_free_block_found
-00:002604 50D002              +419 	lx	tlist:top, b
-00:002605 44DFE8              +420 	lr, i	tlist:connection_block(4096/24-1), b
-00:002606 F6061B              +421 	jxge	tcp_no_new_connection
-00:002607 FCA018              +422 	push, i	24, x
-00:002608 38D002              +423 	pop	tlist:top, b
-00:002609 B6060C              +424 	j	tcp_connection_made
-  :                            425 
-  :                            426 tcp_free_block_found
-00:00260A F8A000              +427 	push	transmission:next, x
-00:00260B 38D001              +428 	pop	tlist:free, b
-  :                            429 
-  :                            430 tcp_connection_made
-00:00260C 20A000              +431 	sa	transmission:next, x	. insert point forward pointer
-00:00260D 10B000              +432 	sx	transmission:next, y	. insert point previous block
-  :                            433 
-00:00260E CF0096              +434 	dl	DAYCLOCK$U
-00:00260F 360010              +435 	dsl	16
-00:002610 C7A00C              +436 	ds	transmission:sequence_ackx
-00:002611 3E0847              +437 	lcal	tcp_restart_timer1
+  :                            390 tcp_hv_accept
+00:0025EC 3E0841              +391 	lcal	tcp_restart_timer2
+00:0025ED FF0E58              +392 	call	(tcp_accept)
+00:0025EE 350001              +393 	lret	1			. could not respond yet
+00:0025EF CFA00C              +394         dl      transmission:sequence_ackx, x
+00:0025F0 D70E54              +395         da      (1*/16:d)
+00:0025F1 C7A00C              +396         ds      transmission:sequence_ackx, x
+00:0025F2 350002              +397 	lret	2			. good
+  :                            398 
+  :                            399 tcp_xaccept
+00:0025F3 60A016              +400 	la	transmission:q4ack:head
+00:0025F4 90A014              +401 	or	transmission:q4window.head
+00:0025F5 D605FC              +402 	jnza	tcp_e0_accept
+00:0025F6 F8A002              +403 	push	transmission:mss	. this may be happening
+00:0025F7 38001A              +404 	pop	MSS			. many circuits later than
+  :                            405 					. SYNC receive
+  :                            406 
+00:0025F8 3E05EC              +407 	lcal	tcp_hv_accept
+00:0025F9 B605FD              +408 	j	tcp_e1_accept
+00:0025FA B605FD              +409 	j	tcp_e2_accept
+00:0025FB 650000              +410 	la, xi	0			. generate a handle!
+  :                            411 
+  :                            412 tcp_e0_accept
+00:0025FC 3D0000              +413 	fret	0
+  :                            414 tcp_e1_accept
+  :                            415 tcp_e2_accept
+00:0025FD 65FFFF              +416 	la, xi	-1
+00:0025FE 3D0000              +417 	fret	0
+  :                            418 	
+  :                            419 .	prior pointer is in y
+  :                            420 .	actual pointer is NULL
+  :                            421 
+  :                            422 tcp_add_connection
+00:0025FF 60B000              +423 	la	0, y		. insert point forward pointer
+00:002600 680E40              +424 	lb	(BSOCKET*/12)
+00:002601 50D001              +425 	lx	tlist:free, b
+00:002602 700002              +426 	tz	x
+00:002603 B6060A              +427 	j	tcp_free_block_found
+00:002604 50D002              +428 	lx	tlist:top, b
+00:002605 44DFE8              +429 	lr, i	tlist:connection_block(4096/24-1), b
+00:002606 F6061B              +430 	jxge	tcp_no_new_connection
+00:002607 FCA018              +431 	push, i	24, x
+00:002608 38D002              +432 	pop	tlist:top, b
+00:002609 B6060C              +433 	j	tcp_connection_made
+  :                            434 
+  :                            435 tcp_free_block_found
+00:00260A F8A000              +436 	push	transmission:next, x
+00:00260B 38D001              +437 	pop	tlist:free, b
   :                            438 
-00:002612 160030              +439 	dsr	48
-00:002613 30A003              +440 	z	transmission:tsq
-00:002614 C7A010              +441 	ds	transmission:receiveq:head
-00:002615 C7A012              +442 	ds	transmission:deferq:head
-00:002616 C7A014              +443 	ds	transmission:q4window:head
-00:002617 C7A016              +444 	ds	transmission:q4ack:head
-  :                            445 
-00:002618 6D1000              +446 	lb, xi	4096
-00:002619 C7A00E              +447 	ds	transmission:ack_window
-00:00261A 350001              +448 	lret	1
-  :                            449 
-  :                            450 tcp_no_new_connection
-00:00261B 350000              +451 	lret	0
-  :                            452 
-  :                            453 tcp_scan_options
-00:00261C 400004              +454 	lr	a
-00:00261D B6062C              +455 	j	tcp_scan_next_option?
-  :                            456 
-  :                            457 tcp_scan_next_option
-00:00261E 60B000              +458 	la	0, y
-00:00261F 680004              +459 	anu, xi	0204
-00:002620 DD0204              +459 
-00:002621 DE062B              +460 	jnzb	tcp_scan_option2
-00:002622 1E0624              +461 	jdr	tcp_scan_mss
-00:002623 350000              +462 	lret	0
-  :                            463 
-  :                            464 tcp_scan_mss
-00:002624 60B001              +465 	la	1, y
-00:002625 680004              +466 	anu	MSS
-00:002626 D8001A              +466 
-00:002627 7E0629              +467 	jc	tcp_keep_mss
-00:002628 20001A              +468 	sa	MSS
-  :                            469 tcp_keep_mss
-00:002629 8D0002              +470 	ay, xi	2
-00:00262A B6062C              +471 	j	tcp_scan_next_option?
+  :                            439 tcp_connection_made
+00:00260C 20A000              +440 	sa	transmission:next, x	. insert point forward pointer
+00:00260D 10B000              +441 	sx	transmission:next, y	. insert point previous block
+  :                            442 
+00:00260E CF0096              +443 	dl	DAYCLOCK$U
+00:00260F 360010              +444 	dsl	16
+00:002610 C7A00C              +445 	ds	transmission:sequence_ackx
+00:002611 3E0847              +446 	lcal	tcp_restart_timer1
+  :                            447 
+00:002612 160030              +448 	dsr	48
+00:002613 30A003              +449 	z	transmission:tsq
+00:002614 C7A010              +450 	ds	transmission:receiveq:head
+00:002615 C7A012              +451 	ds	transmission:deferq:head
+00:002616 C7A014              +452 	ds	transmission:q4window:head
+00:002617 C7A016              +453 	ds	transmission:q4ack:head
+  :                            454 
+00:002618 6D1000              +455 	lb, xi	4096
+00:002619 C7A00E              +456 	ds	transmission:ack_window
+00:00261A 350001              +457 	lret	1
+  :                            458 
+  :                            459 tcp_no_new_connection
+00:00261B 350000              +460 	lret	0
+  :                            461 
+  :                            462 tcp_scan_options
+00:00261C 400004              +463 	lr	a
+00:00261D B6062C              +464 	j	tcp_scan_next_option?
+  :                            465 
+  :                            466 tcp_scan_next_option
+00:00261E 60B000              +467 	la	0, y
+00:00261F 680004              +468 	anu, xi	0204
+00:002620 DD0204              +468 
+00:002621 DE062B              +469 	jnzb	tcp_scan_option2
+00:002622 1E0624              +470 	jdr	tcp_scan_mss
+00:002623 350000              +471 	lret	0
   :                            472 
-  :                            473 		. that will work so long as MSS
-  :                            474 		. option is on a byte pair boundary
-  :                            475 
-  :                            476 
-  :                            477 tcp_scan_option2
-00:00262B 8D0001              +478 	ay, xi	1
-  :                            479 
-  :                            480 tcp_scan_next_option?
-00:00262C 1E061E              +481 	jdr	tcp_scan_next_option
-00:00262D 350001              +482 	lret	1
-  :                            483 
-  :                            484 tcp_add_incoming_defaults
-00:00262E 60E002              +485 	la	descriptor:i_f
+  :                            473 tcp_scan_mss
+00:002624 60B001              +474 	la	1, y
+00:002625 680004              +475 	anu	MSS
+00:002626 D8001A              +475 
+00:002627 7E0629              +476 	jc	tcp_keep_mss
+00:002628 20001A              +477 	sa	MSS
+  :                            478 tcp_keep_mss
+00:002629 8D0002              +479 	ay, xi	2
+00:00262A B6062C              +480 	j	tcp_scan_next_option?
+  :                            481 
+  :                            482 		. that will work so long as MSS
+  :                            483 		. option is on a byte pair boundary
+  :                            484 
+  :                            485 
+  :                            486 tcp_scan_option2
+00:00262B 8D0001              +487 	ay, xi	1
+  :                            488 
+  :                            489 tcp_scan_next_option?
+00:00262C 1E061E              +490 	jdr	tcp_scan_next_option
+00:00262D 350001              +491 	lret	1
+  :                            492 
+  :                            493 tcp_add_incoming_defaults
+00:00262E 60E002              +494 	la	descriptor:i_f
 (+01)10
-00:00262F C50000              +486 	aa, xi	i_f_pointer_array
-00:002630 60C000              +487 	la	0, a
-00:002631 68C004              +488 	lb	this_if:mtu, a
-00:002632 CDFFD8              +489 	ab, xi	-40
-00:002633 28001A              +490 	sb	MSS
-00:002634 58E005              +491 	ly	descriptor:uproto
-00:002635 CFB002              +492 	dl	transfer:seq, y
-00:002636 2E0008              +493 	sbl	8
-00:002637 360008              +494 	dsl	8
-00:002638 480E3F              +495 	lk	(00FFFF)
-00:002639 BFA00F              +496 	mlb	transmission:ack_window+1, x
-00:00263A C7A00E              +497 	ds	transmission:ack_window, x
-  :                            498 
-00:00263B CFA00C              +499 	dl	transmission:sequence_ackx, x
-00:00263C BFB007              +500 	mlb	transfer:window, y
-00:00263D C7A00A              +501 	ds	transmission:remote_ack_window, x
-  :                            502 
-00:00263E 60001B              +503 	la	HL_FLAGS
-00:00263F 06000B              +504 	sar	12-1
-00:002640 A5001E              +505 	and, xi	30
-00:002641 8D000A              +506 	ay, xi	10
-00:002642 C5FFF6              +507 	aa, xi	-10
-  :                            508 
-00:002643 E60646              +509 	jna	tcp_add_anomaly
-00:002644 C60647              +510 	jza	tcp_options_complete
-00:002645 3E061C              +511 	lcal	tcp_scan_options
-  :                            512 tcp_add_anomaly
-00:002646 350000              +513 	lret	0	. bad return from scan_options
-  :                            514 
-  :                            515 tcp_options_complete
-00:002647 18E006              +516 	sy	descriptor:apdata
+00:00262F C50000              +495 	aa, xi	i_f_pointer_array
+00:002630 60C000              +496 	la	0, a
+00:002631 68C004              +497 	lb	this_if:mtu, a
+00:002632 CDFFD8              +498 	ab, xi	-40
+00:002633 28001A              +499 	sb	MSS
+00:002634 58E005              +500 	ly	descriptor:uproto
+00:002635 CFB002              +501 	dl	transfer:seq, y
+00:002636 2E0008              +502 	sbl	8
+00:002637 360008              +503 	dsl	8
+00:002638 480E3F              +504 	lk	(00FFFF)
+00:002639 BFA00F              +505 	mlb	transmission:ack_window+1, x
+00:00263A C7A00E              +506 	ds	transmission:ack_window, x
+  :                            507 
+00:00263B CFA00C              +508 	dl	transmission:sequence_ackx, x
+00:00263C BFB007              +509 	mlb	transfer:window, y
+00:00263D C7A00A              +510 	ds	transmission:remote_ack_window, x
+  :                            511 
+00:00263E 60001B              +512 	la	HL_FLAGS
+00:00263F 06000B              +513 	sar	12-1
+00:002640 A5001E              +514 	and, xi	30
+00:002641 8D000A              +515 	ay, xi	10
+00:002642 C5FFF6              +516 	aa, xi	-10
   :                            517 
-00:002648 60001A              +518 	la	MSS
-00:002649 20A002              +519 	sa	transmission:mss, x
-00:00264A 350001              +520 	lret	1
-  :                            521 
-  :                            522 	$if	0
-  :                            523 tcp_clear
-  :                            524 	push	x
-  :                            525 tcp_clear3			. remove q4window now
-  :                            526 	lx	0, sp
-  :                            527 	ly	transmission:q4window,,i
-  :                            528 	lcal	readq
-  :                            529 	jza	tcp_clear4
-  :                            530 	lcal	net_free_txb
-  :                            531 	j	tcp_clear3
-  :                            532 tcp_clear4			. mark q4ack no-send, no-retain
-  :                            533 	lx	0, sp
-  :                            534 	ly	transmission:q4ack,,i
-  :                            535 	lcal	readq
-  :                            536 	jza	tcp_clearx
-  :                            537 	z	descriptor:bytes, a
-  :                            538 	j	tcp_clear4
-  :                            539 tcp_clearx
-  :                            540 	pop	x
-  :                            541 	lret	0
-  :                            542 	$endif
-  :                            543 
-  :                            544 tcp_log_reset
-00:00264B FD0001              +545 	MIB_ICOUNT48	tcpOutRsts:i
+00:002643 E60646              +518 	jna	tcp_add_anomaly
+00:002644 C60647              +519 	jza	tcp_options_complete
+00:002645 3E061C              +520 	lcal	tcp_scan_options
+  :                            521 tcp_add_anomaly
+00:002646 350000              +522 	lret	0	. bad return from scan_options
+  :                            523 
+  :                            524 tcp_options_complete
+00:002647 18E006              +525 	sy	descriptor:apdata
+  :                            526 
+00:002648 60001A              +527 	la	MSS
+00:002649 20A002              +528 	sa	transmission:mss, x
+00:00264A 350001              +529 	lret	1
+  :                            530 
+  :                            531 	$if	0
+  :                            532 tcp_clear
+  :                            533 	push	x
+  :                            534 tcp_clear3			. remove q4window now
+  :                            535 	lx	0, sp
+  :                            536 	ly	transmission:q4window,,i
+  :                            537 	lcal	readq
+  :                            538 	jza	tcp_clear4
+  :                            539 	lcal	net_free_txb
+  :                            540 	j	tcp_clear3
+  :                            541 tcp_clear4			. mark q4ack no-send, no-retain
+  :                            542 	lx	0, sp
+  :                            543 	ly	transmission:q4ack,,i
+  :                            544 	lcal	readq
+  :                            545 	jza	tcp_clearx
+  :                            546 	z	descriptor:bytes, a
+  :                            547 	j	tcp_clear4
+  :                            548 tcp_clearx
+  :                            549 	pop	x
+  :                            550 	lret	0
+  :                            551 	$endif
+  :                            552 
+  :                            553 tcp_log_reset
+00:00264B FD0001              +554 	MIB_ICOUNT48	tcpOutRsts:i
 (+01)0f
-00:00264C 2F0428              +545 
-00:00264D 5E064F              +545 
+00:00264C 2F0428              +554 
+00:00264D 5E064F              +554 
 (+01)0f
-00:00264E 170427              +545 
-00:00264F 350000              +546 	lret	0	
-  :                            547 
-  :                            548 tcp_ripdown
-  :                            549 .	lcal	tcp_clear
-00:002650 3E064B              +550 	lcal	tcp_log_reset
-00:002651 FD0001              +551 	push,xi	TCP_CLOSED
-00:002652 38A001              +552 	pop	transmission:state
-00:002653 350000              +553 	lret	0
-  :                            554 
-  :                            555 tcp_refuse
-00:002654 3E075F              +556 	lcal	tcp_reset	. send a reset if possible
-00:002655 B60656              +557 	j	$+1	
-00:002656 3E0650              +558 	lcal	tcp_ripdown
-00:002657 3D0000              +559 	fret	0
-  :                            560 
-  :                            561 tcp_locate_connection
-00:002658 50E005              +562 	lx	descriptor:uproto
-00:002659 100012              +563 	sx	RX_SEGMENT
-00:00265A 60A006              +564 	la	transfer:hl_code, x
-00:00265B 20001B              +565 	sa	HL_FLAGS
-  :                            566 
-00:00265C CFA000              +567 	dl	transfer:sourcep
-00:00265D 20000B              +568 	sa	11		. the remote port
-00:00265E 280009              +569 	sb	9		. the local port
-  :                            570 
-00:00265F 480E3F              +571 	lk	(00FFFF)
-00:002660 50E004              +572 	lx	descriptor:dgram
-  :                            573 
-00:002661 CFA006              +574 	dl	dgram:ipsource, x
-00:002662 2E0008              +575 	sbl	8
-00:002663 360008              +576 	dsl	8
-00:002664 BF000B              +577 	mlb	11
-00:002665 C7000A              +578 	ds	10		. the remote socket
+00:00264E 170427              +554 
+00:00264F 350000              +555 	lret	0	
+  :                            556 
+  :                            557 tcp_ripdown
+  :                            558 .	lcal	tcp_clear
+00:002650 3E064B              +559 	lcal	tcp_log_reset
+00:002651 FD0001              +560 	push,xi	TCP_CLOSED
+00:002652 38A001              +561 	pop	transmission:state
+00:002653 350000              +562 	lret	0
+  :                            563 
+  :                            564 tcp_refuse
+00:002654 3E075F              +565 	lcal	tcp_reset	. send a reset if possible
+00:002655 B60656              +566 	j	$+1	
+00:002656 3E0650              +567 	lcal	tcp_ripdown
+00:002657 3D0000              +568 	fret	0
+  :                            569 
+  :                            570 tcp_locate_connection
+00:002658 50E005              +571 	lx	descriptor:uproto
+00:002659 100012              +572 	sx	RX_SEGMENT
+00:00265A 60A006              +573 	la	transfer:hl_code, x
+00:00265B 20001B              +574 	sa	HL_FLAGS
+  :                            575 
+00:00265C CFA000              +576 	dl	transfer:sourcep
+00:00265D 20000B              +577 	sa	11		. the remote port
+00:00265E 280009              +578 	sb	9		. the local port
   :                            579 
-00:002666 CFA008              +580 	dl	dgram:ipdest, x
-00:002667 2E0008              +581 	sbl	8
-00:002668 360008              +582 	dsl	8
-00:002669 BF0009              +583 	mlb	9
-00:00266A C70008              +584 	ds	8		. the local socket
-  :                            585 
-00:00266B 708E51              +586 	tz	*(BSOCKET*/12++tlist:hvbuffer)
-00:00266C B60671              +587 	j	tcp_resolve2remotesocket
-00:00266D 360020              +588 	dsl	32
-00:00266E 060008              +589 	sar	8
-00:00266F FF0E59              +590 	call	(tcp_hash_localsocket)
-00:002670 B60673              +591 	j	tcp_walk_connection
-  :                            592 
-  :                            593 tcp_resolve2remotesocket
-00:002671 CF000A              +594 	dl	10
-00:002672 FF0E5A              +595 	call	(tcp_hash_remotesocket)
-  :                            596 
-  :                            597 tcp_walk_connection
-  :                            598 
-  :                            599 
-00:002673 500E4E              +600 	lx	(BSOCKET*/12++tlist:chain(1))	. &first
-00:002674 800004              +601 	ax	a
-  :                            602 tcp_seek
-00:002675 580002              +603 	ly	x
-00:002676 50A000              +604 	lx	transmission:next
+00:00265F 480E3F              +580 	lk	(00FFFF)
+00:002660 50E004              +581 	lx	descriptor:dgram
+  :                            582 
+00:002661 CFA006              +583 	dl	dgram:ipsource, x
+00:002662 2E0008              +584 	sbl	8
+00:002663 360008              +585 	dsl	8
+00:002664 BF000B              +586 	mlb	11
+00:002665 C7000A              +587 	ds	10		. the remote socket
+  :                            588 
+00:002666 CFA008              +589 	dl	dgram:ipdest, x
+00:002667 2E0008              +590 	sbl	8
+00:002668 360008              +591 	dsl	8
+00:002669 BF0009              +592 	mlb	9
+00:00266A C70008              +593 	ds	8		. the local socket
+  :                            594 
+00:00266B 708E51              +595 	tz	*(BSOCKET*/12++tlist:hvbuffer)
+00:00266C B60671              +596 	j	tcp_resolve2remotesocket
+00:00266D 360020              +597 	dsl	32
+00:00266E 060008              +598 	sar	8
+00:00266F FF0E59              +599 	call	(tcp_hash_localsocket)
+00:002670 B60673              +600 	j	tcp_walk_connection
+  :                            601 
+  :                            602 tcp_resolve2remotesocket
+00:002671 CF000A              +603 	dl	10
+00:002672 FF0E5A              +604 	call	(tcp_hash_remotesocket)
   :                            605 
-00:002677 700002              +606 	tz	x
-00:002678 B6067A              +607 	j	tcp_compare_local
-00:002679 350000              +608 	lret	0
-  :                            609 
-  :                            610 tcp_compare_local
-00:00267A 4FA006              +611 	ql	transmission:socket_address
-00:00267B DF0008              +612 	dan	8
-  :                            613 
-00:00267C 7C0680              +614 	jdz	tcp_compare_remote
-00:00267D 7E0675              +615 	jc	tcp_seek	. socket address > segment address
-  :                            616 
-00:00267E 550000              +617 	lx, xi	0		. insert point is in y
-00:00267F 350000              +618 	lret	0
-  :                            619 
-  :                            620 tcp_compare_remote
-00:002680 CF0006              +621 	dl	6
-00:002681 DF000A              +622 	dan	10
-  :                            623 
-00:002682 7C0685              +624 	jdz	tcp_tbloc_found	. socket addresses = segment addresses
-00:002683 7E0675              +625 	jc	tcp_seek	. socket address > sending address
-  :                            626 
-00:002684 550000              +627 	lx, xi	0		. insert point is in y
-  :                            628 tcp_tbloc_found
-00:002685 350000              +629 	lret	0
-  :                            630 
-  :                            631 	. the LRET was up there
+  :                            606 tcp_walk_connection
+  :                            607 
+  :                            608 
+00:002673 500E4E              +609 	lx	(BSOCKET*/12++tlist:chain(1))	. &first
+00:002674 800004              +610 	ax	a
+  :                            611 tcp_seek
+00:002675 580002              +612 	ly	x
+00:002676 50A000              +613 	lx	transmission:next
+  :                            614 
+00:002677 700002              +615 	tz	x
+00:002678 B6067A              +616 	j	tcp_compare_local
+00:002679 350000              +617 	lret	0
+  :                            618 
+  :                            619 tcp_compare_local
+00:00267A 4FA006              +620 	ql	transmission:socket_address
+00:00267B DF0008              +621 	dan	8
+  :                            622 
+00:00267C 7C0680              +623 	jdz	tcp_compare_remote
+00:00267D 7E0675              +624 	jc	tcp_seek	. socket address > segment address
+  :                            625 
+00:00267E 550000              +626 	lx, xi	0		. insert point is in y
+00:00267F 350000              +627 	lret	0
+  :                            628 
+  :                            629 tcp_compare_remote
+00:002680 CF0006              +630 	dl	6
+00:002681 DF000A              +631 	dan	10
   :                            632 
-00:002686 580012              +633 tcp4_rx	ly	TP_HEADER
-00:002687 100012              +634 	sx	TP_HEADER
-00:002688 CF0006              +635 	dl	HEADER_SUM
-  :                            636 
-00:002689 FD0001              +637 	MIB_ICOUNT48	tcpInSegs:i
+00:002682 7C0685              +633 	jdz	tcp_tbloc_found	. socket addresses = segment addresses
+00:002683 7E0675              +634 	jc	tcp_seek	. socket address > sending address
+  :                            635 
+00:002684 550000              +636 	lx, xi	0		. insert point is in y
+  :                            637 tcp_tbloc_found
+00:002685 350000              +638 	lret	0
+  :                            639 
+  :                            640 	. the LRET was up there
+  :                            641 
+00:002686 580012              +642 tcp4_rx	ly	TP_HEADER
+00:002687 100012              +643 	sx	TP_HEADER
+00:002688 CF0006              +644 	dl	HEADER_SUM
+  :                            645 
+00:002689 FD0001              +646 	MIB_ICOUNT48	tcpInSegs:i
 (+01)0f
-00:00268A 2F0420              +637 
-00:00268B 5E068D              +637 
+00:00268A 2F0420              +646 
+00:00268B 5E068D              +646 
 (+01)0f
-00:00268C 17041F              +637 
-  :                            638 
-00:00268D 8FB000              +639 	qpush	transfer:sourcep, y
-00:00268E D7F000              +640 	da	0, sp
-00:00268F D7F002              +641 	da	2, sp
-00:002690 87A000              +642 	qpop	transfer:sourcep
-  :                            643 
-00:002691 8FB004              +644 	qpush	transfer:ack, y
-00:002692 D7F000              +645 	da	0, sp
-00:002693 D7F002              +646 	da	2, sp
-00:002694 87A004              +647 	qpop	transfer:ack
-  :                            648 
-00:002695 9FB008              +649 	dpush	transfer:checksum, y
-00:002696 C0F001              +650 	aa	1, sp		.	urgent pointer
-00:002697 380011              +651 	pop	CHECKSUM
-00:002698 38A009              +652 	pop	transfer:urgent
-  :                            653 
-00:002699 85000A              +654 	ax, xi	10		.	fixed part of segment header
-00:00269A 8D000A              +655 	ay, xi	10		.	is already buffered and summed
-  :                            656 
-00:00269B C70006              +657 	ds	HEADER_SUM
-00:00269C 60E003              +658 	la	descriptor:bytes
-  :                            659 
-00:00269D C5FFEC              +660 	aa, xi	-20
-00:00269E 5E028C              +661 	jnc	ipv4_drop	.	add header options and payload
+00:00268C 17041F              +646 
+  :                            647 
+00:00268D 8FB000              +648 	qpush	transfer:sourcep, y
+00:00268E D7F000              +649 	da	0, sp
+00:00268F D7F002              +650 	da	2, sp
+00:002690 87A000              +651 	qpop	transfer:sourcep
+  :                            652 
+00:002691 8FB004              +653 	qpush	transfer:ack, y
+00:002692 D7F000              +654 	da	0, sp
+00:002693 D7F002              +655 	da	2, sp
+00:002694 87A004              +656 	qpop	transfer:ack
+  :                            657 
+00:002695 9FB008              +658 	dpush	transfer:checksum, y
+00:002696 C0F001              +659 	aa	1, sp		.	urgent pointer
+00:002697 380011              +660 	pop	CHECKSUM
+00:002698 38A009              +661 	pop	transfer:urgent
   :                            662 
-00:00269F 3E0459              +663 	lcal	rx_payload
-00:0026A0 B00E3F              +664 	xor	(00FFFF)
-00:0026A1 D00011              +665 	ana	CHECKSUM
-00:0026A2 D6028C              +666 	jnza	ipv4_drop
-  :                            667 
-00:0026A3 500012              +668 	lx	TP_HEADER
-00:0026A4 60A001              +669 	la	transfer:destp
-00:0026A5 6D5E00              +670 	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
+00:002699 85000A              +663 	ax, xi	10		.	fixed part of segment header
+00:00269A 8D000A              +664 	ay, xi	10		.	is already buffered and summed
+  :                            665 
+00:00269B C70006              +666 	ds	HEADER_SUM
+00:00269C 60E003              +667 	la	descriptor:bytes
+  :                            668 
+00:00269D C5FFEC              +669 	aa, xi	-20
+00:00269E 5E028C              +670 	jnc	ipv4_drop	.	add header options and payload
   :                            671 
-  :                            672 				.	000 000 000 000 000 00p ppp ppp : A
-00:0026A6 160009              +673 	dsr	9		.	ppp ppp ppp 000 000 000 bbb bbb : B
-  :                            674 
-00:0026A7 C52180              +675 	aa, xi	tsockb(1)	.	000 000 000 010 000 11p ppp ppp : A
+00:00269F 3E0459              +672 	lcal	rx_payload
+00:0026A0 B00E3F              +673 	xor	(00FFFF)
+00:0026A1 D00011              +674 	ana	CHECKSUM
+00:0026A2 D6028C              +675 	jnza	ipv4_drop
   :                            676 
-00:0026A8 60C000              +677 	la	0, a		.	is there even storage where the
-  :                            678 				.	bound socket structure should be?
-  :                            679 
-00:0026A9 C606AE              +680 	jza	tcp_reset_deflect
-  :                            681 
-00:0026AA 4E000C              +682 	rbr	12		.	000 000 bbb bbb ooo ooo ooo 000
+00:0026A3 500012              +677 	lx	TP_HEADER
+00:0026A4 60A001              +678 	la	transfer:destp
+00:0026A5 6D5E00              +679 	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
+  :                            680 
+  :                            681 				.	000 000 000 000 000 00p ppp ppp : A
+00:0026A6 160009              +682 	dsr	9		.	ppp ppp ppp 000 000 000 bbb bbb : B
   :                            683 
-00:0026AB 34002F              +684 	sabr	BSOCKET		.	look at the port socket structure
-00:0026AC 70D001              +685 	tz	1, b		.	is the port bound?
-00:0026AD B606B5              +686 	j	tcp_qthru	.	yes, queue it to protocol 2nd part
-  :                            687 
-  :                            688 tcp_reset_deflect
-00:0026AE 60A006              +689 	la	transfer:hl_code
-00:0026AF A50004              +690 	and, xi	TCP_RST		.	no, repool the buffer
-00:0026B0 D6028C              +691 	jnza	ipv4_drop	.	don't try to reset a reset
+00:0026A7 C52180              +684 	aa, xi	tsockb(1)	.	000 000 000 010 000 11p ppp ppp : A
+  :                            685 
+00:0026A8 60C000              +686 	la	0, a		.	is there even storage where the
+  :                            687 				.	bound socket structure should be?
+  :                            688 
+00:0026A9 C606AE              +689 	jza	tcp_reset_deflect
+  :                            690 
+00:0026AA 4E000C              +691 	rbr	12		.	000 000 bbb bbb ooo ooo ooo 000
   :                            692 
-00:0026B1 F80009              +693 	push	RXPOOL		.	output TCP_RST will overload that
-00:0026B2 3E0734              +694 	lcal	tcp_reject
-00:0026B3 380009              +695 	pop	RXPOOL
-  :                            696 				.	send a reset
-00:0026B4 B6028C              +697 	j	ipv4_drop	.	and drop the input
-  :                            698 
-  :                            699 
-  :                            700 tcp_qthru
-00:0026B5 C7E006              +701 	ds	descriptor:sobdi
-  :                            702 .	sa	descriptor:sobdi
-  :                            703 .	sb	descriptor:lso	.	cache the LVA of the port
-  :                            704 
-00:0026B6 60000E              +705 	la	fp 
-(+01)10
-00:0026B7 5D0303              +706 	ly, xi	tcpq
-00:0026B8 3E0CA3              +707 	lcal	q2
+00:0026AB 34002F              +693 	sabr	BSOCKET		.	look at the port socket structure
+00:0026AC 70D001              +694 	tz	1, b		.	is the port bound?
+00:0026AD B606B5              +695 	j	tcp_qthru	.	yes, queue it to protocol 2nd part
+  :                            696 
+  :                            697 tcp_reset_deflect
+00:0026AE 60A006              +698 	la	transfer:hl_code
+00:0026AF A50004              +699 	and, xi	TCP_RST		.	no, repool the buffer
+00:0026B0 D6028C              +700 	jnza	ipv4_drop	.	don't try to reset a reset
+  :                            701 
+00:0026B1 F80009              +702 	push	RXPOOL		.	output TCP_RST will overload that
+00:0026B2 3E0734              +703 	lcal	tcp_reject
+00:0026B3 380009              +704 	pop	RXPOOL
+  :                            705 				.	send a reset
+00:0026B4 B6028C              +706 	j	ipv4_drop	.	and drop the input
+  :                            707 
   :                            708 
-00:0026B9 B6028F              +709 	j	ipv4_rxz	.	release the interface buffer
-  :                            710 
-  :                            711 
-  :                            712 .	group of similar functions which
-  :                            713 .	get a buffer and send a short segment
-  :                            714 .
-  :                            715 .	for	SYN
-  :                            716 .		SYN_ACK
-  :                            717 .		FIN
-  :                            718 .		FIN_ACK
-  :                            719 
-  :                            720 .	connection address is in X
-  :                            721 
-  :                            722 .       hl_code is in A
-  :                            723 .       if header is over 5 longwords
-  :                            724 .       address of options list is in B
-  :                            725 
-  :                            726 .	options list is 16 bits per word
-  :                            727 
-  :                            728 .		0000 0000 tttt tttt llll llll
-  :                            729 .		0000 0000 vvvv vvvv vvvv vvvv
-  :                            730 
-  :                            731 .	if there is payload
-  :                            732 .	the byte count is in B
-  :                            733 .	the data address is in Y
-  :                            734 .	the data at Y is already in
-  :                            735 .	16-bit network format
-  :                            736 
-  :                            737 .		0000 0000 xxxx xxxx yyyy yyyy
-  :                            738 
-  :                            739 .       connection state variables are
-  :                            740 .       used
-  :                            741 
-  :                            742 .       the segment is queued and flagged for
-  :                            743 .       retain, meaning IP doesn't pool the
-  :                            744 .       buffer on transmit, but lets TCP do
-  :                            745 .       that on remote ACK
-  :                            746 
-  :                            747 .	these are far calls visible to
-  :                            748 .	applications
-  :                            749 
-  :                            750 .	the vector for tcp_respond_syn_ack
-  :                            751 .	is tcp_accept
-  :                            752 
-  :                            753 .	the vector for tcp_send_i
-  :                            754 .	is tcp_send_push
-  :                            755 
-  :                            756 
-  :                            757 tcp_respond_syn_ack
-00:0026BA 450000              +758 	lr, xi	0
-00:0026BB 656012              +759 	la, xi	06000++TCP_SYN++TCP_ACK
-00:0026BC FD0204              +760 	push,xi	0204
-00:0026BD 380019              +761 	pop	25
-00:0026BE 6D0019              +762 	lb, xi	25		. MSS is in 26
-00:0026BF B606C4              +763 	j	tcp_message_segment_i
-  :                            764 
-  :                            765 tcp_respond_fin_ack
-00:0026C0 450000              +766 	lr, xi	0
-00:0026C1 655011              +767 	la, xi	05000++TCP_FIN++TCP_ACK
-00:0026C2 B606C4              +768 	j	tcp_message_segment_i
-  :                            769 
-  :                            770 tcp_send_i
-00:0026C3 655018              +771 	la, xi	05000++TCP_ACK++TCP_PSH
-  :                            772 
-  :                            773 tcp_message_segment_i
-00:0026C4 3E0779              +774 	lcal	tcp_startbuffer
-00:0026C5 3D0000              +775 	fret	0		. that didn't work
-  :                            776 
-00:0026C6 F80004              +777 	push	a		. the descriptor
-00:0026C7 F80002              +778 	push	x		. the connection
-  :                            779 
-00:0026C8 680010              +780 	lb	BYTES		. segment length
-00:0026C9 980E5B              +781 	orB	(0800000:s)	. send now
-  :                            782 
-00:0026CA 28C003              +783 	sb	descriptor:bytes, a
-  :                            784 
-00:0026CB 500011              +785 	lx	AP_DATA
-00:0026CC 600000              +786 	la	r
-00:0026CD 3E0459              +787 	lcal	tx_payload
-00:0026CE 500012              +788 	lx	TP_HEADER
-00:0026CF C00010              +789 	aa	BYTES
-00:0026D0 20A008              +790 	sa	transfer:checksum, x
-  :                            791 
-00:0026D1 50F000              +792 	lx	0, sp
-00:0026D2 60F001              +793 	la	1, sp
-  :                            794 
-00:0026D3 3E07FA              +795 	lcal	tcp_write_txq
-  :                            796 
-00:0026D4 380002              +797 	pop	x		. the connection
-00:0026D5 380004              +798 	pop	a		. the descriptor
-  :                            799 
-00:0026D6 3E06E7              +800 	lcal	tcp_send_on_window
-  :                            801 
-00:0026D7 3D0001              +802 	fret	1
-  :                            803 
-  :                            804 
-  :                            805 
-  :                            806 .	advertise new window when sending
-  :                            807 .	window can only go up not down when sending
-  :                            808 
-  :                            809 .	window closes incrementally when receiving
-  :                            810 
-  :                            811 WINDOW	$equ	d$save3
-  :                            812 tcp_award_window
-00:0026D8 6D2000              +813 	lb, xi	8192
-00:0026D9 280013              +814 	sb	WINDOW
-  :                            815 				. algorithm up to here can be anything
-  :                            816 				. which does not exaggerate availability
-  :                            817 
-  :                            818 				. the following part prevents the new
-  :                            819 				. window from being smaller than the
-  :                            820 				. hitherto window
-  :                            821 
-00:0026DA 480E3F              +822 	lk	(00FFFF)
-00:0026DB 68A00F              +823 	lb	transmission:ack_window+1
-  :                            824 				. compare, new may not be < old
-00:0026DC F80005              +825 	push	b
-00:0026DD A80001              +826 	andB	k
-00:0026DE D80013              +827 	anb	WINDOW
-00:0026DF 380005              +828 	pop	b
-  :                            829 
-00:0026E0 5E06E4              +830 	jnc	tcp_award_new_window
-  :                            831 
-00:0026E1 A80001              +832 	andB	k	
-00:0026E2 280013              +833 	sb	WINDOW		. old window is at least as large
-00:0026E3 350000              +834 	lret	0		. store it in dynamic register
-  :                            835 
-  :                            836 				. old window is less than new
-  :                            837 				. insert new window in tranmission block
-  :                            838 tcp_award_new_window
-00:0026E4 BF0013              +839 	mlb	WINDOW		. K still contains 00FFFF
-00:0026E5 28A00F              +840 	sb	transmission:ack_window+1
-00:0026E6 350000              +841 	lret	0
-  :                            842 
-  :                            843 
-  :                            844 
-  :                            845 tcp_send_on_window
-00:0026E7 FD0000              +846 	push,xi 0	. count of transmissions
-00:0026E8 F80002              +847 	push	x	. the connection
-  :                            848 
-  :                            849 			. remote ACK + window >=
-  :                            850 			. sequence + size = send
-  :                            851 
-00:0026E9 CFA00A              +852 	dl	transmission:remote_ack_window, x
-00:0026EA C70008              +853 	ds	8
-00:0026EB 360020              +854 	dsl	32
-00:0026EC 160010              +855 	dsr	16
-00:0026ED D70008              +856 	da	8
-00:0026EE C70008              +857 	ds	8
-00:0026EF 3E06D8              +858 	lcal	tcp_award_window
-00:0026F0 CFA00E              +859 	dl	transmission:ack_window, x
-00:0026F1 160008              +860 	dsr	8
-00:0026F2 0E0008              +861 	sbr	8
-00:0026F3 C7000A              +862 	ds	10
-  :                            863 
-  :                            864 tcp_send_on_window_next
-00:0026F4 60A014              +865 	la	transmission:q4window:head, x
-00:0026F5 C6071A              +866 	jza	tcp_sent_all
-  :                            867 
-00:0026F6 580004              +868 	ly	a
-00:0026F7 60B003              +869 	la	descriptor:bytes, y
-00:0026F8 A6071A              +870 	jpa	tcp_sent_all		. the sticky bit = send
-  :                            871 					. otherwise the segment
-  :                            872 					. is still accumulating
-  :                            873 					. and is last on the window q
-  :                            874 
-00:0026F9 A00E5C              +875 	and	(01FFFF)		. remove the sticky bit
-  :                            876 					. for calculation
-  :                            877 
-00:0026FA 68B005              +878 	lb	descriptor:uproto, y	. the negative of the size
-00:0026FB 280012              +879 	sb	TP_HEADER
-00:0026FC D8B006              +880 	anb	descriptor:apdata, y	. of the segment header
-00:0026FD 2E0001              +881 	sbl	1			. in bytes at 16/24 bits/word
-  :                            882 	
-00:0026FE C80004              +883 	ab	a			. segment minus header
-  :                            884 					. = payload
-00:0026FF 650000              +885 	la, xi	0
-00:002700 360010              +886 	dsl	16
-00:002701 C70006              +887 	ds	6
-  :                            888 
-00:002702 580012              +889 	ly	TP_HEADER
-00:002703 CFB002              +890 	dl	transfer:seq, y
-  :                            891 
-00:002704 2E0008              +892 	sbl	8
-00:002705 360008              +893 	dsl	8	. sequence
-  :                            894 
-00:002706 D70006              +895 	da	6	. sequence + payload
-00:002707 C70006              +896 	ds	6
-  :                            897 
-  :                            898 .	maybe cache the sum of remote window + remote ack
-  :                            899 .	as soon as remote ack has been actioned on the
-  :                            900 .	front of q4ack
-  :                            901 .	so this sum would not be done here
-  :                            902 
-  :                            903 
-00:002708 CF0008              +904 	dl	8	. remote ack plus remote window
-  :                            905 
-00:002709 DF0006              +906 	dan	6
-00:00270A E6071A              +907 	jna	tcp_sent_possible
-  :                            908 
-  :                            909 
-00:00270B 3E0804              +910 	lcal	tcp_read_txq	. remove atomically from queue
-  :                            911 
-00:00270C 8F0008              +912 	qpush	8	. the cached state variables
-00:00270D F80004              +913 	push	a	. the descriptor
-  :                            914 
-00:00270E 3E071D              +915 	lcal	tcp_xmit
-  :                            916 
-00:00270F 380004              +917 	pop	a	. the descriptor
-00:002710 870008              +918 	qpop	8	. the cached state variables
-  :                            919 
-00:002711 50F000              +920 	lx	0, sp	. the connection pointer on the stack top
-00:002712 5CA016              +921 	ly, i	transmission:q4ack
-  :                            922 
-00:002713 3E0C9D              +923 	lcal	q2first?		. write the q4ACK
-00:002714 B60718              +924 	j	tcp_ackq_started	. but
-  :                            925 
-00:002715 6D02EE              +926 	lb, xi	TCP_TIMER2		. only start this timer
-00:002716 C80097              +927 	ab	DAYCLOCK$		. if the ACK q was empty
-00:002717 28A005              +928 	sb	transmission:timer(2)	. before
-  :                            929 
-  :                            930 tcp_ackq_started
-  :                            931 
-00:002718 17F001              +932 	inc	1, sp	. count of transmissions
-  :                            933 
-00:002719 B606F4              +934 	j	tcp_send_on_window_next
-  :                            935 
-  :                            936 tcp_sent_possible
-  :                            937 	$if	0
-  :                            938 			. I have traffic and no window
-  :                            939 	la	1, sp	. reasonable if I have sent any segments
-  :                            940 	jnza	tcp_sent_all
-  :                            941 	lcal	tcp_send_ack	. or try to
-  :                            942 	lr	0	. nop, send_ack skips on succesful return
-  :                            943 	$endif
-  :                            944 tcp_sent_all
-  :                            945 .tcp_sent_enough
-  :                            946 			. the connection pointer is now at the stack top
-00:00271A 380002              +947 	pop	x	. $$frame was exactly 1 word
-00:00271B 380004              +948 	pop	a	. count of transmissions
-00:00271C 350000              +949 	lret	0
-  :                            950 
-  :                            951 
-  :                            952 tcp_xmit 
-00:00271D CF000A              +953         dl      10      . this should be ACK
-  :                            954 
-00:00271E 500012              +955         lx      TP_HEADER
-00:00271F C7A004              +956         ds      transfer:ack, x
-00:002720 C80004              +957         ab      a
-  :                            958 
-  :                            959 	$if	1
-00:002721 652000              +960 	la, xi	8192
-  :                            961 	$else
-  :                            962         la      WINDOW
-  :                            963 	$endif
-  :                            964 
-00:002722 20A007              +965         sa      transfer:window, x
-00:002723 C0A008              +966         aa      transfer:checksum, x
-  :                            967 
-00:002724 58F001              +968 	ly	1, sp		. the descriptor
-  :                            969 
-  :                            970 tcp_finalise_checksum_on_xmit
-00:002725 C00005              +971         aa      b
-00:002726 160010              +972         dsr     16
-00:002727 0E0008              +973         sbr     8
-00:002728 D60725              +974         jnza    tcp_finalise_checksum_on_xmit
-  :                            975 
-00:002729 B80E3F              +976         xorB	(00FFFF)
-00:00272A 28A008              +977         sb      transfer:checksum, x
-  :                            978 
-00:00272B 50F001              +979         lx      1, sp		. the descriptor
-  :                            980 
-00:00272C 58A004              +981         ly      descriptor:dgram, x
-00:00272D 4FB006              +982         ql      dgram:ipsource, y
-  :                            983 
-00:00272E FD0001              +984 	MIB_ICOUNT48	tcpOutSegs:i
-(+01)0f
-00:00272F 2F0422              +984 
-00:002730 5E0732              +984 
-(+01)0f
-00:002731 170421              +984 
-  :                            985 
-00:002732 FF0E4B              +986         call    (ipsend)
-00:002733 350000              +987         lret    0
-  :                            988 
-  :                            989 
-  :                            990 
-  :                            991 
-  :                            992 .	following is unique of TCP send calls
-  :                            993 .	because it's called when there is no
-  :                            994 .	connection, consequently no connection
-  :                            995 .	pointer and no state variables to
-  :                            996 .	consult
-  :                            997 
-  :                            998 .	the only input is the received buffer
-  :                            999 .	descriptor in fp
-  :                            1000 
-  :                            1001 .	this has to work for disliked incoming
-  :                            1002 .	SYN, so incoming SEQ is incremented
-  :                            1003 .	before being returned as ACK, and
-  :                            1004 .	_ACK flag is set as well as _RST
-  :                            1005 
-  :                            1006 
-  :                            1007 tcp_reject		. this is when TCP_RST must be sent
-  :                            1008 			. and there is no connection
-00:002734 650014              +1009 	la, xi	20
-00:002735 3E07DA              +1010 	lcal	tcp_txbuffer
-00:002736 C6075E              +1011 	jza	tcp_noresetbuffer	. no action either!
-  :                            1012 
-00:002737 F80004              +1013 	push	a			. the descriptor
-  :                            1014 
-00:002738 58E004              +1015 	ly	descriptor:dgram
-  :                            1016 
-00:002739 9FB006              +1017 	dpush	dgram:ipsource, y
-00:00273A 9FB008              +1018 	dpush	dgram:ipdest, y
-  :                            1019 
-00:00273B 4FF000              +1020 	ql	0, sp			. ipsend wants the
-00:00273C D70006              +1021 	da	6			. destination in 6:7
-  :                            1022 
-00:00273D C50006              +1023 	aa, xi	IPPROTO_TCP
-00:00273E CD0014              +1024 	ab, xi	20
-  :                            1025 
-00:00273F 580013              +1026 	ly	TX_DATAGRAM
-00:002740 87B006              +1027 	qpop	dgram:ipsource, y
-  :                            1028 
-00:002741 58E005              +1029 	ly	descriptor:uproto
-00:002742 9FB002              +1030 	dpush	transfer:seq, y
-00:002743 9FB000              +1031 	dpush	transfer:sourcep, y
-00:002744 F80E5D              +1032 	push	(05000++TCP_RST++TCP_ACK)
-  :                            1033 
-00:002745 17F004              +1034 	inc	4, sp
-00:002746 70F004              +1035 	tz	4, sp
-00:002747 B60749              +1036 	j	$+2
-00:002748 17F003              +1037 	inc	3, sp
-  :                            1038 
-00:002749 C0F000              +1039 	aa	0, sp
-00:00274A D7F001              +1040 	da	1, sp
-00:00274B D7F003              +1041 	da	3, sp
-  :                            1042 
-00:00274C 38A006              +1043 	pop	transfer:hl_code, x	. tx_datagram loads
-00:00274D 38A001              +1044 	pop	transfer:destp, x	. x->segment
-00:00274E 38A000              +1045 	pop	transfer:sourcep, x
-  :                            1046 
-00:00274F 30A002              +1047 	z	transfer:seq, x
-00:002750 30A003              +1048 	z	transfer:seq+1, x
-00:002751 38A004              +1049 	pop	transfer:ack, x
-00:002752 38A005              +1050 	pop	transfer:ack+1, x
-00:002753 30A007              +1051 	z	transfer:window, x
-00:002754 30A009              +1052 	z	transfer:urgent, x
-  :                            1053 
-00:002755 C00005              +1054 	aa	b
-00:002756 160010              +1055 	dsr	16
-00:002757 0E0008              +1056 	sbr	8
-00:002758 D60755              +1057 	jnza	$-3
-00:002759 B80E3F              +1058 	xorB	(00FFFF)
-00:00275A 28A008              +1059 	sb	transfer:checksum, x
-  :                            1060 
-00:00275B 380002              +1061 	pop	x			. the descriptor
-00:00275C 580013              +1062 	ly	TX_DATAGRAM
-00:00275D FF0E4B              +1063 	call	(ipsend)
-  :                            1064 	
-  :                            1065 tcp_noresetbuffer
-00:00275E 350000              +1066 	lret	0
-  :                            1067 
-  :                            1068 
-  :                            1069 
-  :                            1070 .	following routine with ++entry points
-  :                            1071 .	sends short segments when there is a
-  :                            1072 .	connection
-  :                            1073 
-  :                            1074 .	it's different from payload because
-  :                            1075 .	it sends the most recent sequence
-  :                            1076 .	value transmitted, not the advanced
-  :                            1077 .	sequence value assigned to new payload
-  :                            1078 .	segments
-  :                            1079 
-  :                            1080 .	used just for ACK + advertise window
-  :                            1081 .	or to probe for window with 1 byte
-  :                            1082 .	of payload
-  :                            1083 
-  :                            1084 .	The segment isn't flagged for retain or
-  :                            1085 .	held on the output queue / ack wait queue
-  :                            1086 
-  :                            1087 .	payload bytes are in R
-  :                            1088 .	if payload, the pointer is in Y
-  :                            1089 .	and is two bytes per word right justified
-  :                            1090 .	not internal format
-  :                            1091 
-  :                            1092 .	this isn't the payload send and
-  :                            1093 .	may not alter the SEQ variable
-  :                            1094 
-  :                            1095 
-  :                            1096 tcp_reset		. this is when TCP_RST must be sent
-  :                            1097 			. and the connection is about to
-  :                            1098 			. get ripped
-00:00275F 450000              +1099 	lr, xi	0
-00:002760 655004              +1100 	la, xi	05000++TCP_RST
-00:002761 FD000C              +1101 	push,xi	TCP_DELETETCB
-00:002762 38A001              +1102 	pop	transmission:state
-00:002763 B60766              +1103 	j	tcp_sendq2
-  :                            1104 
-  :                            1105 tcp_send_ack
-00:002764 450000              +1106 	lr, xi	0
-  :                            1107 tcp_sendq
-00:002765 655010              +1108 	la, xi	05000++TCP_ACK
-  :                            1109 tcp_sendq2
-00:002766 3E0779              +1110 	lcal	tcp_startbuffer
-00:002767 350000              +1111 	lret	0		. not obtained
-  :                            1112 
-  :                            1113 
-  :                            1114 .	check conversions between words and bytes
-  :                            1115 .	in calls to startbuffer, txbuffer
-  :                            1116 
-  :                            1117 
-00:002768 F80002              +1118 	push	x		. the connection
-00:002769 F80004              +1119 	push	a		. the new descriptor
-  :                            1120 
-00:00276A CFA00E              +1121 	dl	transmission:ack_window
-00:00276B 160008              +1122 	dsr	8
-00:00276C 0E0008              +1123 	sbr	8
-00:00276D C7000A              +1124 	ds	10
-  :                            1125 
-00:00276E 3E06D8              +1126 	lcal	tcp_award_window
-  :                            1127 	
-00:00276F 500011              +1128 	lx 	AP_DATA
-00:002770 600000              +1129 	la	r		. startbuffer returns
-  :                            1130 				. the payload count in r
-  :                            1131 
-00:002771 3E0459              +1132 	lcal	tx_payload	. payload address if any
-  :                            1133 				. is in Y
-  :                            1134 
-00:002772 500012              +1135 	lx	TP_HEADER
-00:002773 C00010              +1136 	aa	BYTES
-00:002774 20A008              +1137 	sa	transfer:checksum
-  :                            1138 
-00:002775 3E071D              +1139 	lcal	tcp_xmit
-00:002776 380003              +1140 	pop	y		. the descriptor
-00:002777 380002              +1141 	pop	x		. the connection
-00:002778 350001              +1142 	lret	1
-  :                            1143 
-  :                            1144 
-  :                            1145 
-  :                            1146 
-  :                            1147 
-  :                            1148 
-  :                            1149 
-  :                            1150 .	this primes a buffer to accumulate output
-  :                            1151 .	length wanted for payload is in R
-  :                            1152 .	hl_code is in A
-  :                            1153 .	if header is over 5 longwords
-  :                            1154 .	address of options list is in B
-  :                            1155 
-  :                            1156 .	the checksum seed is left in HEADER_SUM
-  :                            1157 .	registers 6:7
-  :                            1158 
-  :                            1159 .	the checksum seed does not include ACK
-  :                            1160 .	or window
-  :                            1161 
-  :                            1162 .	ACK is re-read from the transmission block
-  :                            1163 .	each time some segments may be sent or
-  :                            1164 .	resent
-  :                            1165 
-  :                            1166 .	window is generated new each time some
-  :                            1167 .	segments may be sent or resent
-  :                            1168 
-  :                            1169 .	send or resend must include new window
-  :                            1170 .	and ACK in the checksum, so those are
-  :                            1171 .	not included here
-  :                            1172 
-  :                            1173 
-  :                            1174 tcp_startbuffer
-00:002779 F80002              +1175 	push	x		. connection block
-00:00277A F80004              +1176 	push	a		. header length / flags
-00:00277B F80005              +1177 	push	b		. address of options program
-00:00277C 000010              +1178 	sr	BYTES		. payload bytes
-00:00277D 06000C              +1179 	sar	12
-00:00277E 260002              +1180 	sal	2
-00:00277F C00000              +1181 	aa	r		. buffer required for TCP segment
-00:002780 F80003              +1182 	push	y
-  :                            1183 
-00:002781 3E07DA              +1184 	lcal	tcp_txbuffer
-  :                            1185 
-00:002782 380003              +1186 	pop	y		. quite likely the user data pointer
-00:002783 380006              +1187 	pop	6		. options list
-00:002784 380007              +1188 	pop	7		. header format word
-00:002785 380002              +1189 	pop	x		. connection
-00:002786 C607CB              +1190 	jza	tcp_nostart
-  :                            1191 
-00:002787 28C003              +1192 	sb	descriptor:bytes, a
-  :                            1193 	
-00:002788 F80003              +1194 	push	y		. user buffer if any
-00:002789 F80004              +1195 	push	a		. the new descriptor
-  :                            1196 
-00:00278A 580012              +1197 	ly	TP_HEADER
-00:00278B 30B009              +1198 	z	transfer:urgent, y
-00:00278C 30B008              +1199 	z	transfer:checksum, y
-  :                            1200 
-00:00278D 8FA006              +1201 	qpush	transmission:socket_address, x
-00:00278E 870008              +1202 	qpop	8
-  :                            1203 
-00:00278F FD0000              +1204 	push, xi   0		. window
-  :                            1205 	
-00:002790 F80007              +1206 	push	7		. header format word
-  :                            1207 
-00:002791 FD0000              +1208 	push, xi   0
-00:002792 FD0000              +1209 	push, xi   0		. ACK
-  :                            1210 
-00:002793 CFA00C              +1211 	dl	transmission:sequence_ackx, x
-00:002794 160008              +1212 	dsr	8
-00:002795 0E0008              +1213 	sbr	8
-00:002796 9F0004              +1214 	dpush	a		. SEQ
-  :                            1215 
-00:002797 600009              +1216 	la	9
-00:002798 260008              +1217 	sal	8
-00:002799 68000B              +1218 	lb	11
-00:00279A 2E0008              +1219 	sbl	8
-00:00279B 160008              +1220 	dsr	8
-  :                            1221 
-00:00279C 9F0004              +1222 	dpush	a		. ports
-  :                            1223 
-00:00279D 680007              +1224 	lb	7
-00:00279E 0E000C              +1225 	sbr	12
-  :                            1226 
-00:00279F 280011              +1227 	sb	HEADER_LONGWORDS
-  :                            1228 	
-00:0027A0 6D0000              +1229 	lb, xi	0
-00:0027A1 650006              +1230 	la, xi	IPPROTO_TCP
-  :                            1231 
-00:0027A2 D7F000              +1232 	da	transfer:sourcep, sp
-00:0027A3 D7F002              +1233 	da	transfer:seq, sp
-  :                            1234 .	da	transfer:ack, sp	. zero just now
-00:0027A4 D7F006              +1235 	da	transfer:hl_code, sp
-  :                            1236 
-00:0027A5 F80006              +1237 	push	6		. options list
-  :                            1238 
-00:0027A6 C70006              +1239 	ds	HEADER_SUM
-  :                            1240 
-00:0027A7 380004              +1241 	pop	a
-  :                            1242 
-00:0027A8 87B000              +1243 	qpop	transfer:sourcep, y
-00:0027A9 87B004              +1244 	qpop	transfer:ack, y
-  :                            1245 
-00:0027AA 30B009              +1246 	z	transfer:urgent, y
-  :                            1247 
-00:0027AB 680011              +1248 	lb	HEADER_LONGWORDS
-  :                            1249 
-00:0027AC CDFFFB              +1250 	ab, xi	-5
-  :                            1251 
-00:0027AD 8D000A              +1252 	ay, xi	20/2
-  :                            1253 
-00:0027AE CE07B0              +1254 	jzb	tcp_sendno_options
-00:0027AF 3E07CD              +1255 	lcal	tcp_send_options
-  :                            1256 tcp_sendno_options
-00:0027B0 60F000              +1257 	la	0, sp		. the descriptor
-00:0027B1 18C006              +1258 	sy	descriptor:apdata, a
-00:0027B2 680011              +1259 	lb	HEADER_LONGWORDS
-  :                            1260 
-00:0027B3 2E0002              +1261 	sbl	2
-00:0027B4 400010              +1262 	lr	BYTES
-00:0027B5 28C003              +1263 	sb	descriptor:bytes, a
-  :                            1264 
-  :                            1265 
-  :                            1266 				. only the header byte count
-  :                            1267 				. should go in the descriptor
-  :                            1268 				. because this may be called
-  :                            1269 				. to prime a buffer for
-  :                            1270 				. streamed writing
-  :                            1271 
-  :                            1272 				. R is for how much space
-  :                            1273 				. is required, not how much
-  :                            1274 				. data is available
-  :                            1275 
-00:0027B6 C80000              +1276 	ab	r
-00:0027B7 280010              +1277 	sb	BYTES		. save the total for
-  :                            1278 				. direct message writes
-  :                            1279 
-00:0027B8 180011              +1280 	sy	AP_DATA
-00:0027B9 580013              +1281 	ly	TX_DATAGRAM
-00:0027BA CF0008              +1282 	dl	8
-00:0027BB 160008              +1283 	dsr	8
-00:0027BC 0E0008              +1284 	sbr	8
-00:0027BD C7B006              +1285 	ds	dgram:ipsource, y
-00:0027BE C70008              +1286 	ds	8
-00:0027BF D70006              +1287 	da	HEADER_SUM	. the checksum
-00:0027C0 C70006              +1288 	ds	HEADER_SUM
-00:0027C1 CF000A              +1289 	dl	10
-00:0027C2 160008              +1290 	dsr	8
-00:0027C3 0E0008              +1291 	sbr	8
-00:0027C4 C7000A              +1292 	ds	10
-00:0027C5 C7B008              +1293 	ds	dgram:ipdest, y
-00:0027C6 D70006              +1294 	da	HEADER_SUM
-00:0027C7 C70006              +1295 	ds	HEADER_SUM
-00:0027C8 380004              +1296 	pop	a		. the descriptor
-00:0027C9 380003              +1297 	pop	y
-00:0027CA 350001              +1298 	lret	1		. did it
-  :                            1299 
-  :                            1300 tcp_nostart
-00:0027CB 500003              +1301 	lx	y
-00:0027CC 350000              +1302 	lret	0		. did not
-  :                            1303 
-  :                            1304 tcp_send_options
-00:0027CD F80002              +1305 	push	x		. the connection
-00:0027CE 500004              +1306 	lx	a		. the option list address
-00:0027CF 400005              +1307 	lr	b		. the longword count
-00:0027D0 B607D7              +1308 	j	tcp_send_option?
-  :                            1309 tcp_send_option!
-00:0027D1 CFA000              +1310 	dl	0, x
-00:0027D2 C7B000              +1311 	ds	0, y
-00:0027D3 D70006              +1312 	da	HEADER_SUM
-00:0027D4 C70006              +1313 	ds	HEADER_SUM
-00:0027D5 850002              +1314 	ax, xi	2
-00:0027D6 8D0002              +1315 	ay, xi	2
-  :                            1316 tcp_send_option?
-00:0027D7 1E07D1              +1317 	jdr	tcp_send_option!
-00:0027D8 380002              +1318 	pop	x		. the connection
-00:0027D9 350000              +1319 	lret	0
-  :                            1320 	
-  :                            1321 	$if	0
-  :                            1322 tcp_send
-  :                            1323 	fret	0
-  :                            1324 
-  :                            1325 tcp_complete_segment?
-  :                            1326 	tz	transmission:q4window:head
-  :                            1327 	lret	0
-  :                            1328 tcp_complete_segment!
-  :                            1329 	ly	transmission:q4window:tail
-  :                            1330 	la	descriptor:bytes, y
-  :                            1331 	jna	tcp_segment_completed
-  :                            1332 	jza	tcp_segment_void		. would happen with send of zero
-  :                            1333 
-  :                            1334 
-  :                            1335 tcp_segment_completed
-  :                            1336 	lret	0
-  :                            1337 tcp_segment_void
-  :                            1338 	lret	1
-  :                            1339 	$endif
-  :                            1340 
-  :                            1341 tcp_txbufferx
-  :                            1342 	$if	HVBANK
-  :                            1343 	lb	*(BSOCKET*/12++tlist:hvbuffer)	. extra output buffer bank?
-  :                            1344 	jzb	tcp_txbuffer			. no
-  :                            1345 	lx	b
-  :                            1346 	lb, xi	04500
-  :                            1347 	push	a
-  :                            1348 	lcal	ip_buy_datagram_alternate
-  :                            1349 	pop	b
-  :                            1350 	j	tcp_txbuffer_initial
-  :                            1351 	$endif
-  :                            1352 	
-  :                            1353 tcp_txbuffer
-00:0027DA 6D4500              +1354 	lb, xi	04500
-  :                            1355 tcp_txbuffer_optional
-00:0027DB F80004              +1356 	push	a		. TCP header + payload length
-00:0027DC 3E0292              +1357 	lcal	ip_buy_datagram
-00:0027DD 380005              +1358 	pop	b
-  :                            1359 tcp_txbuffer_initial
-00:0027DE C607E4              +1360 	jza	tcp_nobuffer
-00:0027DF 28C003              +1361 	sb	descriptor:bytes, a
-00:0027E0 500013              +1362 	lx	TX_DATAGRAM
-00:0027E1 6D3C06              +1363 	lb,xi	IP_DEFAULT_TTL++IPPROTO_TCP
-00:0027E2 28A004              +1364 	sb	dgram:ttl_protocol, x
-00:0027E3 500012              +1365 	lx	TP_HEADER
-  :                            1366 tcp_nobuffer
-00:0027E4 350000              +1367 	lret	0
-  :                            1368 
-  :                            1369 
-  :                            1370 .	buffer queues which are shared between tasks have to be accessed
-  :                            1371 .	in a protected way. They are mainly the queues which both the IP
-  :                            1372 .	task and an application protocol access. Some application protocols
-  :                            1373 .	are in the IP task and some are not
-  :                            1374 
-  :                            1375 .	it would be quite bad to place TS cells in every queue structure
-  :                            1376 .	because not all queues need them. Sockets and connections are the
-  :                            1377 .	best available place for these lock cells
-  :                            1378 
-  :                            1379 .	all this code is SMP, so the code
-  :                            1380 
-  :                            1381 .	1.	prevents itself from getting interrupted or switched
-  :                            1382 .	2.	locks the connection
-  :                            1383 .	3.	updates the queue
-  :                            1384 .	4.	frees the lock
-  :                            1385 .	5.	reloads the interrupt mask it had before
-  :                            1386 
-  :                            1387 
-  :                            1388 .	tcp_write_rxq is called from TCP in the IP task
-  :                            1389 
-  :                            1390 tcp_write_rxq
-  :                            1391 
-00:0027E5 FD0007              +1392 	LOCK	transmission:tsq
-00:0027E6 27F000              +1392 
-00:0027E7 07A003              +1392 
-00:0027E8 B607E7              +1392 
-00:0027E9 64A010              +1393 	la, i	transmission:receiveq
+  :                            709 tcp_qthru
+00:0026B5 C7E006              +710 	ds	descriptor:sobdi
+  :                            711 .	sa	descriptor:sobdi
+  :                            712 .	sb	descriptor:lso	.	cache the LVA of the port
+  :                            713 
+00:0026B6 60000E              +714 	la	fp 
 (+01)10
-00:0027EA 5D0303              +1394 	ly, xi	tcpq
-00:0027EB 3E0160              +1395 	lcal	net_transfer
-00:0027EC 30A003              +1396 	FREE	transmission:tsq
-00:0027ED 27F000              +1396 
-00:0027EE 17000F              +1396 
-00:0027EF 350000              +1397 	lret	0
+00:0026B7 5D0303              +715 	ly, xi	tcpq
+00:0026B8 3E0CA3              +716 	lcal	q2
+  :                            717 
+00:0026B9 B6028F              +718 	j	ipv4_rxz	.	release the interface buffer
+  :                            719 
+  :                            720 
+  :                            721 .	group of similar functions which
+  :                            722 .	get a buffer and send a short segment
+  :                            723 .
+  :                            724 .	for	SYN
+  :                            725 .		SYN_ACK
+  :                            726 .		FIN
+  :                            727 .		FIN_ACK
+  :                            728 
+  :                            729 .	connection address is in X
+  :                            730 
+  :                            731 .       hl_code is in A
+  :                            732 .       if header is over 5 longwords
+  :                            733 .       address of options list is in B
+  :                            734 
+  :                            735 .	options list is 16 bits per word
+  :                            736 
+  :                            737 .		0000 0000 tttt tttt llll llll
+  :                            738 .		0000 0000 vvvv vvvv vvvv vvvv
+  :                            739 
+  :                            740 .	if there is payload
+  :                            741 .	the byte count is in B
+  :                            742 .	the data address is in Y
+  :                            743 .	the data at Y is already in
+  :                            744 .	16-bit network format
+  :                            745 
+  :                            746 .		0000 0000 xxxx xxxx yyyy yyyy
+  :                            747 
+  :                            748 .       connection state variables are
+  :                            749 .       used
+  :                            750 
+  :                            751 .       the segment is queued and flagged for
+  :                            752 .       retain, meaning IP doesn't pool the
+  :                            753 .       buffer on transmit, but lets TCP do
+  :                            754 .       that on remote ACK
+  :                            755 
+  :                            756 .	these are far calls visible to
+  :                            757 .	applications
+  :                            758 
+  :                            759 .	the vector for tcp_respond_syn_ack
+  :                            760 .	is tcp_accept
+  :                            761 
+  :                            762 .	the vector for tcp_send_i
+  :                            763 .	is tcp_send_push
+  :                            764 
+  :                            765 
+  :                            766 tcp_respond_syn_ack
+00:0026BA 450000              +767 	lr, xi	0
+00:0026BB 656012              +768 	la, xi	06000++TCP_SYN++TCP_ACK
+00:0026BC FD0204              +769 	push,xi	0204
+00:0026BD 380019              +770 	pop	25
+00:0026BE 6D0019              +771 	lb, xi	25		. MSS is in 26
+00:0026BF B606C4              +772 	j	tcp_message_segment_i
+  :                            773 
+  :                            774 tcp_respond_fin_ack
+00:0026C0 450000              +775 	lr, xi	0
+00:0026C1 655011              +776 	la, xi	05000++TCP_FIN++TCP_ACK
+00:0026C2 B606C4              +777 	j	tcp_message_segment_i
+  :                            778 
+  :                            779 tcp_send_i
+00:0026C3 655018              +780 	la, xi	05000++TCP_ACK++TCP_PSH
+  :                            781 
+  :                            782 tcp_message_segment_i
+00:0026C4 3E0779              +783 	lcal	tcp_startbuffer
+00:0026C5 3D0000              +784 	fret	0		. that didn't work
+  :                            785 
+00:0026C6 F80004              +786 	push	a		. the descriptor
+00:0026C7 F80002              +787 	push	x		. the connection
+  :                            788 
+00:0026C8 680010              +789 	lb	BYTES		. segment length
+00:0026C9 980E5B              +790 	orB	(0800000:s)	. send now
+  :                            791 
+00:0026CA 28C003              +792 	sb	descriptor:bytes, a
+  :                            793 
+00:0026CB 500011              +794 	lx	AP_DATA
+00:0026CC 600000              +795 	la	r
+00:0026CD 3E0459              +796 	lcal	tx_payload
+00:0026CE 500012              +797 	lx	TP_HEADER
+00:0026CF C00010              +798 	aa	BYTES
+00:0026D0 20A008              +799 	sa	transfer:checksum, x
+  :                            800 
+00:0026D1 50F000              +801 	lx	0, sp
+00:0026D2 60F001              +802 	la	1, sp
+  :                            803 
+00:0026D3 3E07FA              +804 	lcal	tcp_write_txq
+  :                            805 
+00:0026D4 380002              +806 	pop	x		. the connection
+00:0026D5 380004              +807 	pop	a		. the descriptor
+  :                            808 
+00:0026D6 3E06E7              +809 	lcal	tcp_send_on_window
+  :                            810 
+00:0026D7 3D0001              +811 	fret	1
+  :                            812 
+  :                            813 
+  :                            814 
+  :                            815 .	advertise new window when sending
+  :                            816 .	window can only go up not down when sending
+  :                            817 
+  :                            818 .	window closes incrementally when receiving
+  :                            819 
+  :                            820 WINDOW	$equ	d$save3
+  :                            821 tcp_award_window
+00:0026D8 6D2000              +822 	lb, xi	8192
+00:0026D9 280013              +823 	sb	WINDOW
+  :                            824 				. algorithm up to here can be anything
+  :                            825 				. which does not exaggerate availability
+  :                            826 
+  :                            827 				. the following part prevents the new
+  :                            828 				. window from being smaller than the
+  :                            829 				. hitherto window
+  :                            830 
+00:0026DA 480E3F              +831 	lk	(00FFFF)
+00:0026DB 68A00F              +832 	lb	transmission:ack_window+1
+  :                            833 				. compare, new may not be < old
+00:0026DC F80005              +834 	push	b
+00:0026DD A80001              +835 	andB	k
+00:0026DE D80013              +836 	anb	WINDOW
+00:0026DF 380005              +837 	pop	b
+  :                            838 
+00:0026E0 5E06E4              +839 	jnc	tcp_award_new_window
+  :                            840 
+00:0026E1 A80001              +841 	andB	k	
+00:0026E2 280013              +842 	sb	WINDOW		. old window is at least as large
+00:0026E3 350000              +843 	lret	0		. store it in dynamic register
+  :                            844 
+  :                            845 				. old window is less than new
+  :                            846 				. insert new window in tranmission block
+  :                            847 tcp_award_new_window
+00:0026E4 BF0013              +848 	mlb	WINDOW		. K still contains 00FFFF
+00:0026E5 28A00F              +849 	sb	transmission:ack_window+1
+00:0026E6 350000              +850 	lret	0
+  :                            851 
+  :                            852 
+  :                            853 
+  :                            854 tcp_send_on_window
+00:0026E7 FD0000              +855 	push,xi 0	. count of transmissions
+00:0026E8 F80002              +856 	push	x	. the connection
+  :                            857 
+  :                            858 			. remote ACK + window >=
+  :                            859 			. sequence + size = send
+  :                            860 
+00:0026E9 CFA00A              +861 	dl	transmission:remote_ack_window, x
+00:0026EA C70008              +862 	ds	8
+00:0026EB 360020              +863 	dsl	32
+00:0026EC 160010              +864 	dsr	16
+00:0026ED D70008              +865 	da	8
+00:0026EE C70008              +866 	ds	8
+00:0026EF 3E06D8              +867 	lcal	tcp_award_window
+00:0026F0 CFA00E              +868 	dl	transmission:ack_window, x
+00:0026F1 160008              +869 	dsr	8
+00:0026F2 0E0008              +870 	sbr	8
+00:0026F3 C7000A              +871 	ds	10
+  :                            872 
+  :                            873 tcp_send_on_window_next
+00:0026F4 60A014              +874 	la	transmission:q4window:head, x
+00:0026F5 C6071A              +875 	jza	tcp_sent_all
+  :                            876 
+00:0026F6 580004              +877 	ly	a
+00:0026F7 60B003              +878 	la	descriptor:bytes, y
+00:0026F8 A6071A              +879 	jpa	tcp_sent_all		. the sticky bit = send
+  :                            880 					. otherwise the segment
+  :                            881 					. is still accumulating
+  :                            882 					. and is last on the window q
+  :                            883 
+00:0026F9 A00E5C              +884 	and	(01FFFF)		. remove the sticky bit
+  :                            885 					. for calculation
+  :                            886 
+00:0026FA 68B005              +887 	lb	descriptor:uproto, y	. the negative of the size
+00:0026FB 280012              +888 	sb	TP_HEADER
+00:0026FC D8B006              +889 	anb	descriptor:apdata, y	. of the segment header
+00:0026FD 2E0001              +890 	sbl	1			. in bytes at 16/24 bits/word
+  :                            891 	
+00:0026FE C80004              +892 	ab	a			. segment minus header
+  :                            893 					. = payload
+00:0026FF 650000              +894 	la, xi	0
+00:002700 360010              +895 	dsl	16
+00:002701 C70006              +896 	ds	6
+  :                            897 
+00:002702 580012              +898 	ly	TP_HEADER
+00:002703 CFB002              +899 	dl	transfer:seq, y
+  :                            900 
+00:002704 2E0008              +901 	sbl	8
+00:002705 360008              +902 	dsl	8	. sequence
+  :                            903 
+00:002706 D70006              +904 	da	6	. sequence + payload
+00:002707 C70006              +905 	ds	6
+  :                            906 
+  :                            907 .	maybe cache the sum of remote window + remote ack
+  :                            908 .	as soon as remote ack has been actioned on the
+  :                            909 .	front of q4ack
+  :                            910 .	so this sum would not be done here
+  :                            911 
+  :                            912 
+00:002708 CF0008              +913 	dl	8	. remote ack plus remote window
+  :                            914 
+00:002709 DF0006              +915 	dan	6
+00:00270A E6071A              +916 	jna	tcp_sent_possible
+  :                            917 
+  :                            918 
+00:00270B 3E0804              +919 	lcal	tcp_read_txq	. remove atomically from queue
+  :                            920 
+00:00270C 8F0008              +921 	qpush	8	. the cached state variables
+00:00270D F80004              +922 	push	a	. the descriptor
+  :                            923 
+00:00270E 3E071D              +924 	lcal	tcp_xmit
+  :                            925 
+00:00270F 380004              +926 	pop	a	. the descriptor
+00:002710 870008              +927 	qpop	8	. the cached state variables
+  :                            928 
+00:002711 50F000              +929 	lx	0, sp	. the connection pointer on the stack top
+00:002712 5CA016              +930 	ly, i	transmission:q4ack
+  :                            931 
+00:002713 3E0C9D              +932 	lcal	q2first?		. write the q4ACK
+00:002714 B60718              +933 	j	tcp_ackq_started	. but
+  :                            934 
+00:002715 6D02EE              +935 	lb, xi	TCP_TIMER2		. only start this timer
+00:002716 C80097              +936 	ab	DAYCLOCK$		. if the ACK q was empty
+00:002717 28A005              +937 	sb	transmission:timer(2)	. before
+  :                            938 
+  :                            939 tcp_ackq_started
+  :                            940 
+00:002718 17F001              +941 	inc	1, sp	. count of transmissions
+  :                            942 
+00:002719 B606F4              +943 	j	tcp_send_on_window_next
+  :                            944 
+  :                            945 tcp_sent_possible
+  :                            946 	$if	0
+  :                            947 			. I have traffic and no window
+  :                            948 	la	1, sp	. reasonable if I have sent any segments
+  :                            949 	jnza	tcp_sent_all
+  :                            950 	lcal	tcp_send_ack	. or try to
+  :                            951 	lr	0	. nop, send_ack skips on succesful return
+  :                            952 	$endif
+  :                            953 tcp_sent_all
+  :                            954 .tcp_sent_enough
+  :                            955 			. the connection pointer is now at the stack top
+00:00271A 380002              +956 	pop	x	. $$frame was exactly 1 word
+00:00271B 380004              +957 	pop	a	. count of transmissions
+00:00271C 350000              +958 	lret	0
+  :                            959 
+  :                            960 
+  :                            961 tcp_xmit 
+00:00271D CF000A              +962         dl      10      . this should be ACK
+  :                            963 
+00:00271E 500012              +964         lx      TP_HEADER
+00:00271F C7A004              +965         ds      transfer:ack, x
+00:002720 C80004              +966         ab      a
+  :                            967 
+  :                            968 	$if	1
+00:002721 652000              +969 	la, xi	8192
+  :                            970 	$else
+  :                            971         la      WINDOW
+  :                            972 	$endif
+  :                            973 
+00:002722 20A007              +974         sa      transfer:window, x
+00:002723 C0A008              +975         aa      transfer:checksum, x
+  :                            976 
+00:002724 58F001              +977 	ly	1, sp		. the descriptor
+  :                            978 
+  :                            979 tcp_finalise_checksum_on_xmit
+00:002725 C00005              +980         aa      b
+00:002726 160010              +981         dsr     16
+00:002727 0E0008              +982         sbr     8
+00:002728 D60725              +983         jnza    tcp_finalise_checksum_on_xmit
+  :                            984 
+00:002729 B80E3F              +985         xorB	(00FFFF)
+00:00272A 28A008              +986         sb      transfer:checksum, x
+  :                            987 
+00:00272B 50F001              +988         lx      1, sp		. the descriptor
+  :                            989 
+00:00272C 58A004              +990         ly      descriptor:dgram, x
+00:00272D 4FB006              +991         ql      dgram:ipsource, y
+  :                            992 
+00:00272E FD0001              +993 	MIB_ICOUNT48	tcpOutSegs:i
+(+01)0f
+00:00272F 2F0422              +993 
+00:002730 5E0732              +993 
+(+01)0f
+00:002731 170421              +993 
+  :                            994 
+00:002732 FF0E4B              +995         call    (ipsend)
+00:002733 350000              +996         lret    0
+  :                            997 
+  :                            998 
+  :                            999 
+  :                            1000 
+  :                            1001 .	following is unique of TCP send calls
+  :                            1002 .	because it's called when there is no
+  :                            1003 .	connection, consequently no connection
+  :                            1004 .	pointer and no state variables to
+  :                            1005 .	consult
+  :                            1006 
+  :                            1007 .	the only input is the received buffer
+  :                            1008 .	descriptor in fp
+  :                            1009 
+  :                            1010 .	this has to work for disliked incoming
+  :                            1011 .	SYN, so incoming SEQ is incremented
+  :                            1012 .	before being returned as ACK, and
+  :                            1013 .	_ACK flag is set as well as _RST
+  :                            1014 
+  :                            1015 
+  :                            1016 tcp_reject		. this is when TCP_RST must be sent
+  :                            1017 			. and there is no connection
+00:002734 650014              +1018 	la, xi	20
+00:002735 3E07DA              +1019 	lcal	tcp_txbuffer
+00:002736 C6075E              +1020 	jza	tcp_noresetbuffer	. no action either!
+  :                            1021 
+00:002737 F80004              +1022 	push	a			. the descriptor
+  :                            1023 
+00:002738 58E004              +1024 	ly	descriptor:dgram
+  :                            1025 
+00:002739 9FB006              +1026 	dpush	dgram:ipsource, y
+00:00273A 9FB008              +1027 	dpush	dgram:ipdest, y
+  :                            1028 
+00:00273B 4FF000              +1029 	ql	0, sp			. ipsend wants the
+00:00273C D70006              +1030 	da	6			. destination in 6:7
+  :                            1031 
+00:00273D C50006              +1032 	aa, xi	IPPROTO_TCP
+00:00273E CD0014              +1033 	ab, xi	20
+  :                            1034 
+00:00273F 580013              +1035 	ly	TX_DATAGRAM
+00:002740 87B006              +1036 	qpop	dgram:ipsource, y
+  :                            1037 
+00:002741 58E005              +1038 	ly	descriptor:uproto
+00:002742 9FB002              +1039 	dpush	transfer:seq, y
+00:002743 9FB000              +1040 	dpush	transfer:sourcep, y
+00:002744 F80E5D              +1041 	push	(05000++TCP_RST++TCP_ACK)
+  :                            1042 
+00:002745 17F004              +1043 	inc	4, sp
+00:002746 70F004              +1044 	tz	4, sp
+00:002747 B60749              +1045 	j	$+2
+00:002748 17F003              +1046 	inc	3, sp
+  :                            1047 
+00:002749 C0F000              +1048 	aa	0, sp
+00:00274A D7F001              +1049 	da	1, sp
+00:00274B D7F003              +1050 	da	3, sp
+  :                            1051 
+00:00274C 38A006              +1052 	pop	transfer:hl_code, x	. tx_datagram loads
+00:00274D 38A001              +1053 	pop	transfer:destp, x	. x->segment
+00:00274E 38A000              +1054 	pop	transfer:sourcep, x
+  :                            1055 
+00:00274F 30A002              +1056 	z	transfer:seq, x
+00:002750 30A003              +1057 	z	transfer:seq+1, x
+00:002751 38A004              +1058 	pop	transfer:ack, x
+00:002752 38A005              +1059 	pop	transfer:ack+1, x
+00:002753 30A007              +1060 	z	transfer:window, x
+00:002754 30A009              +1061 	z	transfer:urgent, x
+  :                            1062 
+00:002755 C00005              +1063 	aa	b
+00:002756 160010              +1064 	dsr	16
+00:002757 0E0008              +1065 	sbr	8
+00:002758 D60755              +1066 	jnza	$-3
+00:002759 B80E3F              +1067 	xorB	(00FFFF)
+00:00275A 28A008              +1068 	sb	transfer:checksum, x
+  :                            1069 
+00:00275B 380002              +1070 	pop	x			. the descriptor
+00:00275C 580013              +1071 	ly	TX_DATAGRAM
+00:00275D FF0E4B              +1072 	call	(ipsend)
+  :                            1073 	
+  :                            1074 tcp_noresetbuffer
+00:00275E 350000              +1075 	lret	0
+  :                            1076 
+  :                            1077 
+  :                            1078 
+  :                            1079 .	following routine with ++entry points
+  :                            1080 .	sends short segments when there is a
+  :                            1081 .	connection
+  :                            1082 
+  :                            1083 .	it's different from payload because
+  :                            1084 .	it sends the most recent sequence
+  :                            1085 .	value transmitted, not the advanced
+  :                            1086 .	sequence value assigned to new payload
+  :                            1087 .	segments
+  :                            1088 
+  :                            1089 .	used just for ACK + advertise window
+  :                            1090 .	or to probe for window with 1 byte
+  :                            1091 .	of payload
+  :                            1092 
+  :                            1093 .	The segment isn't flagged for retain or
+  :                            1094 .	held on the output queue / ack wait queue
+  :                            1095 
+  :                            1096 .	payload bytes are in R
+  :                            1097 .	if payload, the pointer is in Y
+  :                            1098 .	and is two bytes per word right justified
+  :                            1099 .	not internal format
+  :                            1100 
+  :                            1101 .	this isn't the payload send and
+  :                            1102 .	may not alter the SEQ variable
+  :                            1103 
+  :                            1104 
+  :                            1105 tcp_reset		. this is when TCP_RST must be sent
+  :                            1106 			. and the connection is about to
+  :                            1107 			. get ripped
+00:00275F 450000              +1108 	lr, xi	0
+00:002760 655004              +1109 	la, xi	05000++TCP_RST
+00:002761 FD000C              +1110 	push,xi	TCP_DELETETCB
+00:002762 38A001              +1111 	pop	transmission:state
+00:002763 B60766              +1112 	j	tcp_sendq2
+  :                            1113 
+  :                            1114 tcp_send_ack
+00:002764 450000              +1115 	lr, xi	0
+  :                            1116 tcp_sendq
+00:002765 655010              +1117 	la, xi	05000++TCP_ACK
+  :                            1118 tcp_sendq2
+00:002766 3E0779              +1119 	lcal	tcp_startbuffer
+00:002767 350000              +1120 	lret	0		. not obtained
+  :                            1121 
+  :                            1122 
+  :                            1123 .	check conversions between words and bytes
+  :                            1124 .	in calls to startbuffer, txbuffer
+  :                            1125 
+  :                            1126 
+00:002768 F80002              +1127 	push	x		. the connection
+00:002769 F80004              +1128 	push	a		. the new descriptor
+  :                            1129 
+00:00276A CFA00E              +1130 	dl	transmission:ack_window
+00:00276B 160008              +1131 	dsr	8
+00:00276C 0E0008              +1132 	sbr	8
+00:00276D C7000A              +1133 	ds	10
+  :                            1134 
+00:00276E 3E06D8              +1135 	lcal	tcp_award_window
+  :                            1136 	
+00:00276F 500011              +1137 	lx 	AP_DATA
+00:002770 600000              +1138 	la	r		. startbuffer returns
+  :                            1139 				. the payload count in r
+  :                            1140 
+00:002771 3E0459              +1141 	lcal	tx_payload	. payload address if any
+  :                            1142 				. is in Y
+  :                            1143 
+00:002772 500012              +1144 	lx	TP_HEADER
+00:002773 C00010              +1145 	aa	BYTES
+00:002774 20A008              +1146 	sa	transfer:checksum
+  :                            1147 
+00:002775 3E071D              +1148 	lcal	tcp_xmit
+00:002776 380003              +1149 	pop	y		. the descriptor
+00:002777 380002              +1150 	pop	x		. the connection
+00:002778 350001              +1151 	lret	1
+  :                            1152 
+  :                            1153 
+  :                            1154 
+  :                            1155 
+  :                            1156 
+  :                            1157 
+  :                            1158 
+  :                            1159 .	this primes a buffer to accumulate output
+  :                            1160 .	length wanted for payload is in R
+  :                            1161 .	hl_code is in A
+  :                            1162 .	if header is over 5 longwords
+  :                            1163 .	address of options list is in B
+  :                            1164 
+  :                            1165 .	the checksum seed is left in HEADER_SUM
+  :                            1166 .	registers 6:7
+  :                            1167 
+  :                            1168 .	the checksum seed does not include ACK
+  :                            1169 .	or window
+  :                            1170 
+  :                            1171 .	ACK is re-read from the transmission block
+  :                            1172 .	each time some segments may be sent or
+  :                            1173 .	resent
+  :                            1174 
+  :                            1175 .	window is generated new each time some
+  :                            1176 .	segments may be sent or resent
+  :                            1177 
+  :                            1178 .	send or resend must include new window
+  :                            1179 .	and ACK in the checksum, so those are
+  :                            1180 .	not included here
+  :                            1181 
+  :                            1182 
+  :                            1183 tcp_startbuffer
+00:002779 F80002              +1184 	push	x		. connection block
+00:00277A F80004              +1185 	push	a		. header length / flags
+00:00277B F80005              +1186 	push	b		. address of options program
+00:00277C 000010              +1187 	sr	BYTES		. payload bytes
+00:00277D 06000C              +1188 	sar	12
+00:00277E 260002              +1189 	sal	2
+00:00277F C00000              +1190 	aa	r		. buffer required for TCP segment
+00:002780 F80003              +1191 	push	y
+  :                            1192 
+00:002781 3E07DA              +1193 	lcal	tcp_txbuffer
+  :                            1194 
+00:002782 380003              +1195 	pop	y		. quite likely the user data pointer
+00:002783 380006              +1196 	pop	6		. options list
+00:002784 380007              +1197 	pop	7		. header format word
+00:002785 380002              +1198 	pop	x		. connection
+00:002786 C607CB              +1199 	jza	tcp_nostart
+  :                            1200 
+00:002787 28C003              +1201 	sb	descriptor:bytes, a
+  :                            1202 	
+00:002788 F80003              +1203 	push	y		. user buffer if any
+00:002789 F80004              +1204 	push	a		. the new descriptor
+  :                            1205 
+00:00278A 580012              +1206 	ly	TP_HEADER
+00:00278B 30B009              +1207 	z	transfer:urgent, y
+00:00278C 30B008              +1208 	z	transfer:checksum, y
+  :                            1209 
+00:00278D 8FA006              +1210 	qpush	transmission:socket_address, x
+00:00278E 870008              +1211 	qpop	8
+  :                            1212 
+00:00278F FD0000              +1213 	push, xi   0		. window
+  :                            1214 	
+00:002790 F80007              +1215 	push	7		. header format word
+  :                            1216 
+00:002791 FD0000              +1217 	push, xi   0
+00:002792 FD0000              +1218 	push, xi   0		. ACK
+  :                            1219 
+00:002793 CFA00C              +1220 	dl	transmission:sequence_ackx, x
+00:002794 160008              +1221 	dsr	8
+00:002795 0E0008              +1222 	sbr	8
+00:002796 9F0004              +1223 	dpush	a		. SEQ
+  :                            1224 
+00:002797 600009              +1225 	la	9
+00:002798 260008              +1226 	sal	8
+00:002799 68000B              +1227 	lb	11
+00:00279A 2E0008              +1228 	sbl	8
+00:00279B 160008              +1229 	dsr	8
+  :                            1230 
+00:00279C 9F0004              +1231 	dpush	a		. ports
+  :                            1232 
+00:00279D 680007              +1233 	lb	7
+00:00279E 0E000C              +1234 	sbr	12
+  :                            1235 
+00:00279F 280011              +1236 	sb	HEADER_LONGWORDS
+  :                            1237 	
+00:0027A0 6D0000              +1238 	lb, xi	0
+00:0027A1 650006              +1239 	la, xi	IPPROTO_TCP
+  :                            1240 
+00:0027A2 D7F000              +1241 	da	transfer:sourcep, sp
+00:0027A3 D7F002              +1242 	da	transfer:seq, sp
+  :                            1243 .	da	transfer:ack, sp	. zero just now
+00:0027A4 D7F006              +1244 	da	transfer:hl_code, sp
+  :                            1245 
+00:0027A5 F80006              +1246 	push	6		. options list
+  :                            1247 
+00:0027A6 C70006              +1248 	ds	HEADER_SUM
+  :                            1249 
+00:0027A7 380004              +1250 	pop	a
+  :                            1251 
+00:0027A8 87B000              +1252 	qpop	transfer:sourcep, y
+00:0027A9 87B004              +1253 	qpop	transfer:ack, y
+  :                            1254 
+00:0027AA 30B009              +1255 	z	transfer:urgent, y
+  :                            1256 
+00:0027AB 680011              +1257 	lb	HEADER_LONGWORDS
+  :                            1258 
+00:0027AC CDFFFB              +1259 	ab, xi	-5
+  :                            1260 
+00:0027AD 8D000A              +1261 	ay, xi	20/2
+  :                            1262 
+00:0027AE CE07B0              +1263 	jzb	tcp_sendno_options
+00:0027AF 3E07CD              +1264 	lcal	tcp_send_options
+  :                            1265 tcp_sendno_options
+00:0027B0 60F000              +1266 	la	0, sp		. the descriptor
+00:0027B1 18C006              +1267 	sy	descriptor:apdata, a
+00:0027B2 680011              +1268 	lb	HEADER_LONGWORDS
+  :                            1269 
+00:0027B3 2E0002              +1270 	sbl	2
+00:0027B4 400010              +1271 	lr	BYTES
+00:0027B5 28C003              +1272 	sb	descriptor:bytes, a
+  :                            1273 
+  :                            1274 
+  :                            1275 				. only the header byte count
+  :                            1276 				. should go in the descriptor
+  :                            1277 				. because this may be called
+  :                            1278 				. to prime a buffer for
+  :                            1279 				. streamed writing
+  :                            1280 
+  :                            1281 				. R is for how much space
+  :                            1282 				. is required, not how much
+  :                            1283 				. data is available
+  :                            1284 
+00:0027B6 C80000              +1285 	ab	r
+00:0027B7 280010              +1286 	sb	BYTES		. save the total for
+  :                            1287 				. direct message writes
+  :                            1288 
+00:0027B8 180011              +1289 	sy	AP_DATA
+00:0027B9 580013              +1290 	ly	TX_DATAGRAM
+00:0027BA CF0008              +1291 	dl	8
+00:0027BB 160008              +1292 	dsr	8
+00:0027BC 0E0008              +1293 	sbr	8
+00:0027BD C7B006              +1294 	ds	dgram:ipsource, y
+00:0027BE C70008              +1295 	ds	8
+00:0027BF D70006              +1296 	da	HEADER_SUM	. the checksum
+00:0027C0 C70006              +1297 	ds	HEADER_SUM
+00:0027C1 CF000A              +1298 	dl	10
+00:0027C2 160008              +1299 	dsr	8
+00:0027C3 0E0008              +1300 	sbr	8
+00:0027C4 C7000A              +1301 	ds	10
+00:0027C5 C7B008              +1302 	ds	dgram:ipdest, y
+00:0027C6 D70006              +1303 	da	HEADER_SUM
+00:0027C7 C70006              +1304 	ds	HEADER_SUM
+00:0027C8 380004              +1305 	pop	a		. the descriptor
+00:0027C9 380003              +1306 	pop	y
+00:0027CA 350001              +1307 	lret	1		. did it
+  :                            1308 
+  :                            1309 tcp_nostart
+00:0027CB 500003              +1310 	lx	y
+00:0027CC 350000              +1311 	lret	0		. did not
+  :                            1312 
+  :                            1313 tcp_send_options
+00:0027CD F80002              +1314 	push	x		. the connection
+00:0027CE 500004              +1315 	lx	a		. the option list address
+00:0027CF 400005              +1316 	lr	b		. the longword count
+00:0027D0 B607D7              +1317 	j	tcp_send_option?
+  :                            1318 tcp_send_option!
+00:0027D1 CFA000              +1319 	dl	0, x
+00:0027D2 C7B000              +1320 	ds	0, y
+00:0027D3 D70006              +1321 	da	HEADER_SUM
+00:0027D4 C70006              +1322 	ds	HEADER_SUM
+00:0027D5 850002              +1323 	ax, xi	2
+00:0027D6 8D0002              +1324 	ay, xi	2
+  :                            1325 tcp_send_option?
+00:0027D7 1E07D1              +1326 	jdr	tcp_send_option!
+00:0027D8 380002              +1327 	pop	x		. the connection
+00:0027D9 350000              +1328 	lret	0
+  :                            1329 	
+  :                            1330 	$if	0
+  :                            1331 tcp_send
+  :                            1332 	fret	0
+  :                            1333 
+  :                            1334 tcp_complete_segment?
+  :                            1335 	tz	transmission:q4window:head
+  :                            1336 	lret	0
+  :                            1337 tcp_complete_segment!
+  :                            1338 	ly	transmission:q4window:tail
+  :                            1339 	la	descriptor:bytes, y
+  :                            1340 	jna	tcp_segment_completed
+  :                            1341 	jza	tcp_segment_void		. would happen with send of zero
+  :                            1342 
+  :                            1343 
+  :                            1344 tcp_segment_completed
+  :                            1345 	lret	0
+  :                            1346 tcp_segment_void
+  :                            1347 	lret	1
+  :                            1348 	$endif
+  :                            1349 
+  :                            1350 tcp_txbufferx
+  :                            1351 	$if	HVBANK
+  :                            1352 	lb	*(BSOCKET*/12++tlist:hvbuffer)	. extra output buffer bank?
+  :                            1353 	jzb	tcp_txbuffer			. no
+  :                            1354 	lx	b
+  :                            1355 	lb, xi	04500
+  :                            1356 	push	a
+  :                            1357 	lcal	ip_buy_datagram_alternate
+  :                            1358 	pop	b
+  :                            1359 	j	tcp_txbuffer_initial
+  :                            1360 	$endif
+  :                            1361 	
+  :                            1362 tcp_txbuffer
+00:0027DA 6D4500              +1363 	lb, xi	04500
+  :                            1364 tcp_txbuffer_optional
+00:0027DB F80004              +1365 	push	a		. TCP header + payload length
+00:0027DC 3E0292              +1366 	lcal	ip_buy_datagram
+00:0027DD 380005              +1367 	pop	b
+  :                            1368 tcp_txbuffer_initial
+00:0027DE C607E4              +1369 	jza	tcp_nobuffer
+00:0027DF 28C003              +1370 	sb	descriptor:bytes, a
+00:0027E0 500013              +1371 	lx	TX_DATAGRAM
+00:0027E1 6D3C06              +1372 	lb,xi	IP_DEFAULT_TTL++IPPROTO_TCP
+00:0027E2 28A004              +1373 	sb	dgram:ttl_protocol, x
+00:0027E3 500012              +1374 	lx	TP_HEADER
+  :                            1375 tcp_nobuffer
+00:0027E4 350000              +1376 	lret	0
+  :                            1377 
+  :                            1378 
+  :                            1379 .	buffer queues which are shared between tasks have to be accessed
+  :                            1380 .	in a protected way. They are mainly the queues which both the IP
+  :                            1381 .	task and an application protocol access. Some application protocols
+  :                            1382 .	are in the IP task and some are not
+  :                            1383 
+  :                            1384 .	it would be quite bad to place TS cells in every queue structure
+  :                            1385 .	because not all queues need them. Sockets and connections are the
+  :                            1386 .	best available place for these lock cells
+  :                            1387 
+  :                            1388 .	all this code is SMP, so the code
+  :                            1389 
+  :                            1390 .	1.	prevents itself from getting interrupted or switched
+  :                            1391 .	2.	locks the connection
+  :                            1392 .	3.	updates the queue
+  :                            1393 .	4.	frees the lock
+  :                            1394 .	5.	reloads the interrupt mask it had before
+  :                            1395 
+  :                            1396 
+  :                            1397 .	tcp_write_rxq is called from TCP in the IP task
   :                            1398 
-  :                            1399 
-  :                            1400 .	tcp_read_rxq is called from the socket user
-  :                            1401 .	indirectly, nested in a far call to receive
-  :                            1402 
-  :                            1403 tcp_read_rxq
-00:0027F0 FD0007              +1404 	push,xi	MAX_INT_MASK
-00:0027F1 27F000              +1405 	sim	0, sp
-00:0027F2 07A003              +1406 	ts	transmission:tsq
-00:0027F3 B607F2              +1407 	j	$-1
-00:0027F4 5CA010              +1408 	ly, i	transmission:receiveq
-00:0027F5 3E0CAE              +1409 	lcal	readq
-00:0027F6 30A003              +1410 	z	transmission:tsq
-00:0027F7 27F000              +1411 	sim	0, sp
-00:0027F8 17000F              +1412 	inc	sp
-00:0027F9 350000              +1413 	lret	0
-  :                            1414 
-  :                            1415 .	tcp_write_txq is called in many places in TCP
-  :                            1416 .	and also from socket users, nested in far calls
-  :                            1417 .	to send
-  :                            1418 
-  :                            1419 .	the connection block transmission: is in x
-  :                            1420 
-  :                            1421 tcp_write_txq
-00:0027FA FD0007              +1422 	push,xi	MAX_INT_MASK
-00:0027FB 27F000              +1423 	sim	0, sp
-00:0027FC 07A003              +1424 	ts	transmission:tsq
-00:0027FD B607FC              +1425 	j	$-1
-00:0027FE 5CA014              +1426 	ly, i	transmission:q4window
-00:0027FF 3E0CA3              +1427 	lcal	q2
-00:002800 30A003              +1428 	z	transmission:tsq
-00:002801 27F000              +1429 	sim	0, sp
-00:002802 17000F              +1430 	inc	sp
-00:002803 350000              +1431 	lret	0
-  :                            1432 
-  :                            1433 .	tcp calls tcp_read_txq when it moves segments
-  :                            1434 .	from q4window to q4ack
-  :                            1435 
-  :                            1436 tcp_read_txq
-00:002804 FD0007              +1437 	push,xi	MAX_INT_MASK
-00:002805 27F000              +1438 	sim	0, sp
-00:002806 07A003              +1439 	ts	transmission:tsq
-00:002807 B60806              +1440 	j	$-1
-00:002808 5CA014              +1441 	ly, i	transmission:q4window
-00:002809 3E0CAE              +1442 	lcal	readq
-  :                            1443 .	z	0, a		. you might didn't get no address in a
-00:00280A 30A003              +1444 	z	transmission:tsq
-00:00280B 27F000              +1445 	sim	0, sp
-00:00280C 17000F              +1446 	inc	sp
-00:00280D 350000              +1447 	lret	0
-  :                            1448 
-  :                            1449 
-  :                            1450 tcp_rsegment			. low level far calls
-00:00280E F80002              +1451 	push	x		. for message-based TCP traffic
-00:00280F 3E07F0              +1452 	lcal	tcp_read_rxq	. tcpr and tcpz 
-00:002810 380002              +1453 	pop	x
-00:002811 3D0000              +1454 	fret	0
-  :                            1455 
-  :                            1456 tcp_zsegment
-00:002812 C60816              +1457 	jza	tcp_xsegment
-00:002813 F80002              +1458 	push	x
-00:002814 3E015C              +1459 	lcal	net_free
-00:002815 380002              +1460 	pop	x
-  :                            1461 tcp_xsegment
-00:002816 3D0000              +1462 	fret	0
-  :                            1463 
-  :                            1464 tcp_textline_release
-00:002817 F80002              +1465 	push	x
-00:002818 3E07F0              +1466 	lcal	tcp_read_rxq
-00:002819 C6081B              +1467 	jza	tcp_textline_not_there
-00:00281A 3E015C              +1468 	lcal	net_free
-  :                            1469 tcp_textline_not_there
-00:00281B 380002              +1470 	pop	x
-00:00281C 3D0000              +1471 	fret	0
+  :                            1399 tcp_write_rxq
+  :                            1400 
+00:0027E5 FD0007              +1401 	LOCK	transmission:tsq
+00:0027E6 27F000              +1401 
+00:0027E7 07A003              +1401 
+00:0027E8 B607E7              +1401 
+00:0027E9 64A010              +1402 	la, i	transmission:receiveq
+(+01)10
+00:0027EA 5D0303              +1403 	ly, xi	tcpq
+00:0027EB 3E0160              +1404 	lcal	net_transfer
+00:0027EC 30A003              +1405 	FREE	transmission:tsq
+00:0027ED 27F000              +1405 
+00:0027EE 17000F              +1405 
+00:0027EF 350000              +1406 	lret	0
+  :                            1407 
+  :                            1408 
+  :                            1409 .	tcp_read_rxq is called from the socket user
+  :                            1410 .	indirectly, nested in a far call to receive
+  :                            1411 
+  :                            1412 tcp_read_rxq
+00:0027F0 FD0007              +1413 	push,xi	MAX_INT_MASK
+00:0027F1 27F000              +1414 	sim	0, sp
+00:0027F2 07A003              +1415 	ts	transmission:tsq
+00:0027F3 B607F2              +1416 	j	$-1
+00:0027F4 5CA010              +1417 	ly, i	transmission:receiveq
+00:0027F5 3E0CAE              +1418 	lcal	readq
+00:0027F6 30A003              +1419 	z	transmission:tsq
+00:0027F7 27F000              +1420 	sim	0, sp
+00:0027F8 17000F              +1421 	inc	sp
+00:0027F9 350000              +1422 	lret	0
+  :                            1423 
+  :                            1424 .	tcp_write_txq is called in many places in TCP
+  :                            1425 .	and also from socket users, nested in far calls
+  :                            1426 .	to send
+  :                            1427 
+  :                            1428 .	the connection block transmission: is in x
+  :                            1429 
+  :                            1430 tcp_write_txq
+00:0027FA FD0007              +1431 	push,xi	MAX_INT_MASK
+00:0027FB 27F000              +1432 	sim	0, sp
+00:0027FC 07A003              +1433 	ts	transmission:tsq
+00:0027FD B607FC              +1434 	j	$-1
+00:0027FE 5CA014              +1435 	ly, i	transmission:q4window
+00:0027FF 3E0CA3              +1436 	lcal	q2
+00:002800 30A003              +1437 	z	transmission:tsq
+00:002801 27F000              +1438 	sim	0, sp
+00:002802 17000F              +1439 	inc	sp
+00:002803 350000              +1440 	lret	0
+  :                            1441 
+  :                            1442 .	tcp calls tcp_read_txq when it moves segments
+  :                            1443 .	from q4window to q4ack
+  :                            1444 
+  :                            1445 tcp_read_txq
+00:002804 FD0007              +1446 	push,xi	MAX_INT_MASK
+00:002805 27F000              +1447 	sim	0, sp
+00:002806 07A003              +1448 	ts	transmission:tsq
+00:002807 B60806              +1449 	j	$-1
+00:002808 5CA014              +1450 	ly, i	transmission:q4window
+00:002809 3E0CAE              +1451 	lcal	readq
+  :                            1452 .	z	0, a		. you might didn't get no address in a
+00:00280A 30A003              +1453 	z	transmission:tsq
+00:00280B 27F000              +1454 	sim	0, sp
+00:00280C 17000F              +1455 	inc	sp
+00:00280D 350000              +1456 	lret	0
+  :                            1457 
+  :                            1458 
+  :                            1459 tcp_rsegment			. low level far calls
+00:00280E F80002              +1460 	push	x		. for message-based TCP traffic
+00:00280F 3E07F0              +1461 	lcal	tcp_read_rxq	. tcpr and tcpz 
+00:002810 380002              +1462 	pop	x
+00:002811 3D0000              +1463 	fret	0
+  :                            1464 
+  :                            1465 tcp_zsegment
+00:002812 C60816              +1466 	jza	tcp_xsegment
+00:002813 F80002              +1467 	push	x
+00:002814 3E015C              +1468 	lcal	net_free
+00:002815 380002              +1469 	pop	x
+  :                            1470 tcp_xsegment
+00:002816 3D0000              +1471 	fret	0
   :                            1472 
-  :                            1473 TPORTCHAIN* $func
-  :                            1474 BITS	$equ	TPORTCHAIN(1, 1)
-  :                            1475 	$return	31**((BITS/*15)--(BITS/*10)--(BITS/*5)--(BITS))
-  :                            1476 	$end
-  :                            1477 
-  :                            1478 tcp_hashremote
-00:00281D 160008              +1479 	dsr	8
-00:00281E 0E0008              +1480 	sbr	8
-00:00281F B00005              +1481 	xor	b
-  :                            1482 
-  :                            1483 tcp_hashlocal
-00:002820 16000A              +1484 	dsr	10	.		 6 bits	15..10
-00:002821 0E000E              +1485 	sbr	14	.	--	10 bits	9..0
-00:002822 B00005              +1486 	xor	b
-00:002823 160005              +1487 	dsr	5	.		 5 bits	(15--9..5)--(14..10--4..0)
-00:002824 0E0013              +1488 	sbr	19	.	--	 5 bits
-00:002825 B00005              +1489 	xor	b
-00:002826 3D0000              +1490 	fret	0
+  :                            1473 tcp_textline_release
+00:002817 F80002              +1474 	push	x
+00:002818 3E07F0              +1475 	lcal	tcp_read_rxq
+00:002819 C6081B              +1476 	jza	tcp_textline_not_there
+00:00281A 3E015C              +1477 	lcal	net_free
+  :                            1478 tcp_textline_not_there
+00:00281B 380002              +1479 	pop	x
+00:00281C 3D0000              +1480 	fret	0
+  :                            1481 
+  :                            1482 TPORTCHAIN* $func
+  :                            1483 BITS	$equ	TPORTCHAIN(1, 1)
+  :                            1484 	$return	31**((BITS/*15)--(BITS/*10)--(BITS/*5)--(BITS))
+  :                            1485 	$end
+  :                            1486 
+  :                            1487 tcp_hashremote
+00:00281D 160008              +1488 	dsr	8
+00:00281E 0E0008              +1489 	sbr	8
+00:00281F B00005              +1490 	xor	b
   :                            1491 
-  :                            1492 	
-  :                            1493 tcp_xdisco		. vector is xdisco
-  :                            1494 			. low level connection close
-  :                            1495 			. connection in x
-  :                            1496 
-00:002827 60A001              +1497 	la	transmission:state
-00:002828 680004              +1498 	anu, xi	TCP_CLOSEWAIT	. remote close received
-00:002829 DD0008              +1498 
-  :                            1499 				. close from local socket awaited
+  :                            1492 tcp_hashlocal
+00:002820 16000A              +1493 	dsr	10	.		 6 bits	15..10
+00:002821 0E000E              +1494 	sbr	14	.	--	10 bits	9..0
+00:002822 B00005              +1495 	xor	b
+00:002823 160005              +1496 	dsr	5	.		 5 bits	(15--9..5)--(14..10--4..0)
+00:002824 0E0013              +1497 	sbr	19	.	--	 5 bits
+00:002825 B00005              +1498 	xor	b
+00:002826 3D0000              +1499 	fret	0
   :                            1500 
-00:00282A CE0835              +1501 	jzb	tcp_xclosewait
-00:00282B CD0003              +1502 	ab, xi	TCP_CLOSEWAIT-TCP_ESTABLISHED
-00:00282C CE0830              +1503 	jzb	tcp_xfinwait1
-  :                            1504 
-  :                            1505 tcp_xclose
-  :                            1506 				. it's been ripped and the owner knows
-00:00282D FD000C              +1507 	push,xi	TCP_DELETETCB	. It can be really reassigned
-00:00282E 38A001              +1508 	pop	transmission:state
-00:00282F 3D0000              +1509 	fret	0
-  :                            1510 
-  :                            1511 tcp_xfinwait1
-00:002830 FF0E5E              +1512 	call	(tcp_ack_fin)
-00:002831 B6082D              +1513 	j	tcp_xclose	. better delete roughly
-  :                            1514 				. if you could not send ACK++FIN
-  :                            1515 
-00:002832 FD0006              +1516 	push,xi	TCP_FINWAIT1
-00:002833 38A001              +1517 	pop	transmission:state
-00:002834 B60839              +1518 	j	tcp_xfin_upsequence
+  :                            1501 	
+  :                            1502 tcp_xdisco		. vector is xdisco
+  :                            1503 			. low level connection close
+  :                            1504 			. connection in x
+  :                            1505 
+00:002827 60A001              +1506 	la	transmission:state
+00:002828 680004              +1507 	anu, xi	TCP_CLOSEWAIT	. remote close received
+00:002829 DD0008              +1507 
+  :                            1508 				. close from local socket awaited
+  :                            1509 
+00:00282A CE0835              +1510 	jzb	tcp_xclosewait
+00:00282B CD0003              +1511 	ab, xi	TCP_CLOSEWAIT-TCP_ESTABLISHED
+00:00282C CE0830              +1512 	jzb	tcp_xfinwait1
+  :                            1513 
+  :                            1514 tcp_xclose
+  :                            1515 				. it's been ripped and the owner knows
+00:00282D FD000C              +1516 	push,xi	TCP_DELETETCB	. It can be really reassigned
+00:00282E 38A001              +1517 	pop	transmission:state
+00:00282F 3D0000              +1518 	fret	0
   :                            1519 
-  :                            1520 tcp_xclosewait			. passive close
-00:002835 FF0E5E              +1521 	call	(tcp_ack_fin)	. 
-00:002836 B6082D              +1522 	j	tcp_xclose	. better delete roughly
+  :                            1520 tcp_xfinwait1
+00:002830 FF0E5E              +1521 	call	(tcp_ack_fin)
+00:002831 B6082D              +1522 	j	tcp_xclose	. better delete roughly
   :                            1523 				. if you could not send ACK++FIN
   :                            1524 
-00:002837 FD0009              +1525 	push,xi TCP_LASTACK
-00:002838 38A001              +1526 	pop	transmission:state
-  :                            1527 
-  :                            1528 tcp_xfin_upsequence
-  :                            1529 
-00:002839 CFA00C              +1530 	dl	transmission:sequence_ackx
-00:00283A D70E54              +1531 	da	(65536d)
-00:00283B C7A00C              +1532 	ds	transmission:sequence_ackx
-00:00283C 3D0000              +1533 	fret	0
-  :                            1534 
-  :                            1535 	$if	RX_FRAGMENTS
-  :                            1536 tcp_rx_rasm
-  :                            1537 	lx	descriptor:uproto
-  :                            1538 	push	transfer:checksum, x
-  :                            1539 	lcal	rasm77_gcheck
-  :                            1540 	xorB	0, sp
-  :                            1541 	pop	transfer:checksum, x
-  :                            1542 	la	fp
-  :                            1543 	jnzb	net_free_chain
-  :                            1544 	lx, xi	tcpq
-  :                            1545 	j	net_add_chain
-  :                            1546 	$endif
-  :                            1547 
-  :                            1548: 	$include	tcp4ruti
+00:002832 FD0006              +1525 	push,xi	TCP_FINWAIT1
+00:002833 38A001              +1526 	pop	transmission:state
+00:002834 B60839              +1527 	j	tcp_xfin_upsequence
+  :                            1528 
+  :                            1529 tcp_xclosewait			. passive close
+00:002835 FF0E5E              +1530 	call	(tcp_ack_fin)	. 
+00:002836 B6082D              +1531 	j	tcp_xclose	. better delete roughly
+  :                            1532 				. if you could not send ACK++FIN
+  :                            1533 
+00:002837 FD0009              +1534 	push,xi TCP_LASTACK
+00:002838 38A001              +1535 	pop	transmission:state
+  :                            1536 
+  :                            1537 tcp_xfin_upsequence
+  :                            1538 
+00:002839 CFA00C              +1539 	dl	transmission:sequence_ackx
+00:00283A D70E54              +1540 	da	(65536d)
+00:00283B C7A00C              +1541 	ds	transmission:sequence_ackx
+00:00283C 3D0000              +1542 	fret	0
+  :                            1543 
+  :                            1544 	$if	RX_FRAGMENTS
+  :                            1545 tcp_rx_rasm
+  :                            1546 	lx	descriptor:uproto
+  :                            1547 	push	transfer:checksum, x
+  :                            1548 	lcal	rasm77_gcheck
+  :                            1549 	xorB	0, sp
+  :                            1550 	pop	transfer:checksum, x
+  :                            1551 	la	fp
+  :                            1552 	jnzb	net_free_chain
+  :                            1553 	lx, xi	tcpq
+  :                            1554 	j	net_add_chain
+  :                            1555 	$endif
+  :                            1556 
+  :                            1557: 	$include	tcp4ruti
   :                            1 tcp_event1_acknowledged?
 00:00283D CFA00C              +2 	dl	transmission:sequence_ackx
 00:00283E A80E45              +3 	andB	(0FF0000s)		. ls 16 bits aren't used yet, but...
@@ -9150,7 +9159,7 @@ Note: ../t77.4/i_f.msm Line 323: void section: discarding relocation tuple
 00:002975 38000F              +639 
 00:002976 350000              +639 
   :                            640 	$root
-  :                            1549 
+  :                            1558 
   :                            80: 	$include	connect
   :                            1 .
   :                            2 .    Copyright Tim Cox, 2012
@@ -24218,6 +24227,7 @@ tlist:free=$43:000001,000003
 tlist:top=$43:000002,000003
 tlist:hvbuffer=$43:000003,000003
 tlist:obuffer=$43:000004,000003
+tlist:attentionlist_next=$43:000005,000003
 tlist:rxq=$43:000006,000003
 tlist:rxq:head=$43:000006,000003
 tlist:rxq:tail=$43:000007,000003
