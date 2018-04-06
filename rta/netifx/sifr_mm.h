@@ -44,6 +44,7 @@
 
 #define DEVICE_PAGE     2048
 #define DEVICE_PAGES    256
+#define	DEVICE_COMPARTMENTS 2
 
 #define	FORWARD(X)	PORT(X) & 65535
 
