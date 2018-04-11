@@ -25,28 +25,36 @@
 .	the 2-word descriptors are chain head and MS timeout
 
 ipv4_fragment $tree
+	lb	dgram:ttl_proto
+	andB	255,,xi			. isolate the protocol field
+	ab	-IPPROTO_TCP,,xi	
+	jza	protocol_ok
+	ab	IPPROTO_TCP-IPPROTO_UDP,,xi
+	jnzb	ipv4_rxz		. fragmented ICMP doesn't make it
+protocol_ok
+	lb	dgram:id
+	ds	FLAGS_FRAGMENT		. = 8:9 a already has flags, fragment
+
 	dl	dgram:ipsource		. cache the netwide identity
 	ds	10			. = source + id 
-	dl	id			. id + fragment index
-	ds	8
 
 	lr	IPV4_FRAGMENTED_DGRAMS-1,,xi
 	ly	fragmented_dgram(1),,xi
 	z	7			. index of unused slot
 
-search	sy	6			. lookaside
-	ly	0, y
-	tz	y
-	j	search_test		. slot is populated: for this datagram?
+search	tz	0, y			. lookaside
+	j	search:test		. slot is populated: for this datagram?
 	sy	7			. slot is available for new use
 search_on
-	ly	6
 	ay	2,,xi
 	jdr	search
+	tz	7			. slot available for new datagram?
+	j	search_insert
 	j	ipv4_rxz
 
+search_insert
 search_test
-
+	j	ipv4_rxz
 
 $(1)
 ?	$do	IPV4_FRAGMENTED_DGRAMS,fragmented_dgram(?)	0:d
