@@ -48,7 +48,7 @@ s	$socket
 
 $(1)
 udpq	dq
-
+udp_nosocket_rxgrams	0
 
 $(0)
 udp4	lk	(00FFFF)
@@ -62,6 +62,9 @@ udp_next
 
 	la	uugram:destp, x
 
+	$if	1
+	lcal	udp_socket
+	$else
 	lb, i	BSOCKET*/9	.	| 000 000 000 101 111 000 000 000 |
 	dsr	9		.	| sss sss sss 000 000 000 101 111 |
 	and, xi	127
@@ -74,6 +77,8 @@ udp_next
 
 	la	s:socket_address+1, b
 	and	(65535)
+	$endif
+
 	jza	udp_nosocket
 
         lx	b
@@ -713,4 +718,35 @@ udp_drop_dgram
 	lcal	net_free
 	fret	0
 	$endif
+
+udp_socket
+        lb, i   BSOCKET*/9      .       | 000 000 000 101 111 000 000 000 |
+        dsr     9               .       | sss sss sss 000 000 000 101 111 |
+        and, xi 127
+        aa, xi  usockb(1)
+        la      0, a
+        jza     udp_socketx
+        sabr    BSOCKET
+
+        rbr     12              .       | 000 000 101 111 sss sss sss 000 |
+
+        la      s:socket_address+1, b	. socket storage page is there
+        and     (65535)			. is it bound?
+udp_socketx
+	lret	0
+
+udp_rxbufferp
+	$if	1
+	la	1, y		. destination port in interface buffer
+	lcal	udp_socket
+	jnza	udp_target_bound
+	la	udp_nosocket_rxgrams	. how many crazy udgrams have we had?
+	aa	1,,xi
+	sa	udp_nosocket
+	and	-64,,xi		. buffer, checksum and diagnose
+	jnza	ipv4_rxz	. a burst of 64 bad udgrams in 16 million
+
+udp_target_bound		. drop the 16 million silently
+	$endif
+	lret	0
 

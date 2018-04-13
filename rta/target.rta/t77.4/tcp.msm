@@ -248,8 +248,12 @@ tcp4_free_block
 	push	*(BSOCKET*/12++tlist:free)
 	pop	0, x
 	sx	*(BSOCKET*/12++tlist:free)
+
+	$if	HVBANK
 	tz	*(BSOCKET*/12++tlist:hvbuffer)
 	j	$+2
+	$endif
+
 	call	(tcp_agent_free)
 	lx	b
 	j	tcp4_located_next_connection
@@ -360,9 +364,8 @@ tcp4_construct_connections_bank
 	z	tlist:free
 	push	(BSOCKET*/12++tlist:connection_block(1))
 	pop	tlist:top
-	z	tlist:hvbuffer
-	push	tx_buffers
-	pop	tlist:obuffer
+	z	tlist:rxbank
+	z	tlist:txbank
 	z	tlist:link
 tcp4_construct_x
 	lret	0
@@ -380,8 +383,12 @@ tcp_auto_accept
 	ds	transmission:ack_window, x
 	qpush	8
 	qpop	transmission:socket_address, x
+
+	$if	HVBANK
 	tz	*(BSOCKET*/18++tlist:hvbuffer:s)
 	j	tcp_hv_accept
+	$endif
+
 	push,xi	TCP_SYNRECEIVED
 	pop	transmission:state
 	call	(tcp_agent_add)
@@ -592,11 +599,16 @@ tcp_locate_connection
 	mlb	9
 	ds	8		. the local socket
 
+	$if	HVBANK
 	tz	*(BSOCKET*/12++tlist:hvbuffer)
 	j	tcp_resolve2remotesocket
+	$endif
+
 	dsl	32
 	sar	8
 	call	(tcp_hash_localsocket)
+
+	$if	HVBANK
 	j	tcp_walk_connection
 
 tcp_resolve2remotesocket
@@ -604,7 +616,7 @@ tcp_resolve2remotesocket
 	call	(tcp_hash_remotesocket)
 
 tcp_walk_connection
-
+	$endif
 
 	lx	(BSOCKET*/12++tlist:chain(1))	. &first
 	ax	a
@@ -638,6 +650,28 @@ tcp_tbloc_found
 	lret	0
 
 	. the LRET was up there
+
+tcp4_rxbufferp
+	$if	HVBANK
+	la	1, y		. should be at TCP header in interface buffer
+	lcal	tcp_socket
+	jza	tcp4_rxbufferpx
+	la	1,   b
+	and	(65535)
+	jza	tcp4_rxbufferpx
+	la	s:tcp:tbase, b
+
+	sabr	BSOCKET
+	dl	*(BSOCKET*/12++tlist:rxbank)
+	jza	tcp4_rxbufferpx
+	sabr	A$RXBUFFB
+	la	b
+	sabr	A$TXBUFFB
+	lx	(A$RXBUFFB*/18:s)
+	$endif
+	
+tcp4_rxbufferpx
+	lret	0
 
 tcp4_rx	ly	TP_HEADER
 	sx	TP_HEADER
@@ -676,6 +710,15 @@ tcp4_rx	ly	TP_HEADER
 
 	lx	TP_HEADER
 	la	transfer:destp
+
+	$if	1
+	lcal	tcp_socket
+	jza	tcp_reset_deflect
+	ds	descriptor:sobdi
+	la	1, b
+	and	(65535)
+	jnza	tcp_qthru
+	$else
 	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
 
 				.	000 000 000 000 000 00p ppp ppp : A
@@ -691,10 +734,13 @@ tcp4_rx	ly	TP_HEADER
 	rbr	12		.	000 000 bbb bbb ooo ooo ooo 000
 
 	sabr	BSOCKET		.	look at the port socket structure
+
 	tz	1, b		.	is the port bound?
 	j	tcp_qthru	.	yes, queue it to protocol 2nd part
-
+	$endif
+	
 tcp_reset_deflect
+
 	la	transfer:hl_code
 	and, xi	TCP_RST		.	no, repool the buffer
 	jnza	ipv4_drop	.	don't try to reset a reset
@@ -707,7 +753,7 @@ tcp_reset_deflect
 
 
 tcp_qthru
-	ds	descriptor:sobdi
+.	ds	descriptor:sobdi
 .	sa	descriptor:sobdi
 .	sb	descriptor:lso	.	cache the LVA of the port
 
@@ -1553,6 +1599,25 @@ tcp_rx_rasm
 	lx, xi	tcpq
 	j	net_add_chain
 	$endif
+
+tcp_socket
+        lb, xi  BSOCKET*/9      .       000 000 000 bbb bbb 000 000 000
+
+                                .       000 000 000 000 000 00p ppp ppp : A
+        dsr     9               .       ppp ppp ppp 000 000 000 bbb bbb : B
+
+        aa, xi  tsockb(1)       .       000 000 000 010 000 11p ppp ppp : A
+
+        la      0, a            .       is there even storage where the
+                                .       bound socket structure should be?
+
+        jza     tcp_socketx
+
+        rbr     12              .       000 000 bbb bbb ooo ooo ooo 000
+
+        sabr    BSOCKET         .       look at the port socket structure
+tcp_socketx
+	lret	0
 
 	$include	tcp4ruti
 

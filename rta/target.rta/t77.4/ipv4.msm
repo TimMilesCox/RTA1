@@ -86,21 +86,11 @@ $(1)
 	$include	routes
 	$include	netaddr
 
-ipv4_fragments_pending	+	0	. this is incremented by fragment store
-					. and set to the number remaining on fragment timer
-
-	$if	RX_FRAGMENTS
-rasm77_fragment_q	dq		. holds fragments immediately and quickly
-					. allowing interface buffer immediate free
-
-rasm77_fragment_list	dq		. process chain for reassembly
-	$endif
-
 $(0)
 
 ipv4
-	$if	RX_FRAGMENTS
-	lcal	rasm77_time_fragments
+	$if	IPV4_FRAGMENTED_DGRAMS
+	lcal	ipv4_fragment:timeouts
 	$endif
 
 	lret	0
@@ -329,6 +319,66 @@ ipv4_rx	lx	sp
 
 	MIB_ICOUNT48	ipInReceives:i
 	
+	$if	IPV4_OVERHAUL_20180416
+
+	la	120,,xi
+	ana	r		. calculate internal stack load # words
+	sa	d$save3		. DATAGRAM_PART2
+	jnc	dgram_load(120)
+	sar	3		. # blocks of 8 octets rounded up
+	j	dgram_load(120), a
+
+?	$do	15,dgram_load(128-?*8)	;
+	qpush	60-4*?, y
+
+	la	r		. frame large enough for datagram?
+	ana	dgram:bytes
+	jnc	ipv4_rxz
+
+	la	dgram:vers_ihl_tos
+	dsr	12
+	aa	-4,,xi		. is the header IPv4?
+	jnza	ipv4_rxz	. otherwise forget it
+
+	sbr	20
+	sb	HEADER_LONGWORDS
+	ab	-5,,xi		. does it have >= minimal IP header?
+	jnc	ipv4_rxz	. not much use otherwise
+
+	lb	HEADER_LONGWORDS
+	sbl	1
+	sb	HEADER_WORDS
+
+	lx	sp		. point x to IP header
+	ab	sp
+	sb	TP_HEADER
+	lr	b		. point r to payload protocol header
+	lk	dgram:checksum	. buffer the received checksum aside
+	z	dgram:checksum	. do not checksum the received checksum
+
+	dl	dgram:vers_ihl_tos	. lets start then
+
+ipv4_checksum
+	ax	2,,xi		. next word pair
+	jxge	ipv4_checksumx	. when x reaches r
+	da	0, x
+	j	ipv4_checksum
+
+ipv4_checksumx
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	ipv4_checksumx
+	xorB	(0FFFF)
+
+	xorB	k		. is it the same?
+	jnzb	ipv4_rxz
+
+	sk	dgram:checksum	. put the checksum back
+				. in case ICMP fires it all back with a DU
+
+	$else			. IPV4_OVERHAUL_20180416 
+
 	dpush	0, y		. 2 header words to internal
 				. stack
 
@@ -391,6 +441,8 @@ ipv4_rxsum
 	xorB	dgram:checksum
 	jnzb	ipv4_rxz
 
+	$endif			. not IPV4_OVERHAUL_20180416
+
 	dl	dgram:ipdest
 	lx	I_F_P		. get the interface pointer back
 	lcal	ipv4_forus?
@@ -403,21 +455,24 @@ ipv4_yesforus
 
 	$if	HVBANK
 	lcal	ip_alternate_rxbank?
+	$else
+	la	dgram:ttl_protocol
+	lcal	ipv4_rxbufferp
+	$endif
+
 	tz	x
 	j	ipv4_rxbuffer_rq	. skip asking about fragments
-	$endif				. and skip the default buffer pool
 
+	$if	IPV4_FRAGMENTED_DGRAMS
 	la	dgram:flags_fragment
 	and, xi	IP_MORE++IP_OFFSET_MASK
-	sa	FLAGS_FRAGMENT
-	jza	ipv4_nofragment
+	jnza	ipv4_fragment
+	$else
+	jnza	ipv4_rxz
+	$endif	IPV4_FRAGMENTED_DGRAMS
 
-	lx	ipv4_fragments_pending
-	lr, xi	RX_FRAGMENTS
-	jxge	ipv4_rxz	. enough fragments buffered already
-
-ipv4_nofragment
 	lx	rx_buffers	. the default RX buffer pool
+
 ipv4_rxbuffer_rq
 	la	dgram:bytes
 	aa, xi	1
@@ -512,9 +567,6 @@ option_word?
 			. about 5 instructions
 
 
-	tz	FLAGS_FRAGMENT
-	j	ipv4_fragment
-
 	anu, xi	IPPROTO_UDP
 	jzb	udp_rx
 
@@ -524,29 +576,7 @@ option_word?
 	anu, xi	IPPROTO_ICMP
 	jzb	icmp_rx
 
-
 	j	icmp_noproto
-
-ipv4_fragment
-	anu, xi	IPPROTO_UDP
-	jzb	ipv4_link_fragment
-	anu, xi	IPPROTO_TCP
-	jzb	ipv4_link_fragment
-	anu, xi	IPPROTO_ICMP
-	jzb	ipv4_link_fragment
-	la	8
-	and, xi	IP_OFFSET_MASK
-	jza	icmp_noproto
-	j	ipv4_drop
-ipv4_link_fragment
-
-	$if	RX_FRAGMENTS
-	inc	ipv4_fragments_pending	. a fragment is now certain to be stored
-				.
-
-	lcal	rasm77_preq	. do an absolute minimum
-	j	ipv4_rxz	. and let the interface buffer go
-	$endif
 
 ipv4_drop
 	la	fp
@@ -617,7 +647,7 @@ ip_no_txbuffer
 
 net_free_txbx
 	lk	(63*/18:s)
-	lx	(A$BUFFB*/18:s)
+	lx	(A$TXBUFFB*/18:s)
 	mta	x
 	j	net_free_txb
 	j	sell1
@@ -721,3 +751,13 @@ ip_source_no
 	pop	b
 	lret	0
 
+ipv4_rxbufferp				. select buffer pool and screen out time-wasting traffic
+	lx	0,,xi			. will take default on return
+	and	255,,xi			. a contains ttl_protocol
+	aa	-IPPROTO_TCP,,xi
+	jza	tcp4_rxbufferp
+	aa	IPPROTO_TCP-IPPROTO_UDP,,xi
+	jza	udp_rxbufferp
+	aa	IPPROTO_UDP-IPPROTO_ICMP,,xi
+	jza	icmp_rxbufferp
+	j	icmp_noproto		. an input buffer is never assigned
