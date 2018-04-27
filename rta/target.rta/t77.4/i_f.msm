@@ -376,9 +376,20 @@ i_f_leave
 
 						. i_f should be x->
 						. acw should be a->
-q2ifoq	la	this_if:arp_resolve
-	jza	q2ifreel			. interface does not use ARP
-	call	a				. interface uses ARP
+q2ifoq	tnz	this_if:arp_resolve
+	j	q2ifreel			. interface does not use ARP
+
+	$if	0
+	lb	descriptor:frame, a		. practical measure. set the delivery pointer
+	sb	TX_FRAME			. for the target physical address
+	$else
+	lb	descriptor:frame, a		. diagnostic: test the delivery pointer
+	xorB	TX_FRAME			. for the target physical address
+	jzb	$+2
+	ii	GUARD$
+	$endif
+
+	call	this_if:arp_resolve		. interface uses ARP
 	jza	q2ifreel			. dropped or pending
 	la	8				. descriptor
 	tp	descriptor:bytes, a		

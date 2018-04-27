@@ -37,8 +37,6 @@
 .
 .
 
-LAST_BYTES	$set	d$save
-CHECKSUM	$set	d$save1
 
 $(71::,sp)
 uugram udgram
@@ -48,46 +46,46 @@ s	$socket
 
 $(1)
 udpq	dq
-udp_nosocket_rxgrams	0
+udp_nosocket_rxgrams	0		. value for controlling proliferation of DU ports
 
+udp_ldgram_noport +	icmp_du_port	. default vector of RX large segment no port bound:
+					. DU[PORT] without preliminary checksum. Avoids
+					. expensive input-completion / buffering / repooling
+
+					. can be changed administratively to silent drop
+					. or even to full checksum to choose whether
+					. DU + drop or silent drop
 $(0)
 udp4	lk	(00FFFF)
 	ly, xi	udpq
 udp_next
 	la	udpq.head
 	jza	udp4_x
-	sa	r
+	sa	fp
 
-	lx	descriptor:uproto, a
-
-	la	uugram:destp, x
-
-	$if	1
-	lcal	udp_socket
-	$else
-	lb, i	BSOCKET*/9	.	| 000 000 000 101 111 000 000 000 |
-	dsr	9		.	| sss sss sss 000 000 000 101 111 |
-	and, xi	127
-	aa, xi	usockb(1)
-	la	0, a
-	jza	udp_nosocket
+	$if	IPV4_OVERHAUL
+	dl	descriptor:sobdi
 	sabr	BSOCKET
-
-	rbr	12		.	| 000 000 101 111 sss sss sss 000 |
-
-	la	s:socket_address+1, b
-	and	(65535)
+	$else
+	la	descriptor:uproto	
+	la	uugram:destp, a
+	lcal	udp_socket
+	jza	udp_socket_closed
 	$endif
 
-	jza	udp_nosocket
+	la	s:socket_address+1, b
+	and	(65535)			. socket still bound since since datagram arrived?
+	jza	udp_socket_closed
 
-        lx	b
+	la	descriptor:uproto
+	aa	4,,xi
+	sa	descriptor:apdata
 
+	lx	b			. queueing uses TS cell in socket structure
 	lcal	udp_write_rxq
-
 	j	udp_next
 
-udp_nosocket
+udp_socket_closed
 	lcal	icmp_nosocket
 
 	lcal	net_drop
@@ -112,6 +110,124 @@ udp4_x
 
 .	this is an upward call from ipv4_rx
 
+
+	$if	IPV4_OVERHAUL
+udp_rxq					. TP_HEADER is in x
+	MIB_ICOUNT48	udpInDatagrams:i
+
+	la	dgram:bytes
+	lk	uugram:checksum, x
+	z	uugram:checksum, x
+
+	lb	uugram:udgraml, x
+	ab	-8,,xi
+	jnc	ipv4_drop
+
+	lb	HEADER_LONGWORDS
+	sbl	2
+	ab	uugram:udgraml, x
+	ana	b
+	jnc	ipv4_drop
+
+	la	dgram:bytes
+	anu	IPV4_OVERHAUL,,xi
+	jza	udp_exact
+	jc	udp_rxqlong
+
+udp_exact
+	tnz	k				. rx without checksum?	
+	j	udp_socket?			. skip checksum
+	lcal	check_part1s
+	lcal	check_complete
+	jnzb	$+2
+	lb	(00FFFF)
+	xorB	k
+	jnzb	ipv4_rxz
+
+udp_socket?
+	la	uugram:destp, x
+	lcal	udp_socket
+	jza	icmp_du_port			. socket structure not stored
+	ds	SOCKET_LPOINTER
+
+	la	s:socket_address+1, b
+	and	(65535)
+	jza	icmp_du_port			. socket not bound
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz
+
+	lx	descriptor:dgram
+	lb	dgram:bytes			. calculate 8-byte blocks to store
+	ab	-1,,xi
+	jnc	ipv4_drop
+	sbr	3
+	lr	b
+
+udp_iquick
+	qpop	0, x
+	ax	4,,xi
+	jdr	udp_iquick
+
+udp_rxqthru
+	la	descriptor:uproto
+	la	uugram:udgraml, a
+	aa	-8,,xi				. application data byte count
+	sa	descriptor:bytes
+	dl	SOCKET_LPOINTER
+	ds	descriptor:sobdi
+	ly	udpq,,xi			. don't queue to the socket here
+	la	fp				. because that involves TS arbitration
+	lcal	q2				. so let the other half of UDP do that
+	j	ipv4_rxz			. and clear the interface frame now
+
+udp_rxqlong
+	tnz	k
+	j	udp_uportbound?
+	lcal	check_part1
+
+udp_uportbound?
+	la	uugram:destp, x
+	lcal	udp_socket
+	jza	*udp_ldgram_noport		. drop large ugrams to no port
+	ds	SOCKET_LPOINTER			. without checking sum
+	la	s:socket_address+1, b
+	and	(65535)				. silently or not
+	jza	icmp_du_port			. according to nuisance levels
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz 
+
+	lx	descriptor:dgram
+	la	dgram:bytes
+
+?	$do	IPV4_OVERHAUL/8,	qpop	?*4-4, x
+
+	aa	-IPV4_OVERHAUL,,xi
+
+	ax	IPV4_OVERHAUL/2,,xi
+	ay	IPV4_OVERHAUL/2,,xi
+
+	tz	k
+	j	udp_store	
+
+udp_qup	lcal	rx_nocheck
+	j	udp_rxqthru
+
+udp_store
+	lcal	rx_payload
+	jnzb	$+2
+	lb	(65535)
+	xorB	k
+	jzb	udp_rxqthru
+	j	ipv4_drop
+
+	$else
+	
 udp_rx	ly	TP_HEADER
 
 	MIB_ICOUNT48	udpInDatagrams:i
@@ -146,7 +262,8 @@ udp_rx	ly	TP_HEADER
 .	the header
 
 udp_rx_check
-	ds	LAST_BYTES	. LAST_BYTES:CHECKSUM
+.	ds	LAST_BYTES	. LAST_BYTES:CHECKSUM
+	lk	b
 
 	lr	a
 	dl	6
@@ -161,8 +278,8 @@ udp_rx_check
 
 	lcal	udp_rx_payload
 
-	ana	CHECKSUM
-	jnza	ipv4_drop
+	xorB	k
+	jnzb	ipv4_drop
 
 	ly, xi	udpq
 	la	fp
@@ -170,6 +287,7 @@ udp_rx_check
 	
 	j	ipv4_rxz
 
+	$endif
 
 .	this is the feed to udpq for reassembled datagrams
 .	which are already in a chain of rx_buffer with ACW
@@ -520,33 +638,32 @@ rxcheck8!
 rxcheck8?
 	jdr	rxcheck8!
 
-	aa	b
-	lb	0, sp
-	rbl	2
-	sb	0, sp
-	andB,xi	3
-	lr	b
-	j	rxcheck2?
-rxcheck2!
-	push	0, y
-	aa	0, sp
+	slc	0, sp
+	jnc	rnowordpair
+	dpush	0, y
+	da	0, sp
 	pop	0, x
-	ax, xi	1
-	ay, xi	1
-rxcheck2?
-	jdr	rxcheck2!
+	pop	1, x
 
-	pop	b
-	jpb	rxcheckY
-	lb	0, y
-	andB	(00FF00)
-	sb	0, x
-rxcheckX
-	aa	b
-rxcheckY
-	dsr	16
-	sbr	8
-	jnza	rxcheckX
+	ax	2,,xi
+	ay	2,,xi
+
+rnowordpair
+	ds	6
+	pop	a		. that should leave a return address
+				. next on the stack
+	dsr	24+22		. any 1, 2 or 3 bytes ?
+
+	jzb	rnolastbytes
+	lr	(0, 32, 16, 8q), b
+	dl	0, y
+	dsr	*r
+	dsl	*r
+	ds	0, x
+rnolastbytes
+	da	6
+	ds	6
+	lcal	check_complete
 
 	la	b
 
@@ -555,8 +672,8 @@ rxcheckY
 udp_tx_payload
 udp_rx_payload
 	lcal	tx_payload
+	jnza	$+2
 	xor	(00FFFF)
-	jza	$-1
 	lret	0
 
 in8nocheck* $proc
@@ -730,23 +847,9 @@ udp_socket
 
         rbr     12              .       | 000 000 101 111 sss sss sss 000 |
 
-        la      s:socket_address+1, b	. socket storage page is there
-        and     (65535)			. is it bound?
+.	la      s:socket_address+1, b	. socket storage page is there
+.	and     (65535)			. is it bound? Let the caller ask
 udp_socketx
 	lret	0
 
-udp_rxbufferp
-	$if	1
-	la	1, y		. destination port in interface buffer
-	lcal	udp_socket
-	jnza	udp_target_bound
-	la	udp_nosocket_rxgrams	. how many crazy udgrams have we had?
-	aa	1,,xi
-	sa	udp_nosocket
-	and	-64,,xi		. buffer, checksum and diagnose
-	jnza	ipv4_rxz	. a burst of 64 bad udgrams in 16 million
-
-udp_target_bound		. drop the 16 million silently
-	$endif
-	lret	0
 

@@ -37,10 +37,12 @@
 .
 .
 
-HEADER_WORDS	$equ	d$save	. 16 used in receive
-HEADER_LONGWORDS $equ	d$save1	. 17 used in receive
-TP_HEADER	$equ	d$save2	. 18 used in receive and transmit
-I_F_IDX		$equ	d$save3	. 19 used in receive
+
+HEADER_LONGWORDS $equ	d$save	. 16 used in receive
+TP_HEADER	$equ	d$save1	. 17 used in receive and transmit
+
+I_F_IDX		$equ	10	.   used in receive
+UPROTOCOL_BYTES	$equ	11	.   used in receive
 
 I_F_P		$equ	8	. used in receive
 FLAGS_FRAGMENT	$equ	8	. used in receive
@@ -319,17 +321,17 @@ ipv4_rx	lx	sp
 
 	MIB_ICOUNT48	ipInReceives:i
 	
-	$if	IPV4_OVERHAUL_20180416
+	$if	IPV4_OVERHAUL
 
-	la	120,,xi
+	la	IPV4_OVERHAUL,,xi
 	ana	r		. calculate internal stack load # words
-	sa	d$save3		. DATAGRAM_PART2
-	jnc	dgram_load(120)
-	sar	3		. # blocks of 8 octets rounded up
-	j	dgram_load(120), a
 
-?	$do	15,dgram_load(128-?*8)	;
-	qpush	60-4*?, y
+	jnc	dgram_load(IPV4_OVERHAUL/8)
+	sar	3		. # blocks of 8 octets rounded up
+	j	dgram_load(IPV4_OVERHAUL/8), a
+
+?	$do	IPV4_OVERHAUL/8,dgram_load(IPV4_OVERHAUL/8-?+1)	;
+	qpush	IPV4_OVERHAUL/2-4*?, y
 
 	la	r		. frame large enough for datagram?
 	ana	dgram:bytes
@@ -347,29 +349,24 @@ ipv4_rx	lx	sp
 
 	lb	HEADER_LONGWORDS
 	sbl	1
-	sb	HEADER_WORDS
 
-	lx	sp		. point x to IP header
 	ab	sp
 	sb	TP_HEADER
-	lr	b		. point r to payload protocol header
-	lk	dgram:checksum	. buffer the received checksum aside
-	z	dgram:checksum	. do not checksum the received checksum
 
-	dl	dgram:vers_ihl_tos	. lets start then
+	lb	15,,xi		 . maximum IP header words
+	anb	HEADER_LONGWORDS . scratch registers are jerst wonderful
+	lx	b
 
-ipv4_checksum
-	ax	2,,xi		. next word pair
-	jxge	ipv4_checksumx	. when x reaches r
-	da	0, x
-	j	ipv4_checksum
+	lk	dgram:checksum
+	z	dgram:checksum
+	dl	dgram:vers_ihl_tos	. addend the first
 
-ipv4_checksumx
-	aa	b
-	dsr	16
-	sbr	8
-	jnza	ipv4_checksumx
-	xorB	(0FFFF)
+	j	ipv4_qcheckin(15-1), x
+
+?	$do	15-1,;
+ipv4_qcheckin(15-?)	da	dgram:vers_ihl_tos+15*2-?*2	. add 2 words[28..2]
+
+	lcal	check_complete
 
 	xorB	k		. is it the same?
 	jnzb	ipv4_rxz
@@ -377,7 +374,85 @@ ipv4_checksumx
 	sk	dgram:checksum	. put the checksum back
 				. in case ICMP fires it all back with a DU
 
-	$else			. IPV4_OVERHAUL_20180416 
+
+	dl	dgram:ipdest
+	lx	I_F_P		. interface structure pointer
+	lcal	ipv4_forus?
+	j	ipv4_yesforus
+	lcal	ipv4_forward	. drops or forwards. Hardly need to come back
+	tz	ipForwarding.i
+	j	ipv4_rxz
+	
+
+ipv4_yesforus
+	la	dgram:flags_fragment
+	and	IP_MORE++IP_OFFSET_MASK,,xi
+
+	$if	IPV4_FRAGMENTED_DGRAMS
+	jnza	ipv4_fragment
+	$else
+	jnza	ipv4_rxz
+	$endif
+
+. ipv4_rxbuffer_rq
+	z	RXPOOL
+
+	lb	dgram:bytes
+	la	HEADER_LONGWORDS
+	sal	2
+	anb	a		. upper protocol byte count
+
+	la	dgram:ttl_protocol
+	and	255,,xi		. checksum seed for upper protocol
+	ds	6		. protocol:segment size for checksum in 6:7
+
+	sb	UPROTOCOL_BYTES
+	la	dgram:bytes
+	ana	IPV4_OVERHAUL,,xi		.
+	jc	ipv4_uprotocol_checksum_addresses
+
+ipv4_round_stack_word		. turn off non-counted octets
+	la	0,,xi		. IP payload octet count is in b
+	drr	2		. now longword count is in b
+	sbl	1		. 2 * longwords - 1 = words - 2
+	sar	22		. and octet remainder in a
+	jza	ipv4_count_check . don't look outside the last longword of dgram
+
+	lx	TP_HEADER
+	ax	b
+	lr	(0, 32, 16, 8q), a
+	dl	0, x
+	dsr	*r		. turn off some octets
+	dsl	*r		. in the last longword in the checksum
+	ds	0, x
+	
+ipv4_count_check
+
+. ipv4_uprotocol_checksum		. checksum all that is in the internal stack
+ipv4_uprotocol_checksum_addresses
+	dl	6		. payload protocol : octet count
+	da	dgram:ipsource
+	da	dgram:ipdest
+
+. ipv4_checksum_udata_next
+
+	ds	6		. there may be more in the interface buffer
+
+ipv4_uproto_rx
+	la	dgram:ttl_protocol
+	and	255,,xi
+	lx	TP_HEADER
+
+	aa	-IPPROTO_UDP,,xi
+	jza	udp_rxq
+	aa	IPPROTO_UDP-IPPROTO_TCP,,xi
+	jza	tcp_rxq
+	aa	IPPROTO_TCP-IPPROTO_ICMP,,xi
+	jza	icmp_rxq
+
+	j	icmp_noproto
+
+	$else			. IPV4_OVERHAUL 
 
 	dpush	0, y		. 2 header words to internal
 				. stack
@@ -405,7 +480,6 @@ ipv4_checksumx
 				. IP header
 
 	sx	TP_HEADER
-	sb	HEADER_WORDS
 
 	pop	a
 	pop	b
@@ -431,17 +505,11 @@ option_longword?
 	da	dgram:ipdest
 
 ipv4_rxsum
-	aa	b
-	dsr	16
-	sbr	8
-	jnza	ipv4_rxsum
-
-	xorB	(00FFFF)
+	lcal	check_complete
 
 	xorB	dgram:checksum
 	jnzb	ipv4_rxz
 
-	$endif			. not IPV4_OVERHAUL_20180416
 
 	dl	dgram:ipdest
 	lx	I_F_P		. get the interface pointer back
@@ -455,17 +523,14 @@ ipv4_yesforus
 
 	$if	HVBANK
 	lcal	ip_alternate_rxbank?
-	$else
-	la	dgram:ttl_protocol
-	lcal	ipv4_rxbufferp
-	$endif
-
 	tz	x
 	j	ipv4_rxbuffer_rq	. skip asking about fragments
+	$endif
 
-	$if	IPV4_FRAGMENTED_DGRAMS
 	la	dgram:flags_fragment
 	and, xi	IP_MORE++IP_OFFSET_MASK
+
+	$if	IPV4_FRAGMENTED_DGRAMS
 	jnza	ipv4_fragment
 	$else
 	jnza	ipv4_rxz
@@ -490,7 +555,7 @@ ipv4_rxbuffer_rq
 	la	HEADER_LONGWORDS
 	sal	2
 	anb	a
-	sb	6	. byte count for upper protocol
+	sb	7	. byte count for upper protocol
 			. checksum
 
 .	sb	descriptor:bytes	. isn't that in the
@@ -516,32 +581,41 @@ ipv4_rxbuffer_rq
 
 	la	dgram:ttl_protocol
 	and, xi	255
-	sa	7	. 6:7 contain the pair protocol:msize
+.	sa	6	. a:b contain the pair protocol:msize
 			. as used in all protocols for checksum
 
-	dl	dgram:ipsource
+	da	dgram:ipsource
 	da	dgram:ipdest
-	da	6
-	sa	6
-	la	7
-	sb	7	. upper protocol checksum is now begun
+
+	ds	6
+
+.	sa	6
+.	la	7
+.	sb	7	. upper protocol checksum is now begun
 			. in 6:7
+
+
+	la	dgram:ttl_protocol
 
 	pop	dgram:vers_ihl_tos, x
 	pop	dgram:bytes, x
 	qpop	dgram:id, x
 	qpop	dgram:ipsource, x
 
-	lr	HEADER_WORDS
+	lb	HEADER_LONGWORDS
+	ab	-5,,xi		. already checked for minimum IP header longwords
+	lr	b
 	j	option_word?
 option_word!
 	pop	10, x
-	lx, i	1, x
+	pop	11, x
+	lx, i	2, x
 option_word?
 	jdr	option_word!
 
 	lx, i	10, x
 	sx	descriptor:uproto
+
 
 			. at this point we need to re-use
 			. the earlier decision
@@ -567,20 +641,32 @@ option_word?
 			. about 5 instructions
 
 
-	anu, xi	IPPROTO_UDP
-	jzb	udp_rx
+	and	255,,xi
+	aa	-IPPROTO_UDP,,xi
+	jza	udp_rx
+	aa	IPPROTO_UDP-IPPROTO_TCP,,xi
+	jza	tcp4_rx
+	aa	IPPROTO_TCP-IPPROTO_ICMP,,xi
+	jza	icmp_rx
 
-	anu, xi	IPPROTO_TCP
-	jzb	tcp4_rx
 
-	anu, xi	IPPROTO_ICMP
-	jzb	icmp_rx
+.	anu, xi	IPPROTO_UDP
+.	jzb	udp_rx
+
+.	anu, xi	IPPROTO_TCP
+.	jzb	tcp4_rx
+
+.	anu, xi	IPPROTO_ICMP
+.	jzb	icmp_rx
 
 	j	icmp_noproto
+
+	$endif		. not IPV4_OVERHAUL
 
 ipv4_drop
 	la	fp
 	lx	RXPOOL
+	tz	x
 	lcal	sell1
 
 			. this was acquired to simplify the
@@ -751,13 +837,3 @@ ip_source_no
 	pop	b
 	lret	0
 
-ipv4_rxbufferp				. select buffer pool and screen out time-wasting traffic
-	lx	0,,xi			. will take default on return
-	and	255,,xi			. a contains ttl_protocol
-	aa	-IPPROTO_TCP,,xi
-	jza	tcp4_rxbufferp
-	aa	IPPROTO_TCP-IPPROTO_UDP,,xi
-	jza	udp_rxbufferp
-	aa	IPPROTO_UDP-IPPROTO_ICMP,,xi
-	jza	icmp_rxbufferp
-	j	icmp_noproto		. an input buffer is never assigned

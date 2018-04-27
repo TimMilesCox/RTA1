@@ -37,15 +37,17 @@
 .
 .
 
+
+SOCKET_LPOINTER	$equ	d$save2		. and d$save3, but only for 10 instructions
 TX_DATAGRAM	$equ	d$save3
-RX_SEGMENT	$equ	TP_HEADER
 AP_DATA		$equ	HEADER_LONGWORDS
 RX_APDATA	$equ	AP_DATA
 HL_FLAGS	$equ	SOCKET_CALL_FLAGS
+TPAYLOAD_BYTES	$equ	d$save2
 
 MSS		$equ	26
-RXPOOL		$equ	9		. these registers may be reused
-SOCKETP		$equ	10		. if a TX reset folows RX segment
+RXPOOL		$equ	9		. registers 9 10 may be reused
+					. if a TX reset follows RX segment
 
 $(67::,y)
 tlist	tbank
@@ -63,6 +65,15 @@ tcpq	dq
 tcpqlist	$do	2,	0
 	$endif
 
+tcp_lsegment_noport + tcp_reset_deflect	. default vector RX large segment no port bound:
+					. TCP_RST without preliminary checksum. Avoids
+					. expensive input-completion / buffering / repooling
+
+					. can be changed administratively either to silent drop
+					. or even to full checksum to choose whether
+					. RST + discard or silent discard
+
+ 
 
 $(0)
 
@@ -576,7 +587,7 @@ tcp_refuse
 
 tcp_locate_connection
 	lx	descriptor:uproto
-	sx	RX_SEGMENT
+	sx	TP_HEADER
 	la	transfer:hl_code, x
 	sa	HL_FLAGS
 
@@ -651,27 +662,125 @@ tcp_tbloc_found
 
 	. the LRET was up there
 
-tcp4_rxbufferp
-	$if	HVBANK
-	la	1, y		. should be at TCP header in interface buffer
-	lcal	tcp_socket
-	jza	tcp4_rxbufferpx
-	la	1,   b
-	and	(65535)
-	jza	tcp4_rxbufferpx
-	la	s:tcp:tbase, b
-
-	sabr	BSOCKET
-	dl	*(BSOCKET*/12++tlist:rxbank)
-	jza	tcp4_rxbufferpx
-	sabr	A$RXBUFFB
-	la	b
-	sabr	A$TXBUFFB
-	lx	(A$RXBUFFB*/18:s)
-	$endif
-	
-tcp4_rxbufferpx
 	lret	0
+
+	$if	IPV4_OVERHAUL
+
+tcp_rxq	la	dgram:bytes		. TP_HEADER is in x
+	lk	transfer:checksum, x
+	z	transfer:checksum, x
+	anu	IPV4_OVERHAUL,,xi
+	jza	tcp_rxqexact
+	jc	tcp_rxqlong		. interface contains
+					. more of this datagram
+
+tcp_rxqexact				. datagram is all in internal stack
+	lcal	check_part1s		. and can be checksumed there
+	lcal	check_complete		. return is recalculated checksum in b
+	xorB	k
+	jnzb	ipv4_drop
+
+	la	transfer:destp, x
+	lcal	tcp_socket
+	jza	tcp_reset_deflect	. the port is not tabled
+	ds	SOCKET_LPOINTER		. there is no buffer descriptor yet
+	la	s:socket_address+1, b	. netaddress|0.0.0.0:port_number if bound
+	and	(00FFFF)
+	jza	tcp_reset_deflect	. the port is not bound
+
+	lx	rx_buffers		. default space for RX segments
+
+	$if	HVBANK
+	la	s:tcp:tbase, b		. base the connections block always
+	sabr	BSOCKET
+	tz	*(BSOCKET*/12++tlist:rxbank)
+	lcal	tcp_socket_memory	. private memory blocks for large traffic
+	$endif				. three blocks to place in address space
+
+	la	dgram:bytes
+	lcal	ibuffer
+	jza	ipv4_rxz		. no buffer available
+
+	lb	dgram:bytes		. buffer the datagram
+	ab	-1,,xi			. calculate 8-byte blocks less 1
+	jnc	ipv4_drop
+	sbr	3
+	lr	b
+	lx	descriptor:dgram
+
+tcp_iquick
+	qpop	0, x
+	ax	4,,xi
+	jdr	tcp_iquick
+
+tcp_qthru
+	dl	SOCKET_LPOINTER		. socket structure long virtual address
+	ds	descriptor:sobdi
+
+	$if	HVBANK
+	ly	(BSOCKET*/12++tlist:rxq)
+	$else
+	ly	tcpq,,xi
+	$endif
+
+	la	fp
+	lcal	q2
+	j	ipv4_rxz
+
+tcp_rxqlong
+	lcal	check_part1		. uses HEADER_LONGWORDS
+	la	transfer:destp, x
+	lcal	tcp_socket
+
+	jza	*tcp_lsegment_noport	. without even checksum. default is reset
+					. it might stop more junk coming
+
+	ds	SOCKET_LPOINTER	
+	la	s:socket_address+1, b	. netaddress|0.0.0.0:port_number if bound
+	and	(00FFFF)
+	jza	*tcp_lsegment_noport
+
+	lx	rx_buffers		. default RX segments space
+
+	$if	HVBANK
+	la	s:tcp:tbase, b		. base the connections block always
+	sabr	BSOCKET
+	tz	*(BSOCKET*/12++tlist:rxbank)
+	lcal	tcp_socket_memory
+	$endif
+
+	la	dgram:bytes
+	lcal	ibuffer			. this call saves / restores y and b
+	jza	ipv4_rxz
+
+	lx	descriptor:dgram
+	la	dgram:bytes		. obtain the datagram second part length
+	aa	-IPV4_OVERHAUL,,xi	. while the header is in the internal stack
+
+?	$do	IPV4_OVERHAUL/8,	qpop	?*4-4, x
+
+	ax	IPV4_OVERHAUL/2,,xi
+	ay	IPV4_OVERHAUL/2,,xi
+
+	lcal	rx_payload		. return is recalculated checksum in b
+	xorB	k			. k holds the retrieved checksum
+	jzb	tcp_qthru
+
+	j	ipv4_drop		. if it did not checksum
+					. push the buffer back while it's still at heap top
+
+tcp_reset_deflect
+	la	transfer:hl_code, x
+	and	TCP_RST,,xi
+	jnza	ipv4_drop		. don't reset a reset
+
+	push	RXPOOL			. tx overloads this register
+	lcal	tcp_reject
+	pop	RXPOOL
+
+	j	ipv4_rxz		. don't get here if you have a buffer
+
+	$else
 
 tcp4_rx	ly	TP_HEADER
 	sx	TP_HEADER
@@ -691,7 +800,7 @@ tcp4_rx	ly	TP_HEADER
 
 	dpush	transfer:checksum, y
 	aa	1, sp		.	urgent pointer
-	pop	CHECKSUM
+	pop	k
 	pop	transfer:urgent
 
 	ax, xi	10		.	fixed part of segment header
@@ -704,9 +813,9 @@ tcp4_rx	ly	TP_HEADER
 	jnc	ipv4_drop	.	add header options and payload
 
 	lcal	rx_payload
-	xor	(00FFFF)
-	ana	CHECKSUM
-	jnza	ipv4_drop
+.	xor	(00FFFF)
+	xorB	k
+	jnzb	ipv4_drop
 
 	lx	TP_HEADER
 	la	transfer:destp
@@ -763,6 +872,7 @@ tcp_qthru
 
 	j	ipv4_rxz	.	release the interface buffer
 
+	$endif
 
 .	group of similar functions which
 .	get a buffer and send a short segment
@@ -832,17 +942,26 @@ tcp_message_segment_i
 	push	a		. the descriptor
 	push	x		. the connection
 
-	lb	BYTES		. segment length
+	lb	TPAYLOAD_BYTES	. segment length
 	orB	(0800000:s)	. send now
 
 	sb	descriptor:bytes, a
 
+	lb	TPAYLOAD_BYTES
+	ab	HEADER_SUM+1
+	sb	HEADER_SUM+1
+
 	lx	AP_DATA
 	la	r
 	lcal	tx_payload
+
 	lx	TP_HEADER
-	aa	BYTES
-	sa	transfer:checksum, x
+	xorB	(00FFFF)	. it won't be right until it was to be wrong
+	sb	transfer:checksum, x
+
+.	lx	TP_HEADER
+.	aa	TPAYLOAD_BYTES
+.	sa	transfer:checksum, x
 
 	lx	0, sp
 	la	1, sp
@@ -1023,12 +1142,7 @@ tcp_xmit
 	ly	1, sp		. the descriptor
 
 tcp_finalise_checksum_on_xmit
-        aa      b
-        dsr     16
-        sbr     8
-        jnza    tcp_finalise_checksum_on_xmit
-
-        xorB	(00FFFF)
+	lcal	check_complete
         sb      transfer:checksum, x
 
         lx      1, sp		. the descriptor
@@ -1188,8 +1302,9 @@ tcp_sendq2
 				. is in Y
 
 	lx	TP_HEADER
-	aa	BYTES
-	sa	transfer:checksum
+	xorB	(00FFFF)	. it's become too right to be wrong enough
+	ab	TPAYLOAD_BYTES
+	sb	transfer:checksum
 
 	lcal	tcp_xmit
 	pop	y		. the descriptor
@@ -1230,7 +1345,7 @@ tcp_startbuffer
 	push	x		. connection block
 	push	a		. header length / flags
 	push	b		. address of options program
-	sr	BYTES		. payload bytes
+	sr	TPAYLOAD_BYTES	. payload bytes
 	sar	12
 	sal	2
 	aa	r		. buffer required for TCP segment
@@ -1314,7 +1429,7 @@ tcp_sendno_options
 	lb	HEADER_LONGWORDS
 
 	sbl	2
-	lr	BYTES
+	lr	TPAYLOAD_BYTES
 	sb	descriptor:bytes, a
 
 
@@ -1329,7 +1444,7 @@ tcp_sendno_options
 				. data is available
 
 	ab	r
-	sb	BYTES		. save the total for
+	sb	TPAYLOAD_BYTES	. save the total for
 				. direct message writes
 
 	sy	AP_DATA
@@ -1605,7 +1720,7 @@ tcp_socket
 
                                 .       000 000 000 000 000 00p ppp ppp : A
         dsr     9               .       ppp ppp ppp 000 000 000 bbb bbb : B
-
+	and	127,,xi
         aa, xi  tsockb(1)       .       000 000 000 010 000 11p ppp ppp : A
 
         la      0, a            .       is there even storage where the

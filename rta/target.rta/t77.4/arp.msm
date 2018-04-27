@@ -148,9 +148,9 @@ AXW		$set	8		. it was where we are called from
 	la	TX_FRAME
 	dl	nframe:next_hop, a
 	lr	this_if:id		. the calling xmit routine has the I/F
-	lcal	find_in_cache
+	lcal	find_in_cache		. entry point precaches target protocol address
 	tz	y
-	j	deliver			. found in ARP cache
+	j	consider		. found in ARP cache
 	ly	BLANK
 	tz	y
 	j	construct_request	. found a cache row in same # chain
@@ -159,6 +159,13 @@ AXW		$set	8		. it was where we are called from
 	j	insert_construct_request . found a new cache row
 
 	j	return
+
+consider				. remote physa may be requested but not responded
+	dl	arp_row:tha
+?	$do	HLEN//2-2,	;
+	orB	arp_row:tha+2+?-1
+	jdz	return
+	j	deliver
 
 insert_construct_request
 	la	*CHAIN_HEAD		. read address of 1st in chain by pointer
@@ -281,6 +288,7 @@ xmitx	pop	fp
 
 find_in_cache
 	ds	NET_ADDR
+find_in_cacheq
 	andB	arp_store(ARP_STORE)-1,,xi
 	ly	arp_hash,,xi
 	ay	b
@@ -321,9 +329,17 @@ glean_and_push
 	lx	descriptor:dgram
 	dl	arp_msg:spa, x
 	jdz	gleanx		. don't process ZeroConf as ARP
+
 	ds	NET_ADDR
+
+	dl	arp_msg:sha, x	. if there is an accidental zero HA
+?	$do	HLEN//2-2,	;
+	orB	arp_msg:sha+2+?-1, x
+	jdz	gleanx		. don't cache it: it can't help you
+
 	lr	descriptor:i_f
-	lcal	find_in_cache
+	dl	NET_ADDR
+	lcal	find_in_cacheq	. target protocol address already in 6:7
 	tz	y
 	j	update
 	ly	BLANK		. it's free information if

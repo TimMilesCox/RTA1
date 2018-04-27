@@ -85,16 +85,85 @@ icmp_buy_response
 	z	6
 	z	7
 	lcal	rx_payload
-	xor	(00FFFF)
 	pop	x
 	ly	descriptor:apdata, x
-	sa	ping:h:checksum, y
+	sb	ping:h:checksum, y
 	lret	1
 icmp_noresponse
 	lret	0
 
-icmp_rxbufferp
-	lret	0
+
+	$if	IPV4_OVERHAUL
+
+icmp_rxq			.	TP_HEADER is in x
+				. put tests for categories here
+	la	dgram:bytes
+	z	6		. icmp does not sum
+	z	7		. network addresses / protocol / length
+	lk	ping:h:checksum
+	z	ping:h:checksum
+	anu	IPV4_OVERHAUL,,xi
+
+	jza	icmp_exact
+	jc	icmp_rxqlong	. >= IPV4_OVERHAUL octets
+icmp_exact
+	lcal	check_part1s
+	lcal	check_complete
+	xorB	k		. b = recalculated checksum, k = received checksum
+	jnzb	ipv4_rxz	. there is no buffer yet
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz	. no buffer available
+
+	lx	descriptor:dgram
+	lb	dgram:bytes
+	ab	-1,,xi
+	jnc	ipv4_drop	. might as well be ridiculous
+	sbr	3		. # blocks of 4 byte pairs less 1
+	lr	b
+
+icmp_iquick
+	qpop	0, x
+	ax	4,,xi
+	jdr	icmp_iquick
+
+	j	icmp_rxqq	. already checksumed at this point
+
+icmp_rxqlong
+	lcal	check_part1
+
+	la	dgram:bytes
+	lx	rx_buffers
+
+	lcal	ibuffer
+	jza	ipv4_rxz
+
+	la	dgram:bytes	. obtain the datagram second part length
+				. while the header is in the internal stack
+	lx	descriptor:dgram
+?	$do	IPV4_OVERHAUL/8,	qpop	?*4-4, x
+
+	aa	-IPV4_OVERHAUL,,xi
+	ax	IPV4_OVERHAUL/2,,xi
+	ay	IPV4_OVERHAUL/2,,xi
+
+	lcal	rx_payload
+	xorB	k
+	jnzb	ipv4_drop	. now there is a buffer to return
+
+icmp_rxqq
+
+	MIB_ICOUNT48	icmpInMsgs:i
+
+	la	fp
+	ly	icmpq,,xi
+	lcal	q2
+	j	ipv4_rxz
+
+
+	$else
 
 icmp_rx	ly	TP_HEADER
 	sx	descriptor:apdata
@@ -103,7 +172,7 @@ icmp_rx	ly	TP_HEADER
 
 	dl	ping:h:type_code, y
 	sa	ping:h:type_code
-	sb	CHECKSUM
+	lk	b
 	z	ping:h:checksum
 
 	z	7
@@ -121,14 +190,17 @@ icmp_rx	ly	TP_HEADER
 	aa, xi	-4
 
 	lcal	rx_payload
-	xor	(00FFFF)
 	lx	descriptor:uproto
-	ana	CHECKSUM
-	jnza	ipv4_drop
+	xorB	k
+	jnzb	ipv4_drop
+
+
 	la	fp
 	ly	icmpq,,xi
 	lcal	q2
 	j	ipv4_rxz
+
+	$endif
 
 icmp	la	icmpq.head
 	jza	icmpx
@@ -164,16 +236,19 @@ icmp_drop
 
 icmpx	lret	0
 
-
+icmp_du_port
 icmp_noproto		. jumped at from ipv4_rx
 			. should queue the problem
 			. into icmpq, and then...
-	j	ipv4_drop
-	
+	j	ipv4_rxz	. no buffer shall have been assigned
+				. or memory will trap
+
 
 icmp_nosocket		. called from udp
 			. should send DU[PORT]
-	lret	0
+	lret	0	. must return
+
+
 
 	$if	RX_FRAGMENTS
 

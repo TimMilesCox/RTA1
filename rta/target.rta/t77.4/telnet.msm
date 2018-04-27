@@ -44,7 +44,7 @@ tlsoc_va  -	1:d
 
 
 tn_help		"commands are":HT:"t":HT:"h":HT:"bsh&":LF:;
-		HT:HT:"stay":HT:"m":HT:"q":LF:;
+		HT:HT:"stay":HT:"m":HT:"q":HT:"e":LF:;
 		HT:HT:"w":LF
 
 tn_help_bytes	$equ	$bits/$byte
@@ -165,6 +165,9 @@ telnet_command
 	anu	('w'*/16:s)
 	jzb	webhost_threads
 
+	anu	('e'*/16:s)
+	jzb	telnet_echo
+
 	anu	('q'*/16s)
 	jzb	telnet_quicktimeout	. a test
 
@@ -216,6 +219,13 @@ telnet_quicktimeout
 	la, xi	$bits/$byte
 	j	telnet_respond
 
+telnet_echo
+	la	descriptor:bytes, y
+	lb	descriptor:apdata, y
+	push	'E ',,xi
+	pop	0, b	
+	j	telnet_stream16_respond
+
 telnet_memory
 	ii	TOTAL$FREE
 	push,xi	tn_editline
@@ -261,6 +271,15 @@ telnet_respond
 	push,xi	05000++TCP_ACK++TCP_PSH
 	pop	SOCKET_CALL_FLAGS
 	call	(tcp_tx)
+	lret	0
+
+telnet_stream16_respond
+	sb	q
+	z	RDATAC
+	on	b$stream16r
+	push	05000++TCP_ACK++TCP_PSH
+	pop	SOCKET_CALL_FLAGS
+	call	(tcp_addx)
 	lret	0
 
 telnet_insert
