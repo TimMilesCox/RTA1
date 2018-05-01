@@ -147,6 +147,8 @@ static void outputq()
    int			 fdes;
    unsigned char	*p;
 
+   struct timeval	 txtime;
+
 
    while (q->preamble.flag & FRAME)
    {
@@ -196,6 +198,12 @@ static void outputq()
          #if 0
          oversee(netdata->o, q);
          #endif
+
+         if (uflag['W'-'A'])
+         {
+            gettimeofday(&txtime, NULL);
+            printf("[%d:%3.3d]", txtime.tv_sec % 86400, txtime.tv_usec / 1000);
+         }
 
          printf("TX %d\n", y);
          if (y < 0) printf("%d\n", errno);
@@ -374,7 +382,7 @@ static unsigned short udp_checksum(int bytes,
    #endif
 
    sum += *p + p[1] + p[2] + p[3];
-   if (flag['v'-'a']) printf("[%x:%lx:", bytes, sum);
+//   if (flag['v'-'a']) printf("[%x:%lx:", bytes, sum);
 
    p = (unsigned short *) user_datagram;
    if (bytes & 1) user_datagram[bytes] = 0;
@@ -382,7 +390,7 @@ static unsigned short udp_checksum(int bytes,
 
    while (x--) sum += *p++;
 
-   if (flag['v'-'a']) printf("%lx]", sum);
+//   if (flag['v'-'a']) printf("%lx]", sum);
    carry = sum;
 
    while (sum >>= 16)
@@ -730,7 +738,8 @@ int main(int argc, char *argv[])
 			 y = 5;
 
    unsigned char	 data[4096];
-   unsigned char	*p;
+   unsigned char	*p,
+			*q;
 
 
    unsigned char	 device[24],
@@ -961,57 +970,94 @@ int main(int argc, char *argv[])
 
          p = data;
 
-         while (bytes > (18 + 8))
+         while (bytes > (18 + 4 + 20))
          {
+            /**********************************************************
+
+		to avoid confusion a buffer descriptor bpf_hdr *
+		at the start of the frame buffer is here called a
+		preamble because it is not a network protocol header
+
+		it is a descriptor physically within the packet buffer
+
+		BPF preamble is mostly 18 octets when ethernet header
+                14 bytes is expected.  That aligns the following datagram
+
+		On platform loopback BPF preamble is 20 bytes and aligns
+		the following 4-byte link pseudo-header and the datagram
+
+		In any case bpf_hdr is whatever size ->bh_hdrlen says
+
+		if a frame < 25 is presented it must be some mistake
+		so BPF's buffer isn't processed after less than that
+		remains in it. Running correctly count (bytes) reduces
+		to zero when the last preamble + frame is taken from it
+
+            *********************************************************/
+
+
+            /********************************************************
+		extract the preamble and frame sizes
+		optionally display sizes / buffer remainder / millisecond
+		check preamble size
+            ********************************************************/
+
             j = ((struct bpf_hdr *) p)->bh_hdrlen;
             y = ((struct bpf_hdr *) p)->bh_datalen;
 
-	    if (j < 18)
+            if (flag['v'-'a']) printf("[%d:%3.3d(%d,%d)%d:%d-%d]\n[",
+                                    ((struct bpf_hdr *) p)->bh_tstamp.tv_sec % 86400,
+                                    ((struct bpf_hdr *) p)->bh_tstamp.tv_usec / 1000,
+                                    y,
+                                    ((struct bpf_hdr *) p)->bh_caplen,
+                                    x, bytes, j);
+
+	    if ((j < 18) || (j > 20))
             {
                printf("[1.%p/%p H%d F%d/%d]\n", data, p, j, y, bytes);
                if (uflag['V'-'A']) diagnose(data, p, j, y, bytes);
                break;
             }
 
-            bytes -= j;
-            p += j;
+            /*****************************************************
+		construct a pointer to the received frame
+		= buffer location + BPF preamble length
+            *****************************************************/
 
-            if (y > bytes)
+            q = p + j;
+
+            /****************************************************
+		check for anomaly frame longer than BPF buffer
+            ****************************************************/
+
+            if ((bytes - y - j) < 0)
             {
                printf("[2.%p/%p H%d F%d/%d]\n", data, p, j, y, bytes);
+               if (uflag['V'-'A']) diagnose(data, p, j, y, bytes);
                break;
             }
 
-            if (flag['v'-'a']) printf("[(%d,%d)%d:%d-%d]\n[",
-                                    y,
-                                    ((struct bpf_hdr *) p)->bh_caplen,
-                                    x, bytes, j);
 
-            forward(x, p, y);
+            /****************************************************
+		send the datagram to RTA1 via shared buffer
+            ****************************************************/
 
-            if (uflag['A'-'A'] == 0)
-            {
-               /**************************************
-                  force alignment unless opted not to
-               **************************************/
+            forward(x, q, y);
 
-               y += j & 3;
 
-               /*************************************
-                  sometimes for ARP
-                  BPF uses header length to pack to
-                  halfword, even when datagram is
-                  a longword-aligned size
+            /****************************************************
+		construct in y
+		BPF-preamble + frame length rounded to 4 octets
+            ****************************************************/
 
-                  the summed unalignedness of header
-                  size + packet size is used, because
-                  doing boolean stuff to the pointer
-                  requires desperate casting
-               **************************************/
+            y += j;
+            y += 3;
+            y &= -4;
 
-               y += 3;
-               y &= -4;
-            }
+            /****************************************************
+		advance pointer by consumed data length
+		take consumed data length from oustanding count
+            ****************************************************/
 
             p += y;
             bytes -= y;
