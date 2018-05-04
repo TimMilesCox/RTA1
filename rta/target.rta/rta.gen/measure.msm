@@ -1041,9 +1041,24 @@ deleted	lr	sp_x
 
 
 guard	la, xi	-1
-	sa	PRIORITY$	
+	$if	T$SLICE
+	j	yield2last	. yield with priority field forced out of range
+	$else
+	sa	PRIORITY$
+	$endif
 
-yield	ql	0, fp		. retrieve the interrrupted application frame
+yield
+	$if	T$SLICE
+	la	PRIORITIES-1,,xi
+yield2last
+	sa	PRIORITY$	. normal yield = chain after all chains
+	$endif			. all switch chains are scanned as one
+				. allows lesser priority threads time[SLICE][PRIORITY]
+
+				. rt_yield = chain at your priority
+rt_yield			. does not yield to lesser priority threads
+
+	ql	0, fp		. retrieve the interrrupted application frame
 				. switch visibility to TCB and kernel banks
 
 	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
@@ -1110,6 +1125,19 @@ forward	lb	a_x
 
 	lb	1, a		. copy priority level to interrupt register 149
 	sb	PRIORITY$	. for quick reference
+
+	$if	T$SLICE		. when multiple priorities begin to be used
+				. priorities other than RT=0 need proportional time because
+				. mostly all of the switch chains are walked as 1 chain
+				. except rare cases when only RT threads are candidates
+
+	$do	PRIORITIES>8,	$flag	time slice table < priorities
+	andB	+(1*/T$LOG(PRIORITIES))-1
+	push	(0, T$SLICE*15, T$SLICE*12, T$SLICE*10, T$SLICE*8, T$SLICE*6, T$SLICE*5, T$SLICE*4o), b
+	pop	REALTIME$_CLOCK
+				. the quanta are an instruction ration. Thread yields on decrement<0
+	$endif			. PRIORITY=0=realtime=no time slice, no decrement, no automatic yield
+				. no decrementation takes place during interrupt code
 
 	la, xi	ABT+2		. application data relocation registers
 				. never need saving, only loading
