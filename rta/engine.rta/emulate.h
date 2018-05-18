@@ -420,6 +420,7 @@ else							\
 ea &= 0x00FFFFFF;
 
 
+#define	YIELD_INTERRUPT	ii(II_YIELD);
 #define	GUARD_INTERRUPT	ii(XBASE_U);
 #define	EXIT_INTERRUPT	ii(II_TXIT);
 

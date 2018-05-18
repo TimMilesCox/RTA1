@@ -52,6 +52,10 @@
 #include "sr.h"
 #include "ii.h"
 
+#ifdef	T_SLICE
+#include "../rta.run/settings.h"
+#endif
+
 #ifdef	EDGE
 #include "../rta.run/idisplay.h"
 #endif
@@ -2118,6 +2122,25 @@ void execute(word instruction)
                break;
          }
    }
+
+   #ifdef T_SLICE
+   if (psr & 0x00800000)
+   {
+   }
+   else
+   {
+      if (w = _register[REALTIME_CLOCK] & 0x00FFFFFF)
+      {
+         w--;
+         _register[REALTIME_CLOCK] = w;
+
+         if (w == 0)
+         {
+            YIELD_INTERRUPT
+         }
+      }
+   }
+   #endif
 }
 
 void rta()
