@@ -1,24 +1,37 @@
-COMMANDS $equ	d$save	. count of pseudo-instructions in the remote assembly
-ZENITH	$equ	d$save1	. limit of literal table in the remote assembly
+
+fponline $tree
+
+COMMANDS_EOP $equ d$save1		. high address commands+ in the remote assembly
+ZENITH	$equ	d$save			. limit of literal table in the remote assembly
+STACK_GUARD $equ d$save2
+MESSAGE	$equ	d$save3
 
 	lx	sp
-	sx	d$save2
-	ly	(pseudoprogram_buffer)
+	sx	STACK_GUARD
 	dl	0, y
-	ds	COMMANDS
+	aa	-X_CODES,,xi		. does it lool like an fponline PDU ?
+	jnza	outrage
 
-	aa	-PSEUDOPROGRAM_LIMIT,,xi
-	jc	outrage
-	ab	-PSEUDOPROGRAM_LIMIT,,xi
+	la	b			. range test what this says
+	aa	-FPONLINE_MESSAGE_LIMIT+8*2+2,,xi
+	jc	outrage			. test maximum message less 2 operands
+
+	ab	y			. change offset to address
+	la	1, b			. $zenith function is only real
+	ds	ZENITH			. after all literals have been generated on 2nd pass
+
+	aa	-FPONLINE_MESSAGE_LIMIT,,xi
 	jc	outrage
 
-command	lr	COMMANDS
+	sy	MESSAGE
+
+command	lr	COMMANDS_EOP		. high address of commands list+
 	ay	2,,xi
 	jyge	exit
 	lx	0, y
-	lr	X_CODES,,xi
+	lr	X_CODES,,xi		. a known command?
 	jxge	outrage
-	lr	ZENITH
+	lr	ZENITH			. message-relative end of operands
 	j	$+1, x
 	j	exit
 	j	load
@@ -32,66 +45,80 @@ command	lr	COMMANDS
 	j	pop_add_negative
 	j	pop_multiply
 	j	pop_divide
-load
-	lx      1, y            . operand pointer
-	jxge	outrage		. surely some mistake
+
+load	lx      1, y				. operand index
+	jxge	outrage				. surely some mistake
+	ax	MESSAGE				. change offset to address
 	c	(fplib192_load)	x
 	j	command
+
 load_negative
-	lx	1, y
+	lx	1, y				. operand index
 	jxge	outrage
-	c	(fplib192_load_negative)	x
+	ax	MESSAGE				. change offset to address
+	c	(fplib192_load_negative) x
 	j	command
-opush
-	qpush	8
+
+opush	qpush	8
 	qpush	a
 	j	command
-add
-	lx      1, y
+
+add	lx      1, y				. operand index
 	jxge	outrage
+	ax	MESSAGE				. change offset to address
 	c	(fplib192_add)   x
 	j	command
+
 add_negative
 	lx	1, y
 	jxge    outrage
+	ax	MESSAGE
 	c       (fplib192_add_negative)   x
 	j	command
+
 multiply
-   lx      1, y
-   jxge    outrage
-   c       (fplib192_multiply)   x
+	lx	1, y
+	jxge	outrage
+	ax	MESSAGE
+	c	(fplib192_multiply)   x
 	j	command
-divide
-   lx      1, y
-   jxge    outrage
-   c       (fplib192_divide)	x
+
+divide	lx	1, y
+	jxge	outrage
+	ax	MESSAGE
+	c	(fplib192_divide)	x
 	j	command
-pop_add
-	c	(fplib192_add)	0, sp, i
+
+pop_add	c	(fplib192_add)	0, sp, i
 	lx	8, sp, i
 	sx	sp
 	j	command
+
 pop_add_negative
 	c	(fplib192_add_negative)	0, sp, i
 	lx	 8, sp, i
 	sx	sp
 	j	command
+
 pop_multiply
 	c	(fplib192_multiply)	0, sp, i
 	lx	8, sp, i
 	sx	sp
+
 pop_divide
 	c	 (fplib192_divide)	0, sp, i
 	lx	8, sp, i
 	sx	sp
 	j	command
-outrage
-	ql	(-0.0)
+
+outrage	ql	(-0.0)		. indicate the command list didn't make sense
 	qs	8
-exit
-	lx	d$save2
+
+exit	lx	STACK_GUARD
 	sx	sp
 	on	fp$r
 	fa	8
 	off	fp$r
-	call	(floating_edit192)
+	lret	0
+
+	$root
