@@ -93,7 +93,25 @@ fp_again
 	jzb	fp_divide
 	j	fp_nop
 
+FP192LIB $equ	0
 fp_add
+	$if	FP192LIB
+.	ql	left+4
+.	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+fp_add1
+	c	(fp192lib_add)	right,,i
+
+	on	fp$r		. supernormalise to avoid accumulating rounding bumps
+	fa	$residue
+	off	fp$r
+	jdr	fp_add1
+
+.	qs	left
+.	ql	$residue
+.	qs	left+4
+	
+	$else
 	on	fp$r
 	ql	left
 	fa	right
@@ -111,9 +129,30 @@ fp_add
 
 	qs	left+4
 	jdr	fp_add
+	$endif
+
 	j	fp_edit
 
 fp_add_negative
+
+	$if	FP192LIB
+.	ql	left+4
+.	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+fp_add_negative1
+	c	(fp192lib_add_negative)	right,,i
+
+	on	fp$r
+	fa	$residue
+	off	fp$r
+
+	jdr	fp_add_negative1
+.	qs	left
+.	ql	$residue
+.	qs	left+4
+
+	$else
+
 	ql	left
 	on	fp$r
 	fan	right
@@ -131,11 +170,16 @@ fp_add_negative
 	
 	qs	left+4
 	jdr	fp_add_negative
+	$endif
+
 	j	fp_edit
 
-fp_multiply
+fp_multiply			. leaving this one how it was. It's just as good as (fp192lib_multiply)
 	c	(fp192lib_mfa)	left,,i	right,,i
 	jdr	fp_multiply
+	ql	left+4
+	qs	$residue
+	ql	left
 	j	fp_edit
 
 
@@ -155,6 +199,24 @@ fp_multiply
 .	deliver a 192-bit quotient from a 192-bit dividend 
 
 fp_divide
+	$if	FP192LIB
+.	ql	left+4
+.	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+fp_divide1
+	c	(fp192lib_divide)	right,,i
+
+	on	fp$r
+	fa	$residue
+	off	fp$r
+	jdr	fp_divide1
+
+.	qs	left
+.	ql	$residue
+.	qs	left+4
+
+	$else
+
 	dl	right+4
 	xorB	a		. divisor longer than 96 bits?
 	jpb	fp_divide_again	. no, the minor divisor number is not normalised
@@ -206,15 +268,20 @@ fp_divide_again			. can do 192-bit dividend & quotient with 96-bit divisor
 
 	qs	left+4
 	jdr	fp_divide_again
+	$endif
 
 	j	fp_edit
 
 fp_nop
 fp_edit	z	BYTES
+
+	$if	FP192LIB=0
 	ql	left
 	on	fp$r
 	fa	left+4
 	off	fp$r
+	$endif
+
 	call	(floating_edit192)
 
 	la	("":10:0:0)
