@@ -93,11 +93,9 @@ fp_again
 	jzb	fp_divide
 	j	fp_nop
 
-FP192LIB $equ	0
 fp_add
-	$if	FP192LIB
-.	ql	left+4
-.	qs	$residue
+	ql	left+4
+	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
 fp_add1
 	c	(fp192lib_add)	right,,i
@@ -107,70 +105,21 @@ fp_add1
 	off	fp$r
 	jdr	fp_add1
 
-.	qs	left
-.	ql	$residue
-.	qs	left+4
-	
-	$else
-	on	fp$r
-	ql	left
-	fa	right
-	off	fp$r
-	qs	left
-	ql	left+4
-	fa	$residue
-	fa	right+4
-
-	on	fp$r		. supernormalise avoids accumulating rounding bumps
-	fa	left		. if you are doing thousand-fold repeats
-	off	fp$r		. of the operation
-	qs	left
-	ql	$residue
-
-	qs	left+4
-	jdr	fp_add
-	$endif
-
 	j	fp_edit
 
 fp_add_negative
-
-	$if	FP192LIB
-.	ql	left+4
-.	qs	$residue
+	ql	left+4
+	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
 fp_add_negative1
 	c	(fp192lib_add_negative)	right,,i
 
-	on	fp$r
+	on	fp$r		. supernormalise to avoid accumulating rounding bumps
 	fa	$residue
 	off	fp$r
 
 	jdr	fp_add_negative1
-.	qs	left
-.	ql	$residue
-.	qs	left+4
-
-	$else
-
-	ql	left
-	on	fp$r
-	fan	right
-	off	fp$r
-	qs	left
-	ql	left+4
-	fa	$residue
-	fan	right+4
-
-	on	fp$r		. supernormalise avoids accumulating rounding bumps
-	fa	left		. if you are doing thousand-fold repeats
-	off	fp$r		. of the operation
-	qs	left
-	ql	$residue
-	
-	qs	left+4
-	jdr	fp_add_negative
-	$endif
 
 	j	fp_edit
 
@@ -199,9 +148,8 @@ fp_multiply			. leaving this one how it was. It's just as good as (fp192lib_mult
 .	deliver a 192-bit quotient from a 192-bit dividend 
 
 fp_divide
-	$if	FP192LIB
-.	ql	left+4
-.	qs	$residue
+	ql	left+4
+	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
 fp_divide1
 	c	(fp192lib_divide)	right,,i
@@ -211,76 +159,10 @@ fp_divide1
 	off	fp$r
 	jdr	fp_divide1
 
-.	qs	left
-.	ql	$residue
-.	qs	left+4
-
-	$else
-
-	dl	right+4
-	xorB	a		. divisor longer than 96 bits?
-	jpb	fp_divide_again	. no, the minor divisor number is not normalised
-
-	$if	1
-	c	(reciprocal192)	right,,float192
-	qs	right
-	ql	$residue
-	qs	right+4
-fp_long_divide
-	c	(fp192lib_mfa)	left,,i	right,,i
-	jdr	fp_long_divide
-
-	$else
-	ql	left		. yes, the minor divisor number is normalised
-	fa	left+4		. no possibility of sensible 192-bit quotient
-	qs	left		. round the dividend to 96 bits
-	dsa	48		. clear minor dividend
-	ds	left+4
-	ds	left+6
-	ql	right		. round the divisor to 96 bits
-	fa	right+4
-	qs	right
-	ql	left
-
-fp_short_divide			. calculate a 96-bit quotient
-	fd	right
-	jdr	fp_short_divide
-	qs	left
-	$endif
-
-	j	fp_edit
-
-fp_divide_again			. can do 192-bit dividend & quotient with 96-bit divisor
-	ql	left
-	on	fp$r
-	fd	right
-	off	fp$r
-	qs	left
-	ql	left+4
-	fd	right
-	fa	$residue
-
-	on	fp$r		. this supernormalise
-	fa	left		. avoids accumulating rounding bumps
-	off	fp$r		. if you are doing thousand-fold repeats
-	qs	left		. of the operation
-	ql	$residue
-
-	qs	left+4
-	jdr	fp_divide_again
-	$endif
-
 	j	fp_edit
 
 fp_nop
 fp_edit	z	BYTES
-
-	$if	FP192LIB=0
-	ql	left
-	on	fp$r
-	fa	left+4
-	off	fp$r
-	$endif
 
 	call	(floating_edit192)
 
