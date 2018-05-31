@@ -47,8 +47,8 @@ static WSADATA wsa;
 
 int main(int argc, char *argv[])
 {
-   unsigned char	 sdata[TEXT];
-   unsigned char	 rdata[TEXT];
+   unsigned char	 sdata[TEXTL];
+   unsigned char	 rdata[TEXTL];
 
    #ifdef DOS
    int                   wnet = WSAStartup(MAKEWORD(1, 1), &wsa);
@@ -89,7 +89,7 @@ int main(int argc, char *argv[])
 
    if (config)
    {
-      while (p = fgets(rdata, TEXT-1, config))
+      while (p = fgets(rdata, TEXTL-1, config))
       {
          if (flag['q'-'a']) printf(p);
 
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
 
    for (;;)
    {
-      p = fgets(sdata, TEXT, stdin);
+      p = fgets(sdata, TEXTL, stdin);
       if (!p) break;
 
       if (flag['p'-'a']) printf(p);
@@ -170,7 +170,7 @@ int main(int argc, char *argv[])
 		receive / wait. There are MAXTRY polls
             *************************************************/
 
-            x = recv(s, rdata, TEXT, 0);
+            x = recv(s, rdata, TEXTL, 0);
             if (x < 0)
             {
                if ((detail_code == EAGAIN) || (detail_code == EWOULDBLOCK))

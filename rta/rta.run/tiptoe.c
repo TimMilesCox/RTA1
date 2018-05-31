@@ -556,6 +556,7 @@ static void action(char request[])
          if (xx == 1) breakpoint = &b0p->w[index];
          if (xx == 2) breakpoint = &memory.p4k[index].w[offset];
 
+         indication |= BREAKPOINT;
          flag['s'-'a'] = 0;
          indication &= -1 ^ LOCKSTEP;
          putchar(':');

@@ -477,6 +477,11 @@ static void ones_add(int ea, int direction)
          characteristic += carry;
          if (carry < -71) characteristic = 0x00400000;
 
+         if ((signs ^ normalised_addend[1]) & 0x00800000)
+         {
+         }
+         else characteristic = 0;
+
          /******************************************************
 
 		carry is the change to scale

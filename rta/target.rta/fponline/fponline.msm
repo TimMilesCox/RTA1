@@ -1,0 +1,232 @@
+
+fponline $tree
+
+UDPQ	$equ	1			. takes less space if you use
+					. the socket layer interface
+
+COMMANDS_EOP $equ d$save1		. high address commands+ in the remote assembly
+ZENITH	$equ	d$save			. limit of literal table in the remote assembly
+STACK_GUARD $equ d$save2
+MESSAGE	$equ	d$save3
+
+$(3)
+s1		0
+socket_lva	0:d
+buffer	$res	200
+
+$(0)
+launch	ql	(server,,,:q)
+	ii	THREAD$
+	fret
+
+server	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	leave			. you have no socket
+	sa	s1
+	ql	(,,,FPONLINE_PORT:q)
+	la	s1
+	call	(bind)
+	jna	free_socket		. you could not bind
+
+	$if	UDPQ
+	dl	10			. this is a thread
+	ds	socket_lva		. so the socket structure 
+	$endif				. should stay based
+
+rxnext
+	$if	UDPQ
+	lb	socket_lva+1
+	lb	s:udp:socket_inq:head, b
+	jzb	wait
+
+	la	descriptor:bytes, b
+	sa	BYTES
+	la	descriptor:apdata, b
+	sa	q
+
+	la	43+7+1+2+1		. character columns largest response	
+	call	(udp_rtxbuffer)
+	jza	release_request
+
+	sa	fp
+	
+	lx	buffer,,xi
+	call	(xdr_inopaque24)	. BYTES [q]->[x]
+	ly	buffer,,xi
+	lcal	pdu
+
+	lx	descriptor:apdata
+	sx	p
+	z	BYTES
+	z	WDATAC
+	z	WDATA
+	call	(floating_edit192)
+	la	(LF*/16)
+	wsr	24
+	la	BYTES
+	la	1, a, i
+	sa	descriptor:bytes
+	lx	fp
+	call	(udp_acw_send)
+release_request
+	lx	socket_lva+1
+	call	(release_udgram)
+	j	rxnext
+
+	$else
+	c	(recv)	s1		;
+			buffer,,xi	;
+			600,,xi		;
+			(UDP_AUTO_CONNECT:s)
+
+
+	jna	disengage_free		. bound but not reading
+	jza	wait
+
+	ly	buffer,,xi
+	lcal	pdu
+	ly	buffer,,xi
+	sy	p
+	z	BYTES
+	z	WDATAC
+	z	WDATA
+
+	call	(floating_edit192)
+
+	la	(LF*/16:s)
+	wsr	24
+
+	c	(send)	s1		;
+			buffer,,xi	;
+			BYTES		;
+			0
+	$endif
+
+wait	ii	YIELD$
+	j	rxnext
+
+disengage_free
+	la	s1
+	call	(net_disengage)
+
+free_socket
+	la	s1
+	ii	FREE_HANDLE$
+leave	ii	EXIT$
+
+pdu	lx	sp
+	sx	STACK_GUARD
+	dl	0, y
+	aa	-X_CODES,,xi		. does it look like an fponline PDU ?
+	jnza	outrage
+
+	la	b			. range test what this says
+	aa	-FPONLINE_MESSAGE_LIMIT+8*2+2,,xi
+	jc	outrage			. test maximum message less 2 operands
+
+	ab	y			. change offset to address
+	la	1, b			. $zenith function is only real
+	ds	ZENITH			. after all literals have been generated on 2nd pass
+
+	aa	-FPONLINE_MESSAGE_LIMIT,,xi
+	jc	outrage
+
+	sy	MESSAGE
+
+command	lr	COMMANDS_EOP		. high address of commands list+
+	ay	2,,xi
+	jyge	exitu
+	lx	0, y
+	lr	X_CODES,,xi		. a known command?
+	jxge	outrage
+	lr	ZENITH			. message-relative end of operands
+	j	$+1, x
+	j	exitu
+	j	load
+	j	load_negative
+	j	opush
+	j	add
+	j	add_negative
+	j	multiply
+	j	divide
+	j	pop_add
+	j	pop_add_negative
+	j	pop_multiply
+	j	pop_divide
+
+load	lx      1, y				. operand index
+	jxge	outrage				. surely some mistake
+	ax	MESSAGE				. change offset to address
+	c	(fp192lib_load)	x
+	j	command
+
+load_negative
+	lx	1, y				. operand index
+	jxge	outrage
+	ax	MESSAGE				. change offset to address
+	c	(fp192lib_load_negative) x
+	j	command
+
+opush	qpush	8
+	qpush	a
+	j	command
+
+add	lx      1, y				. operand index
+	jxge	outrage
+	ax	MESSAGE				. change offset to address
+	c	(fp192lib_add)   x
+	j	command
+
+add_negative
+	lx	1, y
+	jxge    outrage
+	ax	MESSAGE
+	c       (fp192lib_add_negative)   x
+	j	command
+
+multiply
+	lx	1, y
+	jxge	outrage
+	ax	MESSAGE
+	c	(fp192lib_multiply)   x
+	j	command
+
+divide	lx	1, y
+	jxge	outrage
+	ax	MESSAGE
+	c	(fp192lib_divide)	x
+	j	command
+
+pop_add	c	(fp192lib_add)	0, sp, i
+	lx	8, sp, i
+	sx	sp
+	j	command
+
+pop_add_negative
+	c	(fp192lib_add_negative)	0, sp, i
+	lx	 8, sp, i
+	sx	sp
+	j	command
+
+pop_multiply
+	c	(fp192lib_multiply)	0, sp, i
+	lx	8, sp, i
+	sx	sp
+
+pop_divide
+	c	 (fp192lib_divide)	0, sp, i
+	lx	8, sp, i
+	sx	sp
+	j	command
+
+outrage	ql	(-0.0)		. indicate the command list didn't make sense
+	qs	8
+
+exitu	lx	STACK_GUARD
+	sx	sp
+	on	fp$r
+	fa	8
+	off	fp$r
+	lret	0
+
+	$root
