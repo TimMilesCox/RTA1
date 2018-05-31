@@ -1,0 +1,144 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$include	../lib/register.def
+	$include	../lib/lib.def
+	$include	../fponline/fponline.def
+
+LIBRARY	$set		LIBRARY_XDR
+
+FPSERVER_PORT	$equ	128
+FPSERVER_PORT2	$equ	130
+CALIBRATE_PORT	$equ	0	.	4610
+AGENT1_PORT	$equ	0	.	4611
+
+
+$(0::A_PROTOS_BANK1)
+telnet		$vector	telnet_i
+http_server	$vector	http_serve
+fp_server	$vector	fp_96:fp_server
+fp_server_192	$vector	fp_192:fp_server
+integer_server	$vector	iserve:integer_serve
+fponline	$vector	fponline:launch
+agent2*		$vector agent_2			. snmpv1
+
+	$if	CALIBRATE_PORT
+calibration	$vector	calibrate
+	$endif
+
+	$do	64-$,	fret	0
+
+	$include fpserver
+	$include fpser192
+
+	$include telnet
+	$list	4
+
+	$include httproto.msm
+	$include iserver1
+
+	$path	../fponline
+	$include fponline
+
+	$path	../mib
+	$include snmpv1
+	$include ber
+	$include sequo
+
+$(0)
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	A_PROTOS_BANK1 too large
+
+
+$(0::A_PROTOS_BANK2)
+mib_get*	$vector	mib_read
+mib_getnext*	$vector	mib_walk
+mib_set*	$vector	mib_write
+mib_start*	$vector	mib_initial
+mib_line*	$vector	mib_wline
+mib2ticks*	$vector	mib2tick
+
+udp_agent1*	$vector	udpagent_net
+udp_agent2*	$vector	udpagent_port
+
+if_agentidx	$vector	ifagent_idx
+if_agentdescr	$vector	ifagent_descr
+if_agenttype	$vector	ifagent_type
+if_agentMTU	$vector	ifagent_MTU
+if_agentspeed	$vector	ifagent_speed
+if_agentphy	$vector	ifagent_phy
+if_agentadmins	$vector	ifagent_admins
+if_agentosta	$vector	ifagent_osta
+if_agentlastc	$vector	ifagent_lastc
+if_agentibytes	$vector	ifagent_ibytes
+if_agentiucast	$vector	ifagent_iucast
+if_agentimcast	$vector	ifagent_imcast
+if_agentidrops	$vector	ifagent_idrops
+if_agentierrs	$vector	ifagent_ierrs
+if_agentinoproto $vector ifagent_inoproto
+if_agentobytes	$vector	ifagent_obytes
+if_agentoucast	$vector	ifagent_oucast
+if_agentomcast	$vector	ifagent_omcast
+if_agentodrops	$vector	ifagent_odrops
+if_agentoerrs	$vector	ifagent_oerrs
+if_agentoqlen	$vector	ifagent_oqlen
+if_agentsmib	$vector	ifagent_smib
+
+tcp_agent_add	$vector	tcpagent_add
+tcp_agent_free	$vector	tcpagent_free
+tcp_agent_state	$vector	tcpagent_state
+tcp_agent_neta	$vector	tcpagent_neta
+tcp_agent_port	$vector	tcpagent_port
+tcp_agent_remote_neta $vector tcpagent_neta_remote
+tcp_agent_remote_port $vector tcpagent_port_remote
+
+	$do	$>64,	flag	jump pad overfull A_PROTOS_BANK2
+	$do	64-$,	fret	0
+	
+	$path	../mib
+	$include mib-II
+	$include mib2tick
+	$include udpagent
+	$include ifagent
+	$include tcpagent
+	$include loadplan
+
+$(0)
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	ap_bank2 overflow
