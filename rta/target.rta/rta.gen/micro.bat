@@ -65,7 +65,7 @@ rem rem #	.\make
 popd
 masmx minimal minimal -lnubxk %1 >>mlist.txt
 %RTA_BINARY%\lstring -b minimal.txo minimal
-%RTA_BINARY%\slab -v minimal minimal.rom 36 -k
+%RTA_BINARY%\slab -v minimal minimal.rom 40 -k
 
 seeif -as system.zak system.txo
 seeif -as minimal.zak minimal.txo

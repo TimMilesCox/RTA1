@@ -75,13 +75,13 @@ _deliver_:
 	add	ebx, -72	; calculate exponent of residue
 	mov	cl, 72
 
-	mov	eax, dword ptr [esi+4*4]
+	mov	eax, dword ptr [esi+4*4]	; mantissa */ 64 bits
 	shl	eax, 8		; separate residual mantissa
 	shr	eax, 8
 	push	eax
-	mov	eax, dword ptr [esi+5*4]
+	mov	eax, dword ptr [esi+5*4]	; mantissa */ 96 bits
 	push	eax
-	mov	eax, dword ptr [esi+6*4]
+	mov	eax, dword ptr [esi+6*4]	; mantissa */ 128 bits
 	mov	ax, word ptr [esi+1*4]		; change low-order half trailing word to signs
 	push	eax				; before normalising
 
@@ -120,13 +120,15 @@ _residue_normalised:
 	pop	eax				; middle order mantissa part
 	mov	bl, al				; donate 8 bits
 	ror	ebx, 8				; distribute as RTA1 24-bit words
-	shr	ebx, 8
-	shr	eax, 8
+	shr	ebx, 8				; mantissa 23..0
+	shr	eax, 8				; mantissa 47..24
 	mov	dword ptr [ebp+11*4], ebx
 	mov	dword ptr [ebp+10*4], eax
 	pop	eax				; high order residual mantissa part
 	pop	ebx				; saved result register index
-	mov	dword ptr [ebp+9*4], eax
+	shl	eax, 8
+	shr	eax, 8				; normalising position is bit 23
+	mov	dword ptr [ebp+9*4], eax	; mantissa 71..48
 
 _deliver:					; deliver floating result
 						; ebx = target register index
@@ -365,7 +367,7 @@ renormalised:
 
 renormalise8:					; from this point on the value is nonzero
 	rol	eax, 8				; are there 8 signs at head of mantissa?
-	cmp	al, byte ptr [ds:edi+1*4]
+	cmp	al, byte ptr [ds:edi+1*4+3]	; this is Intel and the 4th byte is high-order
 	jnz	renormalise1			; you have found the 8 bits containing the
 						; normalising bit
 	call	rotate8left			; or else you haven't
@@ -396,12 +398,13 @@ rotate32left:				; rotate all containing platform words of mantissa
 	movzx	ebx, cx
 	xor	edx, edx		; initialise equality = all signs
 rotate32next:				; the word initially loaded in eax is all signs
+	dec	ebx
 	xchg	eax, dword ptr [ds:edi+ebx*4+2*4]
 	mov	ecx, eax
 	xor	ecx, dword ptr [ds:edi+1*4] ; difference between this word and signs
 	or	edx, ecx		; sum of differences
-	add	ebx, -1
-	jc	rotate32next
+	and	ebx, ebx
+	jnz	rotate32next
 	add	dword ptr [ds:edi], -32	; scale down
 	mov	eax, edx
 	pop	ecx
@@ -499,6 +502,7 @@ fa_addfast:
 
 	mov	eax, dword ptr [ds:edi+1*4]	; before state of target signs
 	push	eax
+	inc	ebx				; add mantissa words + signs word
 
 fa_action:
 	mov	eax, dword ptr [esi+ebx*4]
@@ -508,23 +512,39 @@ fa_action:
 
 	pop	eax				; target signs before
 	xor	eax, dword ptr [ds:edi+1*4]	;              after
+
 	jns	fa_assign			; did not travel thru zero
 
-	not	eax
-	add	ebx, -2
-	mov	dword ptr [ds:edi+1*4], eax	; update final signs
+						; it is ones in eax and
+;	not	eax				; correct in signs field
+;	add	ebx, -2
+;	mov	dword ptr [ds:edi+1*4], eax	; update final signs
 
 	call	frame_mantissa			; get platform words rounded down / bit offset 
 	call	initial_polar_carry		; get polarity + value + bias
-	add	dword ptr [ds:edi+ebx*4+2*4], eax	; adjust low-order mantissa word
-	sar	eax, 31				; subsequent adjusting words = signs
+
+;	mov	dword ptr [__register+272*4], eax
+;	mov	dword ptr [__register+273*4], ebx
+
+	push	eax
+	sar	eax, 31				; do this before setting carry
+	xchg	eax, dword ptr [esp]
+	add	dword ptr [ds:edi+ebx*4+2*4], eax ; adjust low-order mantissa word
+	pop	eax				; subsequent adjusting words = signs
 						; ebx = mantissa words - 2
 fa_carry_round
 	adc	dword ptr [ds:edi+ebx*4+1*4], eax
 	dec	ebx
 	jnz	fa_carry_round
 
-	xor	eax, dword ptr [ds:edi+1*4]	; repeat signs XOR word 1
+	lahf					; read carry from PSR
+	xchg	ah, al
+
+	mov	ebx, dword ptr [ds:edi+1*4]
+	sar	ebx, 31
+	mov	dword ptr [ds:edi+1*4], ebx
+	xor	eax, ebx
+;	xor	eax, dword ptr [ds:edi+1*4]	; detect an unsign has flowed out
 
 fa_assign:
 	and	eax, 1				; added mantissa 1 bit above fractional point?
@@ -551,9 +571,21 @@ fa_normalised					; below the fractional point
 fm:	mov	esi, _OUTPUT			; initialise final accumulation
 	call	zoutput
 
+	mov	ebx, dword ptr [_INPUTR+1*4]	; sign the product
+	xor	ebx, dword ptr [_INPUT2+1*4]	; even if it's nothing
+	mov	dword ptr [_OUTPUT+1*4], ebx
+
 	mov	eax, dword ptr [_INPUT2+1*4]	; is the multiplier normalised?
 	xor	eax, dword ptr [_INPUT2+2*4]	; sign XOR normalising bit?
 	js	fmgo				; yes, proceed
+
+	mov	dword ptr [_OUTPUT+2*4], ebx
+	mov	dword ptr [_OUTPUT+3*4], ebx
+	mov	dword ptr [_OUTPUT+4*4], ebx
+	mov	dword ptr [_OUTPUT+5*4], ebx
+	mov	dword ptr [_OUTPUT+8*4], ebx
+	mov	dword ptr [_OUTPUT+7*4], ebx
+
 	ret					; no, effective zero multiplier
 
 fmgo:	mov	eax, dword ptr [_INPUTR+1*4]
@@ -648,9 +680,10 @@ fm_normalised:
 	and	eax, 007FFFFFh
 ;	mov	esi, _OUTPUT			; esi should be pointing to _OUTPUT
 	mov	dword ptr [esi], eax		; insert unsigned magnitude product scale
-	mov	eax, [_INPUTR+1*4]		; calculate sign of product
-	xor	eax, [_INPUT2+1*4]
-	mov	dword ptr [esi+1*4], eax	; _deliver_ will polarise the scale
+;	mov	eax, [_INPUTR+1*4]		; calculate sign of product
+;	xor	eax, [_INPUT2+1*4]
+;	mov	dword ptr [esi+1*4], eax	; _deliver_ will polarise the scale
+	mov	eax, dword ptr [esi+1*4]
 	xor	dword ptr [esi+2*4], eax	; the mantissa gets polarised here
 	xor	dword ptr [esi+3*4], eax
 	xor	dword ptr [esi+4*4], eax
@@ -665,6 +698,8 @@ fd:	mov	esi, _OUTPUT
 	mov	ebx, eax
 	xor	eax, dword ptr [_INPUT2+2*4]	; normalising bit 31
 	js	fdgo
+	not	dword ptr [_OUTPUT+1*4]		; divisor 0 or otherwise unnormalised
+	call	zover				; return -0.0
 fdnop:	ret					; not normalised = zero divisor
 
 fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
@@ -831,7 +866,7 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
 	call	compress4to8
-	mov	ecx, 00044747h
+	mov	ecx, 00034747h
 	test	dword ptr [_psr], FP_R
 	jz	_fa_
 	mov	ecx, 00068F8Fh
@@ -853,7 +888,7 @@ _fan:	push	ebp
 	call	_burst_read4
 	mov	esi, _INPUTR
 	call	compress4to8
-	mov	ecx, 00044747h
+	mov	ecx, 00034747h
 	test	dword ptr [_psr], FP_R
 	jz	_fan_
 	mov	ecx, 00068F8Fh
@@ -878,7 +913,7 @@ _fm:	push	ebp
 	mov	ecx, 00044747h
 	test	dword ptr [_psr], FP_R
 	jz	_fm_
-	mov	ecx, 00058F8Fh
+	mov	ecx, 00068F8Fh
 _fm_:	call	fm
 	pop	ebx				; retrieve target register name
 	pop	ebp
@@ -900,7 +935,7 @@ _fd:	push	ebp
 	mov	ecx, 00044747h
 	test	dword ptr [_psr], FP_R
 	jz	_fd_
-	mov	ecx, 00058F8Fh
+	mov	ecx, 00068F8Fh
 _fd_:	call	fd
 	pop	ebx				; retrieve target register name
 	pop	ebp
