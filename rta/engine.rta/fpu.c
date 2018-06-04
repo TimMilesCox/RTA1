@@ -477,7 +477,7 @@ static void ones_add(int ea, int direction)
          characteristic += carry;
          if (carry < -71) characteristic = 0x00400000;
 
-         if ((signs ^ normalised_addend[1]) & 0x00800000)
+         if ((normalised_addend[0] ^ normalised_addend[1]) & 0x00800000)
          {
          }
          else characteristic = 0;
