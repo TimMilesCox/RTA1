@@ -179,7 +179,11 @@ static void print_register_row(int index)
    int		 xx = 8;
 
    printf("%2.2x:", index);
-   while ((xx--) && (index < 256)) printf(" %6.6x", _register[index++]);
+   while ((xx--) && (index < REGISTERS))
+   {
+      if (index < 256) printf(" %6.6x", _register[index++]);
+      else             printf(" %8.8x", _register[index++]);
+   }
    
    #else
    printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x",
@@ -573,7 +577,7 @@ static void action(char request[])
          if      (symbol == '0') sscanf(request,     "%x", &index);
          else if (symbol == 'r') sscanf(request + 1, "%d", &index);
 
-         while (index < 256)
+         while (index < REGISTERS)
          {
             print_register_row(index);
             index += 8;

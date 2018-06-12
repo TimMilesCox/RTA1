@@ -52,9 +52,7 @@
 #include "sr.h"
 #include "ii.h"
 
-#ifdef	T_SLICE
 #include "../rta.run/settings.h"
-#endif
 
 #ifdef	EDGE
 #include "../rta.run/idisplay.h"
@@ -73,7 +71,7 @@ int		 iselect = 128;
 int		 b0_name;
 page		*b0p = memory.p4k;
 
-int		 _register[256];
+int		 _register[REGISTERS];
 
 			/*********************************************
 				The IO ports are given the name

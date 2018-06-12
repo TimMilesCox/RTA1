@@ -25,25 +25,11 @@
 #include "../rta.run/idisplay.h"
 #include "../rta.run/settings.h"
 
-#define	TIME_UPDATE	1
-#define	LOCKSTEP	2
-#define	BREAKPOINT	4
-#define	CHILLDOWN	8
-
-#define	chilldown	base[103]
-
 #define ROM_PAGE	&memory.p4k[0].w[0]
 
 static word		*breakpoint;
 
-#ifdef GCC
-int		 indication;
-#else
-extern int	 indication;
-extern word	 readout;
-extern int	 readoutx,
-		 readoutp; 
-#endif
+int			 indication;
 
 #ifndef	X86_MSW
 static struct pollfd	 attention = { 0, POLLIN } ;
@@ -55,7 +41,7 @@ static long long	 u;
 static struct timeval	 time1;
 #endif
 
-#if	defined(GCC) || defined(LLVM_LE)
+#ifdef	GCC
 
 extern int		 iselect;
 extern word		*apc;
@@ -63,7 +49,7 @@ extern page		*b0p;
 extern unsigned int	 b0_name;
 extern unsigned int	 psr;
 extern unsigned int	_register[];
-extern unsigned int	*register_set;
+unsigned int		*register_set = _register+128;
 extern unsigned int	 base[];
 extern device		 devices[];
 extern system_memory	 memory;
@@ -77,7 +63,7 @@ word		    	*apc = ROM_PAGE;
 page            	*b0p  = memory.p4k;
 unsigned int		 b0_name;
 unsigned int    	 psr = 0x00800000;
-extern unsigned int    	 _register[256+24];
+unsigned int    	 _register[REGISTERS];
  
 unsigned int		*register_set = _register+128;
 // unsigned int     	 base[192];
@@ -95,8 +81,8 @@ extern int		 device_read(int device_index, int relocation_base, int offset);
 #else
 static word		 memory_read(int ea);
 static int device_array_read(int descriptor, int offset);
-extern void		 device_readp();
-extern void		 bus_readp();
+extern void		 device_read();
+extern void		 bus_read();
 #endif
 //	extern int               bus_read(int device, int pointer);
 extern void              netbank();
@@ -115,8 +101,8 @@ static int		 msw2i(msw w);
 static void		 print_register_row(int index);
 
 #ifdef METRIC
-unsigned int		 delta;
-extern unsigned int	 metric;
+unsigned int		 delta,
+			 metric;
 
 static unsigned long long	 delta_base,
 				 total_delta,
@@ -124,7 +110,6 @@ static unsigned long long	 delta_base,
 
 static void		 accumulate_metric();
 #endif
-
 
 int main(int argc, char *argv[])
 {
@@ -287,8 +272,8 @@ void *emulate()	/* thread start */
    #ifdef METRIC
    struct timeval	 time2;
    #endif
-  
-   printf("emulation start %p\n", leloup);
+   
+   printf("emulation start\n");
 
    #ifdef METRIC
    gettimeofday(&time2, NULL);
@@ -302,7 +287,7 @@ void *emulate()	/* thread start */
                                  indication, register_set, psr, apc,
                                  apc - memory.array);
 
-      #if defined(GCC)
+      #ifdef GCC
       for (;;)
       {
          execute(*apc++);
@@ -311,16 +296,11 @@ void *emulate()	/* thread start */
          #endif
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
-
-      #elif defined(LLVM_LE)
-      leloup();
       #else
-
       __asm__
       {
-		call	leloup
+		call	leloup 
       }
-
       #endif
 
       if (indication & CHILLDOWN)
@@ -461,7 +441,7 @@ static void action(char request[])
          if      (symbol == '0') sscanf(request,     "%x", &index);
          else if (symbol == 'r') sscanf(request + 1, "%d", &index);
 
-         while (index < 280)
+         while (index < REGISTERS)
          {
             print_register_row(index);
             index += 8;
@@ -805,48 +785,19 @@ static void print_register_row(int index)
 
    if (flag['e'-'a']) printf("[%p]", _register);
    printf("%2.2x:", index);
-   while ((xx--) && (index < 280)) printf(" %6.6x", _register[index++]);
+   while ((xx--) && (index < REGISTERS))
+   {
+      if (index < 256) printf(" %6.6x", _register[index++]);
+      else             printf(" %8.8x", _register[index++]);
+   }
 }
 
-
-/********************************************
-	following two routines are
-	baby-style programming
-	for writing request parameters
-	from debug console to
-	x86 assembler-written bus manager
-
-	some compilers have been enhanced
-	so much that a call from embedded
-	__asm__ won't get there
-********************************************/
 
 /********************************************
 	readout target current address space
 ********************************************/
 
 #ifndef	GCC
-#ifdef	LLVM_LE
-static word memory_read(int ea)
-{
-   readoutp = ea;
-   bus_readp();
-   return readout;
-}
-
-/*******************************************
-	read device array at offset
-*******************************************/
-
-static int device_array_read(int index, int offset)
-{  
-   readoutx = index;
-   readoutp = offset;
-   device_readp();
-   return readoutx;
-}
-     
-#else
 static word memory_read(int ea)
 {
    word		 data;
@@ -895,7 +846,6 @@ static int device_array_read(int index, int offset)
 
    return data;
 }
-#endif
 #endif
 
 #ifdef METRIC

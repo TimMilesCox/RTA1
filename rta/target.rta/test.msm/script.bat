@@ -19,6 +19,7 @@ del ..\test.rta\*
 %MASMX% %FLAGS% base_d.msm ..\test.rta\base_d
 %MASMX% %FLAGS% basis.msm ..\test.rta\basis
 %MASMX% %FLAGS% betaille.msm ..\test.rta\betaille
+%MASMX% %FLAGS% bitmodel.msm ..\test.rta\bitmodel
 %MASMX% %FLAGS% bloc_fun.msm ..\test.rta\bloc_fun
 %MASMX% %FLAGS% boolean.msm ..\test.rta\boolean
 %MASMX% %FLAGS% brin.msm ..\test.rta\brin

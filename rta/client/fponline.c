@@ -46,6 +46,29 @@ static struct sockaddr_in local  = {     PF_INET, 0                      } ;
 static WSADATA wsa;
 #endif
 
+static unsigned char		 path[240];
+static unsigned char		 pdupath[260];
+static unsigned char		 dynamic_masmdef[260];
+
+
+static void dynamic_store(int bytes, char *text)
+{
+   int           f,
+                 x = -1;
+
+
+   f = open(dynamic_masmdef, O_RDWR | O_APPEND, 0777);
+
+   if (f < 0) printf("name update failed on open %d\n", errno);
+   else x = lseek(f, 0, SEEK_END);
+
+   if (x < 0) printf("name update failed on position %d\n", errno);
+   else x = write(f, text, bytes);
+
+   if (x < 0) printf("name update failed on insert %d\n", errno);
+
+   close(f);
+}
 
 int main(int argc, char *argv[])
 {
@@ -67,7 +90,8 @@ int main(int argc, char *argv[])
 			 y,
 			 j,
 			 maxtry,
-			 symbol;
+			 symbol,
+			 symbol1;
 
    int			 resends,
 			 bytes;
@@ -81,8 +105,8 @@ int main(int argc, char *argv[])
    int			 runagate,
 			 pduf;
 
-   unsigned char	 path[72];
-   unsigned char	 pdupath[72];
+   unsigned char	 name[84];
+   unsigned char	 added_name[84];
 
 
    argue(argc, argv);
@@ -91,11 +115,13 @@ int main(int argc, char *argv[])
    {
       sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
       sprintf(pdupath, "%s/dynamic.rta/pduimage", argument[2]);
+      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", argument[2]);
    }
    else
    {
       sprintf(path, "%s/dynamic.rta/runagate.msm", getenv("HOME"));
       sprintf(pdupath, "%s/dynamic.rta/pduimage", getenv("HOME"));
+      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
    }
 
    if (flag['v'-'a']) printf("[%s -> %s]\n", path, pdupath);
@@ -180,8 +206,66 @@ int main(int argc, char *argv[])
          break;
       }
 
+
+      while (symbol = *p++)
+      {
+         if ((symbol ^ ' ') | (symbol ^ '\t')) break;
+      }
+
+      symbol1 = symbol;
+
+      if ((symbol == '_')
+      || ((symbol > 'a'-1) && (symbol < 'z'+1))
+      || ((symbol > 'A'-1) && (symbol < 'Z'+1)))
+      {
+         x = 0;
+
+         for(;;)
+         {
+            if (symbol == ' ') break;
+            if (symbol == 0) break;
+            if (symbol == '\n') break;
+            if (symbol == '\r') break;
+            if (symbol == '+') break;
+            if (symbol == '-') break;
+            if (symbol == '*') break;
+            if (symbol == '/') break;
+
+            name[x++] = symbol;
+            symbol = *p++;
+         }
+
+         name[x++] = 0;
+         while ((symbol == ' ') || (symbol == '\t')) symbol = *p++;
+
+         if ((symbol ^ '+') && (symbol ^ '+') && (symbol ^ '+') && (symbol ^ '/'))
+         {
+            bytes = sprintf(added_name, "%s\t$set,168\t$TOTAL\n", name);
+            dynamic_store(bytes, added_name);
+            continue;
+
+            /************************************************************
+		running total copied to a label
+            ************************************************************/
+         }
+
+         /***************************************************************
+		otherwise it is an operator
+                fall through and assemble it in expression
+		the label should exist
+         ***************************************************************/
+      }
+
+
       x = write(runagate, "\t$xqt_fp,$192\t", 14);
-      if (x == 14) x = write(runagate, sdata, j);
+
+      if (x == 14)
+      {
+         if ((symbol1 == '+') || (symbol1 == '-') || (symbol1 == '*') || (symbol1 == '/'))
+         x = write(runagate, "$TOTAL", 6);
+      }
+
+      if (x > 0) x = write(runagate, sdata, j);
 
       if (x < 0)
       {
@@ -306,6 +390,12 @@ int main(int argc, char *argv[])
          if ((uflag['Q'-'A'] == 0) || (x < 0))
          printf("recv state %d/%d %s", x, errno, rdata);
          else if (x >= 0) printf("%s", rdata);
+      }
+
+      if (x > 0)
+      {
+         bytes = sprintf(added_name, "\"$TOTAL\"\t$set,168\t%s\n", rdata);
+         dynamic_store(bytes, added_name);
       }
    }
 

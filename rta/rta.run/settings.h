@@ -55,4 +55,5 @@
 #define	NET_ATTENTION_COUNT 121
 #define	TIMER_IMASK	4
 #define	INTERVAL	3000
+#define	REGISTERS	288
 

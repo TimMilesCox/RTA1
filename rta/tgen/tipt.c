@@ -63,7 +63,7 @@ word		    	*apc = ROM_PAGE;
 page            	*b0p  = memory.p4k;
 unsigned int		 b0_name;
 unsigned int    	 psr = 0x00800000;
-unsigned int    	 _register[256+24];
+unsigned int    	 _register[REGISTERS];
  
 unsigned int		*register_set = _register+128;
 // unsigned int     	 base[192];
@@ -441,7 +441,7 @@ static void action(char request[])
          if      (symbol == '0') sscanf(request,     "%x", &index);
          else if (symbol == 'r') sscanf(request + 1, "%d", &index);
 
-         while (index < 280)
+         while (index < REGISTERS)
          {
             print_register_row(index);
             index += 8;
@@ -785,7 +785,11 @@ static void print_register_row(int index)
 
    if (flag['e'-'a']) printf("[%p]", _register);
    printf("%2.2x:", index);
-   while ((xx--) && (index < 280)) printf(" %6.6x", _register[index++]);
+   while ((xx--) && (index < REGISTERS))
+   {
+      if (index < 256) printf(" %6.6x", _register[index++]);
+      else             printf(" %8.8x", _register[index++]);
+   }
 }
 
 
