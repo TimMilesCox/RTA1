@@ -47,8 +47,8 @@ static WSADATA wsa;
 #endif
 
 static unsigned char		 path[240];
-static unsigned char		 pdupath[260];
-static unsigned char		 dynamic_masmdef[260];
+static unsigned char		 pdupath[240];
+static unsigned char		 dynamic_masmdef[240];
 
 
 static void dynamic_store(int bytes, char *text)
@@ -105,8 +105,8 @@ int main(int argc, char *argv[])
    int			 runagate,
 			 pduf;
 
-   unsigned char	 name[84];
-   unsigned char	 added_name[84];
+   unsigned char	 name[160];
+   unsigned char	 added_name[160];
 
 
    argue(argc, argv);
@@ -292,10 +292,10 @@ int main(int argc, char *argv[])
 		this is the caller
          ****************************************************/
 
-         printf(" %d launched mpdu\n", x);
+         if (flag['v'-'a']) printf(" %d launched mpdu\n", x);
          y = waitpid(x, &j, 0);
-         printf(" %d returned mpdu, %d\n", y, j);
-         if (y < 0) printf("%d\n", errno);
+         if (flag['v'-'a']) printf(" %d returned mpdu, %d\n", y, j);
+         if (y < 0) printf("mpdu process error return %d\n", errno);
       }
       else
       {
