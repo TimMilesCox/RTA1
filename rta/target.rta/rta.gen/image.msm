@@ -142,8 +142,10 @@ $(0:0:TRANSFER_PAGE)
 	j		freetotal_ii
 	j		rt_yield		. without T$SLICE this jumps to yield = rt_yield
 						. with T$SLICE yield is altered and this stays the same
-	$do		16-$,	ir	0
+	$do		14-$,	ir	0
 
+	j		fpxpo_read_clear_ii
+	j		fpxpo_ii
 	j		handle_ii
 	j		free_handle_ii
 	j		read_handle_ii
@@ -478,6 +480,26 @@ switch_fp_guard_ii
 	push		a
 	pop		fp$guard
 	pop		a
+	ir		0
+
+fpxpo_read_clear_ii
+	on		see$1		. look into the thread control block
+	la		FP_XPO
+	sa		a		. readout to application a register
+	z		FP_XPO		. clear underflow / overflow flag
+	ir		0
+
+fpxpo_ii
+	la		1, sp		. saved PSR
+	and		fp$r,,xi	. isolate residue indication
+	lk		a_x
+	ql		(-0.0)		. default decision
+	qs		a		. write major result
+	tz		k_x		. 192-bit operation?
+	qs		$residue	. write minor result
+	on		see$1		. look into the thread control block
+	la		(0800000s)	. flag this happened
+	sa		FP_XPO		. in case the application likes to know
 	ir		0
 
 TRANSFER_PAGE_HIGH

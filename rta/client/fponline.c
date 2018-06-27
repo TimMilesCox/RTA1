@@ -238,7 +238,7 @@ int main(int argc, char *argv[])
          name[x++] = 0;
          while ((symbol == ' ') || (symbol == '\t')) symbol = *p++;
 
-         if ((symbol ^ '+') && (symbol ^ '+') && (symbol ^ '+') && (symbol ^ '/'))
+         if ((symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
          {
             bytes = sprintf(added_name, "%s\t$set,168\t$TOTAL\n", name);
             dynamic_store(bytes, added_name);

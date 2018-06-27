@@ -6617,9 +6617,78 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|			guard pattern register <b>fp$guard</b> takes place on the minor result and not the major result		|
 	|																|
 	|_______________________________________________________________________________________________________________________________|
-
-
-
+	|																|
+	|																|
+	|																|
+	|			Detecting and Correcting Exponent Underflow and Overflow						|
+	|			________________________________________________________						|
+	|																|
+	|																|
+	|			Floating point operations cannot store a true result if the exponent borrows or carries			|
+	|			from its 23-bit field. These conditions are called exponent underflow and exponent overflow		|
+	|																|
+	|			Exponent underflow and exponent overflow are detected in RTA1 floating instruction architecture.	|
+	|			Interrupt FP_XPO$ is raised										|
+	|																|
+	|			ISR FP_XPO$ in prototype kernel smaragd7 marks the event in the thread control block			|
+	|																|
+	|			The application may issue system call internal interrupt FP_XPO$FLAG. This ISR				|
+	|																|
+	|				returns a value indicating exponent overflow/underflow condition has or has not been encountered|
+	|																|
+	|				resets the flag value which remains reset until exponent overflow/underflow is next encountered	|
+	|																|
+	|			The reasons for accumulating underflow/overflow event are						|
+	|																|
+	|				RTA1 23-bit floating exponent field is so large that exponent overflow/underflow should		|
+	|				never happen as an expected result of an application operation					|
+	|																|
+	|				Applications need no exponent field larger than 23 bits, but an oversight or			|
+	|				misunderstanding in machine programming could cause exponent underflow or overflow		|
+	|																|
+	|				Realtime routines should not need to check continually for exponent overflow errors		|
+	|				since, especially, many calculations are multiple operations in subroutines and libraries	|
+	|																|
+	|				If routines process values within the range							|
+	|																|
+	|					&plusmn;9.999999999999999999999e+1262611							|
+	|																|
+	|					&plusmn;9.999999999999999999999e-1262611							|
+	|																|
+	|				or in 192-bit floating algebra, the range							|
+	|																|
+	|					&plusmn;9.999999999999999999999999999999999999999999e+1262611					|
+	|																|
+	|					&plusmn;9.999999999999999999999999999999999999999999e-1262566					|
+	|																|
+	|				then exponent underflow/overflow is not encountered.						|
+	|																|
+	|				Possible diminishing exponent "only" reaches -1262566 in 192-bit floating algebra		|
+	|				because 192-bit values are maintained in two 96-bit numbers each with an exponent		|
+	|																|
+	|			Applications may check that no underflow/overflow has been encountered with call FP_XPO$FLAG		|
+	|			If exponent underflow/overflow has been encountered, the affected instruction may be pinpointed by	|
+	|			repositioning the call to FP_XPO$FLAG. Call sequence is							|
+	|																|
+	|				ii	FP_XPO$FLAG	. return value in application register a				|
+	|							. 0 = no underflow/overflow encountered since last call to FP_XPO$FLAG	|
+	|							. 800000 hex = exponent underflow/overflow encountered one or more times|
+	|																|
+	|			The default behaviour of ISR FP_XPO$ which executes when exponent underflow/overflow occurs		|
+	|			is to change the value in destination registers to -0.0 represented as all binary 1s. This		|
+	|			may indicate exponent underflow/overflow, although -0.0 can also be a legitimate instruction result	|
+	|																|
+	|			The flag value returned from FP_XPO$FLAG remains available although subsequent instructions may		|
+	|			overwrite indication -0.0										|
+	|																|
+	|			If any one instruction in a sequence or routine has encountered exponent underflow or overflow		|
+	|			then the results of the instruction sequence are unusable						|
+	|																|
+	|			FP_XPO$FLAG is a reliable indication that exponent underflow/overflow has been encountered		|
+	|			at some point leading to the FP_XPO$FLAG call								|
+	|																|
+	|_______________________________________________________________________________________________________________________________|	
+	
 
 
 	<a	name="fpp"/>

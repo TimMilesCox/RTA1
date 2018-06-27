@@ -40,12 +40,17 @@ add	$head_far	 params(addend,	int)		;
 	lx	addend
 	on	fp$r
 	fa	0, x
-	qs	target
 	off	fp$r
+
+.	tp	fp$xpo			. is exponent overflow / underflow flagged?
+.	j	add_exit		. let application evaluate that
+					. target registers unchanged
+	qs	target
 	ql	target+4
 	fa	4, x
 	fa	$residue
 	qs	target+4
+add_exit
 	qpop	a
 	qpop	8
 	fret	0
@@ -62,12 +67,17 @@ add_negative $head_far	 params(subtrahend, int)	;
 	lx	subtrahend
 	on	fp$r
 	fan	0, x
-	qs	minuend
 	off	fp$r
+
+.	tp	fp$xpo			. is exponent overflow / underflow flagged?
+.	j	add_negative_exit	. let application evaluate that
+					. target registers unchanged
+	qs	minuend
 	ql	minuend+4
 	fa	$residue
 	fan	4, x
 	qs	minuend+4
+add_negative_exit
 	qpop	a
 	qpop	8
 	fret	0
@@ -96,9 +106,17 @@ heavy	$head_far	 params(mzand,int mzier,int)
 	on	fp$r
 	ql	0, x
 	fm	0, y
-	qpush	a
-	qpush	a
 	off	fp$r
+
+.	tn	fp$xpo
+.	j	heavy1_normalised
+			. exponent overflow / underflow flagged
+			. inputs unchanged
+.	fret	0	. application decides next action
+
+heavy1_normalised
+	qpush	a
+	qpush	a
 	ql	4, x
 	fm	0, y
 	fa	8
@@ -121,7 +139,7 @@ heavy	$head_far	 params(mzand,int mzier,int)
 	fa	4, x
 	fa	8
 	qs	4, x
-	$ret
+	fret	0	. there are no local variables
 
 
 divide	$head_far	 params(divisor,  int		)	;
@@ -146,8 +164,13 @@ quick_divide
 	ql	quotient
 	on	fp$r
 	fd	0, x
-	qs	quotient
 	off	fp$r
+
+.	tp	fp$xpo
+.	j	divided		. exponent overflow / underflow flagged
+				. target registers unchanged
+				. application decides next action
+	qs	quotient
 	ql	quotient+4
 	fd	0, x
 	fa	$residue

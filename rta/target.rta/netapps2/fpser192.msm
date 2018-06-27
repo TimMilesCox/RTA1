@@ -97,8 +97,14 @@ fp_add
 	ql	left+4
 	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
+	lk	(0800000s)
+
 fp_add1
 	c	(fp192lib_add)	right,,i
+
+	mtane	b		. normalised?
+	j	fp_edit_rnz		
 
 	on	fp$r		. supernormalise to avoid accumulating rounding bumps
 	fa	$residue
@@ -112,8 +118,13 @@ fp_add_negative
 	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
 
+	lk	(0800000s)
+
 fp_add_negative1
 	c	(fp192lib_add_negative)	right,,i
+
+	mtane	b		. normalised?
+	j	fp_edit_rnz
 
 	on	fp$r		. supernormalise to avoid accumulating rounding bumps
 	fa	$residue
@@ -126,9 +137,9 @@ fp_add_negative1
 fp_multiply			. leaving this one how it was. It's just as good as (fp192lib_multiply)
 	c	(fp192lib_mfa)	left,,i	right,,i
 	jdr	fp_multiply
-	ql	left+4
-	qs	$residue
-	ql	left
+	ql	left+4		. this doesn't have a supernormalise
+	qs	$residue	. if iteratively multiplying change to call (fp192lib_multiply)
+	ql	left		. and add a supernormalise in the jdr loop
 	j	fp_edit
 
 
@@ -151,19 +162,28 @@ fp_divide
 	ql	left+4
 	qs	$residue
 	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
 fp_divide1
 	c	(fp192lib_divide)	right,,i
 
-	on	fp$r
+	lk	(0800000s)
+	mtane	b		. normalised?
+	j	fp_edit_rnz
+
+	on	fp$r		. supernormalise 
 	fa	$residue
 	off	fp$r
 	jdr	fp_divide1
 
 	j	fp_edit
 
-fp_nop
+fp_nop	j	fp_edit
+fp_edit_rnz
+	qs	$residue
 fp_edit	z	BYTES
 
+	lcal	edit_prepend
+	
 	call	(floating_edit192)
 
 	la	("":10:0:0)
