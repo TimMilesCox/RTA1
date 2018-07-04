@@ -73,7 +73,7 @@
 
 #define	PAGE		4096
 #define	GRANULE		64
-#define	DIRECTORY_BLOCK	1024
+#define	DIRECTORY_BLOCK	256
 #define	LEEWAY		GRANULE
 #define	PAGES_IN_DEVICE	1
 
@@ -189,7 +189,7 @@ typedef struct { msw		    rfw,
 	device, and points to next unassigned filestore
 	granule
 
-	directory blocks are by default 16 granules of
+	directory blocks are by default 4 granules of
 	64 words. Directory blocks do not straddle bank
 	boundaries of 4096 words
 
@@ -245,7 +245,7 @@ static tree label1  =  { { { 'P', 0, CONTROL_WORDS } } ,
 
                          { { { { 'V', 0, VOLUME1_WORDS + 2 } ,
                              { 0 } ,
-                             { 0, 0, 0, 0, 0, 16 } } ,
+                             { 0, 0, 0, 0, 0, DIRECTORY_BLOCK / GRANULE } } ,
                            { { 'F', 'S', '0' } , { '0', '0', '1' } } } } } ;
 
 
@@ -270,7 +270,7 @@ static int		 f;
 
 static unsigned          pointer1 = CONTROL_WORDS + 1 + 2 * 5 + VOLUME1_WORDS + 1 + 2;
 static unsigned          remainder1 = DIRECTORY_BLOCK - CONTROL_WORDS - 1 - 2 * 5 - VOLUME1_WORDS - 1 - 2;
-static unsigned long long gpointer = 16;
+static unsigned long long gpointer = DIRECTORY_BLOCK / GRANULE;
 
 
 #ifdef MYGETS
@@ -362,7 +362,7 @@ static void output_label(int f, unsigned char *name, long long position)
 
 static int interpret(tree *actual, unsigned *displacement, long long dstart_granule, forward *up1)
 {
-   static dmsw		 restart_offset = { 0, 0, 0, 0, 0, 16 } ;
+   static dmsw		 restart_offset = { 0, 0, 0, 0, 0, DIRECTORY_BLOCK / GRANULE } ;
    static dmsw		 restart_link   = { 0, 0, 0, 0, 0, 0  } ;
    static msw		 start_zero        =          { 0, 0, 0  } ;
 
@@ -424,7 +424,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                                 = VOLUME1_WORDS
 			        + copy(&label1.label3.v.name[0].t1, argument);
 
-      gpointer = 16;
+      gpointer = DIRECTORY_BLOCK / GRANULE;
       label1.label3.v.ex.granule = restart_offset;
 
       pointer1 += CONTROL_WORDS + 1 + 2 * 5 + 1;

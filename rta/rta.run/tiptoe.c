@@ -110,18 +110,16 @@ static void		 statement();
 static void		 action(char *request);
 static void		 load_fs(char *path);
 
-#ifdef SIGALERT
-static void signet(int sig);
+#ifdef METRIC
+unsigned int             delta,
+                         metric;
 
-static struct sigaction  si = {      (* signet),
-                                   1 << SIGUSR1,
-                                     SA_SIGINFO } ;
-static void signet(int sig)
-{
-   base[NET_ATTENTION_COUNT]++;
-}
+static unsigned long long        delta_base,
+                                 total_delta,
+                                 total_metric;
+
+static void              accumulate_metric();
 #endif
-
 
 #ifdef DAYCLOCK
 static int		 start_time;
@@ -274,6 +272,10 @@ int main(int argc, char *argv[])
    word			*load_address = memory.array;
    word			 data_word = { 0, 0, 0, 0 } ;
 
+   #ifdef METRIC
+   struct timeval        time2;
+   #endif
+
    #ifdef ASYNC
 
    #ifdef X86_MSW
@@ -370,24 +372,6 @@ int main(int argc, char *argv[])
 
    if (arguments > 1) load_fs(argument[1]);
 
-   #ifdef SIGALERT
-   /**********************************************************
-
-	if you turn SIGALERT on
-	you must also turn it on in ../netifx/netbank.c
-
-        and in the load image which the emulated machine
-	executes in ../t77.4/icapsule.msm
-
-	and in the interface simulator process ../netifx/netifx.c
-
-   **********************************************************/
-
-   x = sigaction(SIGUSR1, &si, NULL);
-   printf("[RSIG %d %p %p %x %x]\n",
-            x, signet, si.sa_handler, si.sa_mask, si.sa_flags);
-   #endif
-
    #ifdef ASYNC
 
    #ifdef X86_MSW
@@ -415,11 +399,20 @@ int main(int argc, char *argv[])
                         ? "g[break:point] to run"
                         : "s to enter single step");
 
+   #ifdef METRIC
+   gettimeofday(&time2, NULL);
+   delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+   #endif
+
    for (;;)
    {
       if (runout < 0) break;
 
       execute(*apc++);
+
+      #ifdef METRIC
+      metric++;
+      #endif
 
       #ifdef DAYCLOCK
 
@@ -481,8 +474,17 @@ int main(int argc, char *argv[])
 
       if (indication & CHILLDOWN)
       {
+         #ifdef METRIC
+         accumulate_metric();
+         #endif
+
          indication &= -1 ^ CHILLDOWN;
          usleep(base[103]);
+
+         #ifdef METRIC
+         gettimeofday(&time2, NULL);
+         delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+         #endif
       }
 
       #ifdef TIMER
@@ -538,6 +540,20 @@ static void action(char request[])
 
    char			 path[360];
 
+   #ifdef METRIC
+   double                average,
+                         quantum;
+
+   if (symbol == 'i')
+   {
+      average = total_metric;
+      quantum = total_delta;
+      average /= quantum;
+      printf("instructions %lld usecs %lld approximate MIPS %f\n",
+              total_metric, total_delta, average);
+      return;
+   }
+   #endif
 
    if (flag['s'-'a'] == 0)
    {
@@ -842,4 +858,25 @@ static void load_fs(char *path)
       printf("%d granules loaded\n", index);
    }
 }
+
+#ifdef METRIC
+static void accumulate_metric()
+{
+   /*******************************************************
+        this happens at leading edge of emulation sleep
+        requested by I/O chilldown indication
+   *******************************************************/
+
+   struct timeval        time3;
+   unsigned long long    trailing_edge;
+
+   gettimeofday(&time3, NULL);
+   trailing_edge = time3.tv_sec * 1000000 + time3.tv_usec;
+
+   delta = trailing_edge -  delta_base;
+   total_metric += metric;
+   metric = 0;
+   total_delta += delta;
+}
+#endif
 

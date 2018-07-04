@@ -37,7 +37,7 @@
 .
 .
 
-$(1)
+$(3)
 thandle	+	0
 tnetbound -	1
 tlsoc_va  -	1:d
@@ -182,13 +182,13 @@ telnet_command
 
 
 telnet_launch_bshell_task
-	la, xi	28
-	lb, xi	$1("bash shell not yet released":10)
+	lb, xi	$3("bash shell not yet released":10)
+	la	$bits/$byte,,xi
 	j	telnet_respond
 
 telnet_tasks
-	la, xi	22
-	lb, xi	$1("console tasks display":10)
+	lb, xi	$3("console threads display":10)
+	la	$bits/$byte,,xi
 	push	x
 	lcal	telnet_respond
 	lcal	telnet_tasklist
@@ -201,20 +201,20 @@ telnet_help
 	j	telnet_respond
 
 telnet_prompt
-	la, xi	23
-	lb, xi	$1("key h for command list":10)
+	lb, xi	$3("key h for command list":10)
+	la	$bits/$byte,,xi
 	j	telnet_respond
 
 telnet_zero_timer1
 	z	transmission:timer(1)
-	la, xi	11
-	lb, xi	$1("no timeout":10)	
+	lb, xi	$3("no timeout":10)	
+	la	$bits/$byte,,xi
 	j	telnet_respond
 
 telnet_quicktimeout
 	la	DAYCLOCK$
 	sa	transmission:timer(1)
-	lb, xi	$1("zero timeout":LF)
+	lb, xi	$3("zero timeout":LF)
 	la, xi	$bits/$byte
 	j	telnet_respond
 
@@ -235,7 +235,7 @@ telnet_memory
 	la	BYTES
 	lb, xi	tn_editline
 	lcal	telnet_insert
-	lb,xi	$1(" words free":10)
+	lb,xi	$3(" words free":10)
 
 	la,xi	$bits/$byte
 	
@@ -251,7 +251,7 @@ webhost_threads
 	la	BYTES
 	lb	tn_editline,,xi
 	lcal	telnet_insert
-	lb, xi	$1(" webhost threads":10)
+	lb, xi	$3(" webhost threads":10)
 	la, xi	$bits/$byte
 	j	telnet_respond
 
@@ -291,34 +291,55 @@ telnet_insert
 telnet_configuration
 		. for the moment no analysis. just encourage
 
-	lb, xi	$1("RTA1 smaragd7 OS shared console":10)
+	lb, xi	$3("RTA1 smaragd7 OS shared console":10)
 	la, xi	$bits/$byte
 	lret	0
 
 
 
 telnet_tasklist
+	la	(' '*/$word-$byte)
+	sa	tn_editline+2
 	on	+(see$7*/MANAGER_BANKS)-see$7
-	ly, xi	stem(PRIORITIES)
+	lr	tdescriptor_high_index
+	ly	next_tdescriptor_sp
+	
 telnet_task1
-	la	0, y
-	ly	a
-	ana, xi	stem(PRIORITIES)
-	jza	telnet_taskx
-	tp	1, y
-	j	telnet_task1	. it's a stem(?)
+	jyge	telnet_taskx
 	lcal	telnet_task_display
+	ay	TDESCRIPTOR_WORDS,,xi
 	j	telnet_task1
-telnet_taskx
+telnet_taskx	
 	off	+(see$7*/MANAGER_BANKS)-see$7
+	lret	0
+
+telnet_pop2hex* $proc
+	pop	a
+	lcal	telnet_display_quartets
+	$end
+
+telnet_display_quartets
+	call	(display_quartets)
+	ds	tn_editline
+	la	7,,xi
+	lb	tn_editline,,xi
+	lcal	telnet_insert
 	lret	0
 
 telnet_task_display
 	push	y
-	lb, xi	$1("we'll tell you soon":10)
-	la, xi	20
-	lx	3, sp
+	push	r
+	lx	4, sp
+	on	+(see$7*/MANAGER_BANKS)-see$7		. see kernel storage
+	dpush	4, y
+	qpush	0, y
+	off	+(see$7*/MANAGER_BANKS)-see$7		. see application storage
+	$do	6,	telnet_pop2hex
+	
+	lb	$3("":LF),,xi
+	la, xi	$bits/$byte
 	lcal	telnet_respond
+	pop	r
 	pop	y
 	lret	0
 

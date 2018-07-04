@@ -388,7 +388,7 @@ int main(int argc, char *argv[])
       else
       {
          if ((uflag['Q'-'A'] == 0) || (x < 0))
-         printf("recv state %d/%d %s", x, errno, rdata);
+         printf("recv state %d/%d %s\n", x, errno, rdata);
          else if (x >= 0) printf("%s", rdata);
       }
 

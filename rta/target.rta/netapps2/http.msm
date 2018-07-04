@@ -123,7 +123,6 @@ http_walk_q
 
 
 http_walk
-	dl	(10d)			. this loop is otherwise tight
 	lx	transmission:next
 	tz	x
 	j	$+2
@@ -137,15 +136,30 @@ http_walk
 	sx	http_listening_transmission
 
 	la	transmission:state
-	aa, xi	-TCP_SYNRECEIVED
+	aa, xi	-TCP_ESTABLISHED
+	jza	http_traffic?
+	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED,,xi
 	jnza	http_remote_close?
 	call	(xaccept)
-	ii	YIELD$			. let the connection establish, then
-	ql	(http_request_thread,,,:q)
-	sx	6			. assign the connection as parameter
+	j	http_walk		. next
+
+http_traffic?
+	call	(tcpr)			. a message of some sort? 
+	jza	http_walk		. far call to read segment queue
+
+	sx	descriptor:tcbloc, a
+
+	$if	0			. nothing gained by more threads
+	sa	6			. parameter
+	z	7
+.	ql	(http_request_thread,,,:q)
+	dl	(http_request_thread,:d)
+				. assign the connection as parameter
 	ii	THREAD$
 	jnza	http_walk		. thread started
-	la	x			. thread not started but connection accepted
+	$endif
+
+					. thread not started but message read accepted
 	lcal	http_request_thread	. serve request in this thread
 	j	http_walk		. if connection not really established
 					. the call will return without action
@@ -158,37 +172,28 @@ http_remote_close?
 					. after you have done this
 http_xserve
         $if     HTTP_THREADED
-        ii      YIELD$
+	$if	1
+	ii	YIELD$
+	$else
+	dl	(10d)
+        ii      TWAIT$
+	$endif
         j       http_walk_q
         $endif
 http_zserve
         fret    0
 
 
-http_request_thread $head_near	scalars(http_thread_transmission, int, a	;
+http_request_thread $head_near	scalars(http_thread_request, 	int, a		;
+					http_thread_transmission, int, descriptor:tcbloc, a	;
 					fs24_cursor,		long		;
 					http_file_octets,	long		;	
 					http_target_name, 	72//3		)
 
 
 	inc	http_threads
-
-http_next_request
-	dl	http_sla
-	sabr	BSOCKET
-	dl	s:tcp:tbase
-	sabr	BSOCKET
-
-	lx	http_thread_transmission
-	la	transmission:state
-	aa	-TCP_ESTABLISHED,,xi
-	jza	http_traffic?
-	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED
-	jza	http_wait		. this takes longer on network
-	j	http_thread_exit	. than on loopback
-http_traffic?
-	la	transmission:receiveq:head
-	jza	http_wait
+.	lx	desciptor:tcbloc, a
+.	sx	http_thread_transmission
 
 	ly	http_target_name,,i
 	lcal	http_get_what
@@ -269,6 +274,7 @@ http_next_extent
 	jnc	http_final_extent
 	ds	http_file_octets
 	la	7
+
 	lx	http_thread_transmission
 	call	(tcp_tx)
 	jnb	http_hangup
@@ -290,46 +296,26 @@ http_pushover
 	call	(tcp_tx)
 	jnb	http_hangup
 http_norequest
-	lx	http_thread_transmission
-	call	(tcp_release_rxline)
-http_wait
-	dl	(20d)			. wait for remote browser
-	ii	TWAIT$			. to ask anything more
-	j	http_next_request	. on this connection
+	j	http_hangup
 
 http_drop_request
-	ii	GUARD$
-	la, xi	3*(0148d-01459)-1
-	lb, xi	$1("HTTP/1.1 200 OK":CR:LF:;
+	lb, xi	$3("HTTP/1.1 200 OK":CR:LF:;
                    "Content-Type: text/html; charset=UTF-8":CR:LF:;
-		   "Content-Length: 70":CR:LF:CR:LF:;
+		   "Content-Length: 36":CR:LF:CR:LF:;
 		   "<html><div>":CR:LF:;
-		   "that is a very nice request, ":;
-		   "thank you so much":CR:LF:"</div></html>":CR:LF)
+		   "web archive not found":CR:LF:"</div></html>":CR:LF)
 
 	sb	q
+	la	$bits/$byte,,xi
 	lx	http_thread_transmission
 	call	(tcp_tx)
-	jnb	http_hangup
-
-	la, xi	84
-	lb, xi	$1("<html><div>":CR:LF:;
-		"of course you understand, this is what I wish to say":CR:LF:;
-		"</div></html>":CR:LF)
-	sb	q
-	lx	http_thread_transmission
-	call	(tcp_tx)
-	jnb	http_hangup
-
-	call	(tcp_release_rxline)
-	lx	http_thread_transmission
 
 http_hangup
-.	call	(xdisco)
 http_thread_exit
+	la	http_thread_request
+	call	(tcpz)
 	dec	http_threads
 	$ret				.	thread end
-.	j	http_walk
 
 
 http_get_what				. y = caller's name buffer
