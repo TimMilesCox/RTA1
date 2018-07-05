@@ -50,24 +50,17 @@ static unsigned char		 path[240];
 static unsigned char		 pdupath[240];
 static unsigned char		 dynamic_masmdef[240];
 
+static int			 dynamic;
 
 static void dynamic_store(int bytes, char *text)
 {
-   int           f,
-                 x = -1;
+   int           x,
+                 y;
 
-
-   f = open(dynamic_masmdef, O_RDWR | O_APPEND, 0777);
-
-   if (f < 0) printf("name update failed on open %d\n", errno);
-   else x = lseek(f, 0, SEEK_END);
-
-   if (x < 0) printf("name update failed on position %d\n", errno);
-   else x = write(f, text, bytes);
-
+   x = write(dynamic, text, bytes);
    if (x < 0) printf("name update failed on insert %d\n", errno);
-
-   close(f);
+   y = fsync(dynamic);
+   if (y < 0) printf("name update failed on sync %d\n", errno);
 }
 
 int main(int argc, char *argv[])
@@ -135,6 +128,11 @@ int main(int argc, char *argv[])
       printf("[socket %d cntl %d:%d]\n", s, f, u);
       #endif
    }
+
+   dynamic = open(dynamic_masmdef, O_RDWR | O_APPEND, 0777);
+   if (dynamic < 0) printf("dynamic names store unavailable %d\n", errno);
+
+   if (flag['v'-'a']) printf("dynamic.def %d\n", dynamic);
 
    if (config)
    {
@@ -389,7 +387,7 @@ int main(int argc, char *argv[])
       {
          if ((uflag['Q'-'A'] == 0) || (x < 0))
          printf("recv state %d/%d %s\n", x, errno, rdata);
-         else if (x >= 0) printf("%s", rdata);
+         else if (x >= 0) printf("%s\n", rdata);
       }
 
       if (x > 0)
@@ -404,5 +402,7 @@ int main(int argc, char *argv[])
    #else
    close(s);
    #endif
+
+   close(dynamic);
    return 0;
 }
