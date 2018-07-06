@@ -14,6 +14,7 @@
 #include <unistd.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #define	detail_code errno
 #endif
@@ -292,8 +293,13 @@ int main(int argc, char *argv[])
 
          if (flag['v'-'a']) printf(" %d launched mpdu\n", x);
          y = waitpid(x, &j, 0);
-         if (flag['v'-'a']) printf(" %d returned mpdu, %d\n", y, j);
-         if (y < 0) printf("mpdu process error return %d\n", errno);
+         if (flag['v'-'a']) printf(" %d returned mpdu, %x\n", y, j);
+
+         if (j & 0x8000)
+         {
+            printf("mpdu process error return\n");
+            break;
+         }
       }
       else
       {
@@ -301,8 +307,9 @@ int main(int argc, char *argv[])
 		this is the clone
          ***************************************************/
 
-         execlp("./mpdu", "blanco", (char *) 0);
-         return 0;             /* I think you have to stop */
+         x = execlp("./mpdu", "blanco", (char *) 0);
+         if (x < 0) printf("[%d] process script [rta/client/]mpdu not started\n", errno);
+         return x;
       }
 
       #endif
