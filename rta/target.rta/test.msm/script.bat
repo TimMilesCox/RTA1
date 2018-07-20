@@ -1,6 +1,7 @@
 set MASMX=masmx
 set FLAGS=-kw
-del ..\test.rta\*
+@echo off
+del /Q  ..\test.rta\*
 %MASMX% %FLAGS% absolute.msm ..\test.rta\absolute
 %MASMX% %FLAGS% ap1.msm ..\test.rta\ap1
 %MASMX% %FLAGS% ap2.msm ..\test.rta\ap2
@@ -80,11 +81,14 @@ del ..\test.rta\*
 %MASMX% %FLAGS% loadg.msm ..\test.rta\loadg
 %MASMX% %FLAGS% log2.msm ..\test.rta\log2
 %MASMX% %FLAGS% lquick.msm ..\test.rta\lquick
+%MASMX% %FLAGS% lsi.msm ..\test.rta\lsi
+%MASMX% %FLAGS% lsii.msm ..\test.rta\lsii
 %MASMX% %FLAGS% lstruct.msm ..\test.rta\lstruct
 %MASMX% %FLAGS% madstuff.msm ..\test.rta\madstuff
 %MASMX% %FLAGS% main.msm ..\test.rta\main
 %MASMX% %FLAGS% mammoth.msm ..\test.rta\mammoth
 %MASMX% %FLAGS% maru.msm ..\test.rta\maru
+%MASMX% %FLAGS% mijo.msm ..\test.rta\mijo
 %MASMX% %FLAGS% miklthon.msm ..\test.rta\miklthon
 %MASMX% %FLAGS% mstrlib.msm ..\test.rta\mstrlib
 %MASMX% %FLAGS% muklthon.msm ..\test.rta\muklthon
@@ -112,6 +116,8 @@ del ..\test.rta\*
 %MASMX% %FLAGS% q.msm ..\test.rta\q
 %MASMX% %FLAGS% quadlib.msm ..\test.rta\quadlib
 %MASMX% %FLAGS% quickly.msm ..\test.rta\quickly
+%MASMX% %FLAGS% r2xample.msm ..\test.rta\r2xample
+%MASMX% %FLAGS% r3xample.msm ..\test.rta\r3xample
 %MASMX% %FLAGS% rabits.msm ..\test.rta\rabits
 %MASMX% %FLAGS% raft.msm ..\test.rta\raft
 %MASMX% %FLAGS% randomsi ..\test.rta\randomsi
@@ -179,5 +185,7 @@ cd ..\language
 %MASMX% %FLAGS% individu ..\test.rta\individu
 %MASMX% %FLAGS% r2xample ..\test.rta\r2xample
 popd
+@echo on
 seeif -avVW list.txt newlist.txt
 
+seeif -a ../result.rta ../test.rta
