@@ -82,6 +82,7 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% log2.msm ..\test.rta\log2
 %MASMX% %FLAGS% lquick.msm ..\test.rta\lquick
 %MASMX% %FLAGS% lsi.msm ..\test.rta\lsi
+%MASMX% %FLAGS% lsif.msm ..\test.rta\lsif
 %MASMX% %FLAGS% lsii.msm ..\test.rta\lsii
 %MASMX% %FLAGS% lstruct.msm ..\test.rta\lstruct
 %MASMX% %FLAGS% madstuff.msm ..\test.rta\madstuff
