@@ -68,7 +68,7 @@ i_server1	$head_near	scalars(response_axw,	int	;
 	dl	portcb_lva
 	sabr	BSOCKET
 
-	READ_START
+	on	b$stream16r++b$streamZR++b$stream16w
 
 i_rx1	lb	so:udp:socket_inq.head, b
 	jzb	i_no_traffic
@@ -80,7 +80,7 @@ i_rx1	lb	so:udp:socket_inq.head, b
 	push	descriptor:apdata, b
 	pop	q
 
-	la, xi	21+7+1+2+1
+	la, xi	5+23+8
 	call	(udp_rtxbuffer)
 	jza	i_release
 
@@ -153,6 +153,15 @@ i_add_negative_again
 
 i_multiply
 i_multiply_again
+
+	$if	1
+
+	i72m	left+1		;	. multiplicand
+		right+3		;	. multiplier
+		left+1			. product
+
+	$else
+
 	lb	left+3
 	mf	right+3
 	sb	left+3
@@ -167,6 +176,9 @@ i_multiply_again
 	m	right+3
 	ab	7
 	sb	left+1
+
+	$endif
+
 	jdr	i_multiply_again
 	j	i_edit
 
@@ -298,16 +310,16 @@ i_edit
 	lb	left			. remainder?
 	jzb	i_ecomplete		. no
 	la	(" ":0:0)
-	WRITE_UBYTE
+	wsr	$byte			. it's a counted stream 
+	inc	BYTES			. but we haven't set macro settings for it
 	la	b
 	call	(edits)			. sprint the remainder
 i_ecomplete
 	la	("":10:0:0)
+	wsr	$byte*2			. LF + 8 bits to flush
 	WRITE_UBYTE
-	wsr	$byte			. ensure the LF stored thru
-					. but don't increment BYTES
+	inc	BYTES			. count LF but not the 8 flushing bits
 	
-	inc	BYTES
 	lx	response_axw
 	la	BYTES
 	sa	descriptor:bytes, x
