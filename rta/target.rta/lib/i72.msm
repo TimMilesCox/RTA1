@@ -52,13 +52,28 @@ i_divide				. vector name is i72_divide
 	saa		24			. calculate final sign
 	sa		7
 
-	jpb		$+3
+	jpb		divisor_plus
 	n		divisor
 	inc		divisor
-	
+divisor_plus
 
-	la		dividend
-	dsr		24
+	$if		1			. long quotient from d instruction
+						. is necessary for inline 48-bit signed arithmetic
+	dl		dividend		. and saves cycles here as well
+	d		divisor
+	sa		dividend+1		. save quotient bits 47..24
+
+	la		b
+	lb		6			. save quotient bits 71..48
+	sb		dividend
+
+	lb		dividend+2
+	d		divisor			. a <- quotient bits 23..0
+						. b <- remainder
+	$else
+						. this all works but takes longer
+	la		dividend		. it doesn't exploit the payoff of
+	dsr		24			. the long quotient from d instruction
 
 	d		divisor
 	sa		dividend
@@ -71,6 +86,8 @@ i_divide				. vector name is i72_divide
 
 	lb		dividend+2
 	d		divisor
+
+	$endif
 
 	tp		7
 	lcal		reverse			. x still points to dividend	
