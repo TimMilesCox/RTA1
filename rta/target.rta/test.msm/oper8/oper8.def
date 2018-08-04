@@ -1,0 +1,158 @@
+
+f	$func
+"$boxs"*	$name
+	$return	f()
+"$box1"*	$name
+	$return	f(1, 1)
+"$box"*		$name
+	$return	f(1, ?)
+"$boxt"*	$name
+	$do	$t(f(1, ?))=127,	$return	1
+	$do	$t(f(1, ?))=$equ,	$return	1
+	$return	0
+	$end
+
+
+p	$proc
+oper8x*	$name	0
+
+"$pactionx"* $proc
+	ex	($op*/19++t1*/16++1*/15++$pad+1,	;
+		 $op*/19++t2*/16++1*/15++$pad+1,	;
+		 $op*/19++t3*/16++1*/15++$pad+1:t), x
+	$end
+
+_AX	$equ	"ax"*/19
+_XI	$equ	xi*/16
+_LCAL	$equ	"lcal"*/19++6*/16
+_LX	$equ	"lx"*/19
+_INC	$equ	"inc"*/19++7*/16
+_DEC	$equ	"dec"*/19++7*/16
+_LRET	$equ	"lret"*/19++5*/16
+
+"$advancex"* $proc
+	ex	(_AX++_XI++1, _AX++_XI++1, _LCAL++$0(_LX++_XI, _INC++$pad+1, _LRET++0t)t)
+	$end
+"$advancexleft"* $proc
+	ex	(_LCAL++$0(_LX++_XI++2, _DEC++$pad+1, _LRET++0t), _AX++_XI++0FFFF, _AX++_XI++0FFFFt)
+	$end
+
+"$actionx"* $proc
+	ex	($op*/19++t1*/16++1*/15++$dynamicp_x+1, ;
+		 $op*/19++t2*/16++1*/15++$dynamicp_x+1, ;
+		 $op*/19++t3*/16++1*/15++$dynamicp_x+1:t), x
+	$end
+
+"$pointer" $equ	1
+"$preplus" $equ	2
+"$preminus" $equ 3
+"$postplus" $equ 4
+"$postminus" $equ 5
+
+"*"	$equ,144	$pointer
+"++*"	$equ,144	$preplus
+"--*"	$equ,144	$preminus
+"*++"	$equ,144	$postplus
+"*--"	$equ,144	$postminus
+
+"$op"	$equ	p(1, 1)
+"$ad"	$equ	p(2, 1)
+"$pad"	$equ	p(3, 1)
+
+
+	$if	$t("p(2, 1)")=144
+
+	$if	"p(2, 1)"=$pointer
+	$do	$o('V'),	$note	xpointer
+
+	$if	$boxs\p(3, 1)
+	lx	p(3, 1)
+	ax	$box1\p(3, 1),,xi
+	push	p(3, 1)+1
+	call	($pointer_offset_x)
+	pop	$dynamicp_x+1
+	sx	$dynamicp_x
+
+	$actionx
+
+	$else
+	lx	$pad
+	$pactionx
+	$endif
+
+	$elseif	"p(2, 1)"=$preplus
+	$do	$o('V'),	$note	preplus
+
+	lx	$pad
+	$advancex
+	sx	$pad
+	$pactionx
+
+	$elseif	"p(2, 1)"=$preminus
+	$do	$o('V'),	$note	preminus
+
+	lx	$pad
+	$advancexleft
+	sx	$pad
+	$pactionx
+
+	$elseif	"p(2, 1)"=$postplus
+	$do	$o('V'),	$note	postplus
+
+	lx	$pad
+	$pactionx
+	$advancex
+	sx	$pad
+
+	$elseif	"p(2, 1)"=$postminus
+	$do	$o('V'),	$note	postminus	
+
+	lx	$pad
+	$pactionx
+	$advancexleft
+	sx	$pad
+
+	$endif
+	$else
+	$do	$o('V'),	$note	location
+
+	.	this is a location and may be subscripted severally
+	.	with variable and literal subscripts 
+
+bytes_offset	$set	0
+
+	$do	p(2, 4)**7^=0,	$note	target not at octet position, bit positions overstepped
+bytes_offset		$set	p(2, 4)*7/*3
+
+subscript_variables	$set	0
+
+
+?	$do	$boxs\p(2, 1),	$do	$boxt\p(2, 1)=0,;
+bytes_offset	$set	bytes_offset+$box\p(2, 1)
+
+?	$do	$boxs\p(2, 1),	$do	$boxt\p(2, 1),;
+subscript_variables	$set	subscript_variables+1
+
+basis	$equf	p(2)+bytes_offset/3
+bytes_offset $set bytes_offset///3
+
+	$do	$o('V'),	$trace	basis
+	$do	$o('V'),	$trace	bytes_offset
+	$do	$o('V'),	$trace	subscript_variables
+
+	$if	subscript_variables
+	push	basis,,i
+	lx	bytes_offset,,xi
+?	$do	$boxs\p(2, 1),	$do	$boxt\p(2, 1), 	;
+	ax	$box\p(2, 1)
+	call	($table_subscript_x)
+	pop	$dynamicp_x+1
+	sx	$dynamicp_x
+
+	$actionx
+
+	$else
+	p(1, 1)	basis,,t1+bytes_offset
+	$endif
+	$endif
+	$end

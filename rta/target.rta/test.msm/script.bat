@@ -99,7 +99,6 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% oh.msm ..\test.rta\oh
 %MASMX% %FLAGS% once.msm ..\test.rta\once
 %MASMX% %FLAGS% onetime.msm ..\test.rta\onetime
-%MASMX% %FLAGS% oper8.msm ..\test.rta\oper8
 %MASMX% %FLAGS% oreally.msm ..\test.rta\oreally
 %MASMX% %FLAGS% oreilly.msm ..\test.rta\oreilly
 %MASMX% %FLAGS% overlap.msm ..\test.rta\overlap
@@ -170,6 +169,7 @@ lstring -b ..\test.rta\sowino.txo ..\test.rta\sowino
 %MASMX% %FLAGS% tcolumn.msm ..\test.rta\tcolumn
 %MASMX% %FLAGS% tptr.msm ..\test.rta\tptr
 %MASMX% %FLAGS% tryhard.msm ..\test.rta\tryhard
+%MASMX% %FLAGS% tsoper8.msm ..\test.rta\tsoper8
 %MASMX% %FLAGS% types.msm ..\test.rta\types
 %MASMX% %FLAGS% unary.msm ..\test.rta\unary
 %MASMX% %FLAGS% unary2.msm ..\test.rta\unary2
