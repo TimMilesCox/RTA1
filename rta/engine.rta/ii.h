@@ -43,6 +43,7 @@
 
 #define	II_YIELD 65
 #define	II_TXIT	70
+#define	II_XPO	79
 #define	XBASE_U	95
 
 #undef	T_SLICE

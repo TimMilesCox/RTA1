@@ -43,6 +43,7 @@
 
 
 #include <stdio.h>
+#include "ii.h"
 #include "emulate.h"
 #include "rw.h"
 #include "fpu.h"
@@ -170,7 +171,23 @@ static void store_minor_result(int signs, int characteristic, int result[])
    if (normalising_count < 72) characteristic -= normalising_count;
    else                        characteristic = 0;
 
-   characteristic &= 0x007FFFFF;
+   if (characteristic & 0xFF800000)
+   {
+      /**********************************************
+	the minor part cannot be represented
+      **********************************************/
+
+      #ifdef XPO_INTERRUPT
+      XPO_INTERRUPT
+      return;
+      #else
+      characteristic = 0;
+      result[0] = signs;
+      result[1] = signs;
+      result[2] = signs;
+      #endif
+   }
+
    scalea  = characteristic ^ signs;
    mantissa1a = result[0];
    mantissa2a = result[1];
@@ -401,6 +418,7 @@ static void ones_add(int ea, int direction)
                  characteristic,
                  carry;
 
+
    burst_read4(biased_addend, ea);
 
    biased_addend[0] ^= direction;
@@ -476,6 +494,20 @@ static void ones_add(int ea, int direction)
 
          characteristic += carry;
          if (carry < -71) characteristic = 0x00400000;
+
+         #ifdef XPO_INTERRUPT
+         if (characteristic & 0xFF800000)
+         {
+            /***************************************************
+		exponent overflow or underflow
+		indicate for application
+		and take other default ISR action
+            ***************************************************/
+
+            XPO_INTERRUPT
+            return;
+         }
+         #endif
 
          if ((normalised_addend[0] ^ normalised_addend[1]) & 0x00800000)
          {
@@ -677,7 +709,9 @@ void fm(int ea)
          characteristic--;
       }
 
+      #if 0
       characteristic &= 0x007FFFFF;
+      #endif
 
       /**************************************************************
 		because of the conditional shift left just above
@@ -698,7 +732,18 @@ void fm(int ea)
 
          ************************************************************/
 
+         #ifdef XPO_INTERRUPT
+         XPO_INTERRUPT
+         return;
+
+         /***************************************************
+		indicate for application
+		and other default ISR action
+         ***************************************************/
+
+         #else
          characteristic = 0x007FFFFF;
+         #endif
       }
 
       /***************************************************************
@@ -763,6 +808,7 @@ void fd(int ea)
 		 beats = 72,
                  mantissa_words = 3,
                  carry;
+
 
    burst_read4(divisor, ea);
 
@@ -837,6 +883,12 @@ void fd(int ea)
 
    reciprocal[0] = remainder[0] - divisor[0] + 0x00400001;
 
+   #if 0
+   printf("[%8.8x:%8.8x:%8.8x:%8.8x:%8.8x:%8.8x:%8.8x]\n",
+           reciprocal[0], reciprocal[1], reciprocal[2],
+           reciprocal[3], reciprocal[4], reciprocal[5], reciprocal[6]);
+   #endif
+
    if (reciprocal[1] & 0x00800000)
    {
    }
@@ -854,7 +906,27 @@ void fd(int ea)
       }
    }
 
+   if (reciprocal[1] & 0x00800000)
+   {
+   }
+   else reciprocal[0] = 0;
+   
+
+   #ifdef XPO_INTERRUPT
+   if (reciprocal[0] & 0xFF800000)
+   {
+      /***************************************************
+		over or underflow exponent
+                indicate for application
+		and take default ISR action
+      ***************************************************/
+
+      XPO_INTERRUPT
+      return;
+   }
+   #else
    reciprocal[0] &= 0x007FFFFF;
+   #endif
 
    a = reciprocal[0] ^ signs1;
    b = reciprocal[1] ^ signs1;
