@@ -419,6 +419,8 @@ else							\
 							\
 ea &= 0x00FFFFFF;
 
+#define	WPROTECT
+#define	ABSOTS
 
 #define	YIELD_INTERRUPT	ii(II_YIELD);
 #define	GUARD_INTERRUPT	ii(XBASE_U);

@@ -52,3 +52,6 @@ extern void burst_write4(int *list, int ea);
 
 extern word memory_read(int ea);
 
+#ifdef ABSOTS
+extern word *memory_hold(int ea);
+#endif

@@ -39,6 +39,9 @@ rem #    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
 rem #
 rem #
 
+echo	the viable system image build is .\micro.bat -d
+echo	this file .\make.bat is a place holder for future image builds and not currently viable
+exit
 
 del system.txo
 

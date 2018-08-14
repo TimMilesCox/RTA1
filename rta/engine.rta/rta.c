@@ -472,6 +472,33 @@ void execute(word instruction)
 
                *************************************************/
 
+
+               #ifdef ABSOTS
+
+               /************************************************
+                  operand_read() and operand_write()
+                  don't look at the designator argument
+                  before classing EA in register range
+                  so switch ABSO uses * _w = memory_hold(ea)
+                  to get a pointer for TS instruction
+                  and that is one less call to operand_etc()
+
+                  of course TS target is never in range 0..255
+               ************************************************/
+
+	       _w = memory_hold(ea);
+               if (_w == NULL) break;
+               v = _w->t1;
+               v ^= 128;
+
+               if (v & 128)
+               {
+                  _w->t1 = v;
+                  apc++;
+               }
+
+               #else
+
                v = operand_read(ea, 7);
                v ^= 0x00800000;
 
@@ -480,6 +507,9 @@ void execute(word instruction)
                   operand_write(v, ea, 7);
                   apc++;
                }
+
+               #endif
+
                break;
 
             case N:

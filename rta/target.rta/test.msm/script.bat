@@ -169,7 +169,6 @@ lstring -b ..\test.rta\sowino.txo ..\test.rta\sowino
 %MASMX% %FLAGS% tcolumn.msm ..\test.rta\tcolumn
 %MASMX% %FLAGS% tptr.msm ..\test.rta\tptr
 %MASMX% %FLAGS% tryhard.msm ..\test.rta\tryhard
-%MASMX% %FLAGS% tsoper8.msm ..\test.rta\tsoper8
 %MASMX% %FLAGS% types.msm ..\test.rta\types
 %MASMX% %FLAGS% unary.msm ..\test.rta\unary
 %MASMX% %FLAGS% unary2.msm ..\test.rta\unary2
@@ -185,6 +184,10 @@ cd ..\language
 %MASMX% %FLAGS% i_xpr ..\test.rta\i_xpr
 %MASMX% %FLAGS% individu ..\test.rta\individu
 %MASMX% %FLAGS% r2xample ..\test.rta\r2xample
+popd
+pushd oper8
+%MASMX% %FLAGS% oper8 ..\..\test.rta\oper8
+%MASMX% %FLAGS% tsoper8 ..\..\test.rta\tsoper8
 popd
 @echo on
 seeif -avVW list.txt newlist.txt

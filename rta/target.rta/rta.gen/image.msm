@@ -131,48 +131,56 @@ load_image
 	$do		$<256,$(0:256)
 
 $(0:0:TRANSFER_PAGE)
-	j		start
-	j		yield
-	j		spawn_ii
-	j		bank_ii
-	j		array_ii
-	j		bank_free_ii
-	j		exit
-	j		thread
-	j		freetotal_ii
-	j		rt_yield		. without T$SLICE this jumps to yield = rt_yield
+		j		start
+		j		yield		. YIELD$*
+		j		spawn_ii	. SPAWN$*	
+		j		bank_ii		. BANK$*
+		j		array_ii	. ARRAY$*
+		j		bank_free_ii	. BANK$FREE*
+		j		exit		. EXIT$*
+		j		thread		. THREAD$*
+		j		freetotal_ii	. TOTAL$FREE*
+		j		rt_yield	. RT$YIELD* without T$SLICE this jumps to yield = rt_yield
 						. with T$SLICE yield is altered and this stays the same
 	$do		14-$,	ir	0
 
-	j		fpxpo_read_clear_ii
-	j		fpxpo_ii
-	j		handle_ii
-	j		free_handle_ii
-	j		read_handle_ii
-	j		read_xvector_ii
-	j		write_xvector_ii
-	j		read_socket_ii
-	j		uhandle_ii
-	j		kernel_b1_ii
-	j		b1_ii
-	j		kernel_b1_ii_1
-	j		dayclock_w_ii
-	j		twait_ii
-	j		event_wait_ii
-	j		event_free_ii
-	j		switch_fp_guard_ii
+		j		fpxpo_read_clear_ii	. FP_XPO$FLAG*
+		j		fpxpo_ii		. FP_XPO$*
+		j		handle_ii		. HANDLE$*
+		j		free_handle_ii		. FREE_HANDLE$*
+		j		read_handle_ii		. READ_HANDLE$*
+		j		read_xvector_ii		. READ_XVECTOR$*
+		j		write_xvector_ii	. WRITE_XVECTOR$*
+		j		read_socket_ii		. READ_SOCKET$*
+		j		uhandle_ii		. UHANDLE$*
+		j		kernel_b1_ii		. KERNEL$B1*
+		j		b1_ii			. B1$*
+		j		kernel_b1_ii_1		. KERNEL$B1_1*
+		j		dayclock_w_ii		. DAYCLOCK$W*
+		j		twait_ii		. TWAIT$*
+		j		event_wait_ii		. EVENT_WAIT$*
+		j		event_free_ii		. EVENT_FREE$*
+		j		switch_fp_guard_ii	. FP_GUARD$*
 
 	$do		31-$,	ir	0
 
-	j		xbase_u		. this must stay at this address 1:31
+		j		xbase_u		. GUARD$* this must stay at this address 1:31
 
-?	$do		12,		j	xbase(?+32-1)
+?	$do	12,	j	xbase(32+?-1)
 
-	$do		61-$,	ir	0
-					. these must stay at adresses 1:61..1:63
-	j		i_alert		. broadcasted preemptive event notify
-	j		i_time		. broadcasted new dayclock value
-	j		i_timer		. incrementer overflow
+	$if		$K_WPROTECT
+"$TCBLOCKS"*	$vector		a_tcbloc_ii
+"$X_RXB"*	$vector		x_rxb_ii 
+"$B_TXB"*	$vector		b_txb_ii
+	$endif
+
+	$do		60-$,	ir	0
+
+		ir	0			. ATTENTION$*
+						. these must stay at adresses 1:61..1:63
+		j		i_alert		. ALERT$* broadcasted preemptive event notify
+		j		i_time		. TIME$POINT* broadcasted new dayclock value
+		j		i_timer		. TIMER$* incrementer overflow
 
 freetotal_ii				. count up of all free memory banks
 	lcal		available_banks
@@ -469,6 +477,26 @@ b1_ii	on		see$1	. ++see$2
 	la		*B1_P
 	outA		1
 	ir		0
+
+	$if		$K_WPROTECT
+
+x_rxb_ii
+	la		x		. application x
+	sa		rx_buffers	. kernel and IP B2 are the same
+	ir		0
+
+b_txb_ii
+	la		b		. application b
+	sa		tx_buffers	. kernel and IP B2 are the same
+	ir		0
+
+a_tcbloc_ii
+	la		a
+	sa		tcx_v4(1)
+	z		tcx_v4(2)
+	ir	0
+
+	$endif
 
 dayclock_w_ii
 	dl		a

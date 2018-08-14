@@ -110,6 +110,20 @@ int device_read(int device_index, int relocation_base, int offset)
 }
 
 
+/***************************************************************
+   memory_read() is called by instructions which take
+   only a single word memory operand and never a register,
+   notably the instructions
+
+	execute
+
+   and therefore has different rules from operand_read()
+
+   memory_read() is also callable from emulator debug console
+
+***************************************************************/
+
+
 word memory_read(int ea)
 {
    static word	 outside_executable_space = { 0, II, 0, (1 << 6) | 31 } ;
@@ -130,6 +144,11 @@ word memory_read(int ea)
       index >>= 12;
    }
 
+   if ((index) && ((index & 0x38) == 0))
+   {
+      if ((32768 >> index) & psr) index |= 64;
+   }
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -145,6 +164,16 @@ word memory_read(int ea)
          return outside_executable_space;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         if (psr & 0x00800000) return nop;
+         return outside_executable_space;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -156,6 +185,136 @@ word memory_read(int ea)
 
    return memory.array[offset];
 }
+
+#ifdef ABSOTS
+               
+/************************************************
+   operand_read() and operand_write()
+   don't look at the designator argument
+   before classing EA in register range
+   so switch ABSO uses * abso = memory_hold(ea)
+   to get a pointer for TS instruction
+   and that is one less call to operand_etc()
+
+   of course TS target is never in range 0..255
+************************************************/
+
+word *memory_hold(int ea)
+{
+   unsigned      relocation_base, offset;
+   unsigned	 alternate = 0;
+   int           index = ea & 0x00FC0000;
+
+   if (index)
+   {
+      offset = ea & 0x0003FFFF;
+      index >>= 18;
+   }
+   else
+   {
+      index  = ea & 0x0003F000;
+      offset = ea & 0x00000FFF;
+      index >>= 12;
+   }
+
+   if (index & 0x38)
+   {
+   }
+   else
+   {
+      if ((index == 0)
+      ||  (alternate = ((32768 >> index) & psr))
+      ||  (index == 2))
+      {
+         if (psr & 0x00800000)
+         {
+            /************************************
+               interrupt code may lock
+               anywhere in executable space
+               for update
+            ************************************/
+         }
+         else
+         {
+            GUARD_INTERRUPT
+            return NULL;
+         }
+      }
+
+      if (alternate) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   if ((index) && (index < 8))
+   {
+      if ((psr << index) & 32768) relocation_base = base[index | 64];
+   }
+
+   if (relocation_base & 0x00400000)
+   {
+      if (relocation_base & 63)
+      {
+         /********************************************
+            currently nothing outside executable space
+            can be locked for update
+            but this may change for memories similar
+            to system memory in other device arrays
+         *********************************************/
+
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+	 return NULL;
+      }
+   }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095
+            in 4096-word blocks
+         ********************************************/
+
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return NULL;
+      }
+   }
+   #endif
+
+   offset |= (relocation_base & 0x003FFFFF) << 12;
+
+   if (offset > WORDS_IN_MEMORY-1)
+   {
+      if (psr & 0x00800000)
+      {
+      }
+      else
+      {
+         GUARD_INTERRUPT;
+      }
+
+      return NULL;
+   }
+
+   return memory.array + offset;
+}
+
+#endif		/*	ABSOTS	*/
 
 unsigned int operand_read(int ea, int designator)
 {
@@ -181,6 +340,27 @@ unsigned int operand_read(int ea, int designator)
       offset = ea & 0x00000FFF;
    }
 
+   #ifdef WPROTECT
+
+   /********************************************************
+      this is not intended as a logic change
+      but aims to be more efficient
+      by shifting a flag bit and then ORing psr onto it
+      and only fetching relocation_base once
+   ********************************************************/
+
+   if (index & 0x38)
+   {
+   }
+   else if (index)
+   {
+      if ((32768 >> index) & psr) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   #else
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -188,13 +368,59 @@ unsigned int operand_read(int ea, int designator)
       if (psr & (32768 >> index)) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+         
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory read address nowhere is a non-device
+               don't read from nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          return device_read(device_index, relocation_base, offset);
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -281,6 +507,27 @@ void burst_read2(int *list, int ea)
       offset = ea & 0x00000FFF;
    }
 
+   #ifdef WPROTECT
+
+   /********************************************************
+      this is not intended as a logic change 
+      but aims to be more efficient
+      by shifting a flag bit and then ORing psr onto it
+      and only fetching relocation_base once
+   ********************************************************/
+
+   if (index & 0x38)
+   {
+   }
+   else if (index)
+   {
+      if ((32768 >> index) & psr) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   #else
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -288,15 +535,61 @@ void burst_read2(int *list, int ea)
       if ((psr << index) & 32768) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory read address nowhere is a non-device
+               don't read from nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          *list       = device_read(device_index, relocation_base, offset);
          *(list + 1) = device_read(device_index, relocation_base, offset + 1);
          return;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -347,15 +640,60 @@ void burst_read4(int *list, int ea)
 
    relocation_base = base[index];
 
+   #ifdef WPROTECT 
+
+   /********************************************************
+      this is not intended as a logic change
+      but aims to be more efficient
+      by shifting a flag bit and then ORing psr onto it
+      and only fetching relocation_base once
+   ********************************************************/
+   
+   if (index & 0x38)
+   {
+   }
+   else if (index)
+   {  
+      if ((32768 >> index) & psr) index |= 64;
+   }
+         
+   relocation_base = base[index];
+
+   #else
+
    if ((index) && (index < 8))
    {
       if ((psr << index) & 32768) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory read address nowhere is a non-device
+               don't read from nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          *list       = device_read(device_index, relocation_base, offset);
          *(list + 1) = device_read(device_index, relocation_base, offset + 1);
          *(list + 2) = device_read(device_index, relocation_base, offset + 2);
@@ -363,6 +701,28 @@ void burst_read4(int *list, int ea)
          return;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -432,6 +792,7 @@ static void device_write(int v, int device_index, int relocation_base, int offse
 void operand_write(int v, int ea, int designator)
 {
    unsigned		 index, offset, relocation_base, device_index;
+   unsigned		 alternate = 0;
 
    word			*w24p;
 
@@ -439,13 +800,22 @@ void operand_write(int v, int ea, int designator)
    {
       if (psr & 0x00800000)
       {
+         /**********************************************
+            interrupt code may write all registers
+         **********************************************/
       }
       else
       {
-         if (ea < 128)
+         if (ea & 128)
          {
+            /*******************************************
+               application code may not
+               write registers at 128+
+            *******************************************/
+
+            GUARD_INTERRUPT
+            return;
          }
-         else return;
       }
 
       _register[ea] = v;
@@ -463,6 +833,54 @@ void operand_write(int v, int ea, int designator)
       offset = ea & 0x00000FFF;
    }
 
+   #ifdef WPROTECT
+
+   if (index & 0x38)
+   {
+   }
+   else
+   {
+      /***************************************************
+	only interrupt code may write
+
+		B0 instruction window
+		B2 vector window
+		B65 thread control block
+		B66..71 kernel data
+
+	the compiler must conform to known expectations
+	about resolution order of compound conditions
+	and implementors in platform assembler must program:
+
+	first:	if B0 jump to test for interrupt code
+
+        second:	produce alternate as unconditional side-effect
+		and if alternate jump to test for interrupt code
+
+	third:	if B2 jump to test for interrupt code
+      ***************************************************/
+
+      if ((index == 0)
+      ||  (alternate = ((32768 >> index) & psr))
+      ||  (index == 2))
+      {
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+            return;
+         }
+      }
+
+      if (alternate) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   #else
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -470,14 +888,60 @@ void operand_write(int v, int ea, int designator)
       if ((psr << index) & 32768) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+         
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory write target nowhere is a non-device
+               don't write to nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          device_write(v, device_index, relocation_base, offset);
          return;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -529,6 +993,7 @@ void operand_write(int v, int ea, int designator)
 void burst_write2(int *list, int ea)
 {
    unsigned		 device_index, index, relocation_base, offset;
+   unsigned		 alternate = 0;
 
    int			*w24p;
 
@@ -539,13 +1004,23 @@ void burst_write2(int *list, int ea)
    {
       if (psr & 0x00800000)
       {
+         /**********************************************
+            interrupt code may write all registers
+            including a few spares at 256+
+         **********************************************/
       }
       else
       {
-         if (ea < 127)
+         if (ea > 126)
          {
+            /*******************************************
+               application code may not
+               write registers at 128+
+            *******************************************/
+            
+            GUARD_INTERRUPT
+            return;
          }
-         else return;
       }
 
       _register[ea]     = v;
@@ -564,6 +1039,54 @@ void burst_write2(int *list, int ea)
       offset = ea & 0x00000FFF;
    }
 
+   #ifdef WPROTECT
+
+   if (index & 0x38)
+   {
+   }
+   else
+   {
+      /***************************************************
+        only interrupt code may write
+
+                B0 instruction window
+                B2 vector window
+                B65 thread control block
+                B66..71 kernel data
+
+        the compiler must conform to known expectations
+        about resolution order of compound conditions
+        and implementors in platform assembler must program:
+
+        first:  if B0 jump to test for interrupt code
+
+        second: produce alternate as unconditional side-effect
+                and if alternate jump to test for interrupt code
+
+        third:  if B2 jump to test for interrupt code
+      ***************************************************/
+
+      if ((index == 0)
+      ||  (alternate = ((32768 >> index) & psr))
+      ||  (index == 2))
+      {
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+            return;
+         }
+      }
+
+      if (alternate) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   #else
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -571,15 +1094,62 @@ void burst_write2(int *list, int ea)
       if ((psr << index) & 32768) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+         
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory write target nowhere is a non-device
+               don't write to nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          device_write(v, device_index, relocation_base, offset);
          device_write(w, device_index, relocation_base, offset + 1);
          return;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
+
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
@@ -604,6 +1174,7 @@ void burst_write2(int *list, int ea)
 void burst_write4(int *list, int ea)
 {
    unsigned		 device_index, index, relocation_base, offset;
+   unsigned		 alternate = 0;
 
    int			*w24p;
 
@@ -616,13 +1187,23 @@ void burst_write4(int *list, int ea)
    {
       if (psr & 0x00800000)
       {
+         /**********************************************
+            interrupt code may write all registers
+            including a few spares at 256+
+         **********************************************/
       }
       else
       {
-         if (ea < 125)
+         if (ea > 124)
          {
+            /*******************************************
+               application code may not
+               write registers at 128+
+            *******************************************/
+    
+            GUARD_INTERRUPT
+            return;
          }
-         else return;
       }
 
       _register[ea]     = v;
@@ -643,6 +1224,54 @@ void burst_write4(int *list, int ea)
       offset = ea & 0x00000FFF;
    }
 
+   #ifdef WPROTECT
+
+   if (index & 0x38)
+   {
+   }
+   else
+   {
+      /***************************************************
+        only interrupt code may write
+
+                B0 instruction window
+                B2 vector window
+                B65 thread control block
+                B66..71 kernel data
+
+        the compiler must conform to known expectations
+        about resolution order of compound conditions
+        and implementors in platform assembler must program:
+
+        first:  if B0 jump to test for interrupt code
+
+        second: produce alternate as unconditional side-effect
+                and if alternate jump to test for interrupt code
+
+        third:  if B2 jump to test for interrupt code
+      ***************************************************/
+
+      if ((index == 0)
+      ||  (alternate = ((32768 >> index) & psr))
+      ||  (index == 2))
+      {
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+            return;
+         }
+      }
+
+      if (alternate) index |= 64;
+   }
+
+   relocation_base = base[index];
+
+   #else
+
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -650,10 +1279,34 @@ void burst_write4(int *list, int ea)
       if ((psr << index) & 32768) relocation_base = base[index + 64];
    }
 
-   if ((relocation_base & 0x00C00000) == 0x00400000)
+   #endif
+
+   if (relocation_base & 0x00400000)
    {
       if (device_index = relocation_base & 63)
       {
+         #ifdef WPROTECT
+         
+         if (relocation_base & 0x00800000)
+         {
+            /*********************************************
+               memory write target nowhere is a non-device
+               don't write to nowhere whoever you are
+            *********************************************/
+
+            if (psr & 0x00800000)
+            {
+            }
+            else
+            {
+               GUARD_INTERRUPT
+            }
+
+            return;
+         }
+
+         #endif
+
          device_write(v,  device_index, relocation_base, offset);
          device_write(w,  device_index, relocation_base, offset + 1);
          device_write(_u, device_index, relocation_base, offset + 2);
@@ -661,6 +1314,28 @@ void burst_write4(int *list, int ea)
          return;
       }
    }
+   #ifdef WPROTECT
+   else
+   {
+      if (offset & 0x0003F000)
+      {
+         /********************************************
+            you can't do offsets > 4095 
+            in 4096-word blocks
+         ********************************************/
+         
+         if (psr & 0x00800000)
+         {
+         }
+         else
+         {
+            GUARD_INTERRUPT
+         }
+
+         return;
+      }
+   }
+   #endif
 
    offset |= (relocation_base & 0x003FFFFF) << 12;
 
