@@ -1,8 +1,17 @@
 #include <stdio.h>
+#include <string.h>
 #include <ifaddrs.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+
+#ifdef	LINUX
+#include <linux/if_packet.h>
+#else
+#include <net/if_dl.h>
+#endif
+
+#include "../include.rta/argue.h"
 
 unsigned char * physa(unsigned char *name)
 {
@@ -12,8 +21,17 @@ unsigned char * physa(unsigned char *name)
    int				 x;
    unsigned char		*q;
 
+   #ifdef LINUX
+   struct sockaddr_ll		*asoc;
+   #else
+   struct sockaddr_dl		*asoc;
+   #endif
+
+   if (flag['v'-'a']) putchar('.');
+
    if (list == NULL)
    {
+      if (flag['v'-'a'])  putchar(':');
       x = getifaddrs(&list);
 
       if (x < 0) return NULL;
@@ -24,11 +42,30 @@ unsigned char * physa(unsigned char *name)
 
    while (p)
    {
+      if (flag['v'-'a']) printf("[%s]", p->ifa_name);
       x = strcmp(name, p->ifa_name);
+
       if (x == 0)
       {
-         q = (unsigned char *) p->ifa_addr;
-         if ((*q == 20) && (*(q + 1) == 18)) return (unsigned char *) (q + 11);
+	 if (flag['v'-'a'])
+         {
+            q = (unsigned char *) p->ifa_addr;
+	    putchar('[');
+	    x = sizeof(struct ifaddrs);
+	    while (x--) printf("%2.2x", *q++);
+	    printf("]\n");
+         }
+
+         asoc = (struct sockaddr_ll *) p->ifa_addr;
+
+         #ifdef LINUX
+	 if (asoc->sll_family == AF_PACKET) return asoc->sll_addr; 
+         #else
+         if (asoc->sdl_family == AF_LINK)
+         {
+             return (unsigned char *) asoc->sdl_data + asoc->sdl_nlen;
+         }
+         #endif
       }
 
       p = p->ifa_next;
