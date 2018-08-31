@@ -1,168 +1,1235 @@
 #include <stdio.h>
-#include <fcntl.h>
-#include <stdlib.h>
-#include <unistd.h>
+#include <string.h>
 
-#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/time.h>
+#include <sys/ioctl.h>
+
+#ifdef  LINUX
+#define DLT_NULL        0
+#define DLT_EN10MB      1
+#include <linux/bpf.h>
 #include <linux/filter.h>
-#include <netinet/in.h>
 #include <linux/if_ether.h>
 #include <linux/if_packet.h>
+#ifdef	INTEL
+#define	EVERYTHING ETH_P_ALL << 8
+#else
+#define	EVERYTHING ETH_P_ALL
+#endif
+#else
+#include <net/bpf.h>
+#endif
 
+#include <sys/socket.h>
+#include <net/if.h>
+#include <netinet/in.h>
+
+#include <fcntl.h>
 #include <errno.h>
 
-#define	DATA	16384
+#include <sys/shm.h>
+#include <pthread.h>
 
-#ifdef	INTEL
-#define	PLATFORM_LE	1
-#define	EVERYTHING	ETH_P_ALL << 8
+#include "../include.rta/argue.h"
+#include "../netifx/ifconfig.h"
+#include "../rta.run/settings.h"
+#include "../include.rta/address.h"
+#include "../netifx/sifr_mm.h"
+#include "../include.rta/physa.h"
+
+
+//	#define	IP		PORT(0x0800)
+//	#define	FRAME		FORWARD(0x8000)
+#define	LLHL		0
+//	#define FORWARD(X)      PORT(X) & 65535
+#define	MASKS		120
+
+static int			 iftype[INTERFACES];
+static int			 s[INTERFACES];
+static struct ifreq		 sandl[INTERFACES];
+static struct sock_fprog	 bpfp[INTERFACES];
+static struct sockaddr_ll	 rxtxa[INTERFACES];
+static unsigned int		 one = 1;
+static unsigned int		 zero;
+
+static unsigned int		 maximum;
+static int			 halt_flag;
+
+/**********************************************
+	shared memory anf r/w cursors
+**********************************************/
+
+static mm_netdevice     *netdata;
+static mm_netbuffer	*rxdata;
+static mm_netbuffer     *txdata;
+
+/**********************************************
+	filter rules and assignment pointer
+**********************************************/
+
+static unsigned char     instruction[MASKS][8];
+static unsigned char	*heap = instruction[0];
+
+// static struct bpf_hdr	 intro = { { 0, 0 } , 0, 0, sizeof(struct bpf_hdr) } ;
+
+
+/**********************************************
+
+	async()
+        reads stdin to allow option switching
+        and clean halt if wished
+
+**********************************************/
+
+
+static unsigned short udp_checksum(int bytes, char *user_datagram, char *net_addresses);
+static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses);
+
+#ifdef	LINUX
 #else
-#define	PLATFORM_LE	0
-#define	EVERYTHING	ETH_P_ALL
+static void diagnose(unsigned char *buffer_start,
+                     unsigned char *scan_point,
+                     int header_bytes, int packet_bytes, int buffer_bytes);
 #endif
 
-#define	FILTER_CANONICAL 0
-
-#define	REVERSE	PLATFORM_LE & FILTER_CANONICAL
-
-#if	REVERSE
-#define	LOAD16	0x2800
-#define	LOAD32	0x2000
-#define	TEST	0x1500
-#define	RETURN	0x0600
-#define	ETHTYPE	0x0C000000
-#define	ARP	0x06080000
-#define	IP	0x00080000
-#define	IPDEST	0x1e000000
-#else
-#define	LOAD16	40
-#define	LOAD32	32
-#define	TEST	21
-#define	RETURN	6
-#define	ETHTYPE	12
-#define	ARP	0x0806
-#define	IP	0x0800
-#define	IPDEST	30
-#endif
-
-/*******************************************************************************
-	Linux: Software Loopback lo gets 6-octet zero physical addresses
-	plus ETHTYP 0800
-	so loopback and external interfaces have the same LL header
-*******************************************************************************/
-
-
-static struct sock_filter	 filter[] = { 	{ LOAD16,	0, 0, ETHTYPE	} ,
-						{ TEST,		1, 0, IP	} ,
-						{ TEST,		5, 4, ARP	} ,
-						{ LOAD32,	0, 0, IPDEST	} ,
-						{ TEST,		3, 0, 0xac1d0707 } ,
-						{ TEST,		2, 0, 0xac1d0715 } ,
-						{ TEST,		1, 0, 0xac1d074b } ,
-                                                { RETURN,	0, 0, 0		} ,
-                                                { RETURN,	0, 0, -1	} } ;
-
-static struct sock_fprog	 bpfilters =	{ 9, filter } ;
-
-static struct sockaddr_ll	 here = { AF_PACKET, EVERYTHING, 0, 0, 0, 6 } ;
-static long			 twenty = 20;
-
-int main(int argc, char *argv[])
+static void *async()
 {
-   unsigned char	 data[DATA];
-//   char			*device = argv[1];
-   int			 s = socket (AF_PACKET, SOCK_RAW, EVERYTHING);
-   int			 x;
-   int			 laf;
+   char                  request[64];
+   int                   symbol;
+   int                   x, y;
+
+   unsigned char        *p;
+
+   for (;;)
+   {
+      p = fgets(request, 62, stdin);
+      if (!p) continue;
+
+      switch(request[0])
+      {
+         case '-':
+            p++;
+
+            while (symbol = *p++)
+            {
+               if ((symbol > 'A'-1) && (symbol < 'Z'+1)) uflag[symbol-'A'] ^= 1;
+               if ((symbol > 'a'-1) && (symbol < 'z'+1))  flag[symbol-'a'] ^= 1;
+            }
+
+            break;
+
+         case '.':
+            printf("stop the interface? key . again>");
+            p = fgets(request, 62, stdin);
+            if (!p) continue;
+            if (request[0] == '.') halt_flag = -1;
+            if (flag['v'-'a']) printf("service %c\n", *p);
+            break;
+
+         case '|':
+            y = open(request+2, O_CREAT | O_TRUNC | O_RDWR, 0777);
+            if (y < 0) printf("oE %d\n", errno);
+            else
+            {
+               for (x = 0; x < txdata - netdata->o; x++) write(y,  &netdata->o[x], sizeof(mm_netbuffer));
+               close(y);
+               printf("%d blocks\n", x);
+            }
+            break;
+      }
+   }
+}
+
+static void outputq()
+{
+   mm_netbuffer         *q = txdata;
+
+   int                   x,
+                         iphl,
+                         bytes,
+                         y;
+
+   unsigned short        psum, csum;
+
+   unsigned char	*dgram;
+   unsigned char        *ipayload;
+   unsigned short       *wpayload;
+
+   char                  pbuffer[24];
+   int                   k, symbol;
+
+   unsigned short        interface,
+                         llhl,
+                         tx_bytes,
+			 dgraml;
+
+   int			 fdes;
    unsigned char	*p;
 
-   if (s < 0)
-   {
-      printf("socket error %d\n", errno);
-   }
-   else
-   {
-      printf("socket %d\n", s);
-      x = setsockopt(s, SOL_SOCKET, SO_ATTACH_FILTER, &bpfilters, sizeof(bpfilters));
-      printf("[socopt %d %d ?device]\n", x, (x < 0) ? errno : 0 /*, device */);
+   struct timeval	 txtime;
 
-      if (x < 0) printf("nonstart\n");
+
+   while (q->preamble.flag & FRAME)
+   {
+      interface = PORT(q->preamble.i_f);
+
+      switch (iftype[interface])
+      {
+         case DLT_NULL:
+            llhl = 14;
+            break;
+
+         default:
+            llhl = 14;
+      }
+
+      dgram = q->frame + llhl;
+
+      tx_bytes = PORT(q->preamble.frame_length);
+      dgraml = tx_bytes - llhl;
+
+      if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
+
+      x = tx_bytes;
+      fdes = s[interface];
+
+      p = q->frame;
+      if (iftype[interface] == DLT_NULL)
+      {
+         printf("[%p:%x--", p, x);
+         p += 4;
+         x -= 4;
+         printf("%p:%x]\n", p, x);
+      }
+      #if 0
       else
       {
-         if (argc > 1)
-	 {
-            /**************************************************************************************
-		notes
-		bind a handle to an interface in order to execute a filter with few tests
-  		i.e is it: [ARP?] IP? an IP address assigned to this interface? 
+         intro.bh_caplen = x;
+         intro.bh_datalen = x;
+         write(fdes, &intro, sizeof(intro));
+      }
+      #endif
 
-		do not imagine sockaddr_ll is 16 bytes long. bind() will never work if you do
+      y = write(fdes, p, x);
 
-		alternatively don't do this bind
-		let the kernel multiplex all your packets on one socket
-		and demultiplex them according to ifindex
-            **************************************************************************************/
+      if (flag['v'-'a'])
+      {
+         #if 0
+         oversee(netdata->o, q);
+         #endif
 
-	    here.sll_ifindex = atoi(argv[1]);
-
-            if (argc > 2)
-	    {
-	       laf = open(argv[2], O_RDONLY, 0777);
-	       if (laf < 0) printf("link address file not available %d\n", errno);
-	       else read(laf, here.sll_addr, 6);
-	       close(laf);
-            }
-
-            x = bind(s, (struct sockaddr *) &here, sizeof(here));
-
-	    if (x < 0)
-	    {
-	        printf("bind wrong %d\n", errno);
-                printf("[af:%4.4x p:%4.4x ifidx:%8.8x haspa:%4.4x ptyp:%2.2x PhyAL %x::%2.2x:%2.2x:%2.2x:%2.2x:%2.2x:%2.2x]\n",
-                   here.sll_family, here.sll_protocol, here.sll_ifindex, here.sll_hatype, here.sll_pkttype,
-                   here.sll_halen, here.sll_addr[0], here.sll_addr[1], here.sll_addr[2], here.sll_addr[3], here.sll_addr[4], here.sll_addr[5]);
-            }
-	 }
-
-         printf("start listen\n");
-
-         for (;;)
+         if (uflag['W'-'A'])
          {
-            #ifdef RXMUX
-	    x = recvfrom(s, data, DATA, MSG_DONTWAIT, (struct sockaddr *) &here, &twenty);
-            #else
-	    x = recv(s, data, DATA, MSG_DONTWAIT);
-            #endif
+            gettimeofday(&txtime, NULL);
+            printf("[%d:%3.3d]", txtime.tv_sec % 86400, txtime.tv_usec / 1000);
+         }
 
-  	    if (x < 0)
+         printf("TX %d\n", y);
+         if (y < 0) printf("%d\n", errno);
+
+         if ((x) && (flag['u'-'a']))
+         {
+            iphl = (*dgram << 2) & 60;
+            ipayload = dgram + iphl;
+            wpayload = (unsigned short *) ipayload;
+
+            switch(dgram[9])
             {
-	       if (errno == EAGAIN)
-	       {
-	         usleep(3000);
-	         continue;
+               case IPPROTO_UDP:
+                  psum = wpayload[3];
+                  csum = udp_checksum(dgraml - iphl, ipayload, dgram + 12);
+
+                  #ifdef INTEL
+                  csum = (csum>>8)|(csum<<8);
+                  psum = (psum>>8)|(psum<<8);
+                  #endif
+
+                  printf("[%x:%x]\n", psum, csum);
+                  break;
+               case IPPROTO_TCP:
+                  psum = wpayload[8];
+                  csum = tcp_checksum(dgraml - iphl, ipayload, dgram + 12);
+
+                  #ifdef INTEL
+                  csum = (csum>>8)|(csum<<8);
+                  psum = (psum>>8)|(psum<<8);
+                  #endif
+
+                  printf("[%x:%x]\n", psum, csum);
+                  break;
+            }
+
+            if (flag['w'-'a'])
+            {
+               y = 0;
+               k = 0;
+               bytes = 0;
+               pbuffer[20] = 0;
+
+               putchar('[');
+               while (y < llhl) printf("%2.2x", q->frame[y++]);
+               printf("]\n");
+
+               while  (y < tx_bytes)
+               {
+                  if (k == 0) printf("%4.4x  ", bytes);
+                  symbol = (unsigned char) q->frame[y];
+                  printf("%2.2x", symbol);
+                  if (symbol < ' ') symbol = '.';
+                  if (symbol > 126) symbol = '.';
+                  pbuffer[k] = symbol;
+                  y++;
+                  k++;
+                  if (k == 20)
+                  {
+                     k = 0;
+                     bytes += 20;
+                     printf("    %s\n", pbuffer);
+                  }
                }
 
-	       break;
-	    }
+               if (k)
+               {
+                  pbuffer[k] = 0;
+                  while (k++ < 20) printf("  ");
+                  printf("    %s\n", pbuffer);
+               }
 
-            #ifdef RXMUX
-	    printf("[af:%4.4x p:%4.4x ifidx:%8.8x haspa:%4.4x ptyp:%2.2x PhyAL %x::%2.2x:%2.2x:%2.2x:%2.2x:%2.2x:%2.2x]",
-	           here.sll_family, here.sll_protocol, here.sll_ifindex, here.sll_hatype, here.sll_pkttype, 
-		   here.sll_halen, here.sll_addr[0], here.sll_addr[1], here.sll_addr[2], here.sll_addr[3], here.sll_addr[4], here.sll_addr[5]);
-            #endif
-
-            putchar('[');
-            p = data;
-   	    while (x--) printf("%2.2x", *p++);
-	    printf("]\n");
+               #if 0
+               for (y = 0; y < x; y++) printf("%2.2x", q->frame[y]);
+               putchar('\n');
+               #endif
+            }
+            putchar('\n');
          }
       }
 
-      printf("end listen\n");
-      if (x < 0) printf("E %d\n", errno);
+      q->preamble.flag = 0;
+      q++;
+
+      if (q > &netdata->o[DEVICE_PAGES / 2 - 1]) q = netdata->o;
    }
 
-   close(s);
+   txdata = q;
+}
+
+
+
+/**********************************************
+
+        adds a checksum if there is none
+        and returns IP header length in
+        bytes
+
+**********************************************/
+
+
+static int ip_checksum(unsigned short *q)
+{
+   #ifdef INTEL
+   int                   iphl = ((*q) & 0x000F) << 1;
+   #else
+   int                   iphl = ((*q) & 0x0F00) >> 7;
+   #endif
+
+   int                   x = iphl << 1;
+
+   unsigned short       *uph = q;
+   unsigned long         sum = 0;
+   unsigned short        checksum;
+
+   q[5] = 0;
+   while (iphl--) sum += *uph++;
+
+   checksum = sum;
+
+   while (sum >>= 16)
+   {
+      sum += checksum;
+      checksum = sum;
+   }
+
+   q[5] = checksum ^ 0xFFFF;
+
+   return x;
+}
+
+static void icmp_checksum(int bytes, char *icmp_message)
+{
+   unsigned short               *p = (unsigned short *) icmp_message;
+   unsigned long                 sum = *p++;
+   unsigned short                delivered = *p++;
+   unsigned short                carry;
+   unsigned short                x = (bytes + 1) >> 1;
+
+
+   if (bytes & 1) icmp_message[bytes] = 0;
+   x -= 2;
+
+   while (x--) sum += *p++;
+   carry = sum;
+
+   while (sum >>= 16)
+   {
+      sum += carry;
+      carry = sum;
+   }
+
+   /************************************************************
+
+        just checking
+        ICMP checksum appears to be correct even from
+        OSX loopback
+
+   ************************************************************/
+
+   carry ^= 65535;
+   if (carry ^ delivered) printf("[icmpCS>>%x/%x]", delivered, carry);
+}
+
+static unsigned short udp_checksum(int bytes,
+                                   char *user_datagram, char *net_addresses)
+{
+   unsigned short               *p = (unsigned short *) net_addresses;
+   unsigned short                x = (bytes+1) >> 1;
+
+   unsigned long                 sum = bytes + IPPROTO_UDP;
+   unsigned short                carry;
+
+   #ifdef INTEL
+   sum = ((sum >> 8) | (sum << 8)) & 65535;
+   #endif
+
+   sum += *p + p[1] + p[2] + p[3];
+//   if (flag['v'-'a']) printf("[%x:%lx:", bytes, sum);
+
+   p = (unsigned short *) user_datagram;
+   if (bytes & 1) user_datagram[bytes] = 0;
+   p[3] = 0;
+
+   while (x--) sum += *p++;
+
+//   if (flag['v'-'a']) printf("%lx]", sum);
+   carry = sum;
+
+   while (sum >>= 16)
+   {
+      sum += carry;
+      carry = sum;
+   }
+
+   p = (unsigned short *) user_datagram;
+   carry ^= 65535;
+   p[3] = carry;
+   return carry;
+}
+
+static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses)
+{
+   unsigned short               *p = (unsigned short *) net_addresses;
+   unsigned short                x = (bytes+1) >> 1;
+
+   unsigned long                 sum = bytes + IPPROTO_TCP;
+   unsigned short                carry;
+
+   #ifdef INTEL
+   sum = ((sum >> 8) | (sum << 8)) & 65535;
+   #endif
+
+   sum += *p + p[1] + p[2] + p[3];
+
+   p = (unsigned short *) tcp_segment;
+   if (bytes & 1) tcp_segment[bytes] = 0;
+
+   sum += *p + p[1] + p[2] + p[3] + p[4] + p[5] + p[6] + p[7]
+                                                       + p[9];
+   p += 10;
+   x -= 10;
+
+   while (x--) sum += *p++;
+   carry = sum;
+   while (sum >>= 16)
+   {
+      sum += carry;
+      carry = sum;
+   }
+
+   /*
+   p = (unsigned short *) tcp_segment;
+   p[8] = carry ^ 65535;
+   */
+   return carry ^ 65535;
+}
+
+/*****************************************************
+	b2b is like strcpy
+	but does not copy the trailing zero byte
+	although it would not matter if it did
+*****************************************************/
+
+static void b2b(unsigned char *to, unsigned char *from)
+{
+   int			 symbol;
+
+   while (symbol = *from++) *to++ = symbol;
+}
+
+#undef TRACE
+#ifdef TRACE
+
+static void sloco(unsigned char *to, unsigned char *from, int bytes)
+{
+   int			 symbol;
+
+   putchar('|');
+   while (bytes--)
+   {
+      symbol = *from++;
+      printf("%2.2x", symbol);
+      *to++ = symbol;
+   }
+   printf("|\n");
+}
+
+#endif
+
+static void forward(int x, unsigned char *p, int bytes)
+{
+   int			 j,
+			 y,
+			 dgraml,
+			 ll_hl,
+			 proto,
+			 symbol;
+
+   unsigned short	 csum, psum;
+
+   unsigned char	 showrow[16];
+
+         switch (iftype[x])
+         {
+            case DLT_NULL:
+               ll_hl = 14;
+               rxdata->preamble.protocol = IP;
+               break;
+
+            case DLT_EN10MB:
+               ll_hl = 14;
+               rxdata->preamble.protocol = *((unsigned short *) ((unsigned char *) p + 12));
+               break;
+
+            default:
+               ll_hl = 14;
+               rxdata->preamble.protocol = *((unsigned short *) ((unsigned char *) p + 12));
+         }
+
+         if (uflag['L'-'A']) rxdata->preamble.ll_hl = PORT(ll_hl);
+         else
+         {
+            /********************************************
+		only the datagram will be forwarded
+		advance pointer past link header
+		reduce octet count by link header
+		optionally print the link header
+            ********************************************/
+
+            if (flag['v'-'a'])
+            {
+               j = ll_hl;
+               while (j--) printf("%2.2x", *p++);
+               printf("]\n");
+            }
+            else p += ll_hl;
+
+            rxdata->preamble.ll_hl = 0;
+            bytes -= ll_hl;
+         }
+
+         rxdata->preamble.frame_length = PORT(bytes);
+         rxdata->preamble.i_f = PORT(x);
+
+         #ifdef TRACE
+         sloco(rxdata->frame, p, bytes);
+         #else
+         memcpy(rxdata->frame, p, bytes);
+         #endif
+
+         p = rxdata->frame;
+
+         if (uflag['L'-'A'])
+         {
+            /********************************************
+		the whole frame has been forwarded
+		now for display purposes
+		optionally print the link header
+		advance pointer to datagram
+		reduce octet count to datagram
+            ********************************************/
+
+            if (flag['v'-'a'])
+            {
+               j = ll_hl;
+               while (j--) printf("%2.2x", *p++);
+               printf("]\n");
+            }
+            else  p += ll_hl;
+
+            bytes -= ll_hl;
+         }
+
+         if ((flag['z'-'a']) && (rxdata->preamble.protocol == IP & 65535))
+         {
+            /************************************************
+
+                OSX on loopback writes zero IP checksum
+
+                and header part of UDP checksum (neither
+                zero nor the correct UDP checksum)
+
+                TCP checksum is also junk on loopback
+
+                although ICMP checksum is always correct
+
+                so execute with -Z or -z option on loopback
+
+                option -X or -x regenerates UDP checksums
+                instead of just clearing thayum
+
+            ***********************************************/
+
+            if (flag['v'-'a']) printf("[%4.4x]\n", rxdata->preamble.protocol);
+
+            dgraml = (p[2] << 8) | p[3];
+            y = ip_checksum((unsigned short *) p);
+
+            switch (p[9])
+            {
+               case IPPROTO_UDP:
+                  if (flag['x'-'a'])
+                  {
+                     psum = (p[y + 6] << 8)
+                          |  p[y + 7];
+                     udp_checksum(dgraml - y, p + y,
+                                              p + 12);
+                     csum = (p[y + 6] << 8)
+                          |  p[y + 7];
+                     if (flag['v'-'a'])
+                     printf("[UDP:%4.4x:%4.4x]\n", psum, csum);
+                  }
+                  else
+                  {
+                     p[y + 6] = 0;
+                     p[y + 7] = 0;
+                  }
+
+                  break;
+
+               case IPPROTO_ICMP:
+                  icmp_checksum(dgraml - y, p + y);
+                  break;
+
+               case IPPROTO_TCP:
+                  psum = (p[y + 16] << 8)
+                       |  p[y + 17];
+
+                  csum = tcp_checksum(dgraml - y, p + y,
+                                                  p + 12);
+                  if (flag['v'-'a'])
+                  printf("[TCP:%4.4x:%4.4x]\n", psum, csum);
+
+                  #ifdef INTEL
+                  p[y + 16] = csum;
+                  p[y + 17] = csum >> 8;
+                  #else
+                  p[y + 17] = csum;
+                  p[y + 16] = csum >> 8;
+                  #endif
+
+                  break;
+            }
+         }
+
+         if (flag['v'-'a'])
+         {
+            if (rxdata->preamble.protocol == IP & 65535)
+            {
+               y = ((*p) & 15) << 2;            /* IP header length             */
+               dgraml = (p[2] << 8) | p[3];
+
+               proto = p[9];
+
+               bytes -= dgraml;
+               if (bytes < 0) dgraml += bytes; /* if packet < datagram length ! */
+
+               dgraml -= y;
+               if (dgraml < 0) y += dgraml;
+
+               printf("h[%d]\n", y);
+               printf("d[%d]\n", dgraml);
+
+               while (y--) printf("%2.2x", *p++);
+
+               putchar('\n');
+
+               switch (proto)
+               {
+                  case IPPROTO_ICMP:
+                  case IPPROTO_UDP:
+                     y = 8;
+                     break;
+
+                  case IPPROTO_TCP:
+                     y = (p[12] >> 2) & 60;
+                     break;
+
+                  default:
+                     y = dgraml;
+               }
+
+               dgraml -= y;
+               if (dgraml < 0) y += dgraml;
+
+               while (y--) printf("%2.2x", *p++);
+               putchar('\n');
+               if (dgraml > 0)
+               {
+                  y = 0;
+
+                  while (dgraml--)
+                  {
+                     symbol = *p++;
+                     printf("%2.2x", symbol);
+
+                     showrow[y++] = symbol;
+
+                     if (y & 16)
+                     {
+                        putchar('\t');
+                        for (y = 0; y < 16; y++)
+                        {
+                           symbol = showrow[y];
+                           if ((symbol < ' ') || (symbol > 126)) putchar('.');
+                           else putchar(symbol);
+                        }
+                        putchar('\n');
+                        y = 0;
+                     }
+                  }
+
+                  if (y)
+                  {
+                     dgraml = y;
+                     while (y++ < 16) printf("  ");
+                     putchar('\t');
+
+                     y = 0;
+
+                     while (dgraml--)
+                     {
+                        symbol = showrow[y++];
+                        if ((symbol < ' ') || (symbol > 126)) putchar('.');
+                        else putchar(symbol);
+                     }
+                  }
+
+                  putchar('\n');
+               }
+            }
+
+            if (bytes > 0)
+            {
+               while (bytes--) printf("%2.2x", *p++);
+               putchar('\n');
+            }
+         }
+ 
+         rxdata->preamble.flag = FRAME;
+         rxdata++;
+         if (rxdata > &netdata->i[DEVICE_PAGES/2-1]) rxdata = netdata->i;
+}
+
+int main(int argc, char *argv[])
+{
+   int			 j,
+			 physa_octets,
+                         bytes,
+   			 x,
+			 y = 5;
+
+   unsigned char	 data[4096];
+   unsigned char	*p,
+			*q;
+
+
+   unsigned char	 device[24],
+			 netdevice[24],
+			 addresses[240];
+
+   unsigned char	 ipath1[24],
+                         ipath2[24];
+
+   int			 irules,
+                         iphysa;
+
+   pthread_attr_t        asyncb;
+   pthread_t             asyncid;
+
+   int			 fdes;
+
+   struct sockaddr_ll	*rxtx;
+
+
+   argue(argc, argv);
+
+   if (arguments == 0)
+   {
+      printf("\n\t       \tosserv /dev/bpfX:netdeviceY:addresses[:port][:udp][+addresses[:ports]"
+	     "\n\t		[ /dev/bpfY:netdeviceZ:addresses...\n"
+             "\n\t       \t 	  /dev/bpfZ:loopbackY:addresses...\n"
+             "\n\tdon\'t opt -o for a software loopback device\n\n");
+
+      return 0;
+   }
+
+
+   x = shmget('aaaa', DEVICE_PAGE * DEVICE_PAGES, IPC_CREAT);
+   printf("shared core handle %d code %d size %d\n", x, errno,
+           DEVICE_PAGE * DEVICE_PAGES);
+
+   if (x < 0) return 0;
+
+   netdata = shmat(x, NULL, 0);
+   printf("shared core based @ %p code %d\n", netdata, errno);
+
+   rxdata = netdata->i;
+   txdata = netdata->o;
+
+   rxdata->preamble.flag = 0;
+   txdata->preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) rxdata[x].preamble.flag = 0;
+
+   x = DEVICE_PAGES/2;
+   while (x--) txdata[x].preamble.flag = 0;
+
+
+   for (x = 0; x < arguments; x++)
+   {
+      sscanf(argument[x], "%[^:]:%s", netdevice, addresses);
+
+      sprintf(ipath1, "../temp.%s/filter", netdevice);
+      sprintf(ipath2, "../temp.%s/physa", netdevice);
+
+      s[x] = fdes = socket(AF_PACKET, SOCK_RAW, ETH_P_ALL);
+      printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, device);
+
+      if (fdes < 0)
+      {
+      }
+      else
+      {
+         b2b((char *) &sandl[x], netdevice);
+//         y = ioctl(fdes, BIOCSETIF, &sandl[x]);
+
+         rxtx = &rxtxa[x];
+//	 rxtx->sll_ifindex = x + 1;
+
+         #if 0
+	 if (argc > 2)
+            {
+               laf = open(argv[2], O_RDONLY, 0777);
+               if (laf < 0) printf("link address file not available %d\n", errno);
+               else read(laf, rxtx->sll_addr, 6);
+               close(laf);
+            }
+         #endif
+
+         #if 1
+	 ifidxa(netdevice, rxtx);
+	 rxtx->sll_protocol = EVERYTHING;
+         #else
+
+	 rxtx->sll_family = AF_PACKET;
+	 rxtx->sll_protocol = EVERYTHING;
+	 rxtx->sll_ifindex = x + 1;
+         #endif
+ 
+	 y = bind(fdes, (struct sockaddr *) rxtx, sizeof(struct sockaddr_ll));
+
+         if (y < 0)printf("bind wrong %d\n", errno);
+
+	 printf("[af:%4.4x p:%4.4x ifidx:%8.8x haspa:%4.4x ptyp:%2.2x PhyAL %x::%2.2x:%2.2x:%2.2x:%2.2x:%2.2x:%2.2x]\n",
+                 rxtx->sll_family, rxtx->sll_protocol, rxtx->sll_ifindex, rxtx->sll_hatype, rxtx->sll_pkttype,
+                 rxtx->sll_halen, rxtx->sll_addr[0], rxtx->sll_addr[1], rxtx->sll_addr[2], rxtx->sll_addr[3], rxtx->sll_addr[4], rxtx->sll_addr[5]);
+
+
+	 printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+
+         if (y < 0)
+         {
+         }
+         else
+         {
+            p = (unsigned char *) &sandl[x];
+            y = sizeof(struct ifreq);
+            putchar('[');
+            while (y--) printf("%2.2x", *p++);
+            printf("]\n");
+         }
+
+
+         #if 1
+         /***********************************************************
+	    LINUX platform loopback frames are Ethernet-shaped
+	    which makes all frames Ethernet-shaped currently
+	    RTA1 system image must must build 14-byte LL header
+	    with 0800 protocol field when sending
+	    but not do any ARP when its own interface physa is zero
+	 ***********************************************************/
+
+         j = DLT_EN10MB;
+         #else
+
+	 /***********************************************************
+	    this is pathetic cheating
+	    to be replaced fifthwith
+	 ***********************************************************/
+
+	 if (x) j = DLT_EN10MB;
+	 else   j = DLT_NULL;
+         #endif
+
+
+//         y = ioctl(fdes, BIOCIMMEDIATE, &one);
+//         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
+
+//         y = ioctl(fdes, BIOCGBLEN, &maximum);
+//         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+
+//         y = ioctl(fdes, BIOCGDLT, &j);
+//         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+
+         switch (j)
+         {
+            case DLT_NULL:
+//            case DLT_LOOP:
+               rxdata->frame[1] = 14;
+               physa_octets = 6;
+
+               break;
+
+            case DLT_EN10MB:
+ //           case DLT_IEEE802:
+               rxdata->frame[1] = 14;
+               physa_octets = 6;
+
+//               y = ioctl(fdes, BIOCSSEESENT, &zero);
+//               printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+
+               /********************************************************
+			external device, switch no- see transmitted frames
+			but for loopback you must see transmitted frames
+			because you don't otherwise see received frames
+               ********************************************************/
+
+               break;
+
+            default:
+               rxdata->frame[1] = 14;
+         }
+
+         iftype[x] = j;
+         rxdata->frame[0] = j;
+
+         rxdata->frame[2] = 0;
+         rxdata->frame[3] = 0;
+         if (x) rxdata->frame[3] = 2;	/* within RTA1 machine
+					   requeue output from this logical i/f
+					   to logical i/f 2:0
+					   which is managing the shared buffer
+					   they can't all manipulate that
+					*/
+
+         rxdata->frame[8] = 32;		/* default mask size */
+
+         sscanf(addresses, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 4,
+                                                       rxdata->frame + 5,
+                                                       rxdata->frame + 6,
+                                                       rxdata->frame + 7,
+                                                       rxdata->frame + 8);
+
+         rxdata->frame[9] = physa_octets;
+         rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
+         rxdata->preamble.ll_hl = LLHL;
+
+         rxdata->preamble.i_f = PORT(x);
+
+         rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+
+         if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
+         portal(j, netdevice, addresses);
+//         portal((x) ? 1 : 0, netdevice, addresses);
+
+         irules = open(ipath1, O_RDONLY, 0777);
+         printf("%d/%s\n", irules, ipath1);
+         j = 0;
+         bpfp[x].filter = (struct sock_filter *) heap;
+
+         for (;;)
+         {
+            /********************************************************
+		read assembled filter rules
+		from ../temp.device/filter
+            ********************************************************/
+
+            y = read(irules, heap, 8);
+            if (y < 8) break;
+            j++;
+            if (flag['v'-'a'])
+            {
+               printf("[:");
+               for (y = 0; y < 8; y++) printf("%2.2x", heap[y]);
+               printf("]\n");
+            }
+            heap += 8;
+         }
+
+         close(irules);
+         bpfp[x].len = j;
+
+//         y = ioctl(fdes, BIOCSETF, &bpfp[x]);
+         printf("socket %d fprog %4.4x:%p, \n", fdes, bpfp[x].len, bpfp[x].filter);
+         y = setsockopt(fdes, SOL_SOCKET, SO_ATTACH_FILTER, &bpfp[x], sizeof(struct sock_fprog));
+         printf("[socopt %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+
+
+	 printf("[SF %d]\n", y, (y < 0) ? errno : j);
+
+         #if 1
+	 memcpy(rxdata->frame + 10, rxtx->sll_addr, physa_octets);
+         #else
+	 iphysa = open(ipath2, O_RDONLY, 0777);
+         printf("%d/%s\n", iphysa, ipath2);
+	 read(iphysa, rxdata->frame + 10, physa_octets);
+         close(iphysa);
+         #endif
+
+	 p = (unsigned char *) rxdata;
+	 q = rxdata->frame + 10 + physa_octets;
+
+	 rxdata->preamble.flag = FRAME;
+	 rxdata++;
+
+	 printf("[<-");
+	 while (p < q) printf("%2.2x", *p++);
+         printf("]\n");
+      }
+   }
+
+   if (flag['h'-'a']) return 0;
+
+   x = pthread_attr_init(&asyncb);
+
+   if (x < 0) printf("threadcbinit %d e %d\n", x, errno);
+   else
+   {
+      x = pthread_create(&asyncid, &asyncb, &async, NULL);
+      if (x < 0) printf("async thread start %d %d\n", x, errno);
+      else       printf("async thread ID %p\n", asyncid);
+   }
+
+   for (;;)
+   {
+      if (halt_flag < 0) break;
+
+      for (x = 0; x < arguments; x++)
+      {
+         fdes = s[x];
+
+         if (fdes < 0) continue;
+
+         #ifdef LINUX
+	 bytes = recv(fdes, data, 4096, MSG_DONTWAIT);
+         #else
+	 bytes = read(fdes, data, 4096);
+         #endif
+
+         if (bytes < 0)
+         {
+            if (uflag['O'-'A']) putchar('.');
+            if (errno == EAGAIN) continue;
+            close(fdes);
+            s[x] = -1;
+	    printf("-%d", x);
+            continue;
+         }
+
+         p = data;
+
+         #if 1
+
+	 forward(x, p, bytes);
+
+         #else
+
+	 while (bytes > (18 + 4 + 20))
+         {
+            /**********************************************************
+
+		to avoid confusion a buffer descriptor bpf_hdr *
+		at the start of the frame buffer is here called a
+		preamble because it is not a network protocol header
+
+		it is a descriptor physically within the packet buffer
+
+		BPF preamble is mostly 18 octets when ethernet header
+                14 bytes is expected.  That aligns the following datagram
+
+		On platform loopback BPF preamble is 20 bytes and aligns
+		the following 4-byte link pseudo-header and the datagram
+
+		In any case bpf_hdr is whatever size ->bh_hdrlen says
+
+		if a frame < 25 is presented it must be some mistake
+		so BPF's buffer isn't processed after less than that
+		remains in it. Running correctly count (bytes) reduces
+		to zero when the last preamble + frame is taken from it
+
+            *********************************************************/
+
+
+            /********************************************************
+		extract the preamble and frame sizes
+		optionally display sizes / buffer remainder / millisecond
+		check preamble size
+            ********************************************************/
+
+            j = ((struct bpf_hdr *) p)->bh_hdrlen;
+            y = ((struct bpf_hdr *) p)->bh_datalen;
+
+            if (flag['v'-'a']) printf("[%d:%3.3d(%d,%d)%d:%d-%d]\n[",
+                                    ((struct bpf_hdr *) p)->bh_tstamp.tv_sec % 86400,
+                                    ((struct bpf_hdr *) p)->bh_tstamp.tv_usec / 1000,
+                                    y,
+                                    ((struct bpf_hdr *) p)->bh_caplen,
+                                    x, bytes, j);
+
+	    if ((j < 18) || (j > 20))
+            {
+               printf("[1.%p/%p H%d F%d/%d]\n", data, p, j, y, bytes);
+               if (uflag['V'-'A']) diagnose(data, p, j, y, bytes);
+               break;
+            }
+
+            /*****************************************************
+		construct a pointer to the received frame
+		= buffer location + BPF preamble length
+            *****************************************************/
+
+            q = p + j;
+
+            /****************************************************
+		check for anomaly frame longer than BPF buffer
+            ****************************************************/
+
+            if ((bytes - y - j) < 0)
+            {
+               printf("[2.%p/%p H%d F%d/%d]\n", data, p, j, y, bytes);
+               if (uflag['V'-'A']) diagnose(data, p, j, y, bytes);
+               break;
+            }
+
+
+            /****************************************************
+		send the datagram to RTA1 via shared buffer
+            ****************************************************/
+
+            forward(x, q, y);
+
+
+            /****************************************************
+		construct in y
+		BPF-preamble + frame length rounded to 4 octets
+            ****************************************************/
+
+            y += j;
+            y += 3;
+            y &= -4;
+
+            /****************************************************
+		advance pointer by consumed data length
+		take consumed data length from oustanding count
+            ****************************************************/
+
+            p += y;
+            bytes -= y;
+         }
+
+         #endif
+      }
+
+      outputq();
+      usleep(2000);
+
+      /**********************************************************
+		drive output here
+		and a usleep() if the platform is heating
+      **********************************************************/
+   }
+
+   if (flag['v'-'a']) printf("halt1\n");
+   for (x = 0; x < arguments; x++) close(s[x]);
+   if (flag['v'-'a']) printf("halt2\n");
+
    return 0;
 }
+
+#ifdef  LINUX
+#else
+static void diagnose(unsigned char *buffer_start,
+                     unsigned char *scan_point,
+                     int header_bytes, int packet_bytes, int buffer_bytes)
+{
+   int			 x = scan_point - buffer_start;
+   unsigned char	*q = buffer_start;
+   int			 poi = 0;
+
+   printf("input scan desynchronised %d+ bytes at %p\n", x, buffer_start);
+   printf("spurious header information at %p "
+          "header %d/ packet %d/ buffer %d\n",
+           scan_point, header_bytes, packet_bytes, buffer_bytes);
+
+   while (x--)
+   {
+      if ((poi & 15) == 0) printf("\n%4.4x: ", poi);
+      printf("%2.2x", *q++);
+      poi++;
+   }
+
+   printf("\n%d more bytes in buffer\n", buffer_bytes);
+
+   if (poi & 15)
+   {
+      printf("%4.4x: ", poi);
+      x = (poi & 15);
+      while (x--) printf("  ");
+
+      while (buffer_bytes--)
+      {
+         printf("%2.2x", *q++);
+         poi++;
+         if ((poi & 15) == 0) break;
+      }
+   }
+
+   while (buffer_bytes--)
+   {
+      if ((poi & 15) == 0) printf("\n%4.4x: ", poi);
+      printf("%2.2x", *q++);
+      poi++;
+   }
+}
+#endif
 

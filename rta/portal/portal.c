@@ -11,7 +11,16 @@
 #else
 #include <stdio.h>
 #include <fcntl.h>
+
+#include <sys/wait.h>
+#ifdef	LINUX
+#define DLT_NULL        0
+#define DLT_EN10MB      1
+#include <linux/bpf.h>
+#else
 #include <net/bpf.h>
+#endif
+
 #include <unistd.h>
 #include <errno.h>
 #endif
@@ -63,10 +72,15 @@ static int write_program(int iftype, int offset,
    switch (iftype)
    {
       case DLT_NULL:
+	 #ifdef	LINUX
+	 bytes = sprintf(text,	"\tl,h\tdgram-2\n"
+			 	"\tj\tETHERTYPE_IP,no\n");
+	 #else
          #ifdef INTEL
          bytes = sprintf(text, "\tl\t0\n\tj\tAF_INET_INVERSE,no\n");
          #else
          bytes = sprintf(text, "\tl\t0\n\tj\tAF_INET,no\n");
+         #endif
          #endif
          break;
 
@@ -119,8 +133,12 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
    switch (iftype)
    {
       case DLT_NULL:
+	 #ifdef LINUX
+	 x = write_program(iftype, 14, net_addresses, ofile1);
+	 #else
          x = write_program(iftype,  4, net_addresses, ofile1); 
          break;
+         #endif
 
       case DLT_EN10MB:
          x = write_program(iftype, 14, net_addresses, ofile1);

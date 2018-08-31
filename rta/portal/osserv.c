@@ -8,6 +8,7 @@
 
 #include <sys/socket.h>
 #include <net/if.h>
+#include <net/if_dl.h>
 #include <netinet/in.h>
 
 #include <fcntl.h>
@@ -33,7 +34,13 @@
 static int			 iftype[INTERFACES];
 static int			 s[INTERFACES];
 static struct ifreq		 sandl[INTERFACES];
+
+#ifdef	LINUX
+#else
 static struct bpf_program	 bpfp[INTERFACES];
+static struct sockaddr_dl	 rxtxa[INTERFACES];
+#endif
+
 static unsigned int		 one = 1;
 static unsigned int		 zero;
 
@@ -757,6 +764,12 @@ int main(int argc, char *argv[])
 
    int			 fdes;
 
+   #ifdef LINUX
+   struct sockaddr_ll	*rxtx;
+   #else
+   struct sockaddr_dl	*rxtx;
+   #endif
+
 
    argue(argc, argv);
 
@@ -817,11 +830,32 @@ int main(int argc, char *argv[])
          }
          else
          {
-            p = (unsigned char *) &sandl;
+            p = (unsigned char *) &sandl[x];
             y = sizeof(struct ifreq);
             putchar('[');
             while (y--) printf("%2.2x", *p++);
             printf("]\n");
+
+            rxtx = &rxtxa[x];
+            printf("%p %p\n", netdevice, rxtx);
+            printf("%s\n", netdevice);
+            ifidxa(netdevice, rxtx);
+            printf("return link_addr\n");
+
+            if (rxtx->sdl_family ^ AF_LINK) printf("%x not LL tuple\n",
+                                                    rxtx->sdl_family);
+            else
+            {
+               printf("[%x] af %x if %x type %x nbytes %x abytes %x sebytes %x:"
+                      "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x"
+                      "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x\n",
+                       rxtx->sdl_len, rxtx->sdl_family, rxtx->sdl_index,
+                       rxtx->sdl_type, rxtx->sdl_nlen, rxtx->sdl_alen, rxtx->sdl_slen,
+                       rxtx->sdl_data[0], rxtx->sdl_data[1], rxtx->sdl_data[2],
+                       rxtx->sdl_data[3], rxtx->sdl_data[4], rxtx->sdl_data[5],
+                       rxtx->sdl_data[6], rxtx->sdl_data[7], rxtx->sdl_data[8],
+                       rxtx->sdl_data[9], rxtx->sdl_data[10],rxtx->sdl_data[11]);
+            }
          }
 
          y = ioctl(fdes, BIOCIMMEDIATE, &one);
@@ -924,13 +958,23 @@ int main(int argc, char *argv[])
          y = ioctl(fdes, BIOCSETF, &bpfp[x]);
          printf("[SF %d]\n", y, (y < 0) ? errno : j);
 
+         #if 1
+         memcpy(rxdata->frame + 10, rxtx->sdl_data + rxtx->sdl_nlen, physa_octets);
+         p = (unsigned char *) rxdata;
+         q = rxdata->frame + 10 + physa_octets;
+         #else
          iphysa = open(ipath2, O_RDONLY, 0777);
          printf("%d/%s\n", iphysa, ipath2);
 	 read(iphysa, rxdata->frame + 10, physa_octets);
          close(iphysa);
+         #endif
 
          rxdata->preamble.flag = FRAME;
          rxdata++;
+
+         printf("[<-");
+         while (p < q) printf("%2.2x", *p++);
+         printf("]\n");
       }
    }
 
@@ -956,7 +1000,11 @@ int main(int argc, char *argv[])
 
          if (fdes < 0) continue;
 
+         #ifdef LINUX
+         bytes = recv(fdes, data, 4096, MSG_DONTWAIT);
+         #else
          bytes = read(fdes, data, 4096);
+         #endif
 
          if (bytes < 0)
          {
