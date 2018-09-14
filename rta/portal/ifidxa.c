@@ -10,6 +10,7 @@
 #include <linux/if_packet.h>
 #else
 #define	IFIDXA sockaddr_dl
+#include <sys/types.h>
 #include <net/if_dl.h>
 #endif
 

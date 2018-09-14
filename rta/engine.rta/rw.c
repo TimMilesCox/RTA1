@@ -1098,6 +1098,26 @@ void burst_write2(int *list, int ea)
 
    if (relocation_base & 0x00400000)
    {
+      #ifdef BANK_EDGE_GUARD
+      if (offset == 0x0003FFFF)
+      {
+         /****************************************************
+            1st word of 2 is last of block
+            write words beyond block to YOUR next block if any
+         ****************************************************/
+
+         if (base[index + 1] ^ (relocation_base + 64)) return;
+
+         /****************************************************
+           if that isn't within the anticipated array limit
+           fail to write silently. Or guard interrupt if preferred
+
+           base 64 is static zero
+           and should not give a spurious match on base 63 + 1
+         ****************************************************/
+      }
+      #endif
+
       if (device_index = relocation_base & 63)
       {
          #ifdef WPROTECT
@@ -1147,6 +1167,26 @@ void burst_write2(int *list, int ea)
 
          return;
       }
+
+      #ifdef BANK_EDGE_GUARD
+      if (offset == 0x00000FFF) 
+      {  
+         /****************************************************
+            1st word of 2 is last of block
+            write words beyond block to YOUR next block if any
+         ****************************************************/
+            
+         if (base[index + 1] ^ (relocation_base + 1)) return;
+            
+         /****************************************************
+           if that isn't within the anticipated array limit
+           fail to write silently. Or guard interrupt if preferred
+
+           base 64 is static zero
+           and should not give a spurious match on base 63 + 1
+         ****************************************************/
+      }
+      #endif
    }
    #endif
 
@@ -1283,6 +1323,34 @@ void burst_write4(int *list, int ea)
 
    if (relocation_base & 0x00400000)
    {
+      #ifdef BANK_EDGE_GUARD
+      if ((offset & 0x0003FFFC) ^ 0x0003FFFC)
+      {
+         /****************************************************
+            if offset bits 17..2 are not all 1s
+            then you are not at the last 4 words in the block
+            so 4 words may be written in a burst
+         ****************************************************/
+      }
+      else if (offset & 3)
+      {
+         /****************************************************
+            1st word of 4 is in last 3 of  block
+            write words beyond block to YOUR next block if any
+         ****************************************************/
+
+         if (base[index + 1] ^ (relocation_base + 64)) return;
+
+         /****************************************************
+           if that isn't in the anticipated array limit
+           fail to write silently. Or guard interrupt if preferred
+
+           base 64 is static zero
+           and should not give a spurious match on base 63 + 1
+         ****************************************************/
+      }
+      #endif
+
       if (device_index = relocation_base & 63)
       {
          #ifdef WPROTECT
@@ -1334,6 +1402,34 @@ void burst_write4(int *list, int ea)
 
          return;
       }
+
+      #ifdef BANK_EDGE_GUARD
+      if ((offset & 0x00000FFC) ^ 0x00000FFC)
+      {
+         /****************************************************
+            if offset bits 11..2 are not all 1s
+            then you are not at the last 4 words in the block
+            so 4 words may be written in a burst
+         ****************************************************/
+      }
+      else if (offset & 3)
+      {
+         /****************************************************
+            1st word of 4 is in last 3 of  block
+            write words beyond block to YOUR next block if any
+         ****************************************************/
+
+         if (base[index + 1] ^ (relocation_base + 1)) return;
+
+         /****************************************************
+           if that isn't in the anticipated array limit
+           fail to write silently. Or guard interrupt if preferred
+
+           base 64 is static zero
+           and should not give a spurious match on base 63 + 1
+         ****************************************************/
+      }
+      #endif
    }
    #endif
 

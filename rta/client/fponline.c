@@ -176,7 +176,9 @@ int main(int argc, char *argv[])
    if (uflag['U'-'A']) target.sin_port = PORT(FP_SERVICE_192);
 
    x = bind(s, (struct sockaddr *) &local, 16);
+   if (x < 0) x = 0 - errno;
    y = connect(s, (struct sockaddr *) &target, 16);
+   if (y < 0) y = 0 - errno;
 
    if ((uflag['Q'-'A'] == 0)
    ||  (s < 0) || (x < 0) || (f < 0) || (u < 0) || (y < 0))

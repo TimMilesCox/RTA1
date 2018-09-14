@@ -421,6 +421,7 @@ ea &= 0x00FFFFFF;
 
 #define	WPROTECT
 #define	ABSOTS
+#define	BANK_EDGE_GUARD
 
 #define	YIELD_INTERRUPT	ii(II_YIELD);
 #define	GUARD_INTERRUPT	ii(XBASE_U);

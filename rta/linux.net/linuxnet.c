@@ -4,10 +4,12 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <sys/socket.h>
 
 #ifdef  LINUX
 #define DLT_NULL        0
 #define DLT_EN10MB      1
+#include <linux/if_arp.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <linux/if_ether.h>
@@ -17,12 +19,13 @@
 #else
 #define	EVERYTHING ETH_P_ALL
 #endif
-#else
+#endif
+#ifdef	OSX
 #include <net/bpf.h>
+#include <net/if.h>
+#include <net/if_dl.h>
 #endif
 
-#include <sys/socket.h>
-#include <net/if.h>
 #include <netinet/in.h>
 
 #include <fcntl.h>
@@ -39,25 +42,31 @@
 #include "../include.rta/physa.h"
 
 
-//	#define	IP		PORT(0x0800)
-//	#define	FRAME		FORWARD(0x8000)
 #define	LLHL		0
-//	#define FORWARD(X)      PORT(X) & 65535
 #define	MASKS		120
 
 static int			 iftype[INTERFACES];
 static int			 s[INTERFACES];
 static struct ifreq		 sandl[INTERFACES];
+
+#ifdef	LINUX
 static struct sock_fprog	 bpfp[INTERFACES];
 static struct sockaddr_ll	 rxtxa[INTERFACES];
+static int			 twenty = sizeof(struct sockaddr_ll);
+#endif
+
+#ifdef	OSX
+static struct bpf_program	 bpfp[INTERFACES];
+static struct sockaddr_dl	 rxtxa[INTERFACES];
 static unsigned int		 one = 1;
 static unsigned int		 zero;
+#endif
 
 static unsigned int		 maximum;
 static int			 halt_flag;
 
 /**********************************************
-	shared memory anf r/w cursors
+	shared memory r/w cursors
 **********************************************/
 
 static mm_netdevice     *netdata;
@@ -70,8 +79,6 @@ static mm_netbuffer     *txdata;
 
 static unsigned char     instruction[MASKS][8];
 static unsigned char	*heap = instruction[0];
-
-// static struct bpf_hdr	 intro = { { 0, 0 } , 0, 0, sizeof(struct bpf_hdr) } ;
 
 
 /**********************************************
@@ -86,8 +93,7 @@ static unsigned char	*heap = instruction[0];
 static unsigned short udp_checksum(int bytes, char *user_datagram, char *net_addresses);
 static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses);
 
-#ifdef	LINUX
-#else
+#ifdef	OSX
 static void diagnose(unsigned char *buffer_start,
                      unsigned char *scan_point,
                      int header_bytes, int packet_bytes, int buffer_bytes);
@@ -177,7 +183,12 @@ static void outputq()
       switch (iftype[interface])
       {
          case DLT_NULL:
+            #ifdef LINUX
             llhl = 14;
+            #endif
+            #ifdef OSX
+            llhl = 4;
+            #endif
             break;
 
          default:
@@ -202,14 +213,6 @@ static void outputq()
          x -= 4;
          printf("%p:%x]\n", p, x);
       }
-      #if 0
-      else
-      {
-         intro.bh_caplen = x;
-         intro.bh_datalen = x;
-         write(fdes, &intro, sizeof(intro));
-      }
-      #endif
 
       y = write(fdes, p, x);
 
@@ -295,11 +298,6 @@ static void outputq()
                   while (k++ < 20) printf("  ");
                   printf("    %s\n", pbuffer);
                }
-
-               #if 0
-               for (y = 0; y < x; y++) printf("%2.2x", q->frame[y]);
-               putchar('\n');
-               #endif
             }
             putchar('\n');
          }
@@ -402,7 +400,6 @@ static unsigned short udp_checksum(int bytes,
    #endif
 
    sum += *p + p[1] + p[2] + p[3];
-//   if (flag['v'-'a']) printf("[%x:%lx:", bytes, sum);
 
    p = (unsigned short *) user_datagram;
    if (bytes & 1) user_datagram[bytes] = 0;
@@ -410,7 +407,6 @@ static unsigned short udp_checksum(int bytes,
 
    while (x--) sum += *p++;
 
-//   if (flag['v'-'a']) printf("%lx]", sum);
    carry = sum;
 
    while (sum >>= 16)
@@ -455,10 +451,6 @@ static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addre
       carry = sum;
    }
 
-   /*
-   p = (unsigned short *) tcp_segment;
-   p[8] = carry ^ 65535;
-   */
    return carry ^ 65535;
 }
 
@@ -510,7 +502,13 @@ static void forward(int x, unsigned char *p, int bytes)
          switch (iftype[x])
          {
             case DLT_NULL:
+               #ifdef LINUX
                ll_hl = 14;
+               #endif
+               #ifdef OSX
+               ll_hl = 4;
+               #endif
+
                rxdata->preamble.protocol = IP;
                break;
 
@@ -761,9 +759,10 @@ int main(int argc, char *argv[])
    unsigned char	*p,
 			*q;
 
-
-   unsigned char	 device[24],
-			 netdevice[24],
+   #ifdef OSX
+   unsigned char	 device[24];
+   #endif
+   unsigned char	 netdevice[24],
 			 addresses[240];
 
    unsigned char	 ipath1[24],
@@ -777,17 +776,31 @@ int main(int argc, char *argv[])
 
    int			 fdes;
 
+   #ifdef LINUX
    struct sockaddr_ll	*rxtx;
+   #endif
+   #ifdef OSX
+   struct sockaddr_dl	*rxtx;
+   #endif
 
 
    argue(argc, argv);
 
    if (arguments == 0)
    {
-      printf("\n\t       \tosserv /dev/bpfX:netdeviceY:addresses[:port][:udp][+addresses[:ports]"
-	     "\n\t		[ /dev/bpfY:netdeviceZ:addresses...\n"
-             "\n\t       \t 	  /dev/bpfZ:loopbackY:addresses...\n"
+      #ifdef LINUX
+      printf("\n\t       \tosserv netdeviceY:addresses[:port][:udp][+addresses[:ports]"
+             "\n\t              [ netdeviceZ:addresses...\t]\n"
+             "\n\t       \t       loopbackX:addresses...\n"
              "\n\tdon\'t opt -o for a software loopback device\n\n");
+      #endif
+
+      #ifdef OSX
+      printf("\n\t       \tosserv /dev/bpfX:netdeviceY:addresses[:port][:udp][+addresses[:ports]"
+	     "\n\t		[ /dev/bpfY:netdeviceZ:addresses...\t]\n"
+             "\n\t       \t 	  /dev/bpfZ:loopbackX:addresses...\n"
+             "\n\tdon\'t opt -o for a software loopback device\n\n");
+      #endif
 
       return 0;
    }
@@ -817,45 +830,69 @@ int main(int argc, char *argv[])
 
    for (x = 0; x < arguments; x++)
    {
+      #ifdef LINUX
       sscanf(argument[x], "%[^:]:%s", netdevice, addresses);
+      #endif
+      #ifdef OSX
+      sscanf(argument[x], "%[^:]:%[^:]:%s", device, netdevice, addresses);
+      #endif
 
       sprintf(ipath1, "../temp.%s/filter", netdevice);
       sprintf(ipath2, "../temp.%s/physa", netdevice);
 
+      #ifdef LINUX
       s[x] = fdes = socket(AF_PACKET, SOCK_RAW, ETH_P_ALL);
+      printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, netdevice);
+      #endif
+      #ifdef OSX
+      s[x] = fdes = open(device, O_RDWR | O_NONBLOCK, 0777);
       printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, device);
-
+      #endif
+      
       if (fdes < 0)
       {
       }
       else
       {
          b2b((char *) &sandl[x], netdevice);
-//         y = ioctl(fdes, BIOCSETIF, &sandl[x]);
 
          rxtx = &rxtxa[x];
-//	 rxtx->sll_ifindex = x + 1;
+         /*************************************************************************
+             ifidxa() copies sockaddr_ll from the kernel
+         *************************************************************************/
 
-         #if 0
-	 if (argc > 2)
-            {
-               laf = open(argv[2], O_RDONLY, 0777);
-               if (laf < 0) printf("link address file not available %d\n", errno);
-               else read(laf, rxtx->sll_addr, 6);
-               close(laf);
-            }
+         ifidxa(netdevice, rxtx);
+
+         #ifdef OSX
+         y = ioctl(fdes, BIOCSETIF, &sandl[x]);
+         printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+
+         printf("%p %p\n", netdevice, rxtx);
+         printf("%s\n", netdevice);
+         printf("return link_addr\n");
+
+         if (rxtx->sdl_family ^ AF_LINK)
+         {
+            printf("%x not LL tuple\n", rxtx->sdl_family);
+         }
+         else
+         {
+            printf("[%x] af %x if %x type %x nbytes %x abytes %x sebytes %x:"
+                   "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x"
+                   "%2.2x%2.2x%2.2x%2.2x%2.2x%2.2x\n",
+                    rxtx->sdl_len, rxtx->sdl_family, rxtx->sdl_index,
+                    rxtx->sdl_type, rxtx->sdl_nlen, rxtx->sdl_alen, rxtx->sdl_slen,
+                    rxtx->sdl_data[0], rxtx->sdl_data[1], rxtx->sdl_data[2],
+                    rxtx->sdl_data[3], rxtx->sdl_data[4], rxtx->sdl_data[5],
+                    rxtx->sdl_data[6], rxtx->sdl_data[7], rxtx->sdl_data[8],
+                    rxtx->sdl_data[9], rxtx->sdl_data[10],rxtx->sdl_data[11]);
+         }
+
          #endif
 
-         #if 1
-	 ifidxa(netdevice, rxtx);
+         #ifdef LINUX
 	 rxtx->sll_protocol = EVERYTHING;
-         #else
 
-	 rxtx->sll_family = AF_PACKET;
-	 rxtx->sll_protocol = EVERYTHING;
-	 rxtx->sll_ifindex = x + 1;
-         #endif
- 
 	 y = bind(fdes, (struct sockaddr *) rxtx, sizeof(struct sockaddr_ll));
 
          if (y < 0)printf("bind wrong %d\n", errno);
@@ -866,6 +903,7 @@ int main(int argc, char *argv[])
 
 
 	 printf("[i %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
+         #endif
 
          if (y < 0)
          {
@@ -879,8 +917,8 @@ int main(int argc, char *argv[])
             printf("]\n");
          }
 
+         #ifdef LINUX
 
-         #if 1
          /***********************************************************
 	    LINUX platform loopback frames are Ethernet-shaped
 	    which makes all frames Ethernet-shaped currently
@@ -889,44 +927,75 @@ int main(int argc, char *argv[])
 	    but not do any ARP when its own interface physa is zero
 	 ***********************************************************/
 
-         j = DLT_EN10MB;
-         #else
+	 j = rxtx->sll_hatype;
 
-	 /***********************************************************
-	    this is pathetic cheating
-	    to be replaced fifthwith
-	 ***********************************************************/
+	 switch (j)
+	 {
+	    case ARPHRD_LOOPBACK:
+	       j = ARPHRD_ETHER;
 
-	 if (x) j = DLT_EN10MB;
-	 else   j = DLT_NULL;
+	       /*****************************************************
+	          zero local address in case the Linux distro did not
+		  it tells RTA1 system image on startup
+		  packets are like ethernet with 0800
+		  but don't do ARP. Do two zero addresses
+	       *****************************************************/
+
+	       rxtx->sll_addr[0] = 0;
+               rxtx->sll_addr[1] = 0;
+               rxtx->sll_addr[2] = 0;
+               rxtx->sll_addr[3] = 0;
+               rxtx->sll_addr[4] = 0;
+               rxtx->sll_addr[5] = 0;
+
+               rxdata->frame[1] = 14;
+               physa_octets = 6;
+	       break;
+
+	    case ARPHRD_ETHER:
+               rxdata->frame[1] = 14;
+               physa_octets = 6;
+	       break;
+
+	    default:
+	       printf("new interface type: please add case %d:\n", j);
+               rxdata->frame[1] = 14;
+	 }
+
          #endif
 
+         #ifdef OSX
 
-//         y = ioctl(fdes, BIOCIMMEDIATE, &one);
-//         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
+	 /***********************************************************
+	    do the OSX things instead of Linux
+	 ***********************************************************/
 
-//         y = ioctl(fdes, BIOCGBLEN, &maximum);
-//         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+         y = ioctl(fdes, BIOCIMMEDIATE, &one);
+         printf("[i %d %d ]\n", y, (y < 0) ? errno : 0);
 
-//         y = ioctl(fdes, BIOCGDLT, &j);
-//         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+         y = ioctl(fdes, BIOCGBLEN, &maximum);
+         printf("[L %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+
+         y = ioctl(fdes, BIOCGDLT, &j);
+         printf("[LL %d %d]\n", y, (y < 0) ? errno : j);
+
 
          switch (j)
          {
-            case DLT_NULL:
-//            case DLT_LOOP:
-               rxdata->frame[1] = 14;
-               physa_octets = 6;
+     	    case DLT_NULL:
+            case DLT_LOOP:
+               rxdata->frame[1] = 4;
+               physa_octets = 0;
 
                break;
 
             case DLT_EN10MB:
- //           case DLT_IEEE802:
+            case DLT_IEEE802:
                rxdata->frame[1] = 14;
                physa_octets = 6;
 
-//               y = ioctl(fdes, BIOCSSEESENT, &zero);
-//               printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+               y = ioctl(fdes, BIOCSSEESENT, &zero);
+               printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
 
                /********************************************************
 			external device, switch no- see transmitted frames
@@ -937,8 +1006,11 @@ int main(int argc, char *argv[])
                break;
 
             default:
+               printf("new interface type: please add case %d:\n", j);
                rxdata->frame[1] = 14;
          }
+
+         #endif		/*	Linux or OSX	*/
 
          iftype[x] = j;
          rxdata->frame[0] = j;
@@ -970,12 +1042,17 @@ int main(int argc, char *argv[])
 
          if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
          portal(j, netdevice, addresses);
-//         portal((x) ? 1 : 0, netdevice, addresses);
 
          irules = open(ipath1, O_RDONLY, 0777);
          printf("%d/%s\n", irules, ipath1);
          j = 0;
+
+         #ifdef LINUX
          bpfp[x].filter = (struct sock_filter *) heap;
+         #endif
+         #ifdef OSX
+         bpfp[x].bf_insns = (struct bpf_insn *) heap;
+         #endif
 
          for (;;)
          {
@@ -997,24 +1074,26 @@ int main(int argc, char *argv[])
          }
 
          close(irules);
-         bpfp[x].len = j;
 
-//         y = ioctl(fdes, BIOCSETF, &bpfp[x]);
+         #ifdef LINUX
+         bpfp[x].len = j;
+         
+
          printf("socket %d fprog %4.4x:%p, \n", fdes, bpfp[x].len, bpfp[x].filter);
          y = setsockopt(fdes, SOL_SOCKET, SO_ATTACH_FILTER, &bpfp[x], sizeof(struct sock_fprog));
          printf("[socopt %d %d %s]\n", y, (y < 0) ? errno : 0, netdevice);
 
 
 	 printf("[SF %d]\n", y, (y < 0) ? errno : j);
-
-         #if 1
 	 memcpy(rxdata->frame + 10, rxtx->sll_addr, physa_octets);
-         #else
-	 iphysa = open(ipath2, O_RDONLY, 0777);
-         printf("%d/%s\n", iphysa, ipath2);
-	 read(iphysa, rxdata->frame + 10, physa_octets);
-         close(iphysa);
          #endif
+
+         #ifdef OSX
+         bpfp[x].bf_len = j;
+         y = ioctl(fdes, BIOCSETF, &bpfp[x]);
+         printf("[SF %d]\n", y, (y < 0) ? errno : j);
+         memcpy(rxdata->frame + 10, rxtx->sdl_data + rxtx->sdl_nlen, physa_octets);
+         #endif     
 
 	 p = (unsigned char *) rxdata;
 	 q = rxdata->frame + 10 + physa_octets;
@@ -1051,7 +1130,13 @@ int main(int argc, char *argv[])
          if (fdes < 0) continue;
 
          #ifdef LINUX
+         #define SEEFROM
+         #ifdef SEEFROM
+	 rxtx = rxtxa + x;
+	 bytes = recvfrom(fdes, data, 4096, MSG_DONTWAIT, (struct sockaddr *) rxtx, &twenty);
+         #else
 	 bytes = recv(fdes, data, 4096, MSG_DONTWAIT);
+         #endif
          #else
 	 bytes = read(fdes, data, 4096);
          #endif
@@ -1066,13 +1151,34 @@ int main(int argc, char *argv[])
             continue;
          }
 
-         p = data;
+         #ifdef LINUX
+         #ifdef SEEFROM
 
-         #if 1
+	 j = rxtx->sll_pkttype;
+
+	 if (j)
+         {
+            if (flag['v'-'a']) printf("[%x->|]", j);
+
+            #if 1
+	    switch (j)
+            {
+               case 4:
+                 continue;
+            }
+            #endif
+         }
+         #endif
+         #endif
+
+	 p = data;
+
+         #ifdef LINUX
 
 	 forward(x, p, bytes);
+         #endif
 
-         #else
+         #ifdef OSX
 
 	 while (bytes > (18 + 4 + 20))
          {
@@ -1186,8 +1292,8 @@ int main(int argc, char *argv[])
    return 0;
 }
 
-#ifdef  LINUX
-#else
+#ifdef	OSX
+
 static void diagnose(unsigned char *buffer_start,
                      unsigned char *scan_point,
                      int header_bytes, int packet_bytes, int buffer_bytes)
