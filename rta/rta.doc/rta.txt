@@ -67,7 +67,18 @@ SNMP, HTTP, ICMP and floating point server interact with other computers
 			<li><a href="#ispace">Instruction Address Space</a></li>
 			<li><a href="#istack">The Internal Stack</a></li>
 			<li><a href="#asum">Address Space Summary and Diagram</a></li>
-			<li><a href="#device">Device Array Protection</a></li>
+			<ol>
+				<li><a href="#space_summary">Summary of Instruction and Operand Address Spaces</a></li>
+				<li><a href="#address_array">Addressing Arrays</a></li>
+				<li><a href="#large_array">Large Arrays</a></li>
+				<li><a href="#ultra_array">Ultra-Large and Distributed Arrays</a></li>
+				<li><a href="#multi_word">Multi-Word Write Operands straddling Banks</a></li>
+			</ol>
+			<li><a href="#protection">Protection and Safety</a></li>
+			<ol>
+				<li><a href=<"#safety">System Data Protection</a></li>
+				<li><a href="#device">Device Array Protection</a></li>
+			</ol>
 			<li><a href="#thread">Thread Switch and Address Space</a></li>
 			<li><a href="#ioport">I/O Ports for Inter-Processor Signaling / Memory and Peripheral Configuration / Timer Restart</a></li>
 			<ol>
@@ -192,7 +203,7 @@ relocation values the width of I/O ports. Each relocation register is implemente
 				    ___________________________________
 
 				    _____________________________________
- 				    | 01 | 16 bank select bits | device	|
+				    | 01 | 16 bank select bits | device	|
 				    |____|_____________________|________|
 
 
@@ -210,7 +221,7 @@ Device arrays can be placed in the address space in ranges of 262144-word blocks
 	|			ADDRESS SPACE AND EXECUTABLE SPACE			|
 	|_______________________________________________________________________________|
 	|										|
-        |                                                                               |
+	|                                                                               |
 	|										|
 	|	Address space is the space which the effective address can reach	|
 	|       i.e. the space which code can see at one moment             		|
@@ -420,6 +431,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 <pre>
 
+	<a	name="space_summary"/>
 	Summary of Instruction and Operand Address Spaces
 	_________________________________________________
 
@@ -534,11 +546,15 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 
-
+	<a	name="address_array"/>
 	Addressing Arrays
 	_________________
 
-	Arrays less than the address space in size can be adressed all at once
+	Directly addressed application static data is in
+	sequential address windows mapping continuous storage
+
+
+	Arrays less than the address space in size can also be adressed all at once
 	in one or more address windows
 
 				_________________________
@@ -558,12 +574,17 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 
-
 	An array is one linear storage block of any size up to 16 gigawords. The prototype
 	RTOS smaragd7 responds to memory requests with a single pointer
 
+
+	<a	name="large_array"/>
+	Large Arrays
+	____________
+
 	When an array is many times the address space in size, address windows
-	are used as cursors in the array
+	are used as cursors in the array, fixing dynamically on buckets of one or
+	two memory blocks or banks
 
 	If structures in the array straddle banks, the cursor should be two or more
 	adjacent physical banks based in adjacent windows
@@ -605,29 +626,110 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 							. this array is any size up to
 							. 16 gigawords
 
-	
+
+	<a	name="ultra_array"/>
+	Ultra-Large and Distributed Arrays
+	__________________________________
+
+	Alternatively, successive blocks of a large array need not be in physically continuous storage
+	so long as storage operands of two or four words are aligned
+
+	Applications may process arrays up to 64 gigawords in size distributed over
+	multiple device arrays with the help of system calls to prototype kernel smaragd7
+
+
+
+	<a	name="multi_word"/>
+	Multi-Word Write Operands straddling Banks
+	__________________________________________
+
+	Burst reads and writes of two or four words are at any word address.
+	There is no bus alignment larger than a word
+
+	Instructions writing an operand which straddles storage banks snoop the next base pointer during execution
+
+	If the pointer selects the bank physically next then the burst write proceeds.
+	The entire burst write is otherwise abandoned
+
+	Base pointers are relocation registers addressed as I/O ports
+	and select a bank either of 4096 words or 262144 words
+
+	No precaution is taken for multiword operand read over bank edge. Burst read is done uncritically.
+	If the next physical bank is not linearly successive application data then the trailing readout is wrong.
+
+	An array greater than a storage block must either have 2- and 4-word operands aligned
+	or must be in physically continuous storage
+
+	Alignment of 2- and 4-word write operands has an advantage in efficiency
+	because the next-base-pointer-snoop is never necessary. It is rarely necessary to snoop the next base,
+	but an unaligned address necessitates an extra check for bank-end and the consequent snoop
+
+
 </pre>
 
 
-<a	name="device"/>
-<h3>2.7 Device Array Protection</h3>
+<a	name="protection"/>
+<h3>2.7 Protection and Safety</h3>
+<pre>
 
-<p>
-Banks in devices outside system memory can only be based by interrupt code.
-This is to prevent accidental damage to anything like a static RAM file system. An inadvertant attempt to base a device from an application raises the
-guard interrupt
+	<a	name="safety"/>
+	System Data Protection
+	______________________
 
-<p>
-Applications may call ISRs to place device banks in their address space and
-subsequently read and write each based bank without restriction.
-See Section 1.11: Interrupt Assignments
 
-<p>
-The initial reason for allowing only ISRs to base device banks is to avoid accident
+	Storage appears so far as possible only in the address space of routines designated to access it
 
-<p>
-ISRs which base device banks on user request may also include a credential check
+	Some storage is read-only for applications
 
+	prevented are
+
+	all reads and writes in unassigned address space windows
+
+	all reads and writes above the highest assigned address in a window
+	i.e accesses at window+4096+
+	where the assigned memory block is 4096 words and not 262144 words
+
+	writes from applications to
+
+		interrupt registers
+
+		the instruction window B0
+
+		the application vector window B2
+
+		the thread control block B65
+
+		the kernel vector window B66
+
+		kernel data windows B67..B71
+
+	are stopped with guard interrupt
+	interrupt code constructs these spaces
+
+	address space windows communicating between kernel and applications
+	are only in application address space during kernel routines
+
+
+
+	<a	name="device"/>
+	Device Array Protection
+	_______________________
+
+
+	Banks in devices outside system memory can only be based by interrupt code
+
+	This is to prevent accidental damage to anything like a static RAM file system.
+	An inadvertant attempt to base a device from an application raises the guard interrupt
+
+	Applications may call ISRs to place device banks in their address space and
+	subsequently read and write each based bank without restriction.
+	See Section 2.10: <a href="#iassign">Interrupt Assignments</a>
+
+	The initial reason for allowing only ISRs to base device banks is to avoid accident
+
+	ISRs which base device banks on user request may also include a credential check
+
+</pre>
 
 <a	name="thread"/>
 <h3>2.8 Thread Switch and Address Space</h3>
