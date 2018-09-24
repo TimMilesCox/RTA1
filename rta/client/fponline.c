@@ -388,14 +388,14 @@ int main(int argc, char *argv[])
 
       if (flag['x'-'a'])
       {
-         printf("recv state %d/%d\n", x, errno);
+         printf("recv state %d/%d\n", x, (x < 0) ? errno : TEXTL);
          for (y = 0; y < x; y++) printf("%2.2x", rdata[y]);
          if (y) putchar(10);
       }
       else
       {
          if ((uflag['Q'-'A'] == 0) || (x < 0))
-         printf("recv state %d/%d %s\n", x, errno, rdata);
+         printf("recv state %d/%d %s\n", x, (x < 0) ? errno : TEXTL, rdata);
          else if (x >= 0) printf("%s\n", rdata);
       }
 
