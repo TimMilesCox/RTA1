@@ -229,7 +229,7 @@ static void outputq()
          }
 
          printf("TX %d\n", y);
-         if (y < 0) printf("%d\n", errno);
+         if (y < 0) printf("%d:%d\n", errno, fdes);
 
          if ((x) && (flag['u'-'a']))
          {
@@ -1145,9 +1145,13 @@ int main(int argc, char *argv[])
          {
             if (uflag['O'-'A']) putchar('.');
             if (errno == EAGAIN) continue;
+
+            #if 0
             close(fdes);
             s[x] = -1;
-	    printf("-%d", x);
+            #endif
+
+	    printf("[rer %d:%d:%d]\n", x, errno, fdes);
             continue;
          }
 
@@ -1158,7 +1162,7 @@ int main(int argc, char *argv[])
 
 	 if (j)
          {
-            if (flag['v'-'a']) printf("[%x->|]", j);
+            if (flag['v'-'a']) printf("[%x->|%x]", j, rxtx->sll_protocol);
 
             #if 1
 	    switch (j)
@@ -1175,7 +1179,8 @@ int main(int argc, char *argv[])
 
          #ifdef LINUX
 
-	 forward(x, p, bytes);
+         if (flag['v'-'a']) printf("[%d:%d]\n", x, bytes);
+         forward(x, p, bytes);
          #endif
 
          #ifdef OSX

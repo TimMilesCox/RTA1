@@ -369,6 +369,43 @@ update	dl	NET_ADDR
 
 gleanx	lret	0
 
+
+	$if	1
+
+search_and_indicate
+	.	some lousey network boxes
+	.	deliver ARP requests on a medium where the sender is not homed
+	.	so respond on the interface where it is
+
+	.	ANYNET replicated addresses aren't replicated in one host
+	.	only among attached autoconf networks
+
+
+	lx	i_f_pointer_array,,xi
+	ax	descriptor:i_f		. requesting i/f id
+	lr	0, x			. requesting interface
+	lx	r
+
+	dl	arp_msg:tpa
+	lcal	ipv4_address_this_if?	. found on the shorter list? most frequent case
+	j	respond_yes		. the interface is already pointed
+	lcal	ipv4_address_this_host?
+	lret	0			. not anywhere on this host
+
+	lx	ifaddr:i_f		. point to the interface where the address is found
+	ax	i_f_pointer_array,,xi
+	lr	0, x
+
+respond_yes
+	c	(ARP_XMIT)	ARP_REPLY,,xi		;
+				r			;
+				arp_msg:sha,,i		;
+				arp_msg:spa,,long	;
+				arp_msg:tpa,,long
+	lret	0
+
+	$else
+
 search_and_indicate		. process a request from outside
 	$head_near	scalars(i_f_of_request,	int)
 
@@ -389,6 +426,8 @@ respond_yes
 respond_no
 	inc	sp
 	lret	0
+
+	$endif
 
 
 time_test			. y -> ARP cache row for time test
