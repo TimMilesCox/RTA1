@@ -7,6 +7,7 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% ap2.msm ..\test.rta\ap2
 %MASMX% %FLAGS% ap3.msm ..\test.rta\ap3
 %MASMX% %FLAGS% -Z ap3.msm ..\test.rta\ap3z
+%MASMX% %FLAGS% aplical.msm ..\test.rta\aplical
 %MASMX% %FLAGS% applaud.msm ..\test.rta\applaud
 %MASMX% %FLAGS% application.msm ..\test.rta\application
 %MASMX% %FLAGS% aqt.msm ..\test.rta\aqt
@@ -145,6 +146,7 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% seeabout.msm ..\test.rta\seeabout
 %MASMX% %FLAGS% sema.msm ..\test.rta\sema
 %MASMX% %FLAGS% semi.msm ..\test.rta\semi
+%MASMX% %FLAGS% sevenup.msm ..\test.rta\sevenup
 %MASMX% %FLAGS% shadow.msm ..\test.rta\shadow
 %MASMX% %FLAGS% shadow1.msm ..\test.rta\shadow1
 %MASMX% %FLAGS% shuttle.msm ..\test.rta\shuttle

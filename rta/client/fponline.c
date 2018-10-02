@@ -236,10 +236,10 @@ int main(int argc, char *argv[])
             symbol = *p++;
          }
 
-         name[x++] = 0;
+         name[x] = 0;
          while ((symbol == ' ') || (symbol == '\t')) symbol = *p++;
 
-         if ((symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
+         if ((symbol1 ^ '_') && (symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
          {
             bytes = sprintf(added_name, "%s\t$set,168\t$TOTAL\n", name);
             dynamic_store(bytes, added_name);
@@ -257,10 +257,10 @@ int main(int argc, char *argv[])
          ***************************************************************/
       }
 
+      if (symbol1 == '_') x = write(runagate, "\t", 1);
+      else                x = write(runagate, "\t$xqt_fp,$192\t", 14);
 
-      x = write(runagate, "\t$xqt_fp,$192\t", 14);
-
-      if (x == 14)
+      if (x > 0)
       {
          if ((symbol1 == '+') || (symbol1 == '-') || (symbol1 == '*') || (symbol1 == '/'))
          x = write(runagate, "$TOTAL", 6);
