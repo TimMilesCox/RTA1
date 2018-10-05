@@ -50,18 +50,30 @@ static WSADATA wsa;
 static unsigned char		 path[240];
 static unsigned char		 pdupath[240];
 static unsigned char		 dynamic_masmdef[240];
+static unsigned char		 save_masmdef[240];
 
+static int			 name_store;
 static int			 dynamic;
+
+static void recall_store(int bytes, char *text)
+{
+   int           x = write(name_store, text, bytes);
+
+   if (x < 0) printf("name update failed on insert %d\n", errno);
+   x = fsync(name_store);
+   if (x < 0) printf("name update failed on sync %d\n", errno);
+}
 
 static void dynamic_store(int bytes, char *text)
 {
-   int           x,
-                 y;
+   int		 x;
 
+   dynamic = open(dynamic_masmdef, O_RDWR | O_TRUNC | O_CREAT, 0777);
+   if (dynamic < 0) printf("total store not restarted %d\n", errno);
    x = write(dynamic, text, bytes);
-   if (x < 0) printf("name update failed on insert %d\n", errno);
-   y = fsync(dynamic);
-   if (y < 0) printf("name update failed on sync %d\n", errno);
+   if (x < 0) printf("total update failed on rewrite %d\n", errno);
+   x = close(dynamic);
+   if (x < 0) printf("total update failed on save %d\n", errno);
 }
 
 int main(int argc, char *argv[])
@@ -110,12 +122,14 @@ int main(int argc, char *argv[])
       sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
       sprintf(pdupath, "%s/dynamic.rta/pduimage", argument[2]);
       sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", argument[2]);
+      sprintf(save_masmdef, "%s/dynamic.rta/onlinefp.def", argument[2]);
    }
    else
    {
       sprintf(path, "%s/dynamic.rta/runagate.msm", getenv("HOME"));
       sprintf(pdupath, "%s/dynamic.rta/pduimage", getenv("HOME"));
       sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
+      sprintf(save_masmdef, "%s/dynamic.rta/onlinefp.def", getenv("HOME"));
    }
 
    if (flag['v'-'a']) printf("[%s -> %s]\n", path, pdupath);
@@ -129,11 +143,6 @@ int main(int argc, char *argv[])
       printf("[socket %d cntl %d:%d]\n", s, f, u);
       #endif
    }
-
-   dynamic = open(dynamic_masmdef, O_RDWR | O_APPEND, 0777);
-   if (dynamic < 0) printf("dynamic names store unavailable %d\n", errno);
-
-   if (flag['v'-'a']) printf("dynamic.def %d\n", dynamic);
 
    if (config)
    {
@@ -173,8 +182,6 @@ int main(int argc, char *argv[])
    if (flag['v'-'a']) printf("[%8.8X > %8.8X]\n", local.sin_addr.s_addr,
                                                   target.sin_addr.s_addr);
 
-   if (uflag['U'-'A']) target.sin_port = PORT(FP_SERVICE_192);
-
    x = bind(s, (struct sockaddr *) &local, 16);
    if (x < 0) x = 0 - errno;
    y = connect(s, (struct sockaddr *) &target, 16);
@@ -185,6 +192,66 @@ int main(int argc, char *argv[])
    printf("remote application socket %d bind state %d "
           "F %x NB %d udconnect state %d\n",
 	   s, x, f, u, y);
+
+   /**************************************************************
+      network bound
+   **************************************************************/
+
+   /**************************************************************
+      now ready saved names for adding more
+   **************************************************************/
+
+   name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
+   if (name_store < 0) printf("fixed names store in error %d\n", errno);
+
+   if (flag['f'-'a'])
+   {
+      for (;;)
+      {
+         x = read(name_store, sdata, FPONLINE_TEXTL);
+         if (x < 0) break;
+         x = write(1, sdata, x);
+         if (x < FPONLINE_TEXTL) break;
+      }
+
+      printf("end stored names\n");
+   }
+
+   /**************************************************************
+      now inline the running total if any
+   **************************************************************/
+   
+   strcpy(rdata, "0.0");
+
+   dynamic = open(dynamic_masmdef, O_RDWR | O_APPEND | O_CREAT, 0777);
+   if (dynamic < 0)
+   {
+   }
+   else
+   {
+      x = read(dynamic, sdata, 18);
+
+      if (x == 18)
+      {
+         x = memcmp(sdata, "\"$TOTAL\"\t$set,168\t%s\n", 18);
+
+         if (x == 0)
+         {
+            x = read(dynamic, rdata, TEXTL - 1);
+            if (x < 0) printf("running total bad read [%d]\n", errno);
+            rdata[x] = 0;
+         }
+      }
+      close(dynamic);
+   }
+
+   if (flag['g'-'a']) printf("running total %s\n", rdata);
+
+   if (flag['v'-'a'])
+   {
+      printf("dynamic.def %d\n", dynamic);
+      printf("dynamic.def %d\n", name_store);
+   }
 
 
    for (;;)
@@ -241,8 +308,8 @@ int main(int argc, char *argv[])
 
          if ((symbol1 ^ '_') && (symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
          {
-            bytes = sprintf(added_name, "%s\t$set,168\t$TOTAL\n", name);
-            dynamic_store(bytes, added_name);
+            bytes = sprintf(added_name, "%s\t$set,168\t%s\n", name, rdata);
+            recall_store(bytes, added_name);
             continue;
 
             /************************************************************
@@ -412,6 +479,11 @@ int main(int argc, char *argv[])
    close(s);
    #endif
 
+   close(name_store);
+
+   #if 0
    close(dynamic);
+   #endif
+
    return 0;
 }
