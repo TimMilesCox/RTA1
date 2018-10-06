@@ -1,15 +1,19 @@
 ap_lib192	$tree
+
+.	arguments in internal stack
+.	as for programming languages
+.	read-only arguments may be by pointer
+.	return is in registers a:b:mantissa2:mantissa3:8:9:10:11
+
 square_root
-	$head_far	scalars(trial,		float192, a		;
-				magnitude,	float192, a		;
+	$head_far	 params(magnitude,	float192)		;
+			scalars(trial,		float192, magnitude	;
 				diminuition,	float192, (0.5o)	;
-				signs,		int			)
+				signs,		int, magnitude		)
 
 .	vector name is ap_lib192_square_root
-.	square item is in a:b:mantissa2:mantissa3:8:9:10:11
 
-	saa	24
-	sa	signs
+	la	signs
 	jpa	square_away
 	lx	magnitude,,i
 	lcal	flip8
@@ -22,14 +26,14 @@ square_away
 	ana	trial
 	jc	uprate			. exponent: 0400000- 
 					.        a: 0400000-exponent
-	lb	trial
-	aa	1,,xi
-	jza	start_variation		. exponent is 0400001
-					. don't press it down to all-fraction space
+
+.	some smallest numbers need kinder rounding
+.	but leave that to the caller
+
 	la	trial
 	and	(03FFFFF)
-	aa	1,,xi
-	sar	1
+	aa	1,,xi			. halve scale above midpoint
+	sar	1			. 0400001 changes to 0400001
 	or	(0400000)
 	sa	trial
 	lb	a			. variation scale
@@ -88,7 +92,7 @@ downrate_again?
 arrive	lx	trial,,i
 	tp	signs
 	lcal	flip8
-	push	8+8+1, sp, i
+	push	8+1, sp, i
 	pop	sp
 
 	qpop	a
@@ -104,5 +108,37 @@ flip8	n	0, x
 	n	6, x
 	n	7, x
 	lret	0
+
+curve_q	$head_far	 params(curve,	float192)		;
+			scalars(arrive,	float192, (1.0o)	;
+				index,	float192, (0.0o)
+
+
+	lr	60-1,,xi
+
+curve_r	ql	index
+	fa	(1.0)
+	qs	index
+
+	c	(fp192lib_mfa)		curve,,i	;
+					index,,i
+
+	ql	arrive+4
+	qs	$residue
+	ql	arrive
+	
+	c	(fp192lib_add_negative)	curve,,i
+	qs	arrive
+	ql	8
+	qs	arrive+4
+
+	jdr	curve_r
+	
+	push	8, sp, i
+	pop	sp
+
+	qpop	a
+	qpop	8
+	fret	0
 
 	$root
