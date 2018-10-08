@@ -2,6 +2,7 @@ set MASMX=masmx
 set FLAGS=-kw
 @echo off
 del /Q  ..\test.rta\*
+%MASMX% %FLAGS% 2part.msm ..\test.rta\2part
 %MASMX% %FLAGS% absolute.msm ..\test.rta\absolute
 %MASMX% %FLAGS% ap1.msm ..\test.rta\ap1
 %MASMX% %FLAGS% ap2.msm ..\test.rta\ap2
