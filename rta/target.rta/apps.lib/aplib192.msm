@@ -99,16 +99,6 @@ arrive	lx	trial,,i
 	qpop	8
 	fret	0
 
-flip8	n	0, x
-	n	1, x
-	n	2, x
-	n	3, x
-	n	4, x
-	n	5, x
-	n	6, x
-	n	7, x
-	lret	0
-
 .	vector name ap_lib192_square
 
 square	$head_far	 params(root, 		float192)	;
@@ -131,17 +121,160 @@ square	$head_far	 params(root, 		float192)	;
 	fret	0
 
 
+cube_root
+	$head_far	 params(magnitude3,	float192)		;
+			scalars(trial3,		float192, magnitude3	;
+				diminuition3,	float192, (0.5o)	;
+				signs3,		int,	  magnitude3	)
+
+.	vector name ap_lib192_cube_root
+
+	la	magnitude3
+	jpa	root3_start
+
+	lx	magnitude3,,i		. must work in positive magnitude
+	lcal	flip8			. because of subtraction
+	lx	trial3,,i		. which compares the filtered trial root
+	lcal	flip8
+
+root3_start
+	lb	(0400000)
+	anb	trial3
+	jc	up3wards		. scale is midpoint/less
+
+	lb	trial3
+	andB	(03FFFFF)		. isolate the net positive scale
+
+	ab	2,,xi			. 0400001..2 -> 0400001
+	mf	(0555556)		. thirdify the net positive scale
+
+	or	(0400000)		. new exponent in a
+	j	scale_away3
+
+up3wards	. distance up to midpoint is positive in b
+
+	mf	(0555556)		. thirdify he and round down
+	lb	(0400000)		. quotient is in a
+	anb	a
+	la	b			. new exponent is in a
+
+scale_away3
+
+	sa	diminuition3		. set initial exponent of +- variable
+	sa	trial3
+	aa	-72,,xi			. minor part is already normalised
+	sa	trial3+4
+	lr	144,,xi			. start the fateful count
+					. don't worry, you may escape before the count is out
+downrate3
+	ql	trial3+4
+	qs	8
+downrate3_again!
+	ql	trial3
+
+	c	(fp192lib_multiply)	trial3,,i
+	c	(fp192lib_multiply)	trial3,,i
+	c	(fp192lib_add_negative)	magnitude3,,i
+
+	jdz	arrive3
+	jpa	downrate3_down
+
+	ql	trial3
+	on	fp$r
+	fa	trial3+4
+	off	fp$r
+
+	c	(fp192lib_add)		diminuition3,,i
+	j	downrate3_again?
+
+downrate3_down
+
+	ql	trial3
+	on	fp$r
+	fa	trial3+4
+	off	fp$r
+
+	c	(fp192lib_add_negative)	diminuition3,,i
+
+downrate3_again?
+	qs	trial3			. store the candidate value
+	ql	8
+	qs	trial3+4
+
+	dec	diminuition3		. scale of variation
+	jdr	downrate3_again!
+
+arrive3	lx	trial3,,i
+	tp	signs3
+	lcal	flip8
+
+	push	8+1, sp, i
+	pop	sp
+
+	qpop	a
+	qpop	8
+	on	fp$r
+	fa	$residue
+	off	fp$r
+	fret	0
+
+.	vector name ap_lib192_cube
+
+cube	$head_far	 params(cubase,	float192)
+	ql	cubase
+	on	fp$r
+	fa	cubase+4
+	off	fp$r
+
+	c	(fp192lib_multiply)	cubase,,i
+	c	(fp192lib_multiply)	cubase,,i
+	fret	0
+
+flip8	n	0, x
+	n	1, x
+	n	2, x
+	n	3, x
+	n	4, x
+	n	5, x
+	n	6, x
+	n	7, x
+	lret	0
+
 GRIMP	$set, 168	2.442002442002442002442002442002442002442003e-4
 GRIMPA	$set, 168	2.7322404371584699453551912568306010928961755e-4
+GRIMPB	$set, 168	0.0002713
+TWISTA	$set, 168	0.00000005
 
 curve_q	$head_far	 params(degree,	float192)		;
 			scalars(target, float192, (1.0o)	;
 				slope,	float192, (0.0o)	;
 				curve,	float192, (major_minor	GRIMPA)	;
+				twista,	float192, (major_minor	TWISTA)	;
 				degrees, int, 89,,i		)
 
+	dl	degree
+	lx	a
+	ax	(-0400000)
+	la	0,,xi
+	tn	x
+	dsl	0,x
+	lb	90,,xi
+	anb	a
+	jzb	curve_x
+	jnb	curve_x
+	sb	degrees
 
-curve_r	ql	slope
+curve_r	ql	curve
+	on	fp$r
+	fa	curve+4
+	off	fp$r
+	c	(fp192lib_add_negative)	twista,,i
+
+	qs	curve
+	ql	$residue
+	qs	curve+4
+
+	ql	slope
 	on	fp$r
 	fa	slope+4
 	off	fp$r
@@ -163,7 +296,7 @@ curve_r	ql	slope
 	tz	degrees
 	j	curve_r
 	
-	push	1+8+8, sp, i
+curve_x	push	1+8+8+8, sp, i
 	pop	sp
 
 	qpop	a
