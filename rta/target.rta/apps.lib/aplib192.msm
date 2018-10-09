@@ -6,91 +6,88 @@ ap_lib192	$tree
 .	return is in registers a:b:mantissa2:mantissa3:8:9:10:11
 
 square_root
-	$head_far	 params(magnitude,	float192)		;
-			scalars(trial,		float192, magnitude	;
-				diminuition,	float192, (0.5o)	;
-				signs,		int, magnitude		)
+	$head_far	 params(magnitude2,	float192)		;
+			scalars(trial2,		float192, magnitude2	;
+				diminuition2,	float192, (0.5o)	;
+				signs2,		int, magnitude2		)
 
 .	vector name is ap_lib192_square_root
 
-	la	signs
+	la	signs2
 	jpa	square_away
-	lx	magnitude,,i
+	lx	magnitude2,,i
 	lcal	flip8
-	lx	trial,,i
+	lx	trial2,,i
 	lcal	flip8	
 
 square_away
 
 	la	(0400000)
-	ana	trial
+	ana	trial2
 	jc	uprate			. exponent: 0400000- 
 					.        a: 0400000-exponent
 
 .	some smallest numbers need kinder rounding
 .	but leave that to the caller
 
-	la	trial
+	la	trial2
 	and	(03FFFFF)
 	aa	1,,xi			. halve scale above midpoint
 	sar	1			. 0400001 changes to 0400001
 	or	(0400000)
-	sa	trial
-	lb	a			. variation scale
-	aa	-72,,xi
-	sa	trial+4
 
 	j	start_variation
 
 uprate	aa	1,,xi			. add half the undershot to midpoint
 	sar	1			. 0400000 changes to 0400000
-	aa	trial
-	sa	trial
-	lb	a			. variation scale
-	aa	-72,,xi
-	sa	trial+4
+	aa	trial2
 
 start_variation
-	sb	diminuition		. set initial exponent of +- variable
+
+	sa	diminuition2		. set initial exponent of +- variable
+	sa	trial2
+	aa	-72,,xi
+	sa	trial2+4
 	lr	144,,xi			. start the fateful count
 					. don't worry, you may escape before the count is out
 downrate
-	ql	trial+4
+	ql	trial2+4
 	qs	8
-downrate_again!
-	ql	trial
 
-	c	(fp192lib_multiply)	trial,,i
-	c	(fp192lib_add_negative)	magnitude,,i
+downrate_again!
+	ql	trial2
+
+	c	(fp192lib_multiply)	trial2,,i
+	c	(fp192lib_add_negative)	magnitude2,,i
 
 	jdz	arrive
 	jpa	downrate_down
 
-	ql	trial+4
+	ql	trial2+4
 	qs	8
-	ql	trial
+	ql	trial2
 
-	c	(fp192lib_add)		diminuition,,i
+	c	(fp192lib_add)		diminuition2,,i
 	j	downrate_again?
 
 downrate_down
 
-	ql	trial+4
+	ql	trial2+4
 	qs	8
-	ql	trial
+	ql	trial2
 
-	c	(fp192lib_add_negative)	diminuition,,i
+	c	(fp192lib_add_negative)	diminuition2,,i
 
 downrate_again?
-	qs	trial			. store the candidate value
+	qs	trial2			. store the candidate value
 	ql	8
-	qs	trial+4
+	qs	trial2+4
 
-	dec	diminuition		. scale of variation
+	dec	diminuition2		. scale of variation
 	jdr	downrate_again!
 
-arrive	lx	trial,,i
-	tp	signs
+arrive	lx	trial2,,i
+	tp	signs2
 	lcal	flip8
 	push	8+1, sp, i
 	pop	sp
@@ -153,10 +150,8 @@ root3_start
 
 up3wards	. distance up to midpoint is positive in b
 
-	mf	(0555556)		. thirdify he and round down
-	lb	(0400000)		. quotient is in a
-	anb	a
-	la	b			. new exponent is in a
+	mf	(0555556)		. thirdify he and round he down
+	aa	trial3			. quotient is in a
 
 scale_away3
 
