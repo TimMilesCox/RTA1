@@ -12,11 +12,15 @@
 #else
 #include <sys/fcntl.h>
 #include <unistd.h>
+#include <spawn.h>
+#include <crt_externs.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <netinet/in.h>
 #define	detail_code errno
+
+extern char **environ;
 #endif
 
 #include "../include.rta/argue.h"
@@ -55,6 +59,7 @@ static unsigned char		 save_masmdef[240];
 static int			 name_store;
 static int			 dynamic;
 
+#ifdef NAMESFILE_ASYNC
 static void recall_store(int bytes, char *text)
 {
    int           x = write(name_store, text, bytes);
@@ -63,6 +68,34 @@ static void recall_store(int bytes, char *text)
    x = fsync(name_store);
    if (x < 0) printf("name update failed on sync %d\n", errno);
 }
+#else
+static void recall_store(int bytes, char *text)
+{
+   int           x;
+
+   /*************************************************************
+      mpdu process is started every interaction
+      and the default behaviour of kernels
+      is to clone open file structures
+      which is of not help or interest and is not unlimited
+      so name_store will be open/write/closed 
+      every new name insertion. It works fast enough
+      no wish to manipulate file_open_flags
+      stuff like that changes with kernels
+   *************************************************************/
+      
+   name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
+
+   if (name_store < 0) printf("name store unavailable %d\n", errno);
+   else
+   {
+      x = write(name_store, text, bytes);
+      if (x < 0) printf("name update failed on insert %d\n", errno);
+      x = close(name_store);
+      if (x < 0) printf("name save failed on sync %d\n", errno);
+   }
+}
+#endif
 
 static void dynamic_store(int bytes, char *text)
 {
@@ -90,6 +123,12 @@ int main(int argc, char *argv[])
    int			 s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    int			 f = fcntl(s, F_GETFL, 0);
    int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
+
+   #ifdef FORK
+   #else
+   char			*scriptp[] = { "bash", "./mpdu", NULL } ;
+   #endif
+
    #endif
 
    int			 x,
@@ -116,6 +155,8 @@ int main(int argc, char *argv[])
 
 
    argue(argc, argv);
+
+   if (flag['w'-'a']) printf("[%s]", environ[0]);
 
    if (arguments > 2)
    {
@@ -201,6 +242,7 @@ int main(int argc, char *argv[])
       now ready saved names for adding more
    **************************************************************/
 
+   #ifdef NAMESFILE_ASYNC
    name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
    if (name_store < 0) printf("fixed names store in error %d\n", errno);
 
@@ -217,13 +259,48 @@ int main(int argc, char *argv[])
       printf("end stored names\n");
    }
 
+   #else
+
+   if (flag['f'-'a'])
+   {
+      /*************************************************************
+         mpdu process is started every interaction
+         and the default behaviour of kernels
+         is to clone open file structures
+         which is of not help or interest and is not unlimited
+         so name_store will be open/write/closed
+         every new name insertion. It works fast enough
+         no wish to manipulate file_open_flags
+         stuff like that changes with kernels
+      *************************************************************/
+
+      name_store = open(save_masmdef, O_RDONLY, 0777);
+      if (name_store < 0) printf("no saved names available %d\n", errno);
+      else
+      {
+         for (;;)
+         {
+            x = read(name_store, sdata, FPONLINE_TEXTL);
+            if (x < 0) break;
+            x = write(1, sdata, x);
+            if (x < FPONLINE_TEXTL) break;
+         }
+
+         printf("end stored names\n");
+         close(name_store);
+         name_store = 0;
+      }
+   }
+
+   #endif
+
    /**************************************************************
       now inline the running total if any
    **************************************************************/
    
    strcpy(rdata, "0.0");
 
-   dynamic = open(dynamic_masmdef, O_RDWR | O_APPEND | O_CREAT, 0777);
+   dynamic = open(dynamic_masmdef, O_RDONLY, 0777);
    if (dynamic < 0)
    {
    }
@@ -243,6 +320,7 @@ int main(int argc, char *argv[])
          }
       }
       close(dynamic);
+      dynamic = 0;
    }
 
    if (flag['g'-'a']) printf("running total %s\n", rdata);
@@ -350,7 +428,7 @@ int main(int argc, char *argv[])
       if (x) printf("process launch %s failed E %x", "mpdu", GetLastError());
       else WaitForSingleObject(pi.hProcess, INFINITE);
 
-      #else
+      #elif FORK
 
       x = fork();
 
@@ -381,6 +459,42 @@ int main(int argc, char *argv[])
          return x;
       }
 
+      #else
+
+      /******************************************************
+         the the upline PDU is just-in-time assembled
+         every interaction
+         there is no point in cloning this process
+         in order to start that process
+         so posix_spawn() is called instead of fork()/execlp()
+      ******************************************************/
+
+      x = 0;
+      y = posix_spawnp(&x, "bash", NULL, NULL, scriptp, environ);
+
+      if (y < 0)
+      {
+         printf("mpdu launch fail %d\n", errno);
+         continue;
+      }
+      else if (x == 0)
+      {
+         printf("launch process not identified\n");
+         continue;
+      }
+      else
+      {
+         if (flag['v'-'a']) printf(" %d launched mpdu\n", x);
+         y = waitpid(x, &j, 0);
+         if (flag['v'-'a']) printf(" %d returned mpdu, %x\n", y, j);
+
+         if (j & 0x8000)
+         {
+            printf("mpdu process error return\n");
+            continue;
+         }
+      }
+
       #endif
 
       pduf = open(pdupath, O_RDONLY, 0777);
@@ -389,7 +503,7 @@ int main(int argc, char *argv[])
       if (pduf < 1)
       {
          printf("error %d obtaining pdu image\n", errno);
-         break;
+         continue;
       }
 
       x = read(pduf, sdata, FPONLINE_TEXTL);
@@ -479,7 +593,9 @@ int main(int argc, char *argv[])
    close(s);
    #endif
 
+   #ifdef NAMESFILE_ASYNC
    close(name_store);
+   #endif
 
    #if 0
    close(dynamic);

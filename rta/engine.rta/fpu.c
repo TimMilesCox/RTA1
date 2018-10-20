@@ -493,7 +493,7 @@ static void ones_add(int ea, int direction)
                           biased_addend);
 
          characteristic += carry;
-         if (carry < -71) characteristic = 0x00400000;
+//         if (carry < -71) characteristic = 0x00400000;
 
          #ifdef XPO_INTERRUPT
          if (characteristic & 0xFF800000)
