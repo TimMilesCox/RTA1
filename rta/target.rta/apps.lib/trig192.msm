@@ -1,0 +1,164 @@
+trig192	$tree
+
+_RADIAN_FACTOR $equ	1.7453292519943295769236907684886127134428719z*-2
+.	_RADIAN_FACTOR $equ 0.01745329252z	. 168-bit expression expression + 24 extra signs
+_PASSES	$equ	12
+
+.	vector name trig_sine
+
+sine	$tree									. quadrant looks after itself
+	$head_far	 params(angle,	float192)			;	. trim to % 360 degrees here
+			scalars(u_rkxy,	float,		r		)
+
+	lc	trig192:_sine	angle,,i
+	qpop	r
+	fret	0
+	$root
+
+cosine	$tree
+	$head_far	 params(angle,	float192)			;
+			scalars(u_rkxy,	float,		r		)
+
+							. trim to % 360 degrees before the next step
+							. or values > 180 are negative to infinity
+							. instead of retraversing + and - quadrants
+
+	ql	(major_minor 90.0)+4			. constant 90.0 is loaded up
+	qs	8					. because it can't be pointed in reference
+	ql	(major_minor 90.0)			. to a different B0 section, fp192lib
+	c	(fp192lib_add_negative)	angle,,i
+	qs	angle
+	la	8
+	qs	angle+4
+
+	lc	trig192:_sine	angle,,i
+	qpop	r
+	fret	0
+	$root
+
+_sine	$head_near	 params(anglep, int)					;
+										;
+			 scalars(power,	float192				;
+				square,	float192				;
+				factorial, float192 		;
+				factor,	float192		)
+
+	ql	(6.0)
+	qs	factorial
+	ql	(3.0)
+	qs	factor
+	ql	(0.0)
+	qs	factorial+4
+	qs	factor+4
+
+	lx	anglep
+	ql	_radian_factor+4			. _RADIAN_FACTOR constant is loaded up
+	qs	8					. because it can't be pointed in reference
+	ql	_radian_factor				. to a different B0 section, fp192lib
+
+	c	(fp192lib_multiply)	x
+
+	qs	0, x
+	ql	8
+	qs	4, x
+	ql	0, x
+
+	c	(fp192lib_multiply) x			. square the angle in radians
+	qs	square					. square is the power multiplier
+	ql	8
+	qs	square+4
+	ql	square
+
+	c	(fp192lib_multiply) x			. and cube is the initial power
+
+	qs	power
+	ql	8
+	qs	power+4					. initially power is cube
+	ql	power
+
+	lr	_PASSES,,xi
+	j	_nomial					. start on the minus kick
+
+_NEXT_FACTORIAL* $proc
+	ql	factor
+	fa	(1.0)
+	qs	factor
+	c	(fp192lib_mfa)	factorial,,i	factor,,i
+	ql	factor
+	fa	(1.0)
+	qs	factor
+	c	(fp192lib_mfa)	factorial,,i	factor,,i
+	$end
+
+_NEXT_POWER* $proc
+	c	(fp192lib_mfa)	power,,i	square,,i
+	$end
+
+_poly	qs	0, x					. the plus kick
+	ql	8
+	qs	4, x
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+	c	(reciprocal192)	factorial,,float192
+	c	(fp192lib_multiply)	power,,i	. 
+.	c	(fp192lib_divide) factorial,,i		. divide power(angle) by factorial
+	c	(fp192lib_add) x			. add quotient to running total
+	qs	0, x
+	ql	8
+	qs	4, x
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+_nomial	c	(reciprocal192)	factorial,,float192
+	c	(fp192lib_multiply)	power,,i
+.	c	(fp192lib_divide) factorial,,i		. divide power(angle) by factorial
+	n	a
+	n	b
+	n	6
+	n	7
+	n	8
+	n	9
+	n	10
+	n	11
+	c	(fp192lib_add)	x			. subtract quotient from runnning total
+	jdr	_poly
+
+.	lcal	eliminate_microdust
+.	lcal	trim
+
+	$ret
+
+_radian_factor	major_minor	_RADIAN_FACTOR
+
+	$if	0
+trim	dpush	a		. replace LS 36 bits mantissa
+	dsa	24		. with signs
+	sa	7
+	lb	6
+	sbr	12
+	drl	12
+	sb	6
+	pop	a
+	pop	b
+	lret	0
+
+eliminate_microdust
+	lk	(0800000s)
+	mta	b
+	lcal	eliminate_normalised
+	lret	0
+
+eliminate_normalised
+	qpush	a
+	dsa	24
+	xorB	a
+	anb	(0400000-35)
+	jc	eliminated
+	sa	b
+	ds	0, sp
+	ds	2, sp
+eliminated
+	qpop	a
+	lret	0
+	$endif
+
+	$root
