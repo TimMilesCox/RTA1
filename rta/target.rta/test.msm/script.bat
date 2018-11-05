@@ -132,6 +132,7 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% rei.msm ..\test.rta\rei
 %MASMX% %FLAGS% relarith.msm ..\test.rta\relarith
 %MASMX% %FLAGS% relocate.msm ..\test.rta\relocate
+%MASMX% %FLAGS% ribble.msm ..\test.rta\ribble
 %MASMX% %FLAGS% rodel.msm ..\test.rta\rodel
 %MASMX% %FLAGS% rtable.msm ..\test.rta\rtable
 %MASMX% %FLAGS% s.msm ..\test.rta\s
@@ -168,6 +169,7 @@ lstring -b ..\test.rta\sowino.txo ..\test.rta\sowino
 %MASMX% %FLAGS% step4.msm ..\test.rta\step4
 %MASMX% %FLAGS% stredit.msm ..\test.rta\stredit
 %MASMX% %FLAGS% subsequf ..\test.rta\subsequf
+%MASMX% %FLAGS% suitable.msm ..\test.rta\suitable
 %MASMX% %FLAGS% symbo.msm ..\test.rta\symbo
 %MASMX% %FLAGS% tcolumn.msm ..\test.rta\tcolumn
 %MASMX% %FLAGS% tptr.msm ..\test.rta\tptr

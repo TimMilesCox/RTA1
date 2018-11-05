@@ -1,8 +1,10 @@
 trig192	$tree
 
+RECIPROCAL_READY $equ	1
+
 _RADIAN_FACTOR $equ	1.7453292519943295769236907684886127134428719z*-2
 .	_RADIAN_FACTOR $equ 0.01745329252z	. 168-bit expression expression + 24 extra signs
-_PASSES	$equ	12
+_PASSES	$equ	18
 
 .	vector name trig_sine
 
@@ -36,7 +38,19 @@ cosine	$tree
 	fret	0
 	$root
 
-_sine	$head_near	 params(anglep, int)					;
+_sine
+	$if	RECIPROCAL_READY
+
+	$head_near	 params(anglep, int)			;
+								;
+			scalars(power,	float192		;
+				square,	float192		)
+
+	ly	reciprocal_factorials,,xi
+
+	$else
+
+	$head_near	 params(anglep, int)					;
 										;
 			 scalars(power,	float192				;
 				square,	float192				;
@@ -50,6 +64,8 @@ _sine	$head_near	 params(anglep, int)					;
 	ql	(0.0)
 	qs	factorial+4
 	qs	factor+4
+
+	$endif
 
 	lx	anglep
 	ql	_radian_factor+4			. _RADIAN_FACTOR constant is loaded up
@@ -80,6 +96,9 @@ _sine	$head_near	 params(anglep, int)					;
 	j	_nomial					. start on the minus kick
 
 _NEXT_FACTORIAL* $proc
+	$if	RECIPROCAL_READY
+	ay	8,,xi
+	$else
 	ql	factor
 	fa	(1.0)
 	qs	factor
@@ -88,6 +107,7 @@ _NEXT_FACTORIAL* $proc
 	fa	(1.0)
 	qs	factor
 	c	(fp192lib_mfa)	factorial,,i	factor,,i
+	$endif
 	$end
 
 _NEXT_POWER* $proc
@@ -99,7 +119,14 @@ _poly	qs	0, x					. the plus kick
 	qs	4, x
 	_NEXT_FACTORIAL
 	_NEXT_POWER
+
+	$if	RECIPROCAL_READY
+	ql	0, y
+	on	fp$r
+	fa	4, y
+	$else
 	c	(reciprocal192)	factorial,,float192
+	$endif
 	c	(fp192lib_multiply)	power,,i	. 
 .	c	(fp192lib_divide) factorial,,i		. divide power(angle) by factorial
 	c	(fp192lib_add) x			. add quotient to running total
@@ -108,7 +135,14 @@ _poly	qs	0, x					. the plus kick
 	qs	4, x
 	_NEXT_FACTORIAL
 	_NEXT_POWER
-_nomial	c	(reciprocal192)	factorial,,float192
+_nomial
+	$if	RECIPROCAL_READY
+	ql	0, y
+	on	fp$r
+	fa	4, y
+	$else
+	c	(reciprocal192)	factorial,,float192
+	$endif
 	c	(fp192lib_multiply)	power,,i
 .	c	(fp192lib_divide) factorial,,i		. divide power(angle) by factorial
 	n	a
@@ -122,43 +156,58 @@ _nomial	c	(reciprocal192)	factorial,,float192
 	c	(fp192lib_add)	x			. subtract quotient from runnning total
 	jdr	_poly
 
-.	lcal	eliminate_microdust
-.	lcal	trim
+	lcal	eliminate_microdust
+	lcal	trim
 
 	$ret
 
 _radian_factor	major_minor	_RADIAN_FACTOR
 
-	$if	0
-trim	dpush	a		. replace LS 36 bits mantissa
-	dsa	24		. with signs
-	sa	7
-	lb	6
-	sbr	12
-	drl	12
-	sb	6
-	pop	a
-	pop	b
+	$if	1
+trim	push	a		. if 96 mantissa bits are nonsign change it all to nonsign
+	saa	24		. it's likely to round up after that
+	lk	-1,,xi		. mask = all 24 bits
+	xor	-1,,xi		. test = value = not signs
+	mta	b
+	j	trimmed
+	mta	6
+	j	trimmed
+	mta	7
+	j	trimmed
+	mta	9		. don't mess with the normalised position of minor mantissa
+	j	trimmed		. or its exponent in register 8
+	sa	10
+	sa	11
+trimmed	pop	a
 	lret	0
+	$endif
 
-eliminate_microdust
+	$if	1
+eliminate_microdust			. change any microscopic number to true result 0
 	lk	(0800000s)
 	mta	b
-	lcal	eliminate_normalised
+	lcal	eliminate_normalised	. it is nonzero so check its range
 	lret	0
 
 eliminate_normalised
 	qpush	a
 	dsa	24
 	xorB	a
-	anb	(0400000-35)
-	jc	eliminated
-	sa	b
+	anb	(0400000-112)		
+	jc	eliminated		. it is larger than microscopic
+	sa	b			. it is microscopic. Change to 192 signs
 	ds	0, sp
 	ds	2, sp
+	ds	6
+	qs	8
 eliminated
 	qpop	a
 	lret	0
+	$endif
+
+	$if	RECIPROCAL_READY
+reciprocal_factorials
+	$include	rfactori
 	$endif
 
 	$root
