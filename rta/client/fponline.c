@@ -1,3 +1,18 @@
+
+#ifdef	OSX
+#ifndef	INTEL
+#define	FORK
+#endif
+#endif
+
+/**********************************************
+
+	that stuff is in case
+	posix_spawnp can't be configured
+	in gcc for powerpc OSX
+
+**********************************************/
+
 #include <stdio.h>
 #include <string.h>
 
@@ -11,9 +26,18 @@
 #define	usleep(X) Sleep(X/500)
 #else
 #include <sys/fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
+
+#define	MMAN
+#ifdef	MMAN
+#include <sys/mman.h>
+#endif
+
+#ifndef	FORK
 #include <spawn.h>
-#include <crt_externs.h>
+#endif
+//	#include <crt_externs.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -59,14 +83,21 @@ static unsigned char		 save_masmdef[240];
 static int			 name_store;
 static int			 dynamic;
 
-#ifdef NAMESFILE_ASYNC
+#ifdef MMAN
 static void recall_store(int bytes, char *text)
 {
    int           x = write(name_store, text, bytes);
-
    if (x < 0) printf("name update failed on insert %d\n", errno);
-   x = fsync(name_store);
-   if (x < 0) printf("name update failed on sync %d\n", errno);
+}
+
+static void dynamic_store(int bytes, char *text)
+{
+   int           x;
+   off_t	 position;
+
+   position = lseek(dynamic, (off_t) 0, SEEK_SET);
+   x = write(dynamic, text, bytes);
+   if (x < 0) printf("total update failed on rewrite %d\n", errno);
 }
 #else
 static void recall_store(int bytes, char *text)
@@ -95,7 +126,6 @@ static void recall_store(int bytes, char *text)
       if (x < 0) printf("name save failed on sync %d\n", errno);
    }
 }
-#endif
 
 static void dynamic_store(int bytes, char *text)
 {
@@ -108,6 +138,7 @@ static void dynamic_store(int bytes, char *text)
    x = close(dynamic);
    if (x < 0) printf("total update failed on save %d\n", errno);
 }
+#endif
 
 int main(int argc, char *argv[])
 {
@@ -127,6 +158,7 @@ int main(int argc, char *argv[])
    #ifdef FORK
    #else
    char			*scriptp[] = { "bash", "./mpdu", NULL } ;
+   char			*scriptq[] = { "bash", "./fponline.cfg", NULL } ;
    #endif
 
    #endif
@@ -153,11 +185,30 @@ int main(int argc, char *argv[])
    unsigned char	 name[160];
    unsigned char	 added_name[160];
 
+   struct stat		 path_present;
+
 
    argue(argc, argv);
 
    if (flag['w'-'a']) printf("[%s]", environ[0]);
 
+   #ifdef MMAN
+   sprintf(pdupath, "/dynamic/rta/fponline/%s/pduimage", getenv("USER"));
+
+   if (arguments > 2)
+   {
+      sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
+      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", argument[2]);
+      sprintf(save_masmdef, "%s/dynamic.rta/my_names.def", argument[2]);
+   }
+   else
+   {
+      sprintf(path, "%s/dynamic.rta/runagate.msm", getenv("HOME"));
+      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
+      sprintf(save_masmdef, "%s/dynamic.rta/my_names.def", getenv("HOME"));
+   }
+
+   #else
    if (arguments > 2)
    {
       sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
@@ -172,6 +223,7 @@ int main(int argc, char *argv[])
       sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
       sprintf(save_masmdef, "%s/dynamic.rta/onlinefp.def", getenv("HOME"));
    }
+   #endif
 
    if (flag['v'-'a']) printf("[%s -> %s]\n", path, pdupath);
 
@@ -242,9 +294,106 @@ int main(int argc, char *argv[])
       now ready saved names for adding more
    **************************************************************/
 
-   #ifdef NAMESFILE_ASYNC
+   #ifdef MMAN
+
+   x  = stat("/dynamic/rta/fponline/", &path_present);
+   x |= stat(dynamic_masmdef, &path_present);
+
+   if (x < 0)
+   {
+      #ifdef FORK
+
+      x = fork();
+
+      /*******************************************************
+		for platforms where posix_spawnp
+		can't be configured
+		mercifully no files are yet open
+		so they won't get cloned 
+      *******************************************************/
+
+      if (x)
+      {
+         /****************************************************
+                this is the caller
+         ****************************************************/
+
+         if (flag['v'-'a']) printf(" %d launched fpconfig.cfg\n", x);
+         y = waitpid(x, &j, 0);
+         if (flag['v'-'a']) printf(" %d returned fpconfig.cfg, %x\n", y, j);
+
+         if (j & 0x8000)
+         {
+            printf("please run rta/client/fponline.cfg\n");
+            return 0;
+         }
+      }
+      else
+      {
+         /***************************************************
+                this is the clone
+         ***************************************************/
+
+         x = execlp("./fponline.cfg", "blanco", (char *) 0);
+         if (x < 0) printf("[%d] please run rta/client/fponline.cfg\n\n", errno);
+         return x;
+      }
+
+      #else
+
+      x = 0;
+      y = posix_spawnp(&x, "bash", NULL, NULL, scriptq, environ);
+
+      if ((y < 0) || (x == 0))
+      {
+         printf("please cd rta/client and run  ./fponline.cfg\n"
+                "then execute fponline again: error %d \n", errno);
+
+         return 0;
+      }
+      else
+      {
+         if (flag['v'-'a']) printf(" %d launched fponline.cfg\n", x);
+         y = waitpid(x, &j, 0);
+         if (flag['v'-'a']) printf(" %d returned fponline.cfg, %x\n", y, j);
+
+         if (j & 0x8000)
+         {
+            printf("please run rta/client/fponline.cfg\n");
+            return 0;
+         }
+      }
+      #endif
+   }
+
+
    name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
    if (name_store < 0) printf("fixed names store in error %d\n", errno);
+   p = mmap(NULL, 262144, PROT_READ | PROT_WRITE, MAP_SHARED, name_store, 0);
+
+   if (p == MAP_FAILED)
+   {
+      printf("mmap names %p %d\n", p, errno);
+   }
+
+   dynamic = open(dynamic_masmdef, O_CREAT | O_RDWR, 0777);
+   if (dynamic < 0) printf("total store in error %d\n", errno);
+   p = mmap(NULL, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, dynamic, 0);
+
+   if (p == MAP_FAILED)
+   {  
+      printf("mmap total %p %d\n", p, errno);
+   }
+
+   runagate = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
+   if (runagate < 0) printf("action store in error %d\n", errno);
+   p = mmap(NULL, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, runagate, 0);
+
+   if (p == MAP_FAILED)
+   { 
+      printf("mmap action %p %d\n", p, errno);
+   }
+
 
    if (flag['f'-'a'])
    {
@@ -258,6 +407,29 @@ int main(int argc, char *argv[])
 
       printf("end stored names\n");
    }
+
+   strcpy(rdata, "0.0");
+
+   if (dynamic < 0)
+   {
+   }
+   else
+   {
+      x = read(dynamic, sdata, 18);
+
+      if (x == 18)
+      {
+         x = memcmp(sdata, "\"$TOTAL\"\t$set,168\t%s\n", 18);
+
+         if (x == 0)
+         {
+            x = read(dynamic, rdata, TEXTL - 1);
+            if (x < 0) printf("running total bad read [%d]\n", errno);
+            rdata[x] = 0;
+         }
+      }
+   }
+
 
    #else
 
@@ -292,8 +464,6 @@ int main(int argc, char *argv[])
       }
    }
 
-   #endif
-
    /**************************************************************
       now inline the running total if any
    **************************************************************/
@@ -323,6 +493,8 @@ int main(int argc, char *argv[])
       dynamic = 0;
    }
 
+   #endif
+
    if (flag['g'-'a']) printf("running total %s\n", rdata);
 
    if (flag['v'-'a'])
@@ -342,6 +514,9 @@ int main(int argc, char *argv[])
       if (sdata[0] == '.') break;
       j = strlen(p);
 
+      #ifdef MANN
+      lseek(runagate, (off_t) 0, SEEK_SET);
+      #else
       runagate = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
 
       if (runagate < 0)
@@ -351,6 +526,7 @@ int main(int argc, char *argv[])
       
          break;
       }
+      #endif
 
 
       while (symbol = *p++)
@@ -419,8 +595,11 @@ int main(int argc, char *argv[])
          break;
       }
 
+      #ifdef MMAN
+      write(runagate, "\0", 1);
+      #else
       close(runagate);
-
+      #endif
 
       #ifdef X86_MSW
 
@@ -428,7 +607,7 @@ int main(int argc, char *argv[])
       if (x) printf("process launch %s failed E %x", "mpdu", GetLastError());
       else WaitForSingleObject(pi.hProcess, INFINITE);
 
-      #elif FORK
+      #elif defined(FORK)
 
       x = fork();
 
@@ -582,8 +761,9 @@ int main(int argc, char *argv[])
 
       if (x > 0)
       {
+         memset(added_name, 0, 160);
          bytes = sprintf(added_name, "\"$TOTAL\"\t$set,168\t%s\n", rdata);
-         dynamic_store(bytes, added_name);
+         dynamic_store(160, added_name);
       }
    }
 
@@ -593,12 +773,12 @@ int main(int argc, char *argv[])
    close(s);
    #endif
 
-   #ifdef NAMESFILE_ASYNC
-   close(name_store);
-   #endif
+   if (flag['v'-'a']) printf("save symbols\n");
 
-   #if 0
+   #ifdef MMAN
+   close(name_store);
    close(dynamic);
+   close(runagate);
    #endif
 
    return 0;
