@@ -37,7 +37,6 @@
 #ifndef	FORK
 #include <spawn.h>
 #endif
-//	#include <crt_externs.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -50,6 +49,13 @@ extern char **environ;
 #include "../include.rta/argue.h"
 #include "../include.rta/address.h"
 #include "fp.h"
+
+#ifdef	LINUX
+#define	RAMFS	"/dynamic/rta/"
+#endif
+#ifdef	OSX
+#define	RAMFS	"/Volumes/rta/"
+#endif
 
 #define	RESENDS	5
 
@@ -193,7 +199,7 @@ int main(int argc, char *argv[])
    if (flag['w'-'a']) printf("[%s]", environ[0]);
 
    #ifdef MMAN
-   sprintf(pdupath, "/dynamic/rta/fponline/%s/pduimage", getenv("USER"));
+   sprintf(pdupath, RAMFS "fponline/%s/pduimage", getenv("USER"));
 
    if (arguments > 2)
    {
@@ -296,7 +302,7 @@ int main(int argc, char *argv[])
 
    #ifdef MMAN
 
-   x  = stat("/dynamic/rta/fponline/", &path_present);
+   x  = stat(RAMFS "fponline/", &path_present);
    x |= stat(dynamic_masmdef, &path_present);
 
    if (x < 0)

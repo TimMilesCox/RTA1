@@ -4525,51 +4525,104 @@ Arguments for a function are in parentheses. They are field, subfield and substr
 arguments of arbitrary number
 
 <p>
-This function returns log 2 of the containing power 2 
-
+Code may be generated with values supplied by a function macro, for example
 <pre>
 
-$ masmx log2 -lnxk
-MASMX 7r3
-3/log2.msm
-*EOF*
-  :                            1 
-  :                            2 f	$func
-  :                            3 log2*	$name
-  :                            4 fulcrum	$set	f(1, 1)-1
-  :                            5 	$do	fulcrum<1,	$return	0
-  :                            6 log	$do	48,	$do	1*/log>fulcrum,	$return	log
-  :                            7 	$return	-1
-  :                            8 	$end
-  :                            9 
-  :                            10 log2:zero	$equ	log2(0)
-  :                            11 log2:1	$equ	log2(1)
-  :                            12 log2:2	$equ	log2(2)
-  :                            13 log2:3	$equ	log2(3)
-  :                            14 log2:15	$equ	log2(15)
-  :                            15 log2:16	$equ	log2(16)
-  :                            16 log2:17	$equ	log2(17)
-  :                            17 log2:16383	$equ	log2(16383)
-  :                            18 log2:16384	$equ	log2(16384)
-  :                            19 log2:16385	$equ	log2(16385)
-  :                            20 
-*EOF*
-log2=:N65:F:0:000000
-log2:zero=000000
-log2:1=000000
-log2:2=000001
-log2:3=000002
-log2:15=000004
-log2:16=000004
-log2:17=000005
-log2:16383=00000E
-log2:16384=00000E
-log2:16385=00000F
-log2.msm=0<000003
+        $ masmx 2log.msm -lnke
+        MASMX 7r3A Build 5
+        3/2log.msm
+        *EOF*
+          :                            1 f      $func
+          :                            2 LOG*   $name
+          :                            3 fulcrum        $set    f(1, 1)-1
+          :                            4 ?      $do     23,     $do     1*/?-1>fulcrum, $return ?-1
+          :                            5        $return -1
+          :                            6        $end
+          :                            7
+          :                            8 $(3:03000)
+        03:003000  000005              +9       +       LOG(30)
+        03:003001  000005              +10      +       LOG(31)
+        03:003002  000005              +11      +       LOG(32)
+        03:003003  000006              +12      +       LOG(33)
+          :                            13
+        *EOF*
+        :$(03):003000:003004
+        2log.msm: object code 65 bytes: 0 errors: 0 undefined labels
+
+        $
 
 </pre>
 
-Functions are not permitted to generate code in the current location counter
+
+Code may not be generated inline to the current location counter
+inside the expanded text of a function macro, for example
+<pre>
+
+        $ masmx liable -lnke
+        MASMX 7r3A Build 5
+        3/liable.msm
+        *EOF*
+          :                            1 f*      $func
+          :                            2         +       99
+          :                            3 one     +       100
+          :                            4 two     +       101
+          :                            5 three   +       102
+          :                            6         $snap   2
+          :                            7         $return 103
+          :                            8         $end
+        00:000000  000063              +9         +       f()
+        00:000001  000064              +9
+        00:000002  000065              +9
+        00:000003  000066              +9
+        one=$00:000001
+        two=$00:000002
+        three=$00:000003
+        Error: liable.msm Line 9: Function Adding Code Inline
+        00:000004  000067              +9
+        *EOF*
+        :$(00):000000:000005
+        liable.msm: object code 72 bytes: 1 errors: 0 undefined labels
+
+        $
+
+</pre>
+This restriction is intended to avoid accidental inclusion of
+data constants in instruction streams.<br>
+It is consistent with the purpose of function macros, generating values not code
+
+<p>
+Assembly option flag -I releases this restriction
+<pre>
+
+        $ masmx viable -lnkeI
+        MASMX 7r3A Build 5
+        3/viable.msm
+        *EOF*
+          :                            1 f*       $func
+          :                            2         +       99
+          :                            3 one     +       100
+          :                            4 two     +       101
+          :                            5 three   +       102
+          :                            6         $snap   2
+          :                            7         $return 103
+          :                            8         $end
+        00:000000  000063              +9         +       f()
+        00:000001  000064              +9
+        00:000002  000065              +9
+        00:000003  000066              +9
+        one=$00:000001
+        two=$00:000002
+        three=$00:000003
+        00:000004  000067              +9
+          :                            10         $snap   2
+        *EOF*
+        :$(00):000000:000005
+        viable.msm: object code 72 bytes: 0 errors: 0 undefined labels
+
+        $
+
+</pre>
+
 <p>
 A function macro can be flagged to expand only on the second assembler pass,
 for the case that the function is not idempotent.
@@ -5741,6 +5794,7 @@ Flags used in RTA1 are
 
 	-a	allow automatic literals. Already set in rta.def
 	-d	list load addresses not program-visible addresses in breakpointed sections
+	-e	list generated code word-space-word
 	-k	labels case-significant
 	-l	list to include depth set by <b>$list</b>, default assembly main file
 	-n	list relocation information when -l
@@ -5754,9 +5808,23 @@ Flags used in RTA1 are
 	-+	include masmx internal labels in list, for example -x+y
 	-y	order label list
 	-z	string zero-fill to containing word. Default space
+
+	-B	<a href="http://TimMilesCox.github.io/masmx/masmx.html#clopts">display owner and macro level of label added to $tree or $record structure</a>
+
+	-D	translate \<i>ESCAPED</i> octal and hex sequences in "strings" and 'integers' when -c and $data_code
+
+	-E	floating constant rounding guard pattern is 111 default value
+		flags <a href="http://TimMilesCox.github.io/masmx/masmx.html#optro">-EFGH</a> cancel each other with $set_option directive
 	-F	floating constant rounding guard pattern is 110 instead of 111
 	-G	floating constant rounding guard pattern is 101 instead of 111
+	-H	floating constant rounding guard pattern is 000 instead of 111
+
+	-I	allow function macros to generate code inline to the current location counter
+	-L	<a href="http://TimMilesCox.github.io/masmx/masmx.html#clopts">display type and macro level of added label</a>
 	-Q	expand a <b>$func</b> macro name found in an expression even if it is screened with "quotes"
+	-Y	in $record structures flag fields as signed unless their bit size is suffixed u
+		otherwise bit fields are unsigned unless suffixed s. 
+		macro language reads signedness of bit fields to determine manipulation
 	-Z	zero-fill <b>$res</b> buffers
 
 
@@ -5772,7 +5840,7 @@ masmx link flags. A link is an assembly with <b>$include,$binary</b>
 
 </pre>
 RTA1 structured programming macros <b>head_near / far</b> and <b>$ret</b> respond to unassigned
-assembly flags <b>-VUOS</b>
+assembly flags <b>-VUOS</b> which may be used for tracing
 <pre>
 
 	-V	display stack-handling decisions
@@ -5785,15 +5853,12 @@ assembly flags <b>-VUOS</b>
 infrequently used masmx options for any target
 <pre>
 
-	-e	list generated code word-space-word
 	-f	flag certain errors in 2nd assembly pass, allow listing
 	-g	flag certain errors in 1st assembly pass
 	-h	stop after the first assembly pass
 	-o	force filenames to lowercase
 	-s	generate a source file <b>temp.msm</b> on first pass with <b>$text</b> translations applied
 		default behaviour with when input is stdin
-	-E	allow <b>$equ</b> labels to alter on first pass
-		<b>$set</b> labels alter on either pass without restriction
 
 </pre>
 masmx flags not conventionally used in RTA1 are
@@ -5815,12 +5880,6 @@ masmx flags not conventionally used in RTA1 are
 
 </pre>
 
-masmx flags which otherwise cannot be used with RTA1
-<pre>
-
-	-i	sign extend intrasegment address on add to giant breakpoint
-
-</pre>
 
 _____________________________________________________________________
 <pre>

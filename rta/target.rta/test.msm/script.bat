@@ -192,7 +192,7 @@ cd ..\language
 popd
 pushd oper8
 %MASMX% %FLAGS% oper8 ..\..\test.rta\oper8
-%MASMX% %FLAGS% tsoper8 ..\..\test.rta\tsoper8
+%MASMX% %FLAGS% -I tsoper8 ..\..\test.rta\tsoper8
 popd
 @echo on
 seeif -avVW list.txt newlist.txt
