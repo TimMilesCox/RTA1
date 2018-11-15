@@ -89,6 +89,24 @@ static unsigned char		 save_masmdef[240];
 static int			 name_store;
 static int			 dynamic;
 
+
+/****************************************************
+	suppress if possible
+	the cloning of open file descriptors
+****************************************************/
+
+static void isolate(int f)
+{
+   int		 x = fcntl(f, F_GETFD);
+
+   if (x < 0) printf("error %d retrieving open flags handle %d\d", errno, f);
+   else
+   {
+      x = fcntl(f, F_SETFD, x | FD_CLOEXEC);
+      if (x < 0) printf("error %d updatinging open flags handle %d\d", errno, f);
+   }
+}
+
 #ifdef MMAN
 static void recall_store(int bytes, char *text)
 {
@@ -509,6 +527,9 @@ int main(int argc, char *argv[])
       printf("dynamic.def %d\n", name_store);
    }
 
+   isolate(name_store);
+   isolate(dynamic);
+   isolate(runagate);
 
    for (;;)
    {
@@ -520,7 +541,7 @@ int main(int argc, char *argv[])
       if (sdata[0] == '.') break;
       j = strlen(p);
 
-      #ifdef MANN
+      #ifdef MMAN
       lseek(runagate, (off_t) 0, SEEK_SET);
       #else
       runagate = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
@@ -684,7 +705,6 @@ int main(int argc, char *argv[])
 
       pduf = open(pdupath, O_RDONLY, 0777);
 
-
       if (pduf < 1)
       {
          printf("error %d obtaining pdu image\n", errno);
@@ -696,6 +716,7 @@ int main(int argc, char *argv[])
       if (x < 0)
       {
          printf("error %d reading pdu image\n", errno);
+         close(pduf);
          continue;
       }
 
