@@ -561,6 +561,10 @@ int main(int argc, char *argv[])
          if ((symbol ^ ' ') | (symbol ^ '\t')) break;
       }
 
+      if (symbol ==    0) continue;
+      if (symbol == '\r') continue;
+      if (symbol == '\n') continue;
+
       symbol1 = symbol;
 
       if ((symbol == '_')
