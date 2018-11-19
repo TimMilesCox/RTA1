@@ -29,10 +29,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define	MMAN
-#ifdef	MMAN
 #include <sys/mman.h>
-#endif
 
 #ifndef	FORK
 #include <spawn.h>
@@ -85,10 +82,89 @@ static unsigned char		 path[240];
 static unsigned char		 pdupath[240];
 static unsigned char		 dynamic_masmdef[240];
 static unsigned char		 save_masmdef[240];
+static unsigned char		 path_txo[240];
+static unsigned char		 msympath[240];
+static unsigned char		 ramspace_d[240];
+static unsigned char		 client_d[240];
 
 static int			 name_store;
 static int			 dynamic;
 
+
+/****************************************************
+	internalise and combine the tools
+
+		lstring
+
+		slab
+
+	as a function to format a very simple
+	text encoded binary
+
+		pdu.txo
+
+	this allows just-in-time assembly to
+	be a posix_spawn of masmx
+	not a spawn of of bash->script[several binaries]
+****************************************************/
+
+static int compress_txo(unsigned char *odata)
+{
+   int		 f = open(path_txo, O_RDONLY, 0777);
+   int		 bytes = 0,
+		 words = 0,
+		 x;
+
+   unsigned char *p;
+
+   unsigned char idata[120];
+
+   unsigned char txo_symbol[24][6];
+
+   if (f < 0) return f;
+
+   for (;;)
+   {
+      p = idata;
+
+      while ((x = read(f, p, 1)) && (*p ^ '\n')) p++;
+      if (x < 0) break;
+
+      x = p - idata;
+      *p = 0;
+
+      if (x == 0) continue;
+
+      if (idata[0] == '$') continue;
+      if (idata[0] == '+') break;
+
+      x = sscanf(idata,
+                "%6s%6s%6s%6s %6s%6s%6s%6s %6s%6s%6s%6s %6s%6s%6s%6s",
+                 txo_symbol[0], txo_symbol[1], txo_symbol[2], txo_symbol[3],
+                 txo_symbol[4], txo_symbol[5], txo_symbol[6], txo_symbol[7], 
+                 txo_symbol[8], txo_symbol[9], txo_symbol[10],txo_symbol[11],
+                 txo_symbol[12],txo_symbol[13],txo_symbol[14],txo_symbol[15]);
+ 
+      if (x < 0) break;
+
+      words += x;
+
+      p = txo_symbol[0];
+
+      while(x--)
+      {
+         sscanf(p, "%2hhX%2hhX%2hhX", odata, odata + 1, odata + 2);
+         p += 6;
+         odata += 3;
+         bytes += 3;
+      }
+   }
+
+   close(f);
+   if (x < 0) return x;
+   if ((uflag['V'-'A']) && (idata[0] == '+')) printf("%s = %d\n", idata, words);
+   return bytes;
+}
 
 /****************************************************
 	suppress if possible
@@ -99,15 +175,14 @@ static void isolate(int f)
 {
    int		 x = fcntl(f, F_GETFD);
 
-   if (x < 0) printf("error %d retrieving open flags handle %d\d", errno, f);
+   if (x < 0) printf("error %d retrieving open flags handle %d\n", errno, f);
    else
    {
       x = fcntl(f, F_SETFD, x | FD_CLOEXEC);
-      if (x < 0) printf("error %d updatinging open flags handle %d\d", errno, f);
+      if (x < 0) printf("error %d updating open flags handle %d\n", errno, f);
    }
 }
 
-#ifdef MMAN
 static void recall_store(int bytes, char *text)
 {
    int           x = write(name_store, text, bytes);
@@ -123,46 +198,6 @@ static void dynamic_store(int bytes, char *text)
    x = write(dynamic, text, bytes);
    if (x < 0) printf("total update failed on rewrite %d\n", errno);
 }
-#else
-static void recall_store(int bytes, char *text)
-{
-   int           x;
-
-   /*************************************************************
-      mpdu process is started every interaction
-      and the default behaviour of kernels
-      is to clone open file structures
-      which is of not help or interest and is not unlimited
-      so name_store will be open/write/closed 
-      every new name insertion. It works fast enough
-      no wish to manipulate file_open_flags
-      stuff like that changes with kernels
-   *************************************************************/
-      
-   name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
-
-   if (name_store < 0) printf("name store unavailable %d\n", errno);
-   else
-   {
-      x = write(name_store, text, bytes);
-      if (x < 0) printf("name update failed on insert %d\n", errno);
-      x = close(name_store);
-      if (x < 0) printf("name save failed on sync %d\n", errno);
-   }
-}
-
-static void dynamic_store(int bytes, char *text)
-{
-   int		 x;
-
-   dynamic = open(dynamic_masmdef, O_RDWR | O_TRUNC | O_CREAT, 0777);
-   if (dynamic < 0) printf("total store not restarted %d\n", errno);
-   x = write(dynamic, text, bytes);
-   if (x < 0) printf("total update failed on rewrite %d\n", errno);
-   x = close(dynamic);
-   if (x < 0) printf("total update failed on save %d\n", errno);
-}
-#endif
 
 int main(int argc, char *argv[])
 {
@@ -183,6 +218,7 @@ int main(int argc, char *argv[])
    #else
    char			*scriptp[] = { "bash", "./mpdu", NULL } ;
    char			*scriptq[] = { "bash", "./fponline.cfg", NULL } ;
+   char			*scriprt[] = { "masmx", msympath, path_txo, "-wk", NULL } ;
    #endif
 
    #endif
@@ -216,38 +252,24 @@ int main(int argc, char *argv[])
 
    if (flag['w'-'a']) printf("[%s]", environ[0]);
 
-   #ifdef MMAN
    sprintf(pdupath, RAMFS "fponline/%s/pduimage", getenv("USER"));
+   sprintf(path, RAMFS "fponline/%s/runagate.msm", getenv("USER"));
+   sprintf(path_txo, RAMFS "fponline/%s/pdu.txo", getenv("USER"));
+   sprintf(msympath, "%s/../../target.rta/fponline/pdu.msm", getenv("RTA_BINARY"));
+   sprintf(ramspace_d, RAMFS "fponline/%s", getenv("USER"));
+
+   getcwd(client_d, 240);
 
    if (arguments > 2)
    {
-      sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
       sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", argument[2]);
       sprintf(save_masmdef, "%s/dynamic.rta/my_names.def", argument[2]);
    }
    else
    {
-      sprintf(path, "%s/dynamic.rta/runagate.msm", getenv("HOME"));
       sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
       sprintf(save_masmdef, "%s/dynamic.rta/my_names.def", getenv("HOME"));
    }
-
-   #else
-   if (arguments > 2)
-   {
-      sprintf(path, "%s/dynamic.rta/runagate.msm", argument[2]);
-      sprintf(pdupath, "%s/dynamic.rta/pduimage", argument[2]);
-      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", argument[2]);
-      sprintf(save_masmdef, "%s/dynamic.rta/onlinefp.def", argument[2]);
-   }
-   else
-   {
-      sprintf(path, "%s/dynamic.rta/runagate.msm", getenv("HOME"));
-      sprintf(pdupath, "%s/dynamic.rta/pduimage", getenv("HOME"));
-      sprintf(dynamic_masmdef, "%s/dynamic.rta/dynamic.def", getenv("HOME"));
-      sprintf(save_masmdef, "%s/dynamic.rta/onlinefp.def", getenv("HOME"));
-   }
-   #endif
 
    if (flag['v'-'a']) printf("[%s -> %s]\n", path, pdupath);
 
@@ -318,10 +340,9 @@ int main(int argc, char *argv[])
       now ready saved names for adding more
    **************************************************************/
 
-   #ifdef MMAN
-
-   x  = stat(RAMFS "fponline/", &path_present);
+   x  = stat(ramspace_d, &path_present);
    x |= stat(dynamic_masmdef, &path_present);
+   x |= stat(save_masmdef, &path_present);
 
    if (x < 0)
    {
@@ -392,7 +413,7 @@ int main(int argc, char *argv[])
 
 
    name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
-   if (name_store < 0) printf("fixed names store in error %d\n", errno);
+   if (name_store < 0) printf("%s fixed names store in error %d\n", save_masmdef, errno);
    p = mmap(NULL, 262144, PROT_READ | PROT_WRITE, MAP_SHARED, name_store, 0);
 
    if (p == MAP_FAILED)
@@ -401,7 +422,7 @@ int main(int argc, char *argv[])
    }
 
    dynamic = open(dynamic_masmdef, O_CREAT | O_RDWR, 0777);
-   if (dynamic < 0) printf("total store in error %d\n", errno);
+   if (dynamic < 0) printf("%s total store in error %d\n", dynamic_masmdef, errno);
    p = mmap(NULL, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, dynamic, 0);
 
    if (p == MAP_FAILED)
@@ -410,7 +431,7 @@ int main(int argc, char *argv[])
    }
 
    runagate = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
-   if (runagate < 0) printf("action store in error %d\n", errno);
+   if (runagate < 0) printf("%s action store in error %d\n", path, errno);
    p = mmap(NULL, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, runagate, 0);
 
    if (p == MAP_FAILED)
@@ -454,71 +475,6 @@ int main(int argc, char *argv[])
       }
    }
 
-
-   #else
-
-   if (flag['f'-'a'])
-   {
-      /*************************************************************
-         mpdu process is started every interaction
-         and the default behaviour of kernels
-         is to clone open file structures
-         which is of not help or interest and is not unlimited
-         so name_store will be open/write/closed
-         every new name insertion. It works fast enough
-         no wish to manipulate file_open_flags
-         stuff like that changes with kernels
-      *************************************************************/
-
-      name_store = open(save_masmdef, O_RDONLY, 0777);
-      if (name_store < 0) printf("no saved names available %d\n", errno);
-      else
-      {
-         for (;;)
-         {
-            x = read(name_store, sdata, FPONLINE_TEXTL);
-            if (x < 0) break;
-            x = write(1, sdata, x);
-            if (x < FPONLINE_TEXTL) break;
-         }
-
-         printf("end stored names\n");
-         close(name_store);
-         name_store = 0;
-      }
-   }
-
-   /**************************************************************
-      now inline the running total if any
-   **************************************************************/
-   
-   strcpy(rdata, "0.0");
-
-   dynamic = open(dynamic_masmdef, O_RDONLY, 0777);
-   if (dynamic < 0)
-   {
-   }
-   else
-   {
-      x = read(dynamic, sdata, 18);
-
-      if (x == 18)
-      {
-         x = memcmp(sdata, "\"$TOTAL\"\t$set,168\t%s\n", 18);
-
-         if (x == 0)
-         {
-            x = read(dynamic, rdata, TEXTL - 1);
-            if (x < 0) printf("running total bad read [%d]\n", errno);
-            rdata[x] = 0;
-         }
-      }
-      close(dynamic);
-      dynamic = 0;
-   }
-
-   #endif
-
    if (flag['g'-'a']) printf("running total %s\n", rdata);
 
    if (flag['v'-'a'])
@@ -529,7 +485,6 @@ int main(int argc, char *argv[])
 
    isolate(name_store);
    isolate(dynamic);
-   isolate(runagate);
 
    for (;;)
    {
@@ -541,20 +496,7 @@ int main(int argc, char *argv[])
       if (sdata[0] == '.') break;
       j = strlen(p);
 
-      #ifdef MMAN
       lseek(runagate, (off_t) 0, SEEK_SET);
-      #else
-      runagate = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0777);
-
-      if (runagate < 0)
-      {  
-         printf("please run setup script fponline.cfg in client directory\n"
-                "then execute fponline again: error %d \n", errno);
-      
-         break;
-      }
-      #endif
-
 
       while (symbol = *p++)
       {
@@ -626,11 +568,7 @@ int main(int argc, char *argv[])
          break;
       }
 
-      #ifdef MMAN
       write(runagate, "\0", 1);
-      #else
-      close(runagate);
-      #endif
 
       #ifdef X86_MSW
 
@@ -655,7 +593,7 @@ int main(int argc, char *argv[])
          if (j & 0x8000)
          {
             printf("mpdu process error return\n");
-            break;
+            continue;
          }
       }
       else
@@ -664,8 +602,19 @@ int main(int argc, char *argv[])
 		this is the clone
          ***************************************************/
 
-         x = execlp("./mpdu", "blanco", (char *) 0);
-         if (x < 0) printf("[%d] process script [rta/client/]mpdu not started\n", errno);
+         if (uflag['S'-'A'])
+         {
+            x = execlp("./mpdu", "blanco", (char *) 0);
+            if (x < 0) printf("[%d] process script [rta/client/]mpdu not started\n", errno);
+         }
+         else
+         {
+            chdir(ramspace_d);
+            remove("pdu.txo");
+            x = execlp("masmx", "masmx", msympath, "pdu", "-kw", (char *) 0);
+            if (x < 0) printf("[%d] masmx process not started\n", errno);
+         }
+
          return x;
       }
 
@@ -680,7 +629,15 @@ int main(int argc, char *argv[])
       ******************************************************/
 
       x = 0;
-      y = posix_spawnp(&x, "bash", NULL, NULL, scriptp, environ);
+
+      if (uflag['S'-'A']) y = posix_spawnp(&x, "bash", NULL, NULL, scriptp, environ);
+      else
+      {
+         chdir(ramspace_d);
+         remove("pdu.txo");
+         y = posix_spawnp(&x, "masmx",NULL, NULL, scriprt, environ);
+         chdir(client_d);
+      }
 
       if (y < 0)
       {
@@ -707,24 +664,38 @@ int main(int argc, char *argv[])
 
       #endif
 
-      pduf = open(pdupath, O_RDONLY, 0777);
-
-      if (pduf < 1)
+      if (uflag['S'-'A'] == 0)
       {
-         printf("error %d obtaining pdu image\n", errno);
-         continue;
+         x = compress_txo(sdata);
+
+         if (x < 0)
+         {
+            printf("error %d reading pdu image\n", errno);
+            continue;
+         }
       }
-
-      x = read(pduf, sdata, FPONLINE_TEXTL);
-
-      if (x < 0)
+      else
       {
-         printf("error %d reading pdu image\n", errno);
+         pduf = open(pdupath, O_RDONLY, 0777);
+
+         if (pduf < 1)
+         {
+            printf("error %d obtaining pdu image\n", errno);
+            continue;
+         }
+
+         x = read(pduf, sdata, FPONLINE_TEXTL);
+
+         if (x < 0)
+         {
+            printf("error %d reading pdu image\n", errno);
+            close(pduf);
+            continue;
+         }
+
          close(pduf);
-         continue;
       }
 
-      close(pduf);
 
       resends = 1;
       if (uflag['R'-'A']) resends = RESENDS;
@@ -806,11 +777,9 @@ int main(int argc, char *argv[])
 
    if (flag['v'-'a']) printf("save symbols\n");
 
-   #ifdef MMAN
    close(name_store);
    close(dynamic);
    close(runagate);
-   #endif
 
    return 0;
 }
