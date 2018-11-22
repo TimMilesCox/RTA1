@@ -246,4 +246,110 @@ flip8	n	0, x
 	n	7, x
 	lret	0
 
+.	vector name ap_lib192_fraction
+
+fraction $tree
+	$head_far	 params(input,	float192)	;
+			scalars(i_rkxy,	float,	r	)
+
+	ql	input		. read and supernormalise
+	on 	fp$r
+	fa	input+4
+	off	fp$r
+
+	lx	a		. obtain exponent magnitude
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	all_fraction	. there is no integer part: return all of it
+	lr	144,,xi
+	jxge	all_integer	. there is no fraction part: return zero
+
+	c	(ap_lib192_integer)	a,,float192
+
+	lx	a,,xi
+	lcal	ap_lib192:flip8	. reverse polarity to effect subtract from addend
+
+	c	(fp192lib_add)	input,,i
+	j	complete
+	
+all_integer
+	dsa	48
+	ds	6
+	qs	8
+all_fraction
+complete
+	qpop	r
+	fret	0
+
 	$root
+
+.	vector name ap_lib192_integer
+
+integer	$tree
+	$head_far	 params(input,	float192)	;
+			scalars(i_rkxy,	float,	r	)
+
+	ql	input		. read and supernormalise
+	on	fp$r
+	fa	input+4
+	off	fp$r
+
+	lx	a		. obtain exponent magnitude
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	all_fraction	. there is no integer part: return 0
+	lr	144,,xi
+	jxge	all_integer	. there is no fraction part: return all of it
+
+	lr	72,,xi
+	jxge	major_part_plus	. the result includes the major part
+				. and possibly some of the minor part
+major_part_only
+	ds	input
+	dsa	48		. some signs for the minor part
+	ds	8		. the result is some of the major part
+	ds	10
+	dl	input		.
+
+	lcal	ap_lib96:sign_around
+	j	complete
+
+major_part_plus
+
+	lx	8		. obtain magnitude minor exponent
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	major_part_only	. all expected bits were signs
+				. and normalised out
+
+	qs	input
+	ql	8
+	lcal	ap_lib96:sign_around
+	qs	8
+	ql	input
+	j	complete
+	
+all_fraction
+	dsa	48
+	ds	6
+	qs	8
+all_integer
+complete
+	qpop	r
+	fret	0
+
+	$root		. of routine ap_lib192:integer
+
+	$root		. of block ap_lib:192

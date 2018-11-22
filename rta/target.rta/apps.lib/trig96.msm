@@ -1,7 +1,12 @@
 trig96	$tree
+
+	$if	1
 _RADIAN_FACTOR $equ 1.7453292519943295769236907684886127134428719*-2
-.	_RADIAN_FACTOR $equ 0.01745329252	. generated as 96-bit float
-_PASSES	$equ	6
+	$else
+_RADIAN_FACTOR $equ 0.01745329252	. generated as 96-bit float
+	$endif
+
+_PASSES	$equ	11
 
 .	vector name trig96_sine
 
@@ -70,6 +75,9 @@ _sine	$head_near	 params(anglep, int)			;
 				square,	float			;
 				factorial, float, 	(6.0)	;
 				factor,	float,		(3.0)	)
+
+	lc	encircle	anglep
+
 	lx	anglep
 	ql	0, x
 	fm	(_RADIAN_FACTOR)
@@ -117,20 +125,24 @@ _nomial	fd	factorial
 	jdr	_poly
 
 	lcal	eliminate_microdust
-.	lcal	trim
+	lcal	trim
 
 	$ret
 
-	$if	0
-trim	dpush	a		. replace LS 36 bits mantissa
-	dsa	24		. with signs
+	$if	1		. if 64 mantissa bits are nonsign
+trim	push	a		. make all 72 bits nonsign
+	saa	24
+	xor	-1,,xi
+	lk	-1,,xi
+	mta	b		. test mantissa bits 71..48
+	j	trimmed
+	mta	6		. test mantissa bits 47..24
+	j	trimmed
+	lk	-256,,xi
+	mta	7		. test mantissa bits 23..8
+	j	trimmed
 	sa	7
-	lb	6
-	sbr	12
-	drl	12
-	sb	6
-	pop	a
-	pop	b
+trimmed	pop	a
 	lret	0
 	$endif
 
@@ -151,6 +163,28 @@ eliminate_normalised
 	ds	2, sp
 eliminated
 	qpop	a
+	lret	0
+
+encircle	$head_near	 params(degreep,	int	)
+
+	lx	degreep
+	dl	0, x
+	jpa	magnitude_found
+
+	xor	-1,,xi
+	xorB	-1,,xi
+
+magnitude_found
+	dan	(360.0)		. we'll use both halves of that constant later
+	jnc	encircled
+
+	ql	(2.777777777777777777777777777777777777777778e-3)
+	fm	0, x
+	c	(ap_lib96_fraction)	a,,float
+	fm	(360.0)
+	qs	0, x
+
+encircled
 	lret	0
 
 	$root

@@ -56,6 +56,16 @@ extern char **environ;
 
 #define	RESENDS	5
 
+#ifdef	MSW
+#define	BLUE
+#define	RED
+#define	PRIMARY
+#else
+#define BLUE             if (flag['b'-'a'] == 0) printf("\033[38;5;12m");
+#define RED              if (flag['b'-'a'] == 0) printf("\033[38;5;9m");
+#define PRIMARY          if (flag['b'-'a'] == 0) printf("\033[0m");
+#endif
+
 #ifdef	LINUX
 static struct sockaddr_in target = {     AF_INET, PORT(FPONLINE_SERVICE) } ;
 
@@ -751,14 +761,22 @@ int main(int argc, char *argv[])
       if (flag['x'-'a'])
       {
          printf("recv state %d/%d\n", x, (x < 0) ? errno : TEXTL);
+         BLUE
          for (y = 0; y < x; y++) printf("%2.2x", rdata[y]);
+         PRIMARY
          if (y) putchar(10);
       }
       else
       {
-         if ((uflag['Q'-'A'] == 0) || (x < 0))
-         printf("recv state %d/%d %s\n", x, (x < 0) ? errno : TEXTL, rdata);
-         else if (x >= 0) printf("%s\n", rdata);
+         if ((uflag['Q'-'A'] == 0) || (x < 0)) printf("recv state %d/%d ", x, (x < 0) ? errno : TEXTL);
+         if (x > 0)
+         {
+            BLUE
+            printf("%s", rdata);
+            PRIMARY
+         }
+
+         putchar(10);
       }
 
       if (x > 0)
