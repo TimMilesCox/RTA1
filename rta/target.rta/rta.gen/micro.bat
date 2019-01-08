@@ -1,3 +1,5 @@
+@echo	off
+
 rem 
 rem     Copyright Tim Cox, 2012
 rem     TimMilesCox@gmx.ch
@@ -82,3 +84,5 @@ if [%1]==[-d] goto end
 echo	option ./micro -d for optimal view of memory map in mlist.txt
 echo	-d option also writes expected summaries in output binary minimal.txo
 :end
+
+@echo	on

@@ -48,7 +48,9 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% elephant.msm ..\test.rta\elephant
 %MASMX% %FLAGS% expand.msm ..\test.rta\expand
 %MASMX% %FLAGS% expound.msm ..\test.rta\expound
+%MASMX% %FLAGS% feeler.msm ..\test.rta\feeler
 %MASMX% %FLAGS% fields.msm ..\test.rta\fields
+%MASMX% %FLAGS% floatate.msm ..\test.rta\floatate
 %MASMX% %FLAGS% floating.msm ..\test.rta\floating
 %MASMX% %FLAGS% fpfactor.msm ..\test.rta\fpfactor
 %MASMX% %FLAGS% fplen.msm ..\test.rta\fplen
@@ -96,6 +98,7 @@ del /Q  ..\test.rta\*
 %MASMX% %FLAGS% mstrlib.msm ..\test.rta\mstrlib
 %MASMX% %FLAGS% muklthon.msm ..\test.rta\muklthon
 %MASMX% %FLAGS% nawmuch.msm ..\test.rta\nawmuch
+%MASMX% %FLAGS% newaudit.msm ..\test.rta\newaudit
 %MASMX% %FLAGS% newtotal.msm ..\test.rta\newtotal
 %MASMX% %FLAGS% normal.msm ..\test.rta\normal
 %MASMX% %FLAGS% oh.msm ..\test.rta\oh
@@ -173,6 +176,7 @@ lstring -b ..\test.rta\sowino.txo ..\test.rta\sowino
 %MASMX% %FLAGS% symbo.msm ..\test.rta\symbo
 %MASMX% %FLAGS% tcolumn.msm ..\test.rta\tcolumn
 %MASMX% %FLAGS% tptr.msm ..\test.rta\tptr
+%MASMX% %FLAGS% trumpet.msm ..\test.rta\trumpet -X
 %MASMX% %FLAGS% tryhard.msm ..\test.rta\tryhard
 %MASMX% %FLAGS% types.msm ..\test.rta\types
 %MASMX% %FLAGS% unary.msm ..\test.rta\unary

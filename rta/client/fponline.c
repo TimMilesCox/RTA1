@@ -55,16 +55,22 @@ extern char **environ;
 #endif
 
 #define	RESENDS	5
-
-#ifdef	MSW
-#define	BLUE
-#define	RED
-#define	PRIMARY
+//	"\033[38;5;94m"
+#ifdef  MSW
+#define BLUE
+#define	GREEN
+#define RED
+#define PRIMARY
+#define	BRIGHT
 #else
-#define BLUE             if (flag['b'-'a'] == 0) printf("\033[38;5;12m");
-#define RED              if (flag['b'-'a'] == 0) printf("\033[38;5;9m");
-#define PRIMARY          if (flag['b'-'a'] == 0) printf("\033[0m");
+#define BLUE            "\033[94m"
+#define	GREEN		"\033[92m"
+#define RED             "\033[91m"
+#define PRIMARY         if (flag['b'-'a'] == 0) printf("\033[0m");
+#define	BRIGHT		if (flag['b'-'a'] == 0) printf(bright);
 #endif
+
+static char		 bright[12] = BLUE;
 
 #ifdef	LINUX
 static struct sockaddr_in target = {     AF_INET, PORT(FPONLINE_SERVICE) } ;
@@ -88,17 +94,26 @@ static struct sockaddr_in local  = {     PF_INET, 0                      } ;
 static WSADATA wsa;
 #endif
 
-static unsigned char		 path[240];
-static unsigned char		 pdupath[240];
-static unsigned char		 dynamic_masmdef[240];
-static unsigned char		 save_masmdef[240];
-static unsigned char		 path_txo[240];
-static unsigned char		 msympath[240];
-static unsigned char		 ramspace_d[240];
-static unsigned char		 client_d[240];
+static unsigned char	 path[240];
+static unsigned char	 pdupath[240];
+static unsigned char	 dynamic_masmdef[240];
+static unsigned char	 save_masmdef[240];
+static unsigned char	 path_txo[240];
+static unsigned char	 msympath[240];
+static unsigned char	 ramspace_d[240];
+static unsigned char	 client_d[240];
 
-static int			 name_store;
-static int			 dynamic;
+#ifdef FORK
+#else
+static char		*scriptp[] = { "bash", "./mpdu", NULL } ;
+static char		*scriptq[] = { "bash", "./fponline.cfg", NULL } ;
+static char		*scriprt[] = { "masmx", msympath, path_txo, "-wkuX", NULL } ;
+static char		*scriptl[] = { "masmx", save_masmdef, "my_names.txo", "-wk", NULL } ;
+#endif
+
+
+static int		 name_store;
+static int		 dynamic;
 
 
 /****************************************************
@@ -196,7 +211,85 @@ static void isolate(int f)
 static void recall_store(int bytes, char *text)
 {
    int           x = write(name_store, text, bytes);
-   if (x < 0) printf("name update failed on insert %d\n", errno);
+   int		 y,
+		 j;
+
+   if (x < 0)
+   {
+      printf("name insert failed %d\n", errno);
+      return;
+   }
+ 
+   #ifdef MSW_X86
+
+   #elif defined(FORK)
+
+   x = fork();
+
+   if (x)
+   {
+      /****************************************************
+                this is the caller
+      ****************************************************/
+
+      if (flag['v'-'a']) printf(" %d names reassembly launched\n", x);
+      y = waitpid(x, &j, 0);
+      if (flag['v'-'a']) printf(" %d names reassembly returned, %x\n", y, j);
+
+      if (j & 0x8000)
+      {
+         printf("names reassembly errored. cached names unchanged\n");
+      }
+   }
+   else
+   {
+      /***************************************************
+                this is the clone
+      ***************************************************/
+
+      chdir(ramspace_d);
+      x = execlp("masmx", "masmx", save_masmdef, "my_names", "-kw", (char *) 0);
+      if (x < 0) printf("[%d] new name assembly not started\n", errno);
+
+      return x;
+   }
+
+
+   #else
+
+   /******************************************************
+         a name is added and cached names are reassembled
+   ******************************************************/
+
+   x = 0;
+
+   chdir(ramspace_d);
+   y = posix_spawnp(&x, "masmx",NULL, NULL, scriptl, environ);
+   chdir(client_d);
+
+   if (y < 0)
+   {
+      printf("names reassembly launch fail %d\n", errno);
+      return;
+   }
+   else if (x == 0)
+   {
+      printf("reassembly process not identified\n");
+      return;
+   }
+   else
+   {
+      if (flag['v'-'a']) printf(" %d launched names reassembly\n", x);
+      y = waitpid(x, &j, 0);
+      if (flag['v'-'a']) printf(" %d returned names reassembly, %x\n", y, j);
+
+      if (j & 0x8000)
+      {
+         printf("names reassembly errored. cached names unchanged\n");
+      }
+   }
+
+   #endif
 }
 
 static void dynamic_store(int bytes, char *text)
@@ -223,14 +316,6 @@ int main(int argc, char *argv[])
    int			 s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    int			 f = fcntl(s, F_GETFL, 0);
    int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
-
-   #ifdef FORK
-   #else
-   char			*scriptp[] = { "bash", "./mpdu", NULL } ;
-   char			*scriptq[] = { "bash", "./fponline.cfg", NULL } ;
-   char			*scriprt[] = { "masmx", msympath, path_txo, "-wk", NULL } ;
-   #endif
-
    #endif
 
    int			 x,
@@ -249,21 +334,25 @@ int main(int argc, char *argv[])
 
    FILE			*config = fopen("config.fp", "r");
 
-   int			 runagate,
+   int			 request,
 			 pduf;
 
    unsigned char	 name[160];
    unsigned char	 added_name[160];
 
+   #if 0
    struct stat		 path_present;
-
+   #endif
 
    argue(argc, argv);
 
    if (flag['w'-'a']) printf("[%s]", environ[0]);
 
+   if (uflag['F'-'A']) strcpy(bright, RED);
+   if (uflag['G'-'A']) strcpy(bright, GREEN);
+
    sprintf(pdupath, RAMFS "fponline/%s/pduimage", getenv("USER"));
-   sprintf(path, RAMFS "fponline/%s/runagate.msm", getenv("USER"));
+   sprintf(path, RAMFS "fponline/%s/request.msm", getenv("USER"));
    sprintf(path_txo, RAMFS "fponline/%s/pdu.txo", getenv("USER"));
    sprintf(msympath, "%s/../../target.rta/fponline/pdu.msm", getenv("RTA_BINARY"));
    sprintf(ramspace_d, RAMFS "fponline/%s", getenv("USER"));
@@ -346,81 +435,69 @@ int main(int argc, char *argv[])
       network bound
    **************************************************************/
 
-   /**************************************************************
-      now ready saved names for adding more
-   **************************************************************/
+   #ifdef FORK
 
-   x  = stat(ramspace_d, &path_present);
-   x |= stat(dynamic_masmdef, &path_present);
-   x |= stat(save_masmdef, &path_present);
+   x = fork();
 
-   if (x < 0)
-   {
-      #ifdef FORK
-
-      x = fork();
-
-      /*******************************************************
+   /*******************************************************
 		for platforms where posix_spawnp
 		can't be configured
 		mercifully no files are yet open
 		so they won't get cloned 
-      *******************************************************/
+   *******************************************************/
 
-      if (x)
-      {
-         /****************************************************
+   if (x)
+   {
+      /****************************************************
                 this is the caller
-         ****************************************************/
+      ****************************************************/
 
-         if (flag['v'-'a']) printf(" %d launched fpconfig.cfg\n", x);
-         y = waitpid(x, &j, 0);
-         if (flag['v'-'a']) printf(" %d returned fpconfig.cfg, %x\n", y, j);
+      if (flag['v'-'a']) printf(" %d launched fpconfig.cfg\n", x);
+      y = waitpid(x, &j, 0);
+      if (flag['v'-'a']) printf(" %d returned fpconfig.cfg, %x\n", y, j);
 
-         if (j & 0x8000)
-         {
-            printf("please run rta/client/fponline.cfg\n");
-            return 0;
-         }
-      }
-      else
+      if (j & 0x8000)
       {
-         /***************************************************
-                this is the clone
-         ***************************************************/
-
-         x = execlp("./fponline.cfg", "blanco", (char *) 0);
-         if (x < 0) printf("[%d] please run rta/client/fponline.cfg\n\n", errno);
-         return x;
-      }
-
-      #else
-
-      x = 0;
-      y = posix_spawnp(&x, "bash", NULL, NULL, scriptq, environ);
-
-      if ((y < 0) || (x == 0))
-      {
-         printf("please cd rta/client and run  ./fponline.cfg\n"
-                "then execute fponline again: error %d \n", errno);
-
+         printf("please run rta/client/fponline.cfg\n");
          return 0;
       }
-      else
-      {
-         if (flag['v'-'a']) printf(" %d launched fponline.cfg\n", x);
-         y = waitpid(x, &j, 0);
-         if (flag['v'-'a']) printf(" %d returned fponline.cfg, %x\n", y, j);
+   }
+   else
+   {
+      /***************************************************
+                this is the clone
+      ***************************************************/
 
-         if (j & 0x8000)
-         {
-            printf("please run rta/client/fponline.cfg\n");
-            return 0;
-         }
-      }
-      #endif
+      x = execlp("./fponline.cfg", "blanco", (char *) 0);
+      if (x < 0) printf("[%d] please run rta/client/fponline.cfg\n\n", errno);
+      return x;
    }
 
+   #else
+
+   x = 0;
+   y = posix_spawnp(&x, "bash", NULL, NULL, scriptq, environ);
+
+   if ((y < 0) || (x == 0))
+   {
+      printf("please cd rta/client and run  ./fponline.cfg\n"
+             "then execute fponline again: error %d \n", errno);
+
+      return 0;
+   }
+   else
+   {
+      if (flag['v'-'a']) printf(" %d launched fponline.cfg\n", x);
+      y = waitpid(x, &j, 0);
+      if (flag['v'-'a']) printf(" %d returned fponline.cfg, %x\n", y, j);
+
+      if (j & 0x8000)
+      {
+         printf("please run rta/client/fponline.cfg\n");
+         return 0;
+      }
+   }
+   #endif
 
    name_store = open(save_masmdef, O_CREAT | O_RDWR | O_APPEND, 0777);
    if (name_store < 0) printf("%s fixed names store in error %d\n", save_masmdef, errno);
@@ -440,15 +517,8 @@ int main(int argc, char *argv[])
       printf("mmap total %p %d\n", p, errno);
    }
 
-   runagate = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
-   if (runagate < 0) printf("%s action store in error %d\n", path, errno);
-   p = mmap(NULL, 2048, PROT_READ | PROT_WRITE, MAP_SHARED, runagate, 0);
-
-   if (p == MAP_FAILED)
-   { 
-      printf("mmap action %p %d\n", p, errno);
-   }
-
+   request = open(path, O_RDWR | O_CREAT | O_TRUNC, 0777);
+   if (request < 0) printf("%s action store in error %d\n", path, errno);
 
    if (flag['f'-'a'])
    {
@@ -490,7 +560,7 @@ int main(int argc, char *argv[])
    if (flag['v'-'a'])
    {
       printf("dynamic.def %d\n", dynamic);
-      printf("dynamic.def %d\n", name_store);
+      printf("my_names.def %d\n", name_store);
    }
 
    isolate(name_store);
@@ -506,11 +576,11 @@ int main(int argc, char *argv[])
       if (sdata[0] == '.') break;
       j = strlen(p);
 
-      lseek(runagate, (off_t) 0, SEEK_SET);
+      lseek(request, (off_t) 0, SEEK_SET);
 
       while (symbol = *p++)
       {
-         if ((symbol ^ ' ') | (symbol ^ '\t')) break;
+         if ((symbol ^ ' ') && (symbol ^ '\t')) break;
       }
 
       if (symbol ==    0) continue;
@@ -545,7 +615,7 @@ int main(int argc, char *argv[])
 
          if ((symbol1 ^ '_') && (symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
          {
-            bytes = sprintf(added_name, "%s\t$set,168\t%s\n", name, rdata);
+            bytes = sprintf(added_name, "%s*\t$set,168\t%s\n", name, rdata);
             recall_store(bytes, added_name);
             continue;
 
@@ -561,16 +631,16 @@ int main(int argc, char *argv[])
          ***************************************************************/
       }
 
-      if (symbol1 == '_') x = write(runagate, "\t", 1);
-      else                x = write(runagate, "\t$xqt_fp,$192\t", 14);
+      if (symbol1 == '_') x = write(request, "\t", 1);
+      else                x = write(request, "\t$xqt_fp,$192\t", 14);
 
       if (x > 0)
       {
          if ((symbol1 == '+') || (symbol1 == '-') || (symbol1 == '*') || (symbol1 == '/'))
-         x = write(runagate, "$TOTAL", 6);
+         x = write(request, "$TOTAL", 6);
       }
 
-      if (x > 0) x = write(runagate, sdata, j);
+      if (x > 0) x = write(request, sdata, j);
 
       if (x < 0)
       {
@@ -578,7 +648,7 @@ int main(int argc, char *argv[])
          break;
       }
 
-      write(runagate, "\0", 1);
+      write(request, "\0", 1);
 
       #ifdef X86_MSW
 
@@ -621,7 +691,7 @@ int main(int argc, char *argv[])
          {
             chdir(ramspace_d);
             remove("pdu.txo");
-            x = execlp("masmx", "masmx", msympath, "pdu", "-kw", (char *) 0);
+            x = execlp("masmx", "masmx", msympath, "pdu", "-kwX", (char *) 0);
             if (x < 0) printf("[%d] masmx process not started\n", errno);
          }
 
@@ -761,9 +831,7 @@ int main(int argc, char *argv[])
       if (flag['x'-'a'])
       {
          printf("recv state %d/%d\n", x, (x < 0) ? errno : TEXTL);
-         BLUE
          for (y = 0; y < x; y++) printf("%2.2x", rdata[y]);
-         PRIMARY
          if (y) putchar(10);
       }
       else
@@ -771,7 +839,7 @@ int main(int argc, char *argv[])
          if ((uflag['Q'-'A'] == 0) || (x < 0)) printf("recv state %d/%d ", x, (x < 0) ? errno : TEXTL);
          if (x > 0)
          {
-            BLUE
+            BRIGHT
             printf("%s", rdata);
             PRIMARY
          }
@@ -797,7 +865,7 @@ int main(int argc, char *argv[])
 
    close(name_store);
    close(dynamic);
-   close(runagate);
+   close(request);
 
    return 0;
 }
