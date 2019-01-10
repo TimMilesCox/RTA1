@@ -37,6 +37,8 @@
 .
 .
 
+HTTP_USER $equ	1		. there may be a second web pages tree
+				. for the customer
 HTTP_PORT $equ	80
 
 CR	$equ	0d
@@ -56,6 +58,10 @@ fs24_sla   -	1:d
 
 . http_file_octets
 .	+	0:d
+
+	$if	HTTP_USER
+fs24_sla2  -	1:d
+	$endif
 
 http_threads	1
 
@@ -104,6 +110,14 @@ http_thread
 	dsr	48
 	call	(fs_find)
 	ds	fs24_sla
+
+	$if	HTTP_USER
+	lr	2,,xi
+	ly, xi	$1("web2")
+	dsr	48
+	call	(fs_find)
+	ds	fs24_sla2
+	$endif
 
 http_bound?
 	tp	http_bound
@@ -197,11 +211,27 @@ http_request_thread $head_near	scalars(http_thread_request, 	int, a		;
 
 	ly	http_target_name,,i
 	lcal	http_get_what
+
 	dl	fs24_sla		. fs descriptor from
+
+	$if	HTTP_USER
+	jza	http_search2
+	$else
 	jza	http_drop_request	. global initialisation
+	$endif
 
 	call	(fs_dsearch)
 	jnza	http_located
+
+	$if	HTTP_USER
+http_search2
+	dl	fs24_sla2		. user pages directory
+	jza	http_drop_request
+	call	(fs_dsearch)
+	jnza	http_located
+	dl	fs24_sla		. need to ask a second time
+	jza	http_drop_request
+	$endif
 
 	ly, xi	$1("index.html")
 	lr, xi	4
