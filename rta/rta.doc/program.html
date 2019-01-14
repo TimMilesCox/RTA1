@@ -3,19 +3,134 @@
 <h1>Constructing Applications for RTA1</h1>
 
 
-<form   style="color:FF0000">
+<div   style="color:FF0000">
 
+<form	action="masmx7r3.html">
 masmx 7r3A meta-assembler for RTA1
-        <input type="submit" name="masmx7r3.html" value="masmx"><br><br>
-
-Kernel Routines and System Calls
-        <input type="submit" name="smaragd7.html" value="smaragd7"><br><br>
-
-Towards Compiler Languages for RTA1 Architecture
-        <input type="submit" name="language.html" value="language"><br><br>
+        <input type="submit" name="masmx7r3" value="masmx"><br>
 
 </form>
+<form	action="smaragd7.html">
+Kernel Routines and System Calls
+        <input type="submit" name="smaragd7" value="smaragd7"><br>
 
+</form>
+<form	action="language.html">
+Towards Compiler Languages for RTA1 Architecture
+        <input type="submit" name="language" value="language"><br>
+
+</form>
+</div>
+
+
+<div    style="font-size:14pt;color:000000">
+<h2>Embedded System Model</h2>
+
+<h3>Application Core Map Overview</h3>
+
+RTA1 system image development is oriented toward embedded servers where
+<pre	style="font-size:12pt">
+
+        instruction code is in NVRAM
+
+        all programs are shared instruction code. Each process has a copy of program data
+
+        a new process unpacks its data segment into RAM from a file system in NVRAM
+
+        executable space has a boundary between NVRAM at low order locations and RAM at high order locations
+
+        there is not necessarily a program loader
+        Application instruction code and data segment load template reside in NVRAM
+
+</pre>
+
+Application instruction and data memory is assigned in terms of numbered program sections called location counters
+
+
+<p>
+The use and program-relative addresses of program sections are
+<pre	style="font-size:12pt">
+
+                _________________________
+        000000  |$(0)   Instruction Code|                       TCB / Process Private Space B1 / Vector Space B2 / Static Data Space B3 Assigned at Process SPAWN$
+        hex     |                       |                       __________________________________________________________________________________________________
+                | any size
+                | in 4Kword increments  |
+                                                                __________________________________________                      _________________________
+                                                        001000  |$(1)                   |                               001000  | $(65)                 |
+                                                        hex     |  process private data |                               hex     | thread control block  |
+                                                                |                       |                                       | per thread 4k         |
+                                                                |  4K words     may be multiple                                 | addressed by kernel    |
+                                                                |_______________________|_________________                      |_______________________|
+                                                        002000  |$(2)                   |
+                                                        hex     |  vector list          |       application cannot write
+                                                                |  process global       |       its vector list
+                                                                |  4K words             |
+                                                                |_______________________|
+                                                        003000  |$(3)                   |
+                                                        hex     |  static data          |
+                                                                |  process global
+                                                                   initial assignment multiple of 4Kwords
+
+                                                                   runtime array space + kernel interface space
+                                                                   up to 1 teraword dynamically addressed
+                                                                   outside of program section model
+
+</pre>
+
+Instruction code and core file system containing data load strings are in NVRAM before system call ii SPAWN$
+
+<p>
+SPAWN$ assigns the TCB and sections $(1) $(2) $(3) (private, vector, static), constructs B2 vector list and writes process block pointers B1 and B2
+
+<p>
+Application start reads the start location of B3 static from vectors and writes static block pointers in adress space B3 [ B4..B31] then calls dynamic segment loader seg$load to initialise private data and static data
+
+<h3>Sample Application Source Code</h3>
+
+The this sample source code layout of an embedded model Application uses known absolute addresses
+
+<p>
+Even absolute asasemblies like this can be later combined in packaged program suites
+
+<pre	style="font-size:12pt">
+
+	$path		../rta/target.rta	. depending where you are
+	$include	def/rta.def		. RTA1 instruction set
+	$include	def/vectors.def		. view of B2 vector list constructed by kernel on application spawn
+	$include	language/stack.def	. macro language for structured functions
+	$path					. bring include path back here
+
+ABSOLUTE_I	$equ	48*1024			. absolute code address reserved
+ROM_FS		$equ	60*1024/4096		. ID of 4K-word page where the ROM file system starts
+						. many applications may link to this FS to obtain their initial data segment
+
+$(1:01000)					. this is for any private data
+mysocket	-1				. this can only be an argument by value, never by reference
+
+$(3:03000)					. this is for static data which can be exported
+ibuffer	$res	1500//3				
+obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
+
+$(0:0:ABSOLUTE_I)				. section 0 is code : program relative address 0 : absolute address known
+
+myvector* $vector	entrypoint1		. export ABSOLUTE_I / 4096 * 64 + zero. That's a callable vector value
+
+	$do	64-$,	fret	0		. return if anyone calls ABSOLUTE_I / 4096 * 64 + [1..63]
+
+entrypoint1
+	$base_d	$zenith(3)			. place $(3) storage in address space
+	
+	c	(seg$load)	ROM_FS,,xi	(mydataseg_filename:d),,long
+
+						. 48-bit file name value is a word offset in the ROM file system
+						. it identifies the first extent of the file containing data segment load strings
+
+						. application code goes here
+
+
+</pre>
+</div>
 </div>
 </html>
 
