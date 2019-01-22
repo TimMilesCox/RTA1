@@ -140,8 +140,7 @@ $(0:0:TRANSFER_PAGE)
 		j		exit		. EXIT$*
 		j		thread		. THREAD$*
 		j		freetotal_ii	. TOTAL$FREE*
-		j		rt_yield	. RT$YIELD* without T$SLICE this jumps to yield = rt_yield
-						. with T$SLICE yield is altered and this stays the same
+
 	$do		14-$,	ir	0
 
 		j		fpxpo_read_clear_ii	. FP_XPO$FLAG*
@@ -168,6 +167,8 @@ $(0:0:TRANSFER_PAGE)
 
 ?	$do	12,	j	xbase(32+?-1)
 
+NET2SYM$*	$vector	net2sym_ii		. encode a connection handle
+						. and assign it to a process as stdin/out/err
 	$if		$K_WPROTECT
 "$TCBLOCKS"*	$vector		a_tcbloc_ii
 "$X_RXB"*	$vector		x_rxb_ii 
@@ -528,6 +529,29 @@ fpxpo_ii
 	on		see$1		. look into the thread control block
 	la		(0800000s)	. flag this happened
 	sa		FP_XPO		. in case the application likes to know
+	ir		0
+
+net2sym_ii				. first address the destination
+	la		a		. primary threadcb is in application a
+	sabr		32		. that window is treated as volatile
+	la		*(32*/12++ABT-01000+2) . vector window of the target thread
+	sabr		32
+					. 6:12 address of transmission CB is in
+	la		x		. application x
+	lb		0,,xi
+	drl		12		. base tag in b, offset in a
+	sar		12+3		. isolate 9 bits
+	sal		3		. multiplied by 8
+	or		(TCP_TCB*/16s)	. transmission CB is exactly 24 words
+	on		see$1		. read your own ABT+BSOCKET
+	ab		ABT,,xi
+	lb		0, b		. read the bank ID of connection CBs
+
+	lx		(32*/12)
+	ds		handle(1)**0FFF,x	. stdin
+	ds		handle(2)**0FFF,x	. stdout
+	ds		handle(3)**0FFF,x	. stderr. process start should have reserved thse
+
 	ir		0
 
 TRANSFER_PAGE_HIGH

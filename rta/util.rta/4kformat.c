@@ -766,10 +766,13 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
 int main(int argc, char *argv[])
 {
+   static char		 outwrite[64];
+
    int			 status,
 			 symbol;
 
    long long		 net_granules = GRANULES;
+   off_t		 position;
    int			 net_pages = PAGES_IN_DEVICE;
    unsigned char	*uptr;
 
@@ -877,7 +880,21 @@ int main(int argc, char *argv[])
 
       lseek(f, (off_t) 0, SEEK_SET);
       status = outputw(f, (unsigned char *) &label1, DIRECTORY_BLOCK);
-      if (status < 0) printf("write error %d\n", errno);      
+      if (status < 0) printf("write error %d\n", errno); 
+
+      if (flag['z'-'a'])
+      {
+         if (flag['x']) printf("page fill option -z makes no sense with txo option -x\n");
+         else
+         {
+            position = lseek(f, (off_t) 0, SEEK_END);
+            status = (4096 * 3) - position % (4096 * 3);
+            printf("zero fill %d octets\n", status);
+            write(f, outwrite, status & 63);
+            status >>= 6;
+            while (status--) write(f, outwrite, 64);
+         }
+      }
 
       close (f);
    }

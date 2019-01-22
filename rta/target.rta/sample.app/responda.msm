@@ -1,0 +1,38 @@
+	$path		../			. depending where you are
+	$include	def/rta.def		. RTA1 instruction set
+	$include	def/vector.def		. view of B2 vector list constructed by kernel on application spawn
+	$include	def/ii.def
+	$include	language/stack.def	. macro language for structured functions
+	$path		../image.app/
+	$include	imports.def	
+	$path					. bring include path back here
+
+$(1:01000)					. this is for any private data
+mysocket	-1				. this can only be an argument by value, never by reference
+
+$(3:03000/$3)					. this is for static data which can be exported
+ibuffer	$res	1500//3				
+obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
+
+$(0:0)						. section 0 is code. Relative addresss 0
+
+responder* $vector	respond			. export ABSOLUTE_I / 4096 * 64 + zero. That's a callable vector value
+
+	$list	0
+	$do	64-$,	fret	0		. return if anyone calls ABSOLUTE_I / 4096 * 64 + [1..63]
+	$list
+
+respond
+	$base_x	$zenith(3)-03000 4096		. place static storage in address space
+	
+	c	(seg$load)	0,,xi	(data_load:d),,long
+
+						. 48-bit file name value is a word offset in the ROM file system
+						. it identifies the first extent of the file containing data segment load strings
+
+						. zero block address for the core file system identity
+						. causes seg$load to read the absolute load address from the return stack
+react	ii	YIELD$
+	j	react
+						. application code goes here
+	$do	$<256,$(0:256)			. literal data constants are not addressable at locations before 256
