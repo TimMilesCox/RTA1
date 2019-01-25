@@ -3,16 +3,22 @@
 	$include	def/vector.def		. view of B2 vector list constructed by kernel on application spawn
 	$include	def/ii.def
 	$include	language/stack.def	. macro language for structured functions
+	$include	t77.4/tcp.def
 	$path		../image.app/
 	$include	imports.def	
 	$path					. bring include path back here
 
+"$octets"* $func
+	$return	$bits//8
+	$end
+
 $(1:01000)					. this is for any private data
-mysocket	-1				. this can only be an argument by value, never by reference
+						. this can only be an argument by value, never by reference
 
 $(3:03000/$3)					. this is for static data which can be exported
 ibuffer	$res	1500//3				
 obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
+indications	0:d
 
 $(0:0)						. section 0 is code. Relative addresss 0
 
@@ -32,7 +38,22 @@ respond
 
 						. zero block address for the core file system identity
 						. causes seg$load to read the absolute load address from the return stack
-react	ii	YIELD$
+
+react	c	(recv)	0,,xi		;	. socket
+			ibuffer,,xi	;	. destination
+			1500,,xi	;	. maximum
+			05000,,xi	. flags
+
+	ds	indications			. should be received:1500-received
+
+	c	(send)	1,,xi				;	. socket
+			$3("thank you, I read":9),,xi	;	. source buffer
+			18,,xi				;
+			0,,xi
+
+	c	(send)	1,,xi	ibuffer,,xi	indications	05000++TCP_PSH,,xi
+
+reactx	ii	YIELD$
 	j	react
 						. application code goes here
 	$do	$<256,$(0:256)			. literal data constants are not addressable at locations before 256

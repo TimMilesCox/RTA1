@@ -167,8 +167,18 @@ $(0:0:TRANSFER_PAGE)
 
 ?	$do	12,	j	xbase(32+?-1)
 
+CACHE_NETB$*	$vector	cache_standard_netbuf_ii
+ON_NETB$*	$vector	base_standard_netbuf_ii
+FREE_DEVB$*	$vector	unbase_deviceb_ii
+FREE_BVOLATI$*	$vector unbase_bvolatile_ii
+FREE_SOCKB$*	$vector	unbase_socketb_ii
+FREE_NETB$*	$vector	unbase_standard_netbuf_ii
+
 NET2SYM$*	$vector	net2sym_ii		. encode a connection handle
 						. and assign it to a process as stdin/out/err
+LEASE$*		$vector	lease_ii
+LEASE$?*	$vector	lease_ii?
+
 	$if		$K_WPROTECT
 "$TCBLOCKS"*	$vector		a_tcbloc_ii
 "$X_RXB"*	$vector		x_rxb_ii 
@@ -533,9 +543,9 @@ fpxpo_ii
 
 net2sym_ii				. first address the destination
 	la		a		. primary threadcb is in application a
-	sabr		32		. that window is treated as volatile
-	la		*(32*/12++ABT-01000+2) . vector window of the target thread
-	sabr		32
+	sabr		BVOLATILE_I	. that window is treated as volatile
+	la		*(BVOLATILE_I*/12++ABT-01000+2) . vector window of the target thread
+	sabr		BVOLATILE_I
 					. 6:12 address of transmission CB is in
 	la		x		. application x
 	lb		0,,xi
@@ -547,12 +557,100 @@ net2sym_ii				. first address the destination
 	ab		ABT,,xi
 	lb		0, b		. read the bank ID of connection CBs
 
-	lx		(32*/12)
+	lx		(BVOLATILE_I*/12)
 	ds		handle(1)**0FFF,x	. stdin
 	ds		handle(2)**0FFF,x	. stdout
 	ds		handle(3)**0FFF,x	. stderr. process start should have reserved thse
 
 	ir		0
+
+lease_ii
+	la	a		. load TCB id from application a
+	sabr	BVOLATILE_I
+	la	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+	sa	*b		. store back at application b->
+	ir	0
+
+lease_ii?
+	lx	*b		. get thread descriptor application b->
+				. trust it for real
+
+	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+	la	2, x
+	and	(TRAP++EXIT)	. is this thread running?	
+	jnza	lease_expired
+
+	la	3, x		. is the pointed TCB still its TCB ?
+				. for example that page may be not now be a TCB
+
+	sabr	BVOLATILE_I
+	la	x_x		. is the thread descriptor the one in the TCB ?
+	xor	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+	jnza	lease_expired
+				. does the caller's vector list still have this handle?
+				. if not this might be an all new thread
+
+	la	*(BVOLATILE_I*/12++ABT-01000+2)
+	sabr	BVOLATILE_I
+
+	la	x		. load transmission control block at application x->
+	lb	0,,xi		. change to a handle encoding
+	drl	12
+	sar	12
+	or	(TCP_TCB*/16)
+	ab	01000,,xi
+	lb	ABT-01000, b
+
+	dan	*(BVOLATILE_I*/12++handle(1)-02000)
+	jdz	lease_current
+
+lease_expired
+	z	*b		. end the lease of the transmission control block
+	ir	1
+
+lease_current
+	ir	0
+
+cache_netb* $proc
+	ql	ABT+48+4*?-4
+	qs	$NETB+4*?-4
+	$end
+
+cache_standard_netbuf_ii
+	on	see$1++see$2
+?	$do	4,	cache_netb
+	ir	0
+
+retrieve_netb* $proc
+	la	$NETB+?-1
+	sabr	48+?-1
+	$end
+
+base_standard_netbuf_ii
+	on	see$2
+?	$do	16,	retrieve_netb
+	ir	0
+
+unbase_deviceb_ii
+	la	(0C00001s)
+	sabr	32
+	ir	0
+
+unbase_bvolatile_ii
+	la	(0C00001s)
+	sabr	BVOLATILE_I
+	ir	0
+
+unbase_socketb_ii
+	la	(0C00001s)
+	sabr	BSOCKET
+	ir	0
+
+unbase_standard_netbuf_ii
+	la	(0C00001s)
+?	$do	16,	sabr	48+?-1
+	ir	0
+
 
 TRANSFER_PAGE_HIGH
 

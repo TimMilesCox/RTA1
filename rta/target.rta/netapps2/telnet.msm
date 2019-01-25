@@ -133,6 +133,8 @@ telnet_state?
 telnet_traffic?
 	la	transmission:receiveq:head
 	jza	telnet_walk
+	call	(subagent?)
+	j	telnet_walk
 	lcal	telnet_console
 	j	telnet_walk
 
@@ -143,7 +145,6 @@ telnet_z
 	fret	0
 
 telnet_console
-
 	lcal	telnet_command
 	call	(tcp_release_rxline)
 	lret	0
@@ -159,6 +160,7 @@ telnet_command
 	la	*q		. check text or something else
 	and	(00F000)	. a configuration sequence?
 	xor	(00F000)
+
 	jza	telnet_configure
 
 	la, xi	6		. input a command text word
@@ -283,19 +285,26 @@ telnet_run
 				telnet_run_name,,xi
 
 	lx	telnet_tpaside
-	jza	telnet_runstatus
+	jza	telnet_norun
 
 	ii	NET2SYM$
+	call	(subagent)
 
-telnet_runstatus
+        lcal	telnet_run_report
+	lret	1			. don't fall thru anywhere	
+					. don't drop the input
+telnet_norun
+	lcal	telnet_run_report
+	lret	0
+
+telnet_run_report
 	lcal	telnet_display_quartets
 
 	la	1,,xi
 	lb	$3("":10),,xi
 
-	lcal	telnet_respond		. don't fall thru anywhere
-	lret	1			. dodge dropping the input
-					. it's for forwarding
+	lcal	telnet_respond
+	lret	0
 
 telnet_configure
 		. something received clearly not keyed text

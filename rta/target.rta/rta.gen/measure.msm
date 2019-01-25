@@ -1005,6 +1005,10 @@ remove_threadx
 
 exit	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
 	la	TDESCRIPTOR
+	z	TDESCRIPTOR	. stop the TCB from looking like itself
+	lb	2, a		. mark the descriptor until it's reassigned
+	orB	(EXIT)
+	sb	2, a
 	ts	banks_lock_cell
 	j	$-1
 	tanu	next_tdescriptor_sp
@@ -1130,7 +1134,7 @@ forward	lb	a_x
 				. except rare cases when only RT threads are candidates
 
 	$do	PRIORITIES>8,	$flag	time slice table < priorities
-	andB	+(1*/T$LOG(PRIORITIES))-1
+	andB	+(1*/T$LOG(PRIORITIES))-1,,xi
 	push	(0, T$SLICE*15, T$SLICE*12, T$SLICE*10, T$SLICE*8, T$SLICE*6, T$SLICE*5, T$SLICE*4o), b
 	pop	REALTIME$_CLOCK
 				. the quanta are an instruction ration. Thread yields on decrement<0
@@ -1153,8 +1157,11 @@ forward	lb	a_x
 
 	sr	sp_x	. recover the interrupt stack pointer
 
+	$if	T$SLICE
+	$else
 	la	ULIMIT	. automatic time slice decrementer, zero = no limit
 	sa	REALTIME$_CLOCK
+	$endif
 
 	ql	UPACKET	. interrupt return stack frame of applicatiom
 	qs	0, fp	. interrupt fp = interrupt sp at application interrupt
@@ -1164,6 +1171,9 @@ forward	lb	a_x
 out_of_order		. priority in descriptor
 			. does not figure
 	z	0, x
+	la	(TRAP)
+	sa	2, x	. show how we got here in thread descriptor->eventflags
+
 	la	uq_tail
 	sx	uq_tail	. queue for investigation
 	tz	uq_head	. do not schedule again
@@ -1308,7 +1318,7 @@ priority_out_of_range
 	sa	3, x
 	sa	0, sp
 
-	z	2, x
+	z	2, x		. clear tdescriptor flags
 
 	sbl	2
 
@@ -1411,4 +1421,4 @@ found_tdescriptor
 	z	banks_lock_cell
 	lret	1
 
-
+	$trace	$zenith
