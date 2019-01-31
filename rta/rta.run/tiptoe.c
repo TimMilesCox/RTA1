@@ -81,8 +81,8 @@
 #include "../engine.fs/device24.h"
 #include "idisplay.h"
 #include "settings.h"
+#include "../include.rta/argue.h"
 
-#define	ARGUMENTS	3
 
 int			 indication;
 
@@ -96,9 +96,6 @@ extern system_memory	 memory;
 extern device		 devices[];
 
 static word		*breakpoint;
-char			 flag[26];
-unsigned short		 arguments;
-char			*argument[ARGUMENTS];
 
 static int		 runout;
 
@@ -120,11 +117,6 @@ static unsigned long long        delta_base,
 
 static void              accumulate_metric();
 #endif
-
-#ifdef DAYCLOCK
-static int		 start_time;
-#endif
-
 
 #ifdef ASYNC
 
@@ -257,8 +249,16 @@ int main(int argc, char *argv[])
    int			 imask;
    #endif
 
+
    int			 _x;
-   int			 time_pointer;
+
+   #ifdef DAYCLOCK
+   unsigned long long	 time_pointer;
+   #endif
+
+   #ifdef LP_TSLICE
+   int			 icount;
+   #endif
 
    char			 command[84];
 
@@ -279,50 +279,16 @@ int main(int argc, char *argv[])
    #ifdef ASYNC
 
    #ifdef X86_MSW
-
    #else
 
    pthread_attr_t	 asyncb;
    pthread_t		 asyncid;
 
    #endif
-
-   #endif
-
-   #ifdef DAYCLOCK
-
-   #ifdef X86_MSW
-   GetLocalTime(&stime);
-   SystemTimeToFileTime(&stime, &ftime);
-   start_time = ftime.dwLowDateTime;
-   #else
-   gettimeofday(&time, NULL);
-   start_time = time.tv_sec * 1000 + time.tv_usec / 1000;
-   #endif
    #endif
 
 
-   while (index < argc)
-   {
-      file = argv[index];
-
-      if (*file == '-')
-      {
-         file++;
-
-         while (symbol = *file++)
-         {
-            if ((symbol > 0x40) && (symbol < 0x5B)) symbol |= 32;
-            if ((symbol > 0x60) && (symbol < 0x7B)) flag[symbol - 'a'] = 1;
-         }
-      }
-      else
-      {
-         if (arguments < ARGUMENTS) argument[arguments++] = file;
-      }
-
-      index++;
-   }
+   argue(argc, argv);
 
    if (arguments)
    {
@@ -422,19 +388,28 @@ int main(int argc, char *argv[])
          instructions = INTERVAL;
 
          #if X86_MSW
+
          GetLocalTime(&stime);
          SystemTimeToFileTime(&stime, &ftime);
          time_pointer = ftime.dwLowDateTime;
          #else
+
          gettimeofday(&time, NULL);
-         time_pointer = time.tv_sec * 1000 + time.tv_usec / 1000;
+
          #endif
 
-         time_pointer -= start_time;
-         _register[DAYCLOCK_U] = time_pointer >> 24;
-         _register[DAYCLOCK]   = time_pointer & 0x00FFFFFF;
-      }
+         time_pointer = (unsigned) time.tv_usec / 1000
+                      + (unsigned long long) time.tv_sec * 1000;
+         _register[DAYCLOCK]   =  time_pointer & 0x00FFFFFF;
+         _register[DAYCLOCK_U] = (time_pointer >> 24) & 0x00FFFFFF;
 
+         /************************************************
+		atomicity writing the two dayclock words
+		is not necessary in this model
+		because instructions don't happen
+		while this does
+         ************************************************/
+      }
       #endif
 
       if (indication & LOCKSTEP) flag['s'-'a'] = 1;
@@ -455,22 +430,38 @@ int main(int argc, char *argv[])
          fflush(stdout);
       }
 
-      while (indication & LOCKSTEP) usleep(10000);
-
-      if (psr & 0x00800000)
+      if (indication & LOCKSTEP)
       {
+         #ifdef METRIC
+         accumulate_metric();
+         #endif
+ 
+         while (indication & LOCKSTEP) usleep(10000);
+
+         #ifdef METRIC
+         gettimeofday(&time2, NULL);
+         delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+         #endif
+      }
+
+      #ifdef LP_TSLICE
+      if (psr & 0x00870000)
+      {
+         /***************************************************
+                not during interrupt
+                or with interrupt lock
+         ***************************************************/
       }
       else
       {
-         time_pointer = _register[REALTIME_CLOCK];
-         if (time_pointer & 0x00800000)
+         if (icount = _register[REALTIME_CLOCK] & 0x00FFFFFF)
          {
-            time_pointer++;
-            time_pointer &= 0xFFFFFF;
-            _register[REALTIME_CLOCK] = time_pointer;
-            if (!time_pointer) ii(YIELD);
+            icount--;
+            _register[REALTIME_CLOCK] = icount;
+            if (!icount) ii(YIELD, LP_TSLICE);
          }
       }
+      #endif
 
       if (indication & CHILLDOWN)
       {
@@ -486,33 +477,6 @@ int main(int argc, char *argv[])
          delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
          #endif
       }
-
-      #ifdef TIMER
-      instructions--;
-      if (!instructions)
-      {
-         instructions = INTERVAL;
-
-         #ifdef X86_MSW
-         GetLocalTime(&stime);
-         SystemTimeToFileTime(&stime, &ftime);
-         time_pointer = ftime.dwLowDateTime;
-         #else
-         gettimeofday(&time, NULL);
-         time_pointer = time.tv_sec * 1000000 + time.tv_usec;
-         #endif
-
-         time_pointer /= TIME_GRANULE;
-         time_pointer &= 0x00FFFFFF;
-         imask = (psr >> 16) & 7;
-
-         if (time_pointer |= base[TIMER_IO_PORT]) ii(TIMER);
-         {
-            base[TIMER_IO_PORT] = time_pointer;
-            if (imask < TIMER_IMASK) ii(TIMER);
-         }
-      }
-      #endif
    }
    return 0;
 }
@@ -551,6 +515,9 @@ static void action(char request[])
       average /= quantum;
       printf("instructions %lld usecs %lld approximate MIPS %f\n",
               total_metric, total_delta, average);
+
+      putchar(':');
+      fflush(stdout);
       return;
    }
    #endif
@@ -724,10 +691,6 @@ static void action(char request[])
 
          putchar('\n');
 
-         break;
-
-      case 'z':
-         sscanf(request + 1, "%d", &start_time);
          break;
 
       case 'l':

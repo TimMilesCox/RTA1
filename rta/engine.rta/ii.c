@@ -57,8 +57,9 @@ extern system_memory	 memory;
 
 extern int		 indication;
 extern char		 flag[];
+extern char		 uflag[];
 
-void ii(int ea)
+void ii(int ea, int latent_parameter)
 {
    int			*temp_sp;
 
@@ -70,7 +71,7 @@ void ii(int ea)
    temp_sp[3] = apc - b0p->w;
    temp_sp[2] = b0_name;
    temp_sp[1] = psr;
-   temp_sp[0] = 0;
+   temp_sp[0] = latent_parameter;
 
    if (psr & 0x00800000)
    {
@@ -87,7 +88,10 @@ void ii(int ea)
 
    psr |= 0x00800000;
 
-   if (ea == XBASE_U) indication |= LOCKSTEP;
+   if (ea == XBASE_U)
+   {
+      if (uflag['Z'-'A'] == 0) indication |= LOCKSTEP;
+   }
 
    b0_name = (ea >> 6) & 0x0000FFFF;
    base[0] = b0_name;

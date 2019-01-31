@@ -35,8 +35,6 @@ int			 indication;
 static struct pollfd	 attention = { 0, POLLIN } ;
 #endif
 
-static long long	 start_time;
-static long long	 u;
 #ifndef	X86_MSW
 static struct timeval	 time1;
 #endif
@@ -111,6 +109,8 @@ static unsigned long long	 delta_base,
 static void		 accumulate_metric();
 #endif
 
+static unsigned 	 clockr[2];
+
 int main(int argc, char *argv[])
 {
    int			 _x;
@@ -118,13 +118,9 @@ int main(int argc, char *argv[])
    char			*_p;
 
    #ifdef X86_MSW
-   start_time = GetTickCount64();
    #else
    pthread_attr_t        asyncb;
    pthread_t             asyncid;
-
-   gettimeofday(&time1, NULL);
-   start_time = time1.tv_sec * 1000 + time1.tv_usec / 1000;
    #endif
 
    int                   f, count, image_size = 0;
@@ -257,11 +253,47 @@ int main(int argc, char *argv[])
       Sleep(1000);
       u = GetTickCount64();
       #else
-      gettimeofday(&time1, NULL);
-      u = time1.tv_sec * 1000 + time1.tv_usec / 1000;
-      #endif
+
+      usleep(1000);
+      if (psr & 0x00800000) continue;
+
+      #ifdef TIME_UPDATE_IN_ILOOP
 
       indication |= TIME_UPDATE;
+
+      #else
+
+      gettimeofday(&time1, NULL);
+
+      /******************************************************
+		rigging up 2 words to write in 1 cycle
+		hopefully
+
+		32-bit executable avoiding 64-bit arithmetic
+		in case that's a lot of floundering
+		in generate code
+      ******************************************************/
+
+      clockr[1] = (unsigned) time1.tv_usec / 1000
+                + (time1.tv_sec & 0xFFFF)  * 1000;
+
+      clockr[0] = ((unsigned) time1.tv_sec >> 16) * 1000
+                + (clockr[1] >> 16);
+
+      clockr[1] = (clockr[1] & 0xFFFF)
+                | ((clockr[0] & 255) << 16);
+
+      clockr[0] = (clockr[0] >>= 8) & 0x00FFFFFF;
+
+      /*	hoped to be an atomic 2-register write
+		because all cores are multi
+		and emulated instructions are another thread	*/
+
+      *((unsigned long long *) (_register + DAYCLOCK_U))
+      = (* (unsigned long long *) clockr);
+
+      #endif	/*	TIME_UPDATE_IN_ILOOP	*/
+      #endif	/*	POSIX or WINDOWS	*/
    }
 
    return 0;
@@ -272,7 +304,16 @@ void *emulate()	/* thread start */
    #ifdef METRIC
    struct timeval	 time2;
    #endif
-   
+
+   #ifdef TIME_UPDATE_IN_ILOOP
+   unsigned long long	 time_pointer;
+   int			 x;
+   #endif
+
+   #ifdef REALTIME_CLOCK
+   int			 icount;
+   #endif
+
    printf("emulation start\n");
 
    #ifdef METRIC
@@ -294,6 +335,26 @@ void *emulate()	/* thread start */
          #ifdef METRIC
          metric++;
          #endif
+
+         #ifdef REALTIME_CLOCK
+         if (psr & 0x00870000)
+         {
+            /***************************************************
+                not during interrupt
+                or with interrupt lock
+            ***************************************************/
+         }
+         else
+         {
+            if (icount = _register[REALTIME_CLOCK] & 0x00FFFFFF)
+            {
+               icount--;
+               _register[REALTIME_CLOCK] = icount;
+               if (icount == 0) ii(YIELD,LP_TSLICE);
+            }
+         }
+         #endif
+
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
       #else
@@ -318,13 +379,34 @@ void *emulate()	/* thread start */
          #endif
       }
 
+      #ifdef TIME_UPDATE_IN_ILOOP
+      #error YOU NEED TO SEE IF THIS WORKS
+
       if (indication & TIME_UPDATE)
       {
-         _register[DAYCLOCK] = u & 0x00FFFFFF;
-         _register[DAYCLOCK_U] = (u >> 24) & 0x00FFFFFF;
+         x = gettimeofday(&time2, NULL);
+
+         if (x < 0)
+         {
+            if (uflag['E'-'A'])
+         }
+         else
+         {
+            /******************************************************
+		here it's between emulated instructions
+		and needs no atomicity writing the dayclock
+            ******************************************************/
+
+            time_pointer = (unsigned) time2.tv_usec / 1000
+                         + (unsigned long long) time2.tv_sec  * 1000;
+            _register[DAYCLOCK] = time_pointer & 0x00FFFFFF;
+            _register[DAYCLOCK_U] = (time_pointer >> 24) & 0x00FFFFFF;
+         }
+
          indication &= -1 ^ TIME_UPDATE;
          if (indication == 0) continue;
       }
+      #endif
 
       if (indication & LOCKSTEP) flag['s'-'a'] = 1;
 
@@ -339,6 +421,10 @@ void *emulate()	/* thread start */
 
       if ((indication & LOCKSTEP) == 0) continue;
 
+      #ifdef METRIC
+      accumulate_metric();
+      #endif
+
       statement();
 
       #if 1
@@ -347,6 +433,11 @@ void *emulate()	/* thread start */
       #endif
 
       while (indication & LOCKSTEP) usleep(10000);
+
+      #ifdef METRIC
+      gettimeofday(&time2, NULL);
+      delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+      #endif
    } 
 }
 
@@ -379,6 +470,9 @@ static void action(char request[])
       average /= quantum;
       printf("instructions %lld usecs %lld approximate MIPS %f\n",
               total_metric, total_delta, average);
+
+      putchar(':');
+      fflush(stdout);
       return;
    }
    #endif
@@ -580,10 +674,6 @@ static void action(char request[])
 
          putchar('\n');
 
-         break;
-
-      case 'z':
-         sscanf(request + 1, "%lld", &start_time);
          break;
 
       case 'l':

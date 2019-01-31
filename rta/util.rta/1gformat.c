@@ -756,6 +756,38 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    return 1;
 }
 
+static void help_out()
+{
+   printf("\n\n\t1gformat fs[.rom] [granules [-T|G|M|b|p|K]] < specifications [-hvwz]\n"
+          "\t\tor\n"
+          "\t1gformat -x fs[.txo] [root_directory_offset_granule] < specifications [-hvw]\n\n");
+
+   printf("\trom file system output may opt a size in\n"
+          "\t64-word granules | Kwords | 4096-word pages | 262144-word banks | Megawords | Gigawords | Terawords\n\n");
+
+   printf("\ttxo file system output for code inclusion opts a 48-bit root directory offset granule\n"
+          "\tto point beyond code addresses. 48-bit file and directory offsets are exported\n\n");
+
+   printf("\t-z\tzero-fill to next 4K page\n");
+   printf("\t-v\tverbose\n");
+   printf("\t-w\textra verbose\n");
+   printf("\t-h\tprint this help\n\n");
+
+   printf("\teach specification starts in the 1st column of a line. Example :\n\n");
+   printf("volume volume_name\n");
+   printf("tree directory_1\n");
+   printf("tree directory_2\n");
+   printf("file file_a from_path_1a\n");
+   printf("file file_b from_path_1b\n");
+   printf(".\n");
+   printf("file file_z from_path_2z\n");
+   printf(".\n");
+   printf(".\n\n");
+
+   printf("\twhere a filename is given with no load path the file must be in the working directory\n"
+          "\tcommand . changes to containing directory\n"
+          "\tvolume is root directory and . from volume concludes operation\n\n");  
+}
 
 /*******************************************************
 
@@ -787,6 +819,12 @@ int main(int argc, char *argv[])
 
    argue(argc, argv);
 
+   if (flag['h'-'a'])
+   {
+      help_out();
+      return 0;
+   }
+
    if (arguments)
    {
       if (arguments > 1)
@@ -804,6 +842,16 @@ int main(int argc, char *argv[])
  
             if (flag['x'-'a'])
             {
+               if (uflag['T'-'A'] | uflag['G'-'A'] | uflag['M'-'A'] | flag['b'-'a'] | flag['p'-'a'] | uflag['K'-'A'])
+               {  
+                  printf("\n\n\t-x opted: 2nd positional argument %s is root directory granule offset\n"
+                         "\tto test target size duplicate the operation without -x :\n"
+                         "\t\t1gformat fs.rom [%s [-T|G|M|b|p|K]] < specifications\n\n", uptr, uptr);
+
+                  printf("\thelp : 1gformat -h\n\n");
+                  return 0;
+               }
+
                offset += 63;
                offset >>= 6;
                gpointer += offset;
@@ -901,7 +949,7 @@ int main(int argc, char *argv[])
 
       if (flag['z'-'a'])
       {
-         if (flag['x']) printf("page fill option -z makes no sense with txo option -x\n");
+         if (flag['x'-'a']) printf("page fill option -z not supported with txo option -x\n");
          else
          {
             position = lseek(f, (off_t) 0, SEEK_END);

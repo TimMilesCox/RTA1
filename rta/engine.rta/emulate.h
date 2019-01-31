@@ -423,10 +423,25 @@ ea &= 0x00FFFFFF;
 #define	ABSOTS
 #define	BANK_EDGE_GUARD
 
-#define	YIELD_INTERRUPT	ii(II_YIELD);
-#define	GUARD_INTERRUPT	ii(XBASE_U);
-#define	EXIT_INTERRUPT	ii(II_TXIT);
-#define	XPO_INTERRUPT	ii(II_XPO);
+/************************************************
+	default versions with no latent parameter
+	to have a latent parameter do
+	ii(II_TYPE,LATENT_PARAMETER);
+************************************************/
+
+#define	LP_ADDRESS  14	/* latent parameter for GUARD INTERRRUPT
+                           most cases bad memory address
+                           neither permission nor software trace */ 
+
+#define	YIELD_INTERRUPT	ii(II_YIELD,0);
+#define	GUARD_INTERRUPT	ii(XBASE_U,LP_ADDRESS);
+#define	EXIT_INTERRUPT	ii(II_TXIT,0);
+#define	XPO_INTERRUPT	ii(II_XPO,0);
+
+#define	LP_TSLICE    10 /* latent parameter timeslice YIELD */
+
+#define	LP_PERMISSION 1 /* latent parameter permission GUARD interrupt
+                           application attempt to base device array */
 
 #define	GUARD_RANGE_SP	24
 #define	GUARD_RANGE_UP	128

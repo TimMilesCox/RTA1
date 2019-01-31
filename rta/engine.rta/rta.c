@@ -1486,7 +1486,7 @@ void execute(word instruction)
                            }
                            else
                            {
-                              ii(XBASE_U);
+                              ii(XBASE_U, LP_PERMISSION);
                               break;
                            }
                         }
@@ -1757,7 +1757,7 @@ void execute(word instruction)
                         II instruction (initiate internal interrupt)
                   *******************************************************/
 
-                  ii(ea);
+                  ii(ea, 0);
                   break;
                }
 
@@ -1836,6 +1836,7 @@ void execute(word instruction)
                   v += ea;
                   v &= 0x00FFFFFF;
                   apc = &b0p->w[v];
+
                   iselect = (psr & 0x00800000) >> 16;
                   break;
                }
@@ -2151,7 +2152,7 @@ void execute(word instruction)
          }
    }
 
-   #ifdef T_SLICE
+   #ifdef T_SLICE_HERE	/* it's not */
    if (psr & 0x00870000)
    {
       /*****************************************************************

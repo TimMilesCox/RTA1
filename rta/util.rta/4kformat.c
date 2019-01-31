@@ -271,6 +271,7 @@ static int		 f;
 static unsigned          pointer1 = CONTROL_WORDS + 1 + 2 * 5 + VOLUME1_WORDS + 1 + 2;
 static unsigned          remainder1 = DIRECTORY_BLOCK - CONTROL_WORDS - 1 - 2 * 5 - VOLUME1_WORDS - 1 - 2;
 static unsigned long long gpointer = DIRECTORY_BLOCK / GRANULE;
+static unsigned long long fs_offset;
 
 
 #ifdef MYGETS
@@ -424,7 +425,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                                 = VOLUME1_WORDS
 			        + copy(&label1.label3.v.name[0].t1, argument);
 
-      gpointer = DIRECTORY_BLOCK / GRANULE;
+      gpointer = DIRECTORY_BLOCK / GRANULE + fs_offset;
       label1.label3.v.ex.granule = restart_offset;
 
       pointer1 += CONTROL_WORDS + 1 + 2 * 5 + 1;
@@ -615,10 +616,11 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                   vpointer += (new->ex.rfw.t3 + 1) * 3;
                   extra = (extent2 *) vpointer;
 
-                  printf("slot1 %d banks %ld last granules %ld total %lld\n", slot,
-                                                                              p32,
-                                                                              slab,
-                                                                              p64);
+                  printf("%llx slot1 %d banks %ld last granules %ld total %lld\n", gpointer,
+                                                                                   slot,
+                                                                                   p32,
+                                                                                   slab,
+                                                                                   p64);
 
                   new->ex.next_offset = start_zero;
                   new->ex.next = restart_link;
@@ -651,7 +653,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   while (p32--)
                   {
-                     printf("%s extent %d granules\n", argument, PAGE/GRANULE);
+                     printf("%llx %s extent %d granules\n", gpointer, argument, PAGE/GRANULE);
                      extra->rfw = extrahead;
                  
                      extra->granules.t1 = (PAGE/GRANULE) >> 16;
@@ -700,7 +702,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if (slab)
                   {
-                     printf("%s extend %ld granules\n", argument, slab);
+                     printf("%llx %s extend %ld granules\n", gpointer, argument, slab);
                      extra->rfw = extrahead;
 
                      extra->granules.t1 = slab >> 16;
@@ -754,6 +756,38 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    return 1;
 }
 
+static void help_out()
+{
+   printf("\n\n\t4kformat fs[.rom] [granules [-T|G|M|b|p|K]] < specifications [-hvwz]\n"
+          "\t\tor\n"
+          "\t4kformat -x fs[.txo] [root_directory_offset_granule] < specifications [-hvw]\n\n");
+
+   printf("\trom file system output may opt a size in\n"
+          "\t64-word granules | Kwords | 4096-word pages | 262144-word banks | Megawords | Gigawords | Terawords\n\n");
+
+   printf("\ttxo file system output for code inclusion opts a 48-bit root directory offset granule\n"
+          "\tto point beyond code addresses. 48-bit file and directory offsets are exported\n\n");
+
+   printf("\t-z\tzero-fill to next 4K page\n");
+   printf("\t-v\tverbose\n");
+   printf("\t-w\textra verbose\n");
+   printf("\t-h\tprint this help\n\n");
+
+   printf("\teach specification starts in the 1st column of a line. Example :\n\n");
+   printf("volume volume_name\n");
+   printf("tree directory_1\n");
+   printf("tree directory_2\n");
+   printf("file file_a from_path_1a\n");
+   printf("file file_b from_path_1b\n");
+   printf(".\n");
+   printf("file file_z from_path_2z\n");
+   printf(".\n");
+   printf(".\n\n");
+
+   printf("\twhere a filename is given with no load path the file must be in the working directory\n"
+          "\tcommand . changes to containing directory\n"
+          "\tvolume is root directory and . from volume concludes operation\n\n");  
+}
 
 /*******************************************************
 
@@ -772,6 +806,8 @@ int main(int argc, char *argv[])
 			 symbol;
 
    long long		 net_granules = GRANULES;
+   long long		 offset;
+
    off_t		 position;
    int			 net_pages = PAGES_IN_DEVICE;
    unsigned char	*uptr;
@@ -783,8 +819,61 @@ int main(int argc, char *argv[])
 
    argue(argc, argv);
 
+   if (flag['h'-'a'])
+   {
+      help_out();
+      return 0;
+   }
+
    if (arguments)
    {
+      if (arguments > 1)
+      {
+         uptr = argument[1];
+         symbol = *uptr;
+
+         if ((symbol < '0') || (symbol > '9'))
+         {
+         }
+         else
+         {
+            if (symbol == '0') sscanf(uptr, "%llx", &offset);
+            else               sscanf(uptr, "%lld", &offset);
+ 
+            if (flag['x'-'a'])
+            {
+               if (uflag['T'-'A'] | uflag['G'-'A'] | uflag['M'-'A'] | flag['b'-'a'] | flag['p'-'a'] | uflag['K'-'A'])
+               {  
+                  printf("\n\n\t-x opted: 2nd positional argument %s is root directory granule offset\n"
+                         "\tto test target size duplicate the operation without -x :\n"
+                         "\t\t4kformat fs.rom [%s [-T|G|M|b|p|K]] < specifications\n\n", uptr, uptr);
+
+                  printf("\thelp : 4kformat -h\n\n");
+                  return 0;
+               }
+
+               offset += 63;
+               offset >>= 6;
+               gpointer += offset;
+               fs_offset = offset;
+               printf("fs offset in block %llx\n", offset);
+               net_granules -= gpointer;
+            }
+            else
+            {
+               net_granules = offset;
+               if      (uflag['T'-'A']) net_granules <<= 34;
+               else if (uflag['G'-'A']) net_granules <<= 24;
+               else if (uflag['M'-'A']) net_granules <<= 14;
+               else if  (flag['b'-'a']) net_granules <<= 12;
+               else if  (flag['p'-'a']) net_granules <<=  6;
+               else if (uflag['K'-'A']) net_granules <<=  4;
+
+               net_pages = (net_granules + 63) >> 6;
+            }
+         }
+      }
+
       #ifdef DOS
       f = open(argument[0], O_RDWR | O_CREAT | O_TRUNC | O_BINARY, 0777);
       #else
@@ -799,31 +888,7 @@ int main(int argc, char *argv[])
 
          for (;;)
          {
-            if (interpret(&label1, &pointer1, 0, &label1.label1) == 0) break;
-         }
-      }
-
-      if (arguments > 1)
-      {
-         uptr = argument[1];
-         symbol = *uptr;
-
-         if ((symbol < '0') || (symbol > '9'))
-         {
-         }
-         else
-         {
-            if (symbol == '0') sscanf(uptr, "%llx", &net_granules);
-            else               sscanf(uptr, "%lld", &net_granules);
- 
-            if      (uflag['T'-'A']) net_granules <<= 34;
-            else if (uflag['G'-'A']) net_granules <<= 24;
-            else if (uflag['M'-'A']) net_granules <<= 14;
-            else if  (flag['b'-'a']) net_granules <<= 12;
-            else if  (flag['p'-'a']) net_granules <<=  6;
-            else if (uflag['K'-'A']) net_granules <<=  4;
-
-            net_pages = (net_granules + 63) >> 6;
+            if (interpret(&label1, &pointer1, fs_offset, &label1.label1) == 0) break;
          }
       }
 
@@ -880,11 +945,11 @@ int main(int argc, char *argv[])
 
       lseek(f, (off_t) 0, SEEK_SET);
       status = outputw(f, (unsigned char *) &label1, DIRECTORY_BLOCK);
-      if (status < 0) printf("write error %d\n", errno); 
+      if (status < 0) printf("write error %d\n", errno);      
 
       if (flag['z'-'a'])
       {
-         if (flag['x']) printf("page fill option -z makes no sense with txo option -x\n");
+         if (flag['x'-'a']) printf("page fill option -z not supported with txo option -x\n");
          else
          {
             position = lseek(f, (off_t) 0, SEEK_END);

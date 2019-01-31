@@ -48,4 +48,4 @@
 
 #undef	T_SLICE
 
-extern void ii(int ea);
+extern void ii(int ea, int latent_parameter);
