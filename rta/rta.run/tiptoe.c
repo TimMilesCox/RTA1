@@ -256,7 +256,8 @@ int main(int argc, char *argv[])
    unsigned long long	 time_pointer;
    #endif
 
-   #ifdef LP_TSLICE
+   #ifdef LP_TSLICE_HERE
+   /* It's not. It's in engine.rta/rta.c:execute() */
    int			 icount;
    #endif
 
@@ -444,7 +445,8 @@ int main(int argc, char *argv[])
          #endif
       }
 
-      #ifdef LP_TSLICE
+      #ifdef LP_TSLICE_HERE
+      /* It's not. It's in engine.rta/rta.c:execute() */
       if (psr & 0x00870000)
       {
          /***************************************************

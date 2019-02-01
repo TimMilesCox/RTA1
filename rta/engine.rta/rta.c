@@ -2152,24 +2152,22 @@ void execute(word instruction)
          }
    }
 
-   #ifdef T_SLICE_HERE	/* it's not */
+   #ifdef LP_TSLICE
+   #define icount w
    if (psr & 0x00870000)
    {
-      /*****************************************************************
-		not while ISR or interrupt mask
-      *****************************************************************/
+      /***************************************************
+             not during interrupt
+             or with interrupt lock
+      ***************************************************/
    }
    else
    {
-      if (w = _register[REALTIME_CLOCK] & 0x00FFFFFF)
+      if (icount = _register[REALTIME_CLOCK] & 0x00FFFFFF)
       {
-         w--;
-         _register[REALTIME_CLOCK] = w;
-
-         if (w == 0)
-         {
-            YIELD_INTERRUPT
-         }
+         icount--;
+         _register[REALTIME_CLOCK] = icount;
+         if (!icount) ii(YIELD, LP_TSLICE);
       }
    }
    #endif

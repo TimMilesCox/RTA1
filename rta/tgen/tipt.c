@@ -310,7 +310,8 @@ void *emulate()	/* thread start */
    int			 x;
    #endif
 
-   #ifdef REALTIME_CLOCK
+   #ifdef LP_TSLICE_HERE
+   /* It's not. It's in engine.rta/rta.c:execute() */
    int			 icount;
    #endif
 
@@ -336,7 +337,9 @@ void *emulate()	/* thread start */
          metric++;
          #endif
 
-         #ifdef REALTIME_CLOCK
+         #ifdef LP_TSLICE_HERE
+         /* It's not. It's in engine.rta/rta.c:execute() */
+
          if (psr & 0x00870000)
          {
             /***************************************************
