@@ -4,21 +4,28 @@
 	$include	def/ii.def
 	$include	language/stack.def	. macro language for structured functions
 	$include	t77.4/tcp.def
+	$include	stream/stream.def
+	$path
 	$path		../image.app/
 	$include	imports.def	
 	$path					. bring include path back here
 
-"$octets"* $func
-	$return	$bits//8
-	$end
 
 $(1:01000)					. this is for any private data
 						. this can only be an argument by value, never by reference
 
 $(3:03000/$3)					. this is for static data which can be exported
-ibuffer	$res	1500//3				
-obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
+ibuffer	$res	2000//3				
+obuffer	$res	2000//3				. send and receive buffers for approximately a user datagram on ethernet
 indications	0:d
+left		0.0
+right		0.0
+operator		0
+
+	$set_option	"c"			. escape codes are easier to read in C-syntax
+
+blue	"\033[94m\0"
+mono	"\033[0m\0"
 
 $(0:0)						. section 0 is code. Relative addresss 0
 
@@ -40,21 +47,59 @@ respond
 						. zero block address for the core file system identity
 						. causes seg$load to read the absolute load address from the return stack
 
-react	c	(recv)	0,,xi		;	. socket
-			ibuffer,,xi	;	. destination
-			1500,,xi	;	. maximum
-			05000,,xi	. flags
+	fgets	ibuffer 1500 stdin		. read automatic initial input on stdin
 
-	ds	indications			. should be received:1500-received
+	printf	$3(" responder: received command line >\t %s\n calculations?\n\0"),,xi ibuffer,,xi 
 
-	c	(send)	1,,xi				;	. socket
-			$3("thank you, I read":9),,xi	;	. source buffer
-			18,,xi				;
-			0,,xi
+react	scanf	$3(" %f %c %f\0"),,xi	;
+		left,,xi		;
+		operator,,xi		;
+		right,,xi
 
-	c	(send)	1,,xi	ibuffer,,xi	indications	05000++TCP_PSH,,xi
+	jna	problem			. either the count of tokens or a -status comes back
+
+	aa	-3,,xi
+	jnc	react
+
+	la	operator
+	aa	-'+',,xi
+	jza	add
+
+	aa	'+'-'-',,xi
+	jza	subtract
+
+	aa	'-'-'*',,xi
+	jza	multiply
+
+	aa	'*'-'/',,xi
+	jza	divide
+
+	j	react
+
+add	ql	left
+	fa	right
+	j	output
+
+subtract
+	ql	left
+	fan	right
+	j	output
+
+multiply
+	ql	left
+	fm	right
+	j	output
+
+divide	ql	left
+	fd	right
+
+output	printf	$3("%s %f%s\n\0"),,xi	blue,,xi    a,,float	mono,,xi
 
 reactx	ii	YIELD$
 	j	react
-						. application code goes here
+
+end
+problem	ii	EXIT$			. there isn't stdin
+					. so there isn't likely stdout
+
 	$do	$<256,$(0:256)			. literal data constants are not addressable at locations before 256

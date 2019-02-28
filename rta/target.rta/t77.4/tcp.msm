@@ -664,8 +664,6 @@ tcp_tbloc_found
 
 	lret	0
 
-	$if	IPV4_OVERHAUL
-
 tcp_rxq	la	dgram:bytes		. TP_HEADER is in x
 	lk	transfer:checksum, x
 	z	transfer:checksum, x
@@ -774,105 +772,23 @@ tcp_reset_deflect
 	and	TCP_RST,,xi
 	jnza	ipv4_drop		. don't reset a reset
 
+	push	TP_HEADER		. tcp_reject needs an acw. Make one
+	push	1, sp, i		. datagram address
+	push	UPROTOCOL_BYTES
+	push	3, sp, i
 	push	RXPOOL			. tx overloads this register
+	push	fp			. almost certainly need for releasing the I/F buffer
+
+	push	0, sp, i
+	pop	fp			. fp -> 1st 6 words of an acw descriptor
+
 	lcal	tcp_reject
+	pop	fp
 	pop	RXPOOL
+	pop	sp
 
 	j	ipv4_rxz		. don't get here if you have a buffer
 
-	$else
-
-tcp4_rx	ly	TP_HEADER
-	sx	TP_HEADER
-	dl	HEADER_SUM
-
-	MIB_ICOUNT48	tcpInSegs:i
-
-	qpush	transfer:sourcep, y
-	da	0, sp
-	da	2, sp
-	qpop	transfer:sourcep
-
-	qpush	transfer:ack, y
-	da	0, sp
-	da	2, sp
-	qpop	transfer:ack
-
-	dpush	transfer:checksum, y
-	aa	1, sp		.	urgent pointer
-	pop	k
-	pop	transfer:urgent
-
-	ax, xi	10		.	fixed part of segment header
-	ay, xi	10		.	is already buffered and summed
-
-	ds	HEADER_SUM
-	la	descriptor:bytes
-
-	aa, xi	-20
-	jnc	ipv4_drop	.	add header options and payload
-
-	lcal	rx_payload
-.	xor	(00FFFF)
-	xorB	k
-	jnzb	ipv4_drop
-
-	lx	TP_HEADER
-	la	transfer:destp
-
-	$if	1
-	lcal	tcp_socket
-	jza	tcp_reset_deflect
-	ds	descriptor:sobdi
-	la	1, b
-	and	(65535)
-	jnza	tcp_qthru
-	$else
-	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
-
-				.	000 000 000 000 000 00p ppp ppp : A
-	dsr	9		.	ppp ppp ppp 000 000 000 bbb bbb : B
-
-	aa, xi	tsockb(1)	.	000 000 000 010 000 11p ppp ppp : A
-
-	la	0, a		.	is there even storage where the
-				.	bound socket structure should be?
-
-	jza	tcp_reset_deflect
-
-	rbr	12		.	000 000 bbb bbb ooo ooo ooo 000
-
-	sabr	BSOCKET		.	look at the port socket structure
-
-	tz	1, b		.	is the port bound?
-	j	tcp_qthru	.	yes, queue it to protocol 2nd part
-	$endif
-	
-tcp_reset_deflect
-
-	la	transfer:hl_code
-	and, xi	TCP_RST		.	no, repool the buffer
-	jnza	ipv4_drop	.	don't try to reset a reset
-
-	push	RXPOOL		.	output TCP_RST will overload that
-	lcal	tcp_reject
-	pop	RXPOOL
-				.	send a reset
-	j	ipv4_drop	.	and drop the input
-
-
-tcp_qthru
-.	ds	descriptor:sobdi
-.	sa	descriptor:sobdi
-.	sb	descriptor:lso	.	cache the LVA of the port
-
-	la	fp 
-	ly, xi	tcpq
-	lcal	q2
-
-	j	ipv4_rxz	.	release the interface buffer
-
-	$endif
 
 .	group of similar functions which
 .	get a buffer and send a short segment
@@ -1148,7 +1064,7 @@ tcp_finalise_checksum_on_xmit
         lx      1, sp		. the descriptor
 
         ly      descriptor:dgram, x
-        ql      dgram:ipsource, y
+	ql      dgram:ipsource, y
 
 	MIB_ICOUNT48	tcpOutSegs:i
 
@@ -1167,14 +1083,46 @@ tcp_finalise_checksum_on_xmit
 .	the only input is the received buffer
 .	descriptor in fp
 
-.	this has to work for disliked incoming
-.	SYN, so incoming SEQ is incremented
-.	before being returned as ACK, and
-.	_ACK flag is set as well as _RST
+.	if there is payload or SYNC or FIN
+.	it may help to up the ACK accordingly
+.	because the far side may otherwise drop the RST from here
+.	or don't set _ACK as well as _RST
 
+TCP_REFLEX_SEQUENCE_ON_REJECT	$equ	1
+TCP_ALIGN_ON_REJECT 		$equ	1	. not making any difference
+TCP_WINDOW_ON_REJECT		$equ	0000
 
-tcp_reject		. this is when TCP_RST must be sent
-			. and there is no connection
+	$if	TCP_ALIGN_ON_REJECT
+
+tcp_reject_xtras
+	dpush	a			. a has part of a checksum in it
+	la	transfer:hl_code, y
+	dsr	12			. header longwords
+	sal	2			. header bytes
+	andB	(+(TCP_SYN++TCP_FIN)*/12)
+	jzb	tcp_no_reject_flagweight
+	aa	-1,,xi			. the header length counts 1 less than itself
+tcp_no_reject_flagweight		. or bytes count 1 more than themselves
+	lb	descriptor:bytes
+	anb	a
+	jzb	tcp_reject_no_traffic_weight
+	ab	7, sp			. ACK low 16 bits
+	la	b
+	dsa	16			. crazy if it went negative, but timeout eventually
+	sbr	8
+	aa	6, sp			. ACK high 16 bits
+	and	(00FFFF)		. thankfully no carry-round
+	ds	6, sp			. so put ACK back in the stack for addition + store
+tcp_reject_no_traffic_weight
+	pop	a
+	pop	b
+	lret	0
+
+	$endif
+
+tcp_reject				. this is when TCP_RST must be sent
+					. and there is no connection
+
 	la, xi	20
 	lcal	tcp_txbuffer
 	jza	tcp_noresetbuffer	. no action either!
@@ -1196,18 +1144,32 @@ tcp_reject		. this is when TCP_RST must be sent
 	qpop	dgram:ipsource, y
 
 	ly	descriptor:uproto
+
+	$if	TCP_REFLEX_SEQUENCE_ON_REJECT
+	dpush	transfer:ack, y
+	$endif	
+
 	dpush	transfer:seq, y
 	dpush	transfer:sourcep, y
-	push	(05000++TCP_RST++TCP_ACK)
 
-	inc	4, sp
-	tz	4, sp
-	j	$+2
-	inc	3, sp
+
+	$if	TCP_ALIGN_ON_REJECT
+	push	(05000++TCP_RST++TCP_ACK)
+	lcal	tcp_reject_xtras	. see if aligning ACK on RST cheers the other side up
+	$else				. it doesn't cheer OSX up much
+	push	(05000++TCP_RST)
+	z	4, sp			. but will this? RST without ACK field
+	z	3, sp
+        $endif
+
 
 	aa	0, sp
 	da	1, sp
 	da	3, sp
+
+	$if	TCP_REFLEX_SEQUENCE_ON_REJECT
+	da	5, sp
+	$endif
 
 	pop	transfer:hl_code, x	. tx_datagram loads
 	pop	transfer:destp, x	. x->segment
@@ -1217,7 +1179,16 @@ tcp_reject		. this is when TCP_RST must be sent
 	z	transfer:seq+1, x
 	pop	transfer:ack, x
 	pop	transfer:ack+1, x
-	z	transfer:window, x
+
+	$if	TCP_REFLEX_SEQUENCE_ON_REJECT
+	pop	transfer:seq, x
+	pop	transfer:seq+1, x
+	$endif
+
+	aa	TCP_WINDOW_ON_REJECT,,xi
+	push	TCP_WINDOW_ON_REJECT,,xi
+	pop	transfer:window, x
+
 	z	transfer:urgent, x
 
 	aa	b
@@ -1229,6 +1200,7 @@ tcp_reject		. this is when TCP_RST must be sent
 
 	pop	x			. the descriptor
 	ly	TX_DATAGRAM
+	ql	dgram:ipsource, y	. that might be needed for routing
 	call	(ipsend)
 	
 tcp_noresetbuffer
@@ -1465,11 +1437,22 @@ tcp_sendno_options
 	ds	HEADER_SUM
 	pop	a		. the descriptor
 	pop	y
-	lret	1		. did it
+	lret	1		. return +1 = buffer found
 
 tcp_nostart
-	lx	y
-	lret	0		. did not
+.	lx	y		. ? that looks deadly ? return without connection pointer
+
+				. removed instruction was bad for some callers
+				. and didn't appear good for any other callers
+
+				. callers are (indirectly) far calls tcp_add and tcp_addx
+				. which certainly need x -> connection block unchanged on return
+
+				. and otherwise far calls tcp_accept tcp_ack_fin tcp_send_push
+				. and local calls tcp_send_ack tcp_sendq tcp_sendq2
+				. none of which appears to need the connection pointer lost
+
+	lret	0		. return +0 = no buffer found
 
 tcp_send_options
 	push	x		. the connection

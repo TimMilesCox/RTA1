@@ -119,12 +119,12 @@ void wsr(int ea)
    int		 temp[2]   = { wdata, a } ;
 
    int		 request   = ea,
-		 available = (wdatac & 0x00FFFFFF) - 24;
+                 wspace    = (psr & BSTREAM16W) ? -16 : -24,
+		 available = (wdatac & 0x00FFFFFF) + wspace,
+		 remainder = available + request;
 
-   int		 remainder = available + request;
 
-
-   if (psr & BSTREAM16W) remainder += 8;
+//   if (psr & BSTREAM16W) remainder += 8;
 
    if (remainder < 0)
    {
@@ -138,7 +138,7 @@ void wsr(int ea)
 
       p &= 0x00FFFFFF;
       request = remainder;
-      available = -24;
+      available = wspace;
    }
 
    if (request) lshift2w(request, temp);
@@ -147,7 +147,7 @@ void wsr(int ea)
    a = temp[1] & 0x00FFFFFF;
    wdata = temp[0] & 0x00FFFFFF;
 
-   wdatac = (available + 24) & 0x00FFFFFF;
+   wdatac = (available - wspace) & 0x00FFFFFF;
 }
 
 void rsr(int ea)

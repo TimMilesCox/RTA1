@@ -199,7 +199,7 @@ void execute(word instruction)
    int		*_p;
 
    int		 v, w;
-   int		 buffer[2];
+   int		 buffer[4];
 
    word		*_w;
 
@@ -588,6 +588,10 @@ void execute(word instruction)
 
 		        25th bit of sum -> carry
 
+			unchanged on stepping 28.02.2019
+			if the store target is sp
+			then sp is written without postincrement
+
                **************************************************/
 
 	       v = operand_read(ea, 7) + operand_read(sp, 0);
@@ -815,6 +819,10 @@ void execute(word instruction)
 			pop four words from the internal
 			stack top
 
+			stepping 28.02.2018
+			if the store target words include sp
+			then sp is written without postincrement
+
                *************************************************/
 
 
@@ -823,8 +831,8 @@ void execute(word instruction)
                #endif
 
                _p = &_register[sp];
-               burst_write4(_p, ea);
                sp += 4;
+               burst_write4(_p, ea);
 
                #ifdef EDGE
                if (psr & 32768) stored4(ea);
@@ -841,8 +849,13 @@ void execute(word instruction)
 			push four words onto the internal
 			stack top
 
+			stepping 28.02.2019
+			if the pushed words include sp
+			then sp before decrement is pushed
+
                *************************************************/
 
+               burst_read4(buffer, ea);
                sp -= 4;
 
                if (psr & 0x00800000)
@@ -858,7 +871,10 @@ void execute(word instruction)
                }
 
                _p = &_register[sp];
-               burst_read4(_p, ea);
+               *_p = buffer[0];
+               *(_p + 1) = buffer[1];
+               *(_p + 2) = buffer[2];
+               *(_p + 3) = buffer[3];
                break;
 
             case EX:
@@ -884,8 +900,13 @@ void execute(word instruction)
 			push two words onto the internal
 			stack top
 
+			stepping 28.02.2019
+			if the pushed words include sp
+			then sp before decrement is pushed
+
                *************************************************/
 
+               burst_read2(buffer, ea);
                sp -=2;
 
                if (psr & 0x00800000)
@@ -901,7 +922,8 @@ void execute(word instruction)
                }
 
                _p = &_register[sp];
-               burst_read2(_p, ea);
+               *_p = buffer[0];
+               *(_p + 1) = buffer[1];
                break;
 
             case LSC:
@@ -1656,6 +1678,10 @@ void execute(word instruction)
 			POP instruction
 			store word from the internal stack top
 
+			unchanged on stepping 28.02.2019
+			if the store target is sp
+			then sp is written without postincrement 
+
                ***********************************************************/
 
                _p = &_register[sp];
@@ -2130,8 +2156,13 @@ void execute(word instruction)
 
 			place a word on the internal stack
 
+			stepping 28.02.2019
+			if the pushed word is sp
+			then sp before decrement is pushed
+
                **********************************************************/
 
+               v = operand_read(ea, designator);
                sp--;
 
                if (psr & 0x00800000)
@@ -2147,7 +2178,7 @@ void execute(word instruction)
                }
 
                _p = &_register[sp];
-               *_p = operand_read(ea, designator);
+               *_p = v;
                break;
          }
    }

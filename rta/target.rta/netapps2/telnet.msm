@@ -1,4 +1,4 @@
-u       
+.       
 .    Copyright Tim Cox, 2012
 .    TimMilesCox@gmx.ch
 .
@@ -45,9 +45,14 @@ tnetbound -	1
 tlsoc_va  -	1:d
 telnet_tpaside	0
 
-tn_help		"commands are":HT:"t":HT:"h":HT:"bsh&":HT:"w":LF:;
-		HT:HT:"stay":HT:"m":HT:"q":HT:"e":LFi:;
-		HT:HT:"r"
+tn_help		"commands are":HT:"h":HT:"help":LF:;
+		HT:HT:"e":HT:"echo":LF:;
+		HT:HT:"w":HT:"webhost threads":LF:;
+		HT:HT:"m":HT:"memory free":LF:;
+		HT:HT:"stay":HT:"no timeout":LF:;
+		HT:HT:"t":HT:"threads active":LF:;
+		HT:HT:"a":HT:"applications and shells":LF:;
+		HT:HT:"r":HT:"run ":ESC:"[91mname":ESC:"[0m":LF:
 
 tn_help_bytes	$equ	$bits/$byte
 
@@ -61,7 +66,12 @@ telnet_i
 	$if	TELNET_THREADED
 	ql	(telnet_start,,,:q)
 	ii	THREAD$
+	jza	telnet_zstart
+	lb	$3("telnet":0),,xi
+	ii	TAG$
+telnet_zstart
 	fret	0
+
 telnet_start
 	$endif
 
@@ -155,7 +165,7 @@ telnet_command
 
 	la	descriptor:bytes, y
 	lb	descriptor:apdata, y
-	call	(rstream_start_xdr)
+	call	(rstream_start_net)
 
 	la	*q		. check text or something else
 	and	(00F000)	. a configuration sequence?
@@ -165,7 +175,7 @@ telnet_command
 
 	la, xi	6		. input a command text word
 	lb, xi	10		. max 2 registers in size
-	call	(token_xdr)
+	call	(token_net)
 
 	dl	10
 
@@ -277,7 +287,7 @@ webhost_threads
 telnet_run
 	la	160,,xi
 	lb	telnet_run_name,,xi
-	call	(token_xdr)
+	call	(token_net)
 
 	c	(qstart)	applookupp:bank				;
 				applookupp:absolute_pointer,,long	;
@@ -287,10 +297,10 @@ telnet_run
 	lx	telnet_tpaside
 	jza	telnet_norun
 
+        lcal	telnet_run_report
 	ii	NET2SYM$
 	call	(subagent)
 
-        lcal	telnet_run_report
 	lret	1			. don't fall thru anywhere	
 					. don't drop the input
 telnet_norun
@@ -298,12 +308,14 @@ telnet_norun
 	lret	0
 
 telnet_run_report
+	push	a
 	lcal	telnet_display_quartets
 
 	la	1,,xi
 	lb	$3("":10),,xi
 
 	lcal	telnet_respond
+	pop	a
 	lret	0
 
 telnet_configure
@@ -349,8 +361,8 @@ telnet_configuration
 
 
 telnet_tasklist
-	la	(' '*/$word-$byte)
-	sa	tn_editline+2
+.	la	(' '*/$word-$byte)
+.	sa	tn_editline+2
 	on	+(see$7*/MANAGER_BANKS)-see$7
 	lr	tdescriptor_high_index
 	ly	next_tdescriptor_sp
@@ -377,7 +389,47 @@ telnet_display_quartets
 	lcal	telnet_insert
 	lret	0
 
+telnet_thread_name
+	push	x			. connection
+	sabr	32			. place thread control block
+	lx	(32*/12++TAG-4096)	. in file access space a moment
+	lr	36, x, i
+	lk	255,,xi
+	lb	tn_editline,,xi
+
+telnet_name_display
+	jxge	telnet_name_z
+	la	0, x
+	sa	0, b
+	lb	1, b, i
+	ax	1,,xi
+	mta	(0)			. trailing zero in this name?
+	j	telnet_name_display
+
+telnet_name_z
+	anb	tn_editline,,xi		. words in this part
+	lr	-3,,xi			. maximum zero bytes last word
+
+telnet_count
+	ral	$byte
+	mtane	(0)
+	j	telnet_counted_name
+	inc	r
+	j	telnet_count
+
+telnet_counted_name
+
+	la	b
+	aa	r
+	sbl	1
+	aa	b			. 3 * words + bytes
+	lb	tn_editline,,xi
+	pop	x
+	lcal	telnet_insert
+	lret	0
+
 telnet_task_display
+
 	push	y
 	push	r
 	lx	4, sp
@@ -385,8 +437,18 @@ telnet_task_display
 	dpush	4, y
 	qpush	0, y
 	off	+(see$7*/MANAGER_BANKS)-see$7		. see application storage
+
+	la	(' '*/$word-$byte)
+	sa	tn_editline+2
+
 	$do	6,	telnet_pop2hex
 	
+	on	+(see$7*/MANAGER_BANKS)-see$7
+	ly	1, sp					. snoop in the
+	la	3, y					. thread control block
+	off	+(see$7*/MANAGER_BANKS)-see$7
+	lcal	telnet_thread_name
+
 	lb	$3("":LF),,xi
 	la, xi	$bits/$byte
 	lcal	telnet_respond

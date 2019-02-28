@@ -140,6 +140,7 @@ $(0:0:TRANSFER_PAGE)
 		j		exit		. EXIT$*
 		j		thread		. THREAD$*
 		j		freetotal_ii	. TOTAL$FREE*
+		j		tag_ii		. TAG$
 
 	$do		14-$,	ir	0
 
@@ -170,15 +171,15 @@ $(0:0:TRANSFER_PAGE)
 CACHE_NETB$*	$vector	cache_standard_netbuf_ii
 ON_NETB$*	$vector	base_standard_netbuf_ii
 FREE_DEVB$*	$vector	unbase_deviceb_ii
-FREE_BVOLATI$*	$vector unbase_bvolatile_ii
 FREE_SOCKB$*	$vector	unbase_socketb_ii
 FREE_NETB$*	$vector	unbase_standard_netbuf_ii
 
 NET2SYM$*	$vector	net2sym_ii		. encode a connection handle
 						. and assign it to a process as stdin/out/err
-LEASE$*		$vector	lease_ii
-LEASE$?*	$vector	lease_ii?
-
+THREAD$STATE*	$vector	thread_state_ii		. is thread [application a] running?
+A$IDX*		$vector	storage_block_idxa_ii	. return in a 4K word block indentifier at base_table ABT+[a]
+B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at base_table ABT+[b]
+						
 	$if		$K_WPROTECT
 "$TCBLOCKS"*	$vector		a_tcbloc_ii
 "$X_RXB"*	$vector		x_rxb_ii 
@@ -388,7 +389,7 @@ read_handle_ii
 	lx, xi		handle(1)
 	sal		1
 	ax		a_x
-	on		see$1
+.	on		see$1		not any more. handles are in vector list
 	lr		handles
 	jxge		handle_out_of_range
 	la		0, x
@@ -399,8 +400,15 @@ handle_out_of_range
 	sa		a
 	ir		0
 
+
+	. ii UHANDLE$ completes encoding of handles
+	. on bind and TCP connect
+	. it's an internal interrupt because applications
+	. may not write their vector list, addresses 02000..02FFF
+
 uhandle_ii
-	on		see$1
+.	on		see$1		. no longer because handles are now in $(2) vector
+					. and that is always in caller address space
 	lb		d$save		. user d$save
 	sbl		1		. change to handle offset
 	lx, xi		handle(1)	. change to encoding block pointer
@@ -447,30 +455,33 @@ socket_out_of_range
 .	on return from ISR, see$2 is on or off
 .	whichever it was before
 
+
+xvector_in_range
+	lx		x
+	lr		02000,,xi
+	jxge		xvector_low_threshold	. test 1 passed
+xvector_outwith_range
+	lret		0
+xvector_low_threshold
+	lr		03000,,xi
+	jxge		xvector_outwith_range	. test 2 not passed
+	on		see$2			. kernel vector list
+	lret		1			. test 2 passed
+
+
 read_xvector_ii
-	la		x
-	tanu, xi	02000
-	jnc		read_xvector_ix
-	tanu, xi	03000
-	jc		read_xvector_ix
-	on		see$2
-	lb		0, a
-	sb		a
-read_xvector_ix
+	lcal		xvector_in_range
+	ir		0
+	la		0, x
+	sa		a
 	ir		0
 
 write_xvector_ii
-	la		x
-	tanu, xi	02000
-	jnc		write_xvector_ix
-	tanu, xi	03000
-	jc		write_xvector_ix
-	lb		a
-	on		see$2
-	sb		0, a
-write_xvector_ix
+	lcal		xvector_in_range
 	ir		0
-
+	la		a
+	sa		0, x
+	ir		0
 
 kernel_b1_ii_1
 	on		see$2
@@ -562,53 +573,62 @@ net2sym_ii				. first address the destination
 	ds		handle(2)**0FFF,x	. stdout
 	ds		handle(3)**0FFF,x	. stderr. process start should have reserved thse
 
+	la		(0C00001s)		. close the gate
+	sabr		BVOLATILE_I
 	ir		0
 
-lease_ii
-	la	a		. load TCB id from application a
-	sabr	BVOLATILE_I
-	la	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
-	sa	*b		. store back at application b->
-	ir	0
-
-lease_ii?
-	lx	*b		. get thread descriptor application b->
-				. trust it for real
+thread_current?			. subroutine not ISR
+	sabr	BVOLATILE_I	. thread control block index must be in interrupt a
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
 
 	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+
+	lr	next_tdescriptor_sp	. this changes
+	jxge	threads_threshold
+	j	thread_not_up
+
+threads_threshold
+	lr	tdescriptor_high_index	. this is fixed
+				. descriptor stack is dynamic but check possible ranges
+				. or following tests could crash within ISR = inconvenient
+
+	jxge	thread_not_up	. thread control block does not correspond
+				. to a thread descriptor
+	
+	xor	3, x		. does descriptor point to this thread CB?
+	jnza	thread_not_up
+
 	la	2, x
-	and	(TRAP++EXIT)	. is this thread running?	
-	jnza	lease_expired
+	and	(TRAP++EXIT)	. and is the thread running?
+	jnza	thread_not_up
 
-	la	3, x		. is the pointed TCB still its TCB ?
-				. for example that page may be not now be a TCB
+	lret	1		. thread seems OK
 
-	sabr	BVOLATILE_I
-	la	x_x		. is the thread descriptor the one in the TCB ?
-	xor	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
-	jnza	lease_expired
-				. does the caller's vector list still have this handle?
-				. if not this might be an all new thread
+thread_not_up
+	lret	0		. thread seems gone
 
-	la	*(BVOLATILE_I*/12++ABT-01000+2)
-	sabr	BVOLATILE_I
+thread_state_ii			. general purpose ISR is thread [application a] running?
+	la	a
+	lcal	thread_current?
+	ir	0		. no
+	ir	1		. yes
 
-	la	x		. load transmission control block at application x->
-	lb	0,,xi		. change to a handle encoding
-	drl	12
-	sar	12
-	or	(TCP_TCB*/16)
-	ab	01000,,xi
-	lb	ABT-01000, b
+storage_block_idxa_ii		. return the storage block index at window [a]
+	lb	a
+	on	see$1		. address the thread control block
+	andB	63,,xi
+	orB	ABT,,xi
+	la	0, b
+	sa	a
+	ir	0
 
-	dan	*(BVOLATILE_I*/12++handle(1)-02000)
-	jdz	lease_current
-
-lease_expired
-	z	*b		. end the lease of the transmission control block
-	ir	1
-
-lease_current
+storage_block_idxb_ii		. return the storage block index at window [b]
+	lb	b
+	on	see$1		. address the thread control block
+	andB	63,,xi
+	orB	ABT,,xi
+	la	0, b
+	sa	b
 	ir	0
 
 cache_netb* $proc
@@ -636,11 +656,6 @@ unbase_deviceb_ii
 	sabr	32
 	ir	0
 
-unbase_bvolatile_ii
-	la	(0C00001s)
-	sabr	BVOLATILE_I
-	ir	0
-
 unbase_socketb_ii
 	la	(0C00001s)
 	sabr	BSOCKET
@@ -649,6 +664,28 @@ unbase_socketb_ii
 unbase_standard_netbuf_ii
 	la	(0C00001s)
 ?	$do	16,	sabr	48+?-1
+	ir	0
+
+tag_ii	la	a			. optional thread name
+	jnza	$+2			. this thread if no other
+	inA	65
+	sabr	BVOLATILE_I
+
+	lk	255,,xi
+	ly	b			. name string must be in caller address space
+	lx	(BVOLATILE_I*/12++TAG-4096)
+	lr	36, x, i		. restrict to 100 characters or so
+
+tag_iiw	jxge	tag_iiz
+	la	0, y
+	sa	0, x
+	ax	1,,xi
+	ay	1,,xi
+	mta	(0)			. was at least 1 low-order octet of that word zero?
+	j	tag_iiw			. not yet
+
+tag_iiz	la	(0C00001s)		. prevent accidental access
+	sabr	BVOLATILE_I
 	ir	0
 
 

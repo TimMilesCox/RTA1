@@ -102,6 +102,7 @@ static unsigned char	 path_txo[240];
 static unsigned char	 msympath[240];
 static unsigned char	 ramspace_d[240];
 static unsigned char	 client_d[240];
+static unsigned char	 fixed_names_path[240];
 
 #ifdef FORK
 #else
@@ -115,6 +116,7 @@ static char		*scriptl[] = { "masmx", save_masmdef, "my_names.txo", "-wk", NULL }
 static int		 name_store;
 static int		 dynamic;
 
+static FILE		*fixed_names_stream;
 
 /****************************************************
 	internalise and combine the tools
@@ -206,6 +208,33 @@ static void isolate(int f)
       x = fcntl(f, F_SETFD, x | FD_CLOEXEC);
       if (x < 0) printf("error %d updating open flags handle %d\n", errno, f);
    }
+}
+
+static int fixed_name(char *candidate)
+{
+   char		 text[128];
+   char		 name[120];
+   int		 x;
+   char		*p = NULL;
+
+   if (fixed_names_stream)
+   {
+      rewind(fixed_names_stream);
+ 
+      for (;;)
+      {
+         p = fgets(text, 128, fixed_names_stream);
+         if (!p) break;
+         if (text[0] ^ '+') continue;
+         name[0] = 0;
+         sscanf(text + 1, "%[^:]", name);
+         if (flag['w'-'a']) printf("+%s\n", name);
+         x = strcmp(name, candidate);
+         if (x == 0) return 1;
+      }
+   }
+
+   return 0;
 }
 
 static void recall_store(int bytes, char *text)
@@ -356,6 +385,9 @@ int main(int argc, char *argv[])
    sprintf(path_txo, RAMFS "fponline/%s/pdu.txo", getenv("USER"));
    sprintf(msympath, "%s/../../target.rta/fponline/pdu.msm", getenv("RTA_BINARY"));
    sprintf(ramspace_d, RAMFS "fponline/%s", getenv("USER"));
+   sprintf(fixed_names_path, RAMFS "fponline/%s/fixed.txo", getenv("USER"));
+
+   fixed_names_stream = fopen(fixed_names_path, "r");
 
    getcwd(client_d, 240);
 
@@ -615,7 +647,14 @@ int main(int argc, char *argv[])
 
          if ((symbol1 ^ '_') && (symbol ^ '+') && (symbol ^ '-') && (symbol ^ '*') && (symbol ^ '/'))
          {
+            if (fixed_name(name))
+            {
+               printf("%s is a fixed name and may not be updated dynamically\n", name);
+               continue;
+            }
+
             bytes = sprintf(added_name, "%s*\t$set,168\t%s\n", name, rdata);
+            
             recall_store(bytes, added_name);
             continue;
 

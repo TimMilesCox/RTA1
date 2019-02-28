@@ -82,7 +82,7 @@
 #include "idisplay.h"
 #include "settings.h"
 #include "../include.rta/argue.h"
-
+#include "stepping.h"
 
 int			 indication;
 
@@ -526,7 +526,7 @@ static void action(char request[])
 
    if (flag['s'-'a'] == 0)
    {
-      if (symbol ^ 's')
+      if ((symbol ^ 's') && (symbol ^ '.'))
       {
          printf("key s for single step\n");
          return;
@@ -719,6 +719,10 @@ static void action(char request[])
       case '.':
          runout = -1;
          indication &= -1 ^ LOCKSTEP;
+         break;
+
+      case '?':
+         printf("Stepping %s\n", STEPPING);
          break;
 
       default:

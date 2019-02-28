@@ -37,14 +37,15 @@
 .
 .
 
-. Emulation implements one kind of network interface
 
-. this can be modified when there is more than one interface type
-. initially the only known type is modelled as a dual ported memory
-. interface to the system
-.
-. half of the interfacing memory presents input frames
-. the other half is available for output frames
+. Interfaces multiplex on two circular buffers of 16-bit words
+. one for receive and one for transmit
+
+. 16-bit device array words read out to RTA1 as 24 bits  with 8 high-order zeros
+. and are written from the low-order 16 bits of RTA1 registers
+
+. These 16-bit buffers are in device array space and consist
+. of an array of uniformly 1024-word (2048 octet) frame buffers 
 
 
 .		_________________________________
@@ -64,141 +65,29 @@
 .		|_______________________________|
 
 
-. the frames arrive and are sent in cyclic order of the buffers
-.
-. there is an 8-word length + ethernet header at the start of each buffer
-. this sketch represents a quartet of bits per symbol
+. Five 16-bit words at the start of each frame buffer contain information
+. for RTA1 on receive and for interfaces on transmit
 
-.	 00LLLL 00xxxx 00xxxx 00xxxx 00yyyy 00yyyy 00yyyy 00pppp
+. The five-word preamble is
 
-.	________________________________________________________________________
-.	| 00LLLL | 00xxxx | 00xxxx | 00xxxx | 00yyyy | 00yyyy | 00yyyy | 00pppp|
-.	|________|________|________|________|________|________|________|_______|
-.	| 00data | 00....
+.	_________________________________________________________________________________
+.	| flag 0800/0000|  frame octets	|link hdr octets|interface index|protocol family|
+.	|_______________|_______________|_______________|_______________|_______________|
 
 
-. network data is buffered 16 bits per computer word right up to the socket
-. and XDR interfaces. These "interface dual ported" memories may be 16-bit
-. memories reading out eight zero bits at the high order positions of each
-. computer word, or they may be 24-bit memories: then the high-order 8 bits
-. must be maintained with zero values
+. The first word flagged 0800 to indicated a frame completely received
+. or a frame ready for transmission
 
-.	LLLL	is frame size, and nonzero value written here indicates
-.		a complete frame received, or available for transmission
-.
-.	xxxx xxxx xxxx	is the destination ethernet address
+. The fixed preamble contains a Link Header length which is usually zero on receive
 
-.	yyyy yyyy yyyy	is the source ethernet address
+. Link Layer headers are not usually included in received frames because
+. no protocol layer in RTA1 extracts Link Layer addresses from Link Layer headers
+. The fixed preamble contains a protocol discriminator
 
-.	pppp	is the protocol family indicator, 0800 for IPv4, 0806 for ARP
-.		as many as required
+. Complex protocol discriminators like SNAP header would make the inclusion of 
+. received Link Layer headers necessary
 
-
-. the buffers are equal sized and used cyclically
-
-. the input machine signals to software that a frame is available
-. by writing a length in bits 15:0 of the first word in the buffer:
-.
-.		0000 0000 LLLL LLLL LLLL LLLL
-.
-. The length is not self-inclusive. It is the frame length.
-. The frame starts at the next word
-
-. software indicates that the frame has been sampled and the buffer is
-. free by writing zero to this length word
-
-. software indicates that a frame for transmission is assembled 
-. in the transmission buffer by writing a length in bits 15:0 of
-. the first word in the transmission buffer. The length is the
-. frame length and not self-inclusive
-
-. The frame for transmission starts in the second word of the
-. transmission buffer
-
-. Transmission completion is indicated back to the software by zero
-. in the length word, and this also indicates the transmission buffer
-. is again free
-
-. This interface model is not part of RTA architecture but supports
-. this emulation and is intended to work like network interfaces are 
-. intended for RTA systems
-. 
-. That is, some of the 63 DEVICEs (arrays outside system memory)
-. should carry network data to and from an RTA system.
-
-. A DEVICE is up to 65536 BANKS of up to 262144 WORDS of up to 24 bits
-.
-
-. device 0 is system memory or executable space and is up to 16 gigawords
-. of 24-bit memory
-
-. only system memory is selectable in pages of 4096 words as well as in
-. banks of 256K
-
-. Memory in the other 63 possible devices is selectable in banks of
-. 262144 words only
-
-. the pointer to a page of system memory based in one of the 72 relocation
-. registers has the layout
-
-.	00pp pppp pppp pppp pppp pppp
-
-. where bit 22 = 0 indicates a 22-bit page pointer and the task has a granule
-. of 4096 words addressed and available
-
-. the pointer to a bank of system memory in a relocation register has the layout
-
-.	01pp pppp pppp pppp pp00 0000
-
-. where bit 22 = 1 indicates a 16-bit bank pointer and the task has a granule
-. of 262144 words addressed and available
-
-. bits 5:0 = 00 0000 indicate that the bank is in system memory
-.
-. the pointer to a bank of "I/O Memory" (strictly an array other than
-. system memory) has the layout in a relocation register
-
-.	01bb bbbb bbbb bbbb bbDE VICE
-
-. where bit 22 = 1 = Big Bank ** DEVICE = nonzero = some other device than
-. system memory
-
-. Some of these 63 possible arrays outside system memory will be battery-
-. supported SRAMS of 24-bit words containing realtime transaction file systems
-
-. Others may be flash memories containing default system images and occasional
-. data backups (but flash memories may not be used for high-frequency
-. transaction update data)
-
-. some may be insertable flashes containing 16- or 8-bit memories organised
-. in a file system architecture readable and writable by other systems
-
-. some may be video RAMs of up to 16 Gigawords of 24-bit words
-
-. At least one device must be an array interfacing a network adaptor to the
-. RTA system with 16 network data bits per computer word as modelled here
-
-. This interface array is supplied to the emulator by a Unix shared memory
-. block of 524288 bytes which looks to RTA like a device of one bank of
-. 262144 16-bit words.
-
-. RTA reads each word out as a 24-bit computer word with bits 23:16 = 0000 0000
-. The first half of this block is receive buffers and the second half transmit
-. buffers
-
-. the settings here are that RPAGEW is 1024 words. This is the buffer size
-. and it allows an ethernet frame of 1514+ bytes. Jumbos are not accounted
-. for in the emulation. A device in a large-configuration RTA may have
-. 65536 * 262144 words in a network interface device, but the emulator has
-. only 1 * 262144 words in its one network interface space.
-
-. Therefore the emulator will only test standard ethernet traffic
-
-. the configuration of the emulated interface (which links to a real interface
-. outside the emulator) is therefore
-
-.	128 receive buffers of 1024 words each
-. plus	128 transmit buffers of 1024 words each
+. Link Layer headers are always constructed by RTA1 for transmission
 
 
 . Notes. Note 1
@@ -254,16 +143,15 @@
 . This means IP will check IP correctness, and call ICMP, UDP or TCP which
 . must checksum as necessary while copying the datagram to socket storage.
 
-. This is not a flat-address system and there is no zero-copy
-. receive. But there is only one copy, and it is carried out during checksum
-. generation. After that the datagrams are in socket-associated buffers which
-. are placed in the address space of the application.
+. Datagrams are checksummed during transfer from interface buffers (device array space)
+. to socket buffers (executable space)
 
-. The socket or XDR interface will format the data when the application
+. Some network applications which are threads of IP have zero-copy access to socket buffers
+
+. The socket or XDR interface will otherwise format the data when the application
 . subsequently receives it over the socket API.
 
-. on return from the call to the protocol family, the interface buffer is
-. freed
+. on return from the call to the protocol family, the interface buffer is freed
 
 
 

@@ -28,19 +28,250 @@ Towards Compiler Languages for RTA1 Architecture
 
 <h3>Application Core Map Overview</h3>
 
-RTA1 system image development is oriented toward embedded servers where
+RTA1 system image development is oriented toward embedded servers
 <pre	style="font-size:12pt">
 
-        instruction code is in NVRAM
+	applications are ROMable shared instruction code and may be flashed or RAM loaded
 
-        all programs are shared instruction code. Each process has a copy of program data
+        each process instance of each application has a copy of program data
 
-        a new process unpacks its data segment into RAM from a file system in NVRAM
+        a new process unpacks its data sections into RAM from within the load image in NVRAM or RAM
+
+<div	style="background-color:FF0000;width:150pt;height:200pt;top:420pt;left:100pt;position:absolute">
+	NVRAM
+
+
+    application code
+
+
+<hr/>
+    initial data--------------------------------------->
+    load strings
+
+</div>
+
+<div	style="background-color:00FF00;width:150pt;height:200pt;top:420pt;left:400pt;position:absolute">
+	RAM
+
+
+
+
+
+
+
+---------->
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	a block of memory may contain a suite of applications
+	initial data load strings are modeled as a read-only file system and collected into the application image
 
         executable space has a boundary between NVRAM at low order locations and RAM at high order locations
 
-        there is not necessarily a program loader
-        Application instruction code and data segment load template reside in NVRAM
+	the last NVRAM objects before RAM are a lookup file system pointing into an array of start-on-request applications
+
+<div	style="background-color:FF0000;width:450pt;height:200pt;top:770pt;left:100pt;position:absolute">
+	NVRAM
+<hr/>
+
+    kernel		lookup list		applications
+	+					on request
+    embedded
+    application
+    servers
+
+</div>
+
+<div	style="background-color:00FF00;width:150pt;height:200pt;top:770pt;left:550pt;position:absolute">
+	RAM
+
+</div>
+<div	style="background-color:FFFFFF;width:1pt;height:166pt;top:804pt;left:250pt;position:absolute">
+</div>
+
+<div	style="background-color:FFFFFF;width:1pt;height:166pt;top:804pt;left:400pt;position:absolute">
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+	start-on-request applications may be loaders, shells or other applications
+	the lookup list is a ROM file system containing conditions and requirements of each start-on-request application
+	telnet server spawns an application process on request and assigns to it the interactive dialogue
+
+	this is an example a simple start-on-request application where more usually telnet might spawn a shell
+
+		$ telnet 172.29.7.7
+		Trying 172.29.7.7...
+		Connected to 172.29.7.7.
+		Escape character is '^]'.
+		RTA1 smaragd7 OS shared console
+		r responder
+		00002b 
+		thank you, I read	 r responder
+
+		calculations?
+		333.666666999999333333e1000000 / 3e-250000
+		<a style="color:0000FF"> +1.112222223333331111116e+1250002</a>
+		15 * 30e1200000
+		<a style="color:0000FF"> +4.500000000000000000015e+1200002</a>
+
+	this is the source code of this sample start-on-request application called responder
+	data sections are $(1) which is not used here, and $(3) which is static. Strings are in $(3) static
+	so that kernel routines like read() and write() can address them from their different instruction address space
+	Instruction code is $(0) 
+	<a	style="color:0000FF;font-size:9pt">
+	
+	$path		../			. depending where you are
+	$include	def/rta.def		. RTA1 instruction set
+	$include	def/vector.def		. view of B2 vector list constructed by kernel on application spawn
+	$include	def/ii.def
+	$include	language/stack.def	. macro language for structured functions
+	$include	t77.4/tcp.def
+	$include	stream/stream.def
+	$path
+	$path		../image.app/
+	$include	imports.def	
+	$path					. bring include path back here
+
+
+$(1:01000)					. this is for any private data
+						. data in $(1) can only be exported by value, never by reference
+
+$(3:03000/$3)					. this is for static data. pointers to here can be exported
+ibuffer	$res	1500//3				
+obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
+
+left		0.0
+right		0.0
+operator	0
+
+	$set_option	"c"			. escape codes are easier to read in C-syntax
+
+blue	"\033[94m\0"
+mono	"\033[0m\0"
+
+$(0:0)						. section 0 is code. Relative addresss 0
+
+responder* $vector	respond			. export ABSOLUTE_I / 4096 * 64 + zero. That's a callable vector value
+
+	$list	0
+	$do	64-$,	fret	0		. return if anyone calls ABSOLUTE_I / 4096 * 64 + [1..63]
+	$list
+
+respond
+	$base_x	$zenith(3)-03000 4096		. place static storage in address space.
+						. 2nd argument is for external stack. printf / fprintf need 1024 words
+						
+	
+	c	(seg$load)	0,,xi	(data_load:d),,long
+
+
+						. 48-bit file name value is a word offset in the ROM file system
+						. it identifies the first extent of the file containing data segment load strings
+
+						. zero block address for the core file system identity
+						. causes seg$load to read the absolute load address from the return stack
+
+	fgets	ibuffer 1500 stdin		. read automatic initial input on stdin
+
+	printf	$3("thank you, I read\t %s\ncalculations?\n\0"),,xi ibuffer,,xi 
+
+react	scanf	$3(" %f %c %f\0"),,xi	;
+		left,,xi		;
+		operator,,xi		;
+		right,,xi
+
+	jna	problem			. either the count of tokens or a -status comes back
+	aa	-3,,xi
+	jnc	react
+
+	la	operator
+	aa	-'+',,xi
+	jza	add
+
+	aa	'+'-'-',,xi
+	jza	subtract
+
+	aa	'-'-'*',,xi
+	jza	multiply
+
+	aa	'*'-'/',,xi
+	jza	divide
+	j	react
+
+add	ql	left
+	fa	right
+	j	output
+
+subtract
+	ql	left
+	fan	right
+	j	output
+
+multiply
+	ql	left
+	fm	right
+	j	output
+
+divide	ql	left
+	fd	right
+
+output	printf	$3("%s %f%s\n\0"),,xi	blue,,xi    a,,float	mono,,xi
+
+reactx	ii	YIELD$
+	j	react
+
+problem	ii	EXIT$			. there isn't stdin any more
+					. so there isn't likely stdout
+
+	$do	$<256,$(0:256)		. literal data constants are not addressable at locations before 256
+
+</a>
+
+	data sections $(1,3) are packed into a file system image and collected into
+	instruction code to allow dynamic initial data load from NVRAM
+
+	to have this happen the directory rta/image.app must be in the developer's $PATH
+	here is the load script of sample application responder
+
+		# build application and append to kernel
+
+		appmake	responda
+		aprofile responda responder 7 1 11*4096
+		lookup
+		cat ../rta.gen/minimal.rom lookup.fs responda.rom > sysimage.rom
+		cmp lookup.zak lookup.fs
+		cmp responda.zak responda.rom
+
+	line aprofile enters responder's spawn requirements in the lookup file system
+	binary file responda.abs has entry vector responder and gets priority 7 (lowest), one $(1) private data block (minimum)
+	and is to load in the twelfth 4K-word block NVRAM. $(3) static data size is taken from assembly output
+
+	responder is only about four dozen instructions and would normally share that 4K-word block with some other applications
 
 </pre>
 
@@ -49,7 +280,7 @@ Application instruction and data memory is assigned in terms of numbered program
 
 <p>
 The use and program-relative addresses of program sections are
-<pre	style="font-size:12pt">
+<pre	style="font-size:10pt">
 
                 _________________________
         000000  |$(0)   Instruction Code|                       TCB / Process Private Space B1 / Vector Space B2 / Static Data Space B3 Assigned at Process SPAWN$
@@ -63,9 +294,9 @@ The use and program-relative addresses of program sections are
                                                                 |  4K words     may be multiple                                 | addressed by kernel    |
                                                                 |_______________________|_________________                      |_______________________|
                                                         002000  |$(2)                   |
-                                                        hex     |  vector list          |       application cannot write
-                                                                |  process global       |       its vector list
-                                                                |  4K words             |
+                                                        hex     |  vector list          |       kernel constructs
+                                                                |  process global       |       $(2) vector list
+                                                                |  4K words             |	application may not write it
                                                                 |_______________________|
                                                         003000  |$(3)                   |
                                                         hex     |  static data          |
@@ -78,58 +309,6 @@ The use and program-relative addresses of program sections are
 
 </pre>
 
-Instruction code and core file system containing data load strings are in NVRAM before system call ii SPAWN$
-
-<p>
-SPAWN$ assigns the TCB and sections $(1) $(2) $(3) (private, vector, static), constructs B2 vector list and writes process block pointers B1 and B2
-
-<p>
-Application start reads the start location of B3 static from vectors and writes static block pointers in adress space B3 [ B4..B31] then calls dynamic segment loader seg$load to initialise private data and static data
-
-<h3>Sample Application Source Code</h3>
-
-The this sample source code layout of an embedded model Application uses known absolute addresses
-
-<p>
-Even absolute asasemblies like this can be later combined in packaged program suites
-
-<pre	style="font-size:12pt">
-
-	$path		../rta/target.rta	. depending where you are
-	$include	def/rta.def		. RTA1 instruction set
-	$include	def/vectors.def		. view of B2 vector list constructed by kernel on application spawn
-	$include	language/stack.def	. macro language for structured functions
-	$path					. bring include path back here
-
-ABSOLUTE_I	$equ	48*1024			. absolute code address reserved
-ROM_FS		$equ	60*1024/4096		. ID of 4K-word page where the ROM file system starts
-						. many applications may link to this FS to obtain their initial data segment
-
-$(1:01000)					. this is for any private data
-mysocket	-1				. this can only be an argument by value, never by reference
-
-$(3:03000)					. this is for static data which can be exported
-ibuffer	$res	1500//3				
-obuffer	$res	1500//3				. send and receive buffers for approximately a user datagram on ethernet
-
-$(0:0:ABSOLUTE_I)				. section 0 is code : program relative address 0 : absolute address known
-
-myvector* $vector	entrypoint1		. export ABSOLUTE_I / 4096 * 64 + zero. That's a callable vector value
-
-	$do	64-$,	fret	0		. return if anyone calls ABSOLUTE_I / 4096 * 64 + [1..63]
-
-entrypoint1
-	$base_d	$zenith(3)			. place $(3) storage in address space
-	
-	c	(seg$load)	ROM_FS,,xi	(mydataseg_filename:d),,long
-
-						. 48-bit file name value is a word offset in the ROM file system
-						. it identifies the first extent of the file containing data segment load strings
-
-						. application code goes here
-
-
-</pre>
 </div>
 </div>
 </html>

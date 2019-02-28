@@ -1,0 +1,232 @@
+tcp_add	$tree
+
+.	vector name tcp_tx
+
+	on	b$streamZR	. read to cleared a register
+	off	b$stream16r	. from 24-bit application-space data
+	z	RDATAC		. discount residual data in RDATA
+				. readout starts at data word q ->
+	lcal	tcpa
+	fret	0
+
+.	vector name tcp_addx
+
+__x	lcal	tcpa		. as tcp_tx but without automatic PSR settings 
+	fret	0		. caller to decide PSR flags and RDATAC initialisation
+
+tcpa	$head_near	scalars(caller_fp,	int,	fp	;
+				mss,		int,	transmission:mss ;
+				lookaside,	int		;
+				outstanding,	int,	a	;
+				requested,	int,	a	)
+
+
+add	lb	outstanding	. buffer request uses a but must see requested bytes
+	lcal	buffer
+	j	no_output	. nothing's available, get gone
+
+	sa	fp		. a -> buffer descriptor
+	lr	descriptor:bytes
+	la	outstanding	. outstanding data byte count in this request
+
+	tz	r		. data already in segment buffer?
+	jza	push?		. there is waiting output but none new	
+	jza	no_output	. there is no new output
+				. there is new output to add
+
+	lb	mss
+	anb	r		. available
+	sa	lookaside	. reserve the outstanding
+	ana	b
+	sa	outstanding	.
+	la	b		. suggest the transfer shall be available writespace
+	jc	transfer	. request = or >  write space
+	la	lookaside	. request < write space
+
+transfer
+	lb	r		. update segment bytes total
+	ab	a
+	sb	descriptor:bytes
+
+	lb	descriptor:uproto
+	sb	TP_HEADER
+
+	ly	descriptor:apdata
+	sy	AP_DATA
+
+	off	carry$
+	src	r		. halve the byte count up before now, carry = remainder
+	ay	r		. address in buffer for next complete data word
+
+	lb	transfer:checksum, b
+	jnc	add_words
+	lcal	insert_byte	. previous accumulation is an odd number of bytes
+	aa	-1,,xi		. obtain the next byte and add to checksum in b
+				. down the outstanding byte count for this transfer
+add_words
+	lcal	w2buffer	. target address in y
+				. byte count passed to w2buffer in a
+				. checksum returned in a
+				. input stream in q / RDATA / RDATAC
+
+	lb	TP_HEADER
+	sa	transfer:checksum, b
+
+push?	la	SOCKET_CALL_FLAGS
+	and	TCP_PSH,,xi
+	jnza	release		. send it
+
+	tp	outstanding	
+	j	add_x		. there is space for the next send
+
+release	lcal	segment_transmit
+
+	lb	outstanding
+	jnb	add_x		. everything is sent
+	jzb	add_x
+
+	ii	YIELD$		. let TCP and IP optimise the buffer pools
+
+	j	add
+
+no_output
+	z	requested	. return a minus error code
+	sa	outstanding	. or zero for non-error void write
+
+add_x	qpop	a		. requested:finalcount:lookaside:mss -> a:b:6:7
+	pop	fp
+
+	jnb	add_z		. unless final count < 0
+	ana	b		. result = requested - final count
+
+add_z	lret	0
+
+segment_transmit			. this is out of line because it plays stack
+	qpush	x			. connection.write_pointer.TCP_PSH.outstanding count 0+
+					. segments accumulate on principle
+	la	TP_HEADER		. so read the segment format word
+	lb	SOCKET_CALL_FLAGS	. as it NOW IS
+	lk	(TCP_HL)		. force the longword count
+	mlb	transfer:hl_code, a	. as it FIRST WAS
+	sb	transfer:hl_code, a	. write header flags as they NOW ARE
+	andB,xi	TCP_FLAGS		. add header flags to the checksum
+	ab	transfer:checksum, a
+
+	lr	b				. lodge checksum in r
+
+	lb	AP_DATA				. find the header length
+	anb	TP_HEADER			. again
+	sbl	1				. in bytes
+	push	descriptor:bytes		. calculate the total segment
+	ab	0, sp				. length, save payload length
+	la	TP_HEADER			. save segment total for checksum
+	push	b				. for the checksum
+	orB	(0800000:s)			. and for the 
+	sb	descriptor:bytes		. descriptor
+
+	popA	r				. add segment total to checksum
+	sr	transfer:checksum, a
+
+	pop	b				. retrieve the payload length
+	la, xi	0
+	dsl	16
+	da	transmission:sequence_ackx	. update the sequence state
+	ds	transmission:sequence_ackx	. variable of the connection
+	
+	qpop	x			. retrieve	x = connection
+						.	y = write position
+						.	in segment buffer
+						.	a = 0 = no TCP_PSH
+						.	b = outstanding byte count
+	lret	0
+
+
+insert_byte			. this is out of line because it plays stack
+	push	a
+
+	rsr	8		. obtain 1 byte application data
+	ab	a		. it won't carry
+	or	0, y		. 1st byte this word, already checksummed
+	sa	0, y
+	ay	1,,xi		. write and increment pointer
+
+	pop	a
+	lret	0
+
+.	this routine buffer relies on x -> connection block always returning unchanged
+.	from tcp_shield_buffer. The return skips one instruction on buffer grant
+
+.	tcp_startbuffer called from tcp_shield_buffer also skips 1 instruction on buffer grant
+
+.	for reasons not clear tcp_startbuffer has been overwriting x when returning without skip
+.	(no buffer grant) so not found = connection block was lost unless the caller saved it
+
+.	that doesn't look useful to any caller to tcp_startbuffer
+.	so exit + 0 from tcp_startbuffer no longer changes x -> connection block
+
+.	other callers to tcp_startbuffer are listed where the code has been changed
+.	at label tcp_nostart: return + 0 from tcp_startbuffer = no buffer grant
+
+.	it isn't wished to push / pop x in this routine buffer
+.	because it's not single exit, calls routines which aren't single exit
+.	and makes reference itself to x -> connection block
+
+
+
+buffer	la	transmission:q4window:head
+	jza	new_segment
+	la	transmission:q4window:tail
+	lr	descriptor:bytes, a
+	tn	r			. is 800000 (do not delete or change) on?	
+	lret	1			. no, segment may be incremented
+					. yes, segment is sealed for transmission
+					. so fall thru here to start a new segment
+new_segment
+	jzb	drop_request_zero	. nothing + nothing = do nothing
+					. even with push flag. Status zero - zero
+
+request	la	transmission:state	. check connection state before requesting buffer,
+	aa	-TCP_ESTABLISHED,,xi	. every time and every retry.
+	jza	new_segment_request	. buffers can otherwise remain locked for many minutes
+	aa	TCP_ESTABLISHED-TCP_CLOSEWAIT,,xi
+	jnza	drop_request_closed
+
+new_segment_request
+	lr	transmission:mss
+
+	la	SOCKET_CALL_FLAGS
+	jnza	flags_present
+	la	05018,,xi		. add default header length + flags
+	sa	SOCKET_CALL_FLAGS
+
+flags_present
+	and	(TCP_HL)		. isolate header length. Keep flags from checksum
+	lr	transmission:mss
+
+	lcal	tcp_shield_buffer
+	j	no_segment
+
+	z	descriptor:bytes, a	. before the buffer is on the queue
+	lcal	tcp_write_txq
+	lr	0,,xi
+	ly	TP_HEADER		. pointer set by shield_buffer
+	lb	6			. 2-word checksum from shield_buffer
+	ab	7			. compress
+	sb	 transfer:checksum, y
+	j	segment
+
+no_segment
+	dl	(5d)			. don't call tcp_add from IP main thread
+	ii	TWAIT$
+	j	request
+
+segment	lret	1			. = buffer obtained
+
+
+drop_request_closed
+	la	FILE_NOT_OPEN,,xi
+drop_request_zero
+	lret	0
+
+	$root
+

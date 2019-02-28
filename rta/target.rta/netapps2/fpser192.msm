@@ -37,6 +37,21 @@ fp_rx	tp	fp_bound
 
 fp_rx1	lb	s:udp:socket_inq.head, b
 	jzb	fp_no_traffic
+
+	$if	1
+
+	sb	fp			. take a copy of the input axw
+	la	43+7+1+2+1,,xi
+	call	(udp_rtxbuffer)
+	jza	fp_release		. can't buffer  a response
+					. so drop the question
+	sa	response_axw
+	la	descriptor:bytes
+	lb	descriptor:apdata
+	call	(rstream_start_net)
+
+	$else
+
 	la	descriptor:bytes, b
 	sa	BYTES
 
@@ -54,6 +69,8 @@ fp_rx1	lb	s:udp:socket_inq.head, b
 	sy	p
 	z	WDATAC
 	z	WDATA
+
+	$endif
 
 	call	(floating_scan192)
 	qs	left
@@ -167,7 +184,18 @@ fp_nop	j	fp_edit
 	qs	$residue	. return scanned number if any
 	ql	left
 
-fp_edit	z	BYTES
+fp_edit
+	$if	1
+
+	lx	response_axw
+	lx	descriptor:apdata, x
+	call	(wstream_start_net)
+
+	$else
+
+	z	BYTES
+
+	$endif
 
 	ii	FP_XPO$FLAG
 	lcal	fp_reactz
