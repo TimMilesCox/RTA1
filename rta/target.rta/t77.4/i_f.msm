@@ -71,11 +71,11 @@
 . The five-word preamble is
 
 .	_________________________________________________________________________________
-.	| flag 0800/0000|  frame octets	|link hdr octets|interface index|protocol family|
+.	| flag 8000/0000|  frame octets	|link hdr octets|interface index|protocol family|
 .	|_______________|_______________|_______________|_______________|_______________|
 
 
-. The first word flagged 0800 to indicated a frame completely received
+. The first word flagged 8000 hex to indicated a frame completely received
 . or a frame ready for transmission
 
 . The fixed preamble contains a Link Header length which is usually zero on receive
@@ -190,9 +190,11 @@ i_f_pointer_array	. who wants to go multiplying subscripts?
 	+	1
 ?	$do	INTERFACES,ifxpointer(?)	+	interface(?)
 
+"$if0p"*	$equ	i_f_pointer_array
 "$if2p"*	$equ	ifxpointer(2)		. 1st external interface pointer
 						. exported for self-configuring
 						. device drivers
+"$ifzp"*	$equ	i_f_last
 
 i_f_last +	interface(1)
 
@@ -267,6 +269,7 @@ i_f_leave
 q2ifoq	tnz	this_if:arp_resolve
 	j	q2ifreel			. interface does not use ARP
 
+	la	8				. the descriptor
 	$if	0
 	lb	descriptor:frame, a		. practical measure. set the delivery pointer
 	sb	TX_FRAME			. for the target physical address
@@ -328,9 +331,13 @@ frame2proto
 	jzb	arp_rx		.   arp_rx does lret back into frame2p
 
 	anu, xi	IFCONFIG
-        jzb	ifconfig	. ifconfig does lret back into frame2p
+        jzb	call_ifconfig	. ifconfig does lret back into frame2p
 
 	MIB_ICOUNT48	this_if:inoproto
+	lret	0
+
+call_ifconfig
+	call	(__ifconfig)
 	lret	0
 
 if_rq1		. vector name is if_readq1
@@ -352,39 +359,26 @@ if_rq2		. vector name is if_readq2
 
 	fret	0
 	$endif
-
-if_dportw	. vector name is if_dualport_txwrite
-
-        z       TX_DATAGRAML
-        la, i   nframe:stack_index, a
-
-        lb      0, a
-        aa      b
-
-        jpb     if_osentq
-
-if_osendq
-        dpush   a
-        ly      1, a
-        la      0, a
-
-        jza	if_oblank
-        push    a
-        popA    TX_DATAGRAML
-
-        lcal    tx_nocheck
-if_oblank
-        pop     a
-        pop     b
-        aa, xi  2
-        ab, xi  2
-        jnb     if_osendq
-
-if_osentq
-	fret	0
-
 ifsellmsg	. vector name is if_sell1
 	lcal	sell1
+	fret	0
+
+ifbuy	lcal	buy1	. vector name is if_buy
+	fret	0
+
+ifrq	lcal	readq	. vector name is far_rq
+	fret	0
+
+ifq2	lcal	q2	. vector name is far_q2
+	fret	0
+
+ifq2ifree	. vector name is if_q2ifree
+	lcal	q2ifree
+	fret	0
+
+
+iftx_nocheck	. vector name is if_tx_nocheck
+	lcal	tx_nocheck
 	fret	0
 
 	$else
@@ -445,51 +439,4 @@ if_osentq
         lret	0
 
 	$endif
-
-					. axw in fp
-ifw_llh_space				. bytes size of link header in a
-.	lb	TX_FRAME		. prepare the llh space / descriptor
-	push	-6,,xi
-	pop	nframe:stack_index, b
-	ds	nframe:frame_axw(1),b
-	lret	0
-
-ifw_dlt_null
-	push	a
-	lb	descriptor:frame, a
-	la, xi	4
-	lcal	ifw_llh_space
-	la, xi	0200
-	sa	0, b
-	z	1, b
-	pop	a
-	fret	0
-
-ifw_dlt_loop
-	push	a
-	lb	descriptor:frame, a
-	la, xi	4
-	lcal	ifw_llh_space
-	la, xi	2
-	z	0, b
-	sa	1, b
-	pop	a
-	fret	0
-
-
-ifw_dlt_e10mb			. generic handling already has
-				. the resolved destination at the frame start
-	push	a		. and the protocol at word 6
-	lb	descriptor:frame, a
-	la, xi	14
-	lcal	ifw_llh_space
-
-	push	this_if:physa+2
-	dpush	this_if:physa
-	pop	nframe:llh:ethernet:from, b
-	pop	nframe:llh:ethernet:from+1, b
-	pop	nframe:llh:ethernet:from+2, b
-	pop	a
-	fret	0
-
 

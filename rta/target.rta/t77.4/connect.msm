@@ -61,6 +61,251 @@
 .	not the high-volume connection arrays
 
 
+"$sockif"*	$tree
+
+.	vector name connect	. call from applications
+
+
+socket_connect
+	$head_far		 params(handle1,		int		;
+					target_address,		float	)	;
+										;
+				scalars(socket_address,		long		;
+					handle_encoding,	long		)
+
+	la			handle1
+	ii			READ_SOCKET$
+	ds			handle_encoding
+
+	lk			(255*/16s)
+	jna			socket_nane
+	mtane			(IPPROTO_TCP*/16)
+	j			tcp_connect
+	mta			(IPPROTO_UDP*/16)
+	j			socket_nane
+							. place UDP connect here
+	j			connect_x
+
+socket_nane
+	la			-NO_HANDLE,,xi			
+	j			connect_x
+
+tcp_connect
+
+	ii	ON_NETB$	. caller to __connect
+				. must run with network resources
+				. in address space
+
+	sal	8		. a = port number if any
+	dsr	24+8		. in bound or unbound handle
+
+	c	(__connect)	a,,long			;
+				target_address+2,,long
+
+	jpa	update_tcp_handle
+	lb	a
+	la	handle1
+	ii	FREE_HANDLE$
+	la	b
+
+	j	connect_x
+
+update_tcp_handle
+	la	handle1
+				. convert handle type to TCP_TCB
+	ii	USOCKET$C	. and update with pointers in x and BSOCKET
+
+	la	0,,xi		. you arrived
+
+connect_x
+	ii	FREE_NETB$
+	ii	FREE_SOCKB$
+	$ret
+
+.	vector name __connect	. kernel environment is already addressable
+				. tranmission control block generated not handle
+
+
+active_connect
+	$head_far		 params(addresses,		float)	;
+									;
+				scalars(connect_socketpointer,	long	;
+					default_ifp,		int	;
+					send_syn_tries,	int,	5,,xi	)
+
+	$include	b1down			. get IP B1 frame
+
+	dl	addresses+2			. find a route
+	dsr	8				. to find interface
+	sbr	8				. and therefore MTU
+	ds	6				. and come_from address if not given
+
+	call	(__route)
+	tz	x
+	j	connect_if
+
+connect_no_path
+	la	-NO_PATH,,xi
+	j	connect_return
+
+connect_if
+	la	ro:i_f
+	and	4095,,xi			. relative 1 interface subscript
+	jza	connect_no_path			. there is no index-zero interface
+	lx	a
+	lr	$if0p				. highest interface number
+	inc	r				. highest interface is allowed
+	jxge	connect_no_path
+
+	ax	$if0p,,xi			. address 1st interface pointer - 1
+	lx	0, x				. address interface descriptor
+	sx	default_ifp
+						. first: check / fix up local address:port
+
+	dl	addresses
+	jdz	connect_local_wildcard
+
+	dsl	24+8				. base the port structure
+	lb	BSOCKET*/9,,xi
+	dsr	8+9
+	rbr	12
+	lx	tsockb(1),,xi
+	ax	a
+	ii	READ_XVECTOR$
+	jza	connect_bad_argument
+
+	sabr	BSOCKET
+	ly	b
+	lk	(00FFFF)
+	la	addresses+1
+	mta	s:socket_address+1
+	j	connect_bad_argument
+	j	connect_fixport
+
+connect_local_wildcard
+	c	(__bind)	(IPPROTO_TCP*/16s)	addresses,,long
+
+	jna	connect_return
+
+	la	11
+	dl	s:socket_address, a
+	ds	addresses			. updated sockaddress
+
+
+connect_fixport
+	dl	10
+	ds	connect_socketpointer
+						. 1: any sending address in the parameter
+	dl	addresses
+	andB	(255*/16s)
+	jdz	connect_bound_source?
+	j	connect_source_net
+
+						. 2: any sending address bound to the port
+connect_bound_source?
+	dl	s:socket_address, y
+	andB	(255*/16s)
+	jdz	connect_routed_source
+	j	connect_source_net
+
+
+						. 3: the default interface address on the default
+						.    route to the remote destination
+connect_routed_source
+	lx	default_ifp			. interface descriptor pointer
+	lx	this_if:address_list
+	dl	ifaddr:net
+	sbl	8				. pack it ready
+	dsl	8				. to catenate the port #
+
+connect_source_net
+	lk	(00FFFF)
+	mlb	addresses+1			. can't change the local socket port #
+	ds	addresses			. so splice it with the final from-network-address
+
+	lx	connect_socketpointer+1
+	ql	addresses			. mark this port dedicated to outgoing connection
+	qs	s:socket_address, x		. so it shall be unbound on connection close
+
+	dsl	32				. now buy a transmission control block
+	sar	8				. in the domain of the local port
+	call	(tcp_hash_localsocket)
+	ly	a
+	ay	(BSOCKET*/12++tlist:chain(1))
+
+	la	s:tcp:tbase, x			. obtain the connections block
+	sabr	BSOCKET
+						. y -> hash chain[local port]
+	lcal	tcp_add_connection
+	j	connect_reverse			. clear the port socket
+
+						. x -> new connection
+	lcal	tcp_restart_timer2
+	dl	transmission:sequence_ackx
+	ds	transmission:remote_ack_window
+	la	default_ifp
+	la	this_if:mtu,a
+	aa	-40,,xi
+	sa	MSS
+	sa	transmission:mss
+
+	ql	addresses
+	qs	transmission:socket_address
+
+connect_syn_tx
+	call	(__tcp_connect)
+	j	connect_no_tx
+	j	connect_syn_sent
+
+connect_no_tx					. ie send SYN never happened yet
+	ii	YIELD$
+	dec	send_syn_tries
+	tz	send_syn_tries
+	j	connect_syn_tx
+	la	-COULD_NOT,,xi
+	j	connect_reverse_abandon
+
+connect_syn_sent
+	la	TCP_SYNSENT,,xi
+	sa	transmission:state
+	dl	(1*/16d)
+	da	transmission:sequence_ackx
+	sa	transmission:sequence_ackx
+
+connect_review
+	ii	YIELD$
+	la	transmission:state
+	aa	-TCP_SYNSENT,,xi
+	jza	connect_review
+	aa	TCP_SYNSENT-TCP_ESTABLISHED,,xi
+	jza	connect_return
+
+	la	-REMOTE_REFUSED,,xi
+
+connect_reverse_abandon				. give up in possession of a
+	lb	TCP_DELETETCB,,xi		. transmission control block
+	sb	transmission:state		. let the state machine pool it
+
+connect_reverse
+	lr	a
+	la	connect_socketpointer		. give up before or after getting a
+	sabr	BSOCKET				. transmission control block
+	ly	connect_socketpointer+1		. free the port
+	dsr	48
+	ds	6
+	qs	s:socket_address, y
+	la	r
+	j	connect_return
+
+connect_bad_argument
+	la	-BAD_ARGUMENT,,xi		. the argument might have been fine
+						. but the kernel structure was not
+						. give up without altering
+connect_return
+	$include	b1up			. return to application B1 frame
+	$ret
+
+.	vector name accept
 
 tcp_await_connection $head_far	 params(port_socket,	int)	;
 				scalars(txarray_bank,	int)
@@ -71,6 +316,7 @@ tcp_await_connection $head_far	 params(port_socket,	int)	;
 	lk	(255*/16:s)
 	mta	(IPPROTO_TCP*/16)
 	j	tcp_porthandle_wrong
+	ii	ON_NETB$
 
 	ds	6
 	lb, xi	BSOCKET*/9	.	000 000 000 bbb bbb 000 000 000
@@ -124,22 +370,123 @@ tcp_porthandle_wrong
 	la, xi	-1
 
 tcp_awaitx
-	push, i	$$frame, sp
-	pop	sp
-	fret	0
+	ii	FREE_NETB$			. mask kernel buffers from application
+	ii	FREE_SOCKB$			. mask socket structures from application
+	$ret
 
 tcp_newhandle
 	la	(TCP_TCB*/16:s)
 	ii	HANDLE$
 	jna	tcp_newhandle_x
-	sa	d$save
-	lb	x
-	andB	0FF8,,xi
-	sb	7
-	la	r
-
-	ii	UHANDLE$
-	la	d$save
+	ii	USOCKET$C			. complete the new handle encoding
 
 tcp_newhandle_x
 	lret	0
+
+.	socket close vector name __net_disengage
+.	local name is within structure $sockif
+	
+net_disengage
+	$head_far	 params(close_handle,	int)
+
+	la	close_handle
+	ii	READ_SOCKET$
+
+	lk	(256*/16s)
+	mta	(TCP_TCB*/16s)
+	j	disengage_port?
+
+	jzb	disengage_handle
+	lcal	sock_structure_connection
+	lx	b
+
+	call	(__tcp_disconnect)
+	j	disengage_handle
+
+disengage_port?
+	mta	(IPPROTO_UDP*/16s)
+	j	disengage_tcp_port?
+
+	jzb	disengage_handle
+	lcal	sock_structure_port
+	ii	ON_NETB$
+	call	(__port_disengage_udp)
+	ii	FREE_NETB$
+	j	disengage_handle
+
+disengage_tcp_port?
+	mta	(IPPROTO_TCP*/16s)
+	j	disengage_handle
+
+	jzb	disengage_handle
+	lcal	sock_structure_port
+	lx	b
+	call	(__port_disengage)
+
+disengage_handle
+	la	close_handle
+	ii	FREE_HANDLE$
+	ii	FREE_SOCKB$
+	fret	0
+
+
+.	vector name is __port_disengage_udp
+.	local name is within structure $sockif
+.	parameter is x -> socket structure
+
+port_disengage_udp				. for ports which have a buffer q
+	ly	s:udp:socket_inq,,i		. as UDP does
+	push	x				. drop user datagrams on receive q
+	lcal	tcp_freerxq
+	pop	x
+
+port_disengage					. vector name is __port_disengage
+	dsr	48				. for ports which have no buffer queue
+	ds	6				. as TCP does not
+	qs	s:socket_address		. that's the port no longer bound
+	
+port_disengage_z
+	fret	0
+
+.	connection close vector name __tcp_disconnect
+.	local name is within structure $sockif
+.	parameter is x -> transmission control block
+
+tcp_disconnect
+	la	30000,,xi
+	aa	DAYCLOCK$			. change timeout to 30 seconds
+	sa	transmission:timer(1)
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	tcp_fin1
+	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED,,xi
+	jnza	tcp_disconnect_z
+	la	TCP_FINWAIT2,,xi
+	j	tcp_fin
+
+tcp_fin1
+	la	TCP_FINWAIT1,,xi
+tcp_fin	sa	transmission:state
+	call	(tcp_ack_fin)
+
+tcp_disconnect_z
+        fret    0
+
+sock_structure_port
+	push	a				. save encoding 1st word
+	sal	12
+	lcal	sock_structure
+	pop	a				. hand back encoding 1st word
+	lret	0
+
+sock_structure_connection
+	sar	3
+	sal	15
+sock_structure
+	or	BSOCKET,,xi
+	rar	12
+	drr	24
+	sabr	BSOCKET
+	lret	0
+	
+	$root

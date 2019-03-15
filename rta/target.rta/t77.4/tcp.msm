@@ -39,7 +39,7 @@
 
 
 SOCKET_LPOINTER	$equ	d$save2		. and d$save3, but only for 10 instructions
-TX_DATAGRAM	$equ	d$save3
+. TX_DATAGRAM	$equ	d$save3
 AP_DATA		$equ	HEADER_LONGWORDS
 RX_APDATA	$equ	AP_DATA
 HL_FLAGS	$equ	SOCKET_CALL_FLAGS
@@ -191,8 +191,9 @@ tcp4_new_traffic?
 
 tcp4_synreceived?
 	anu, xi	TCP_SYNRECEIVED
-	jnzb	tcp4_state?
+	jnzb	tcp4_synsent?
 
+tcp4_most_states
 	lcal	tcp_send_on_window
 
 	la	DAYCLOCK$
@@ -211,6 +212,13 @@ tcp4_synreceived?
 	j	tcp4_globaltime?	. there are 2 comebacks from accept
 
 	$endif
+
+	j	tcp4_globaltime?
+
+tcp4_synsent?
+	anu	TCP_SYNSENT,,xi
+	jzb	tcp4_most_states
+	j	tcp4_state?
 
 tcp4_globaltime?
 	la	transmission:timer(1)
@@ -828,12 +836,23 @@ tcp_reset_deflect
 .	these are far calls visible to
 .	applications
 
+.	the vector for tcp_send_syn is __tcp_connect
+
 .	the vector for tcp_respond_syn_ack
 .	is tcp_accept
 
 .	the vector for tcp_send_i
 .	is tcp_send_push
 
+tcp_send_syn
+	lr	0,,xi
+	la	06000++TCP_SYN,,xi
+	push	0204,,xi
+	pop	25
+	lb	25,,xi
+	push	transmission:mss
+	pop	26
+	j	tcp_message_segment_i
 
 tcp_respond_syn_ack
 	lr, xi	0
@@ -939,6 +958,7 @@ tcp_send_on_window
 			. remote ACK + window >=
 			. sequence + size = send
 
+
 	dl	transmission:remote_ack_window, x
 	ds	8
 	dsl	32
@@ -967,6 +987,7 @@ tcp_send_on_window_next
 
 	lb	descriptor:uproto, y	. the negative of the size
 	sb	TP_HEADER
+
 	anb	descriptor:apdata, y	. of the segment header
 	sbl	1			. in bytes at 16/24 bits/word
 	
@@ -996,7 +1017,7 @@ tcp_send_on_window_next
 	dan	6
 	jna	tcp_sent_possible
 
-
+tcp_force_send
 	lcal	tcp_read_txq	. remove atomically from queue
 
 	qpush	8	. the cached state variables

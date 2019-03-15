@@ -141,6 +141,7 @@ $(0:0:TRANSFER_PAGE)
 		j		thread		. THREAD$*
 		j		freetotal_ii	. TOTAL$FREE*
 		j		tag_ii		. TAG$
+		j		assign_xvector_ii . ASSIGN_XVECTOR$
 
 	$do		14-$,	ir	0
 
@@ -152,7 +153,7 @@ $(0:0:TRANSFER_PAGE)
 		j		read_xvector_ii		. READ_XVECTOR$*
 		j		write_xvector_ii	. WRITE_XVECTOR$*
 		j		read_socket_ii		. READ_SOCKET$*
-		j		uhandle_ii		. UHANDLE$*
+		j		usocket_c_ii		. USOCKET$C*
 		j		kernel_b1_ii		. KERNEL$B1*
 		j		b1_ii			. B1$*
 		j		kernel_b1_ii_1		. KERNEL$B1_1*
@@ -185,6 +186,8 @@ B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at
 "$X_RXB"*	$vector		x_rxb_ii 
 "$B_TXB"*	$vector		b_txb_ii
 	$endif
+
+USOCKET$*	$vector		usocket_ii
 
 	$do		60-$,	ir	0
 
@@ -332,59 +335,68 @@ xbase_u	j		guard
 .	|_________|_____________________|_______________________________|
 
 handle_ii
-	on		see$1
-	la		free_handle	. address of next free 48-bit encoding
-	lk		a		. read the type wanted from user A 
-	jza		new_handle
-	lb		0, a		. next free after to free list head
-	sb		free_handle
-	sk		0, a		. type with zero index to encoding
-	z		1, a		. zero bank descriptor to encoding
-	aa, xi		-handle(1)	. change the address to offset
-	sar		1		. change the 2-word offset to integer
-	sa		a		. return the handle
-	ir		0
+	lx		free_handle
+	tnz		x_x
+	j		new_handle	
+	ly		1, x			. chain link is 2nd word
+	sy		free_handle
+	j		encode_handle
 
 new_handle
-	lx		handles		. add a new 48-bit encoding
-	lr, xi		HANDLES_MAX	. at the list end
-	jxge		no_handle	. if you can
-	sk		0, x		. write the handle type, zero index
-	z		1, x		. and zero containing bank descriptor
-	la		x_x		. copy the address
-	ax, xi		2		. before updating it
-	sx		handles		. and writing it back
-	aa, xi		-handle(1)	. turn the address to an offset
-	sar		1		. turn the offset to an integer
-	sa		a		. return it
+	lx		handles			. add a new 48-bit encoding
+	lr, xi		HANDLES_MAX		. at the list end
+	jxge		no_handle		. if you can
+	ly		2,x,i			. increment handle obtain pointer
+	sy		handles
+
+encode_handle
+	la		a			. read application register a
+	and		(255*/16s)		. only allowed parameter = type
+	sa		0, x
+	z		1, x			. encoding complete
+
+	ax		-handle(1),,xi		. make handle # from encoding address
+	la		x_x
+	sar		1
+	sa		a			. write handle # to application register a
 	ir		0
 
 no_handle
-	la, xi		-1
+	la, xi		-1			. write regrets to application register a
 	sa		a
 	ir		0
 
 free_handle_ii
-	la		a
-	lx, xi		free_handle
-	sal		1		. turn the handle integer
-	aa, xi		handle(1)	. to address of 48-bit encoding
-free_handle_search
-	ly		x_x		. this to previous
-	lb		0, x		. read next
-	lx		b_x
-	jzb		free_handle_in_here	. to end of free chain
-	tanu		x_x			. or compare so as to
-						.  order re-use
-	jzb		handle_free_already	. and to test
-	jc		free_handle_search	. if lower insert before
-free_handle_in_here
-	sa		0, y
-	sx		0, a
+	lcal		check_handle
+	jna		not_a_handle
+	z		0, x			. encode it off
+	z		1, x			. it shall be free chain last
+						. unless it's already in the chain
+	la		x_x			. address of encoding
+	lk		-1,,xi			. as search argument
+
+	lx		free_handle
+	tz		x_x
+	j		free_handle_test
+	sa		free_handle
+	ir		0			. chain link is 2nd word
+						. handle empty chain differently
+free_handle_test
+	mtane		x_x
+	j		handle_free_already
+
+	ly		x_x			. previous <- this
+	lx		1, x			. this <- next
+
+	tz		x_x
+	j		free_handle_test
+	sa		1, y			. add to end of chain
+
 handle_free_already
+not_a_handle
 	ir		0
 
-read_handle_ii
+check_handle
 	la		a
 	lx, xi		handle(1)
 	sal		1
@@ -393,42 +405,54 @@ read_handle_ii
 	lr		handles
 	jxge		handle_out_of_range
 	la		0, x
-	sa		a
-	ir		0
+	lret		0
 handle_out_of_range
 	la, xi		-1
+	lret		0
+
+read_handle_ii
+	lcal		check_handle
 	sa		a
 	ir		0
 
+usocket_c_ii
+	lcal		check_handle
+	jna		usocket_nane
+					. a_a = 1st handle word, x_x -> encoding tuple
+	lk		(255*/16s)
+	mta		(IPPROTO_TCP*/16s) . encoding must be TCP handle bound or not
+	j		usocket_nane
+	lb		x		. application x -> TCB
+					. value policed in kernel call routines or trouble
+	andB		(0FF8)
+	and		(00FFFF)
+	or		(TCP_TCB*/16s)
+	j		usocket
 
-	. ii UHANDLE$ completes encoding of handles
-	. on bind and TCP connect
-	. it's an internal interrupt because applications
-	. may not write their vector list, addresses 02000..02FFF
+usocket_ii
+	lcal		check_handle
+	jna		usocket_nane
 
-uhandle_ii
-.	on		see$1		. no longer because handles are now in $(2) vector
-					. and that is always in caller address space
-	lb		d$save		. user d$save
-	sbl		1		. change to handle offset
-	lx, xi		handle(1)	. change to encoding block pointer
-	ax		b_x
-	lb		0, x		. in case the choice of port
-	lk		(00FFFF)	. was randomised
-	mlb		7
-	la		b_x
-	lb		a		. bank descriptor
+	lb		b		. port number in application b
+	andB		(00FFFF)	. value policed in kernel call routines
+					. or trouble
+	lk		-1,,xi		. handle must be a socket type
+	mtane		(IPPROTO_UDP*/16s)
+	j		usocket
+	mta		(IPPROTO_TCP*/16s)
+	j		usocket_nane
+
+usocket	or		b_x
+	on		see$1		. look in the thread control block
+	lb		ABT+BSOCKET	. the connections block must be based there
 	ds		0, x
+usocket_nane
 	ir		0
 
 read_socket_ii
-	la		a
-	sal		1
-	lx, xi		handle(1)
-	ax		a_x
-	on		see$1
-	lr		handles
-	jxge		socket_out_of_range
+	lcal		check_handle
+	jna		socket_out_of_range
+
 	dl		0, x
 	ds		a
 	ir		0		. return the whole 48-bit encoding
@@ -482,6 +506,17 @@ write_xvector_ii
 	la		a
 	sa		0, x
 	ir		0
+
+assign_xvector_ii
+	lcal		xvector_in_range
+	ir		0
+	la		a
+	push		x_x
+	lcal		bank
+	pop		x_x
+	sa		0, x			. write storage block index to vector
+	sa		a			. report it to application
+	ir		0			. but not in application memory estate list
 
 kernel_b1_ii_1
 	on		see$2

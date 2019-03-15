@@ -1,0 +1,122 @@
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$path
+	$include	rpc.def
+
+p	$proc
+XDR_TXLONG* $name
+	dsl	16
+XDR_TXINT* $name
+	dsr	8
+	sbr	8
+	ds	p(1, 1)
+	$end
+
+$(66::,fp)
+tcpa	$res	2
+request	xdr_rpcreq
+
+$(66::,fp)
+tcpz	$res	2
+response xdr_rpcresp
+
+$(1:*1)
+txid	0L	
+blank_handle
+	$do	32//3,	0
+
+
+$(0)
+nfs_open_path	$tree
+	$head_far	 params(path,	int		;
+				flags,	int	)	;
+							;
+			scalars(caller_fp,	int	)
+
+	ii	ON_NETB$				. must run with network resources
+							. in address space
+
+	c	(__connect)	0,,xi		;	. local port socket index don't know
+				path+1,,long		. low-level call
+							. sockets, buffers remain addressable
+
+	tz	x					. you get a transmission CB in x
+	j	connection_running
+
+	la	NO_CONNECTION,,xi
+	j	nfs_open_path_x
+
+connection_running
+	la	NFSPROC_LOOKUP,,xi
+	lcal	nfs:startrq
+
+	lb	blank_handle,,xi
+	lcal	nfs:addhandle
+
+	lb	path
+	la	0, b
+	sar	8
+	and	255,,xi		. octet count in pathname text part
+	lb	5,b,i		. move to pathname text part
+
+	lcal	nfs:send
+
+	lcal	nfs:send_request
+
+respo?	ii	YIELD$
+	la	transmission:receiveq:head
+	jza	respo?
+
+	
+
+nfs_open_path_x
+	ii	FREE_NETB$		. must now mask network resources
+	ii	FREE_SOCKET$		. from address space
+	pop	fp
+	fret	0
+	$root
+
+nfs	$tree
+startrq
+	$head_near	scalars(auth,		float			;
+				procedure,	long			;
+				nfsvers,	long,	(2d)		;
+				program,	long,	(NFSD:d)	;
+				rpcvers,	long,	(2d)		;
+				req_resp,	long			;
+				tid,		long			;
+				count,		long,	(0800000, 0:d)	)
+
+	sa	procedure+1		. procedure
+
+	dl	txid
+	da	(1d)			. request #
+	ds	txid
+	dsl	16
+	dsr	8
+	sbr	8
+	ds	tid
+
+	lb	sp
+	la	8+7*4,,xi
+	lcal	nfs:send16to16
+	$ret
+
+send16to16
+	sb	q
+	z	RDATAC
+	on	b$stream16r
+	call	(tcp_addx)
+	lret	0
+
+addhandle
+	la	32,,xi
+send	sb	q
+	call	(tcp_tx)
+	lret	0
+
+	$root
+
