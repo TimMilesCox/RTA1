@@ -114,7 +114,7 @@ tcp_connection_located
 	sa	HL_FLAGS
 	and	TCP_SYN++TCP_ACK,,xi
 	xor	TCP_SYN++TCP_ACK,,xi
-	jza	tcp_synsent
+	jza	tcp_synsent?
 	
 	and	TCP_SYN,,xi
 	jnza	tcp_no2ndsyn
@@ -123,6 +123,7 @@ tcp_connection_located
 	jza	tcp_stepover_response
 	j	tcp_ripdown_reset
 
+tcp_synsent?
 tcp_no2ndsyn
 	la	HL_FLAGS
 	sar	11
@@ -626,18 +627,26 @@ tcp_synsent
 	jdz	tcp_synsent1
 	j	tcp_ripdown_reset
 tcp_synsent1
-	la	HL_FLAGS
-	and, xi	TCP_SYN++TCP_ACK
-	xor, xi	TCP_SYN++TCP_ACK
-	jnza	tcp_ripdown_reset
 	la, xi	TCP_ESTABLISHED
 	sa	transmission:state
-	dl	(1*/16d)
-	da	transmission:ack_window
+	ly	TP_HEADER
+	dl	transfer:seq, y
+	sbl	8
+	dsl	8
+	da	(1*/16d)
 	ds	transmission:ack_window
-	lcal	tcp_send_ack
-.	j	tcp4xreact
+	call	(tcp_agent_add)
+	ly	transmission:q4ack,,i
 
+	$if	HVBANK
+	lcal	tcp4_net_free_txdatagram
+	$else
+	lcal	net_free_txdatagram
+	$endif
+
+	lcal	tcp_send_ack
+	j	$+1			. if you failed to send you get here
+					. maybe you will ack as required soon
 tcp_stepover_response
 	ly	tcpq,,xi
 	lcal	net_drop

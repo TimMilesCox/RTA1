@@ -133,32 +133,15 @@ active_connect
 					default_ifp,		int	;
 					send_syn_tries,	int,	5,,xi	)
 
-	$include	b1down			. get IP B1 frame
-
 	dl	addresses+2			. find a route
 	dsr	8				. to find interface
 	sbr	8				. and therefore MTU
 	ds	6				. and come_from address if not given
 
-	call	(__route)
-	tz	x
-	j	connect_if
 
-connect_no_path
-	la	-NO_PATH,,xi
-	j	connect_return
-
-connect_if
-	la	ro:i_f
-	and	4095,,xi			. relative 1 interface subscript
-	jza	connect_no_path			. there is no index-zero interface
-	lx	a
-	lr	$if0p				. highest interface number
-	inc	r				. highest interface is allowed
-	jxge	connect_no_path
-
-	ax	$if0p,,xi			. address 1st interface pointer - 1
-	lx	0, x				. address interface descriptor
+	lcal	route_outward_interface		. you always get back from here with IP B1 frame
+	j	connect_no_path
+	
 	sx	default_ifp
 						. first: check / fix up local address:port
 
@@ -166,7 +149,7 @@ connect_if
 	jdz	connect_local_wildcard
 
 	dsl	24+8				. base the port structure
-	lb	BSOCKET*/9,,xi
+	lb	(BSOCKET*/9+8)
 	dsr	8+9
 	rbr	12
 	lx	tsockb(1),,xi
@@ -270,7 +253,7 @@ connect_syn_sent
 	sa	transmission:state
 	dl	(1*/16d)
 	da	transmission:sequence_ackx
-	sa	transmission:sequence_ackx
+	ds	transmission:sequence_ackx
 
 connect_review
 	ii	YIELD$
@@ -295,6 +278,10 @@ connect_reverse
 	ds	6
 	qs	s:socket_address, y
 	la	r
+	j	connect_return
+
+connect_no_path
+	la	-NO_PATH,,xi
 	j	connect_return
 
 connect_bad_argument

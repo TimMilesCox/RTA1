@@ -1,10 +1,17 @@
+
 	$path		../
+	$if		0
 	$include	def/rta.def
 	$include	def/vector.def
 	$include	def/ii.def
 	$include	language/stack.def
+	$include	fs/response.def
+	$include	t77.4/dq.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	t77.4/socket.def
+	$endif
 	$path
-	$include	rpc.def
 
 p	$proc
 XDR_TXLONG* $name
@@ -15,82 +22,220 @@ XDR_TXINT* $name
 	ds	p(1, 1)
 	$end
 
-$(66::,fp)
+$(66::,x)
+transmission	tcp_connection
+
+$(70::,fp)
 tcpa	$res	2
 request	xdr_rpcreq
 
-$(66::,fp)
-tcpz	$res	2
+$(70::,fp)
+tcpresp	$res	2
 response xdr_rpcresp
 
-$(1:*1)
-txid	0L	
-blank_handle
-	$do	32//3,	0
+$(67::,y)
+openfile_bloc	filenfs
 
+$(1:*1)
+txid	0L	. assembled into kernel B1
+		. do not touch when in application B1
+
+rpc_udp_pmapsocket	0L
+rpc_udp_mountsocket	0L
 
 $(0)
-nfs_open_path	$tree
-	$head_far	 params(path,	int		;
-				flags,	int	)	;
+.	vector name rpc_rqport
+
+rpc_request_port $tree
+	$head_far	 params(where,		long	;
+				pmapping,	float	)
+
+	ii	ON_NETB$
+
+	dl	rpc_udp_pmapsocket
+	jdz	restart
+	sabr	BSOCKET
+	j	continue
+
+restart	z	rpc_udp_pmapsocket
+	z	rpc_udp_pmapsocket+1
+	c	(__bind) (IPPROTO_UDP*/16s) (0L)
+	jna	report
+	dl	10
+	ds	rpc_udp_pmapsocket
+	sabr	BSOCKET
+
+continue
+	
+
+
+report	ii	FREE_NETB$
+	ii	FREE_SOCKB$
+	$ret
+		 $root
+
+
+
+.	vector name nfs_mount
+
+nfs_fsmount	$tree
+	$head_far	 params(tcp_tcb,	int		;
+				mount_path,	int	)	;
+								;
+			scalars(mname_bytes,	int		)
+
+	lb	mount_path
+	la	0, b
+	sar	8
+	and	255,,xi		. bytes in mount point name
+	sa	mname_bytes
+
+	lx	tcp_tcb
+	lc	nfs:startrq	XDR_RPCREQ_OCTETS;
+				+XDR_AUTH_VOID_OCTETS,a,i	;
+				(MOUNTD)			;
+				1,,xi				;
+				MOUNTPROC_MNT,,xi
+
+	lb	mount_path
+	lb	5,b,i
+	sb	q
+	la	mname_bytes
+	lb	(05000++TCP_ACK++TCP_PSH)
+	sb	SOCKET_CALL_FLAGS
+	lx	tcp_tcb
+
+	call	(tcp_tx)
+	jna	nfs_mount_x
+
+nfs_mount_?
+	ii	YIELD$
+	ly	transmission:receiveq:head,,i
+	call	(far_readq)
+	jnza	nfs_mount_x
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	nfs_mount_?
+	la	-FILE_NOT_OPEN,,xi
+
+nfs_mount_x
+	$ret
+	$root
+
+nfs_open_path*	$tree
+	$head_far	 params(pathp,		int	;
+				flags,		int)	;
 							;
-			scalars(caller_fp,	int	)
+			scalars(caller_fp,	int	;
+				container_size,	int	;
+				string_bytes,	int	;
+				connectionp,	int	;
+				fobloc,		int	)
 
 	ii	ON_NETB$				. must run with network resources
 							. in address space
+	lx	pathp
+	la	2, x
+	and	(00FFFF)
+	jza	connection_launch
+	c	(__bind)	(IPPROTO_TCP*/16s)	;
+				1,x,long
+	jna	nfs_open_path_x
+	lx	pathp
 
-	c	(__connect)	0,,xi		;	. local port socket index don't know
-				path+1,,long		. low-level call
+connection_launch
+	c	(__connect)	1,x,float		. local port socket index don't know
+							. low-level call
 							. sockets, buffers remain addressable
 
-	tz	x					. you get a transmission CB in x
-	j	connection_running
-
-	la	NO_CONNECTION,,xi
-	j	nfs_open_path_x
+	jna	nfs_open_path_x
 
 connection_running
-	la	NFSPROC_LOOKUP,,xi
-	lcal	nfs:startrq
+							. return from connect B1 is application B1
+	c	(claim_fob)	(FS$NFS,,FS$NFS_WORDS)	. file open block in application B1
+	jza	nfs_open_path_x
+	sy	fobloc
+	la	(AF_INET*/16s)				. block index in B1 and offset in y
+	ii	HANDLE$
 
-	lb	blank_handle,,xi
-	lcal	nfs:addhandle
+	sx	openfile_bloc:socket+1			. save transmission control block pointer
+	la	BSOCKET,,xi
+	ii	A$IDX
+	sa	openfile_bloc:socket			. save storage block index
 
-	lb	path
+	la	pathp					. 6th word is pointer -> mount root path
+
+	call	(nfs_mount)	x		;
+				5, a		;
+				openfile_bloc:nfs_handle,,i	. delivery address
+										
+
+	lb	pathp
 	la	0, b
 	sar	8
-	and	255,,xi		. octet count in pathname text part
-	lb	5,b,i		. move to pathname text part
+	and	255,,xi
 
-	lcal	nfs:send
+	sa	string_bytes
+	aa	3,,xi
+	and	-4,,xi
+	
 
-	lcal	nfs:send_request
+	sa	container_size	. everything except the TCP / XDR stream word
+				. on the front
+	
+	lc	nfs:startrq	XDR_RPCREQ_OCTETS;
+					+XDR_AUTH_VOID_OCTETS;
+					+XDR_DIROPARGS_OCTETS_BASE, a, i	;
+				(NFSD)						;
+				2,,xi						;
+				NFSPROC_LOOKUP,,xi
 
+	ly	fobloc
+	lb	openfile_bloc:nfs_handle,,i
+	la	XDR_FHANDLE_OCTETS,,xi
+	lcal	nfs:send16to16
+
+	lb	pathp
+
+	lc	nfs:counted_send_opaque	openfile_bloc:socket+1		;
+					string_bytes			;
+					5, b, i				;
+					(05000++TCP_PSH++TCP_ACK)									
 respo?	ii	YIELD$
 	la	transmission:receiveq:head
+.	aa	-TCP_SYNSENT,,xi
 	jza	respo?
 
 	
 
 nfs_open_path_x
 	ii	FREE_NETB$		. must now mask network resources
-	ii	FREE_SOCKET$		. from address space
+	ii	FREE_SOCKB$		. from address space
+	inc	sp
+	inc	sp
 	pop	fp
 	fret	0
 	$root
 
 nfs	$tree
 startrq
-	$head_near	scalars(auth,		float			;
-				procedure,	long			;
-				nfsvers,	long,	(2d)		;
-				program,	long,	(NFSD:d)	;
+	$head_near	 params(size,		int			;
+				rqprogram,	int			;
+				programversion,	int			;
+				nfspro,		int		)	;
+									;
+			scalars(auth,		6			;
+				procedure_l,	int,	nfspro		;
+				procedure_u,	int			;
+				programvers_l,	int,	programversion	;
+				programvers_u,	int			;
+				program_l,	int,	rqprogram	;
+				program_u,	int			;
 				rpcvers,	long,	(2d)		;
 				req_resp,	long			;
 				tid,		long			;
-				count,		long,	(0800000, 0:d)	)
-
-	sa	procedure+1		. procedure
+				count,		int,	size		;
+				container,	int,	(008000s)	)
 
 	dl	txid
 	da	(1d)			. request #
@@ -102,9 +247,12 @@ startrq
 
 	lb	sp
 	la	8+7*4,,xi
-	lcal	nfs:send16to16
+	lcal	nfs:send16to16i
 	$ret
 
+send16to16i
+	push	(05000++TCP_ACK)
+	pop	SOCKET_CALL_FLAGS
 send16to16
 	sb	q
 	z	RDATAC
@@ -112,10 +260,33 @@ send16to16
 	call	(tcp_addx)
 	lret	0
 
-addhandle
-	la	32,,xi
-send	sb	q
+counted_send_opaque
+	$head_near	 params(connexiopaque,	int		;	
+				opaque_bytes,	int		;
+				opaque_string,	int		;
+				opaque_flags,	int	)	;
+								;
+			scalars(opaque_count,	long	)
+
+	lx	connexiopaque
+
+	la	opaque_bytes
+	sa	opaque_count+1
+	la	4,,xi
+	lb	opaque_count,,i
+	lcal	send16to16
+
+	lb	opaque_flags
+	sb	SOCKET_CALL_FLAGS
+
+	la	opaque_bytes
+	lb	opaque_string
+	sb	q
 	call	(tcp_tx)
+	
+	$ret
+
+send_request
 	lret	0
 
 	$root
