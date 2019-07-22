@@ -102,7 +102,10 @@ _normalise_residue:
 	jc	_normalise_residue
 	xor	ebx, ebx			; residue all signs zero -> scale
 _residue_normalised:
-
+	test	ebx, 0FF800000h
+	jnz	_xpo4				; nonzero mantissa
+						; and exponent underflow / overflow
+						
 ;			residual mantissa on the stack now is
 ;			______________________________________________
 ;	sp------------->| mantissa bits 15..0 | 16 sign bits discard |
@@ -110,6 +113,8 @@ _residue_normalised:
 ;			|            mantissa bits 47..16            |
 ;			|____________________________________________| 
 ;			| 0000 0000  mantissa bits 71..48            |
+;			|____________________________________________|
+;			|	     result register indication      |
 ;			|____________________________________________|
 
 	mov	eax, dword ptr [esi+1*4]	; signs
@@ -136,6 +141,8 @@ _deliver:					; deliver floating result
 						; ebx = target register index
 						; result register index [ebp+]ebx*4
 	mov	eax, dword ptr [esi]		; unsigned scale magnitude
+	test	eax, 0FF800000h
+	jnz	_fpxpo				; exponent underflow / overflow
 	xor	eax, dword ptr [esi+1*4]	; sign it
 	shl	eax, 8
 	shr	eax, 8
@@ -157,6 +164,13 @@ _store_float
         shr     eax, 8				; store mantissa bits 23..0
         mov     dword ptr [ebp+ebx*4+12], eax
 	ret
+
+_xpo4:	pop	ebx				; exponent underflow / overflow
+	pop	ebx				; with 128 bits on the stack
+	pop	ebx
+	pop	ebx
+	jmp	_fpxpo
+
 
 ;	_output equ	272
 ;	_inputr equ	264
@@ -591,20 +605,25 @@ fa_normalised					; below the fractional point
 fm:	mov	esi, _OUTPUT			; initialise final accumulation
 	call	zoutput
 
-	mov	ebx, dword ptr [_INPUTR+1*4]	; sign the product
-	xor	ebx, dword ptr [_INPUT2+1*4]	; even if it's nothing
-	mov	dword ptr [_OUTPUT+1*4], ebx
+	mov	ebx, dword ptr [_INPUTR+1*4]	; read register-side signs
+	mov	eax, dword ptr [_INPUTR+2*4]	; and high-end mantissa
+	xor	eax, ebx	 		; cache if-normalised in eax
+	xor	ebx, dword ptr [_INPUT2+1*4]	; multiply signs
+	mov	dword ptr [_OUTPUT+1*4], ebx	; save the output sign
+	and	eax, eax			; test the cached if-normalised
+	jns	fmdont
 
 	mov	eax, dword ptr [_INPUT2+1*4]	; is the multiplier normalised?
 	xor	eax, dword ptr [_INPUT2+2*4]	; sign XOR normalising bit?
 	js	fmgo				; yes, proceed
 
-	mov	dword ptr [_OUTPUT+2*4], ebx
+fmdont:	mov	dword ptr [_OUTPUT+2*4], ebx
 	mov	dword ptr [_OUTPUT+3*4], ebx
 	mov	dword ptr [_OUTPUT+4*4], ebx
 	mov	dword ptr [_OUTPUT+5*4], ebx
-	mov	dword ptr [_OUTPUT+8*4], ebx
+	mov	dword ptr [_OUTPUT+6*4], ebx
 	mov	dword ptr [_OUTPUT+7*4], ebx
+	mov	dword ptr [_OUTPUT], 0		; mantissa to go
 
 	ret					; no, effective zero multiplier
 
@@ -691,7 +710,7 @@ fm_inrange
 	mov	eax, dword ptr [_INPUTR]
 	add	eax, dword ptr [_INPUT2]
 	add	eax, -00400000h
-	and	eax, 007FFFFFh
+;	and	eax, 007FFFFFh
 ;	mov	esi, _OUTPUT			; esi should be pointing to _OUTPUT
 	mov	dword ptr [esi], eax		; insert unsigned magnitude product scale
 ;	mov	eax, [_INPUTR+1*4]		; calculate sign of product
@@ -818,7 +837,7 @@ fd_restore:	pop	ecx
 		mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
 		sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
 		add	eax, 00400001h			; midpoint + 1
-		and	eax, 007FFFFFh
+;		and	eax, 007FFFFFh
 		mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
 							; -> front of delivery string
 

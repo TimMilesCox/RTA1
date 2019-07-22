@@ -511,14 +511,22 @@ udp_txaw
 	sy	11			. IP datagram pointer
 	ly	descriptor:uproto, x
 	la	descriptor:bytes, x
-	lr	a			. application data bytes
-	aa, xi	8
-	sa	descriptor:bytes, x
-	sa	uugram:udgraml, y
-	sa	descriptor:bytes, x	. byte count
+
+	lb	a			. payload length no flag for checksum algo
+	andB	(07FFFFF)
+	lr	b
+
+	la	8, a, i			. add UDP header length to payload length
+	sa	descriptor:bytes, x	. byte count -> descriptor
+	and	(07FFFFF)		. remove keep flag if any
+	sa	uugram:udgraml, y	. length -> user datagram header
+
+.	sa	descriptor:bytes, x	. byte count to... aintcha jerst done that?
+					. dont do it again with the sticky bit switched off
+
 	sy	10			. uugram pointer
 	lb, xi	IPPROTO_UDP
-	ab	a
+	ab	a			. length counts twice, of itself and as a header word
 	da	0, y			. ports from to
 	da	8
 	lcal	udp_check_payload_tx
@@ -534,8 +542,11 @@ udp_txaw_nocheck
 	jdz	udp_nosource
 	lb	descriptor:uproto, x
 	la	descriptor:bytes, x
-	aa, xi	8
+	la	8, a, 1			. add udp header length
 	sa	descriptor:bytes, x
+	and	(07FFFFF)		. unlikely you want a sticky bit
+					. on a datagram you didn't want checked
+					. but no harm making sure
 	sa	uugram:udgraml, b
 	z	uugram:checksum, b
 

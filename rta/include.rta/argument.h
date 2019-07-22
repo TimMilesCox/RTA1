@@ -1,5 +1,7 @@
 
+#ifndef	ARGUMENTS
 #define ARGUMENTS       8
+#endif
 
 #define	ARGUMENT							\
 									\

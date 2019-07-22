@@ -222,7 +222,7 @@
 ;	devices are identified in RTA1 memory relocation pointers and
 ;	tagged with device type. Executable space is device zero
 
-						; position-independent jump pad jump
+	%if	0				; position-independent jump pad jump
 ixgo:	shl	eax, 1				; 2-byte vectors
 	add	eax, dword ptr [esp]		; + the return address
 	movzx	eax, word ptr [eax]		; position-independent jump pad jump
@@ -242,6 +242,7 @@ ixlgo:	shl	ebx, 2				; 4-byte vectors
 	adc	word ptr [esp+2], 0		; index in ebx
 	shr	ebx, 16				; latent parameter returned in bx
 	ret
+	%endif
 
 _burst_read2:
 	mov	cx, 6
@@ -302,6 +303,21 @@ memory_read_256k_block:
 	mov	edi, _memory	; byte address
 
 memory_read_on:
+
+	%if	1
+	movzx	eax, cl
+	mov	eax, dword ptr [read_action+eax*4]
+	jmp	eax
+read_action:
+	dd	memory_read
+	dd	memory_t1
+	dd	memory_t2	; or h1
+	dd	memory_t3	; or h2
+	dd	immediate	; don't get here
+	dd	immediate_xi	; don't get here
+	dd	memory_read2
+	dd	memory_read4
+	%else
 	movzx	eax, cl
 	call	ixgo
 
@@ -314,6 +330,7 @@ read_action:
 	dw	immediate_xi-read_action	; don't get here
 	dw	memory_read2-read_action
 	dw	memory_read4-read_action
+	%endif
 
 memory_read:			; readout system memory 1 word
 ;	mov	dword ptr [__register+154*4], edi
@@ -472,9 +489,24 @@ memory_write_256k_block:
 	mov	edi, _memory
 
 memory_write_on:
+	%if	1
+	movzx	eax, cl
+	mov	eax, dword ptr [write_action+eax*4]
+	jmp	eax
+
+write_action:
+	dd	memory_write
+	dd	write_t1
+	dd	write_t2	; or h1
+	dd	write_t3	; or h2
+	dd	dont
+	dd	just_dont
+	dd	memory_write2
+	dd	memory_write4
+	%else
 	movzx	eax, cl
 	call	ixgo
-
+	
 write_action:
 	dw	memory_write-write_action
 	dw	write_t1-write_action
@@ -484,6 +516,7 @@ write_action:
 	dw	just_dont-write_action
 	dw	memory_write2-write_action
 	dw	memory_write4-write_action
+	%endif
 
 memory_write:					; store system memory 1 word
 	bswap	ebx
@@ -606,18 +639,19 @@ mword_go_x:
 ;	location = address in X86 where the RTA1 memory is modeled
 
 
-base_flag_mask db 0, 64, 32, 16, 8, 4, 2, 1	; test psr for kernel memory select
+base_flag_mask db 128, 64, 128+32, 16, 8, 4, 2, 1	; test psr for kernel memory select
 
 base_pointer:			; find handle to memory block containing operand
 	mov	esi, eax	; the tag is EA bits 23..18 (=0) EA bits 17..12
 ;	mov	dword ptr [__register+153*4], eax
-	test	eax, 00FC0000h
+	sar	eax, 18
+	test	al, 63
 	jz	page_pointer
 	and	esi, 0003FFFFh
-	sar	eax, 18
 	jmp	alternative_pointer?
 
 page_pointer:
+	mov	eax, esi
 	and	esi, 00000FFFh
 	sar	eax, 12
 	jz	base_selected		; B0 has no see$ alternative
@@ -628,10 +662,12 @@ alternative_pointer?:
 					; would not shift value 128 off the map
 					; 
 					; should not need the opcode value in ch again
-	mov	ch, byte ptr [_psr+1]	; contains see$1..7
-	and	ch, byte ptr [cs:eax+base_flag_mask]
+
+	mov	ch, byte ptr [cs:eax+base_flag_mask]
+	test	ch, byte ptr [_psr+1]	; contains see$1..7
 	jz	base_selected
 	or	ax, 64			; use base pointer from range 65..71
+	or	ch, 128			; write protect in application mode
 
 base_selected:
 	mov	eax, dword ptr [eax*4+_base]
@@ -784,7 +820,8 @@ _device_read:				; readout device arrays
 
 device_read_void:
 	mov	eax, II_GUARD
-	jmp	_ii
+	call	_ii
+	ret
 
 device_read_sysmem:			; readout system memory array
 	jmp	memory_read_on		; allow all variations partial word / multiword
@@ -797,9 +834,11 @@ device_read_data16:			; readout 16-bit array
 	jz	device_read_data16_2
 	jmp	device_read_data16_1
 
+	%if	1
+	%else
 	movzx	eax, cl
-        mov     dword ptr [__register+153*4], esi
-        mov     dword ptr [__register+154*4], eax
+;       mov     dword ptr [__register+153*4], esi
+;       mov     dword ptr [__register+154*4], eax
 	call	ixgo
 
 device_read16_action:
@@ -811,6 +850,7 @@ device_read16_action:
 	dw	device_read_data16_1-device_read16_action
 	dw	device_read_data16_2-device_read16_action
 	dw	device_read_data16_4-device_read16_action
+	%endif
 
 device_read_data16_1:			; readout 1 word of 16-bit array
 	movzx	eax, word ptr [edi+esi*2]
@@ -850,6 +890,7 @@ device_read_array24:			; readout from packed 24-bit array
 	jz	device_read_array24_2
 	jmp	device_read_array24_1
 
+        %if	0
 	movzx	eax, cl
 	call	ixgo
 
@@ -862,6 +903,7 @@ device_read24_action:
 	dw	device_read_array24_1-device_read24_action
 	dw	device_read_array24_2-device_read24_action
 	dw	device_read_array24_4-device_read24_action
+	%endif
 
 device_read_array24_1:			; readout a wowrd of packed 24-bit array
 	movzx	ax, byte ptr [edi+esi]
@@ -913,7 +955,7 @@ _device_write:				; store device arrays
 
 device_write_void:			; store in array of target system memory
 	mov	eax, II_GUARD
-	jmp	_ii
+	call	_ii
 	ret
 
 device_write_sysmem:
@@ -926,7 +968,7 @@ device_write_data16:
 	jz	device_write_data16_2
 	jmp	device_write_data16_1
 
-
+	%if	0
 	sar	eax, 8
 	movzx	eax, cl
 	call	ixgo
@@ -940,6 +982,7 @@ device_write16_action:
 	dw	device_write_data16_1-device_write16_action
 	dw	device_write_data16_2-device_write16_action
 	dw	device_write_data16_4-device_write16_action
+	%endif
 
 device_write_data16_1:			; store 16-bit array
 	xchg	bh, bl
@@ -977,7 +1020,7 @@ device_write_array24:			; store 24-bit packed array
 	jz	device_write_array24_2
 	jmp	device_write_array24_1
 
-
+	%if	0
 	movzx	eax, cl
 	call	ixgo
 
@@ -990,6 +1033,7 @@ device_write24_action:
 	dw	device_write_array24_1-device_write24_action
 	dw	device_write_array24_2-device_write24_action
 	dw	device_write_array24_4-device_write24_action
+	%endif
 
 device_write_array24_1:			; store 1 word in packed 24-bit array
 	mov	eax, ebx

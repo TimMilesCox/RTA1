@@ -157,6 +157,7 @@ active_connect
 	ii	READ_XVECTOR$
 	jza	connect_bad_argument
 
+	ds	connect_socketpointer
 	sabr	BSOCKET
 	ly	b
 	lk	(00FFFF)
@@ -173,11 +174,13 @@ connect_local_wildcard
 	la	11
 	dl	s:socket_address, a
 	ds	addresses			. updated sockaddress
-
-
-connect_fixport
 	dl	10
 	ds	connect_socketpointer
+
+connect_fixport
+	la	s:tcp:tbase, b
+	jza	port_structure_unprepared
+	sabr	BSOCKET
 						. 1: any sending address in the parameter
 	dl	addresses
 	andB	(255*/16s)
@@ -206,21 +209,19 @@ connect_source_net
 	mlb	addresses+1			. can't change the local socket port #
 	ds	addresses			. so splice it with the final from-network-address
 
-	lx	connect_socketpointer+1
-	ql	addresses			. mark this port dedicated to outgoing connection
-	qs	s:socket_address, x		. so it shall be unbound on connection close
+						. local_net:port:remote_net:port all present
+	ql	addresses
+	lcal	tcp_check_connection		. outbound equivalent tcp_locate_connection
+	tz	x
+	j	you_may_not			. the connection exists locally
 
-	dsl	32				. now buy a transmission control block
-	sar	8				. in the domain of the local port
-	call	(tcp_hash_localsocket)
-	ly	a
-	ay	(BSOCKET*/12++tlist:chain(1))
+	lcal	tcp_add_connection		. insert the connection between *y and y->next
+	j	connect_reverse			. it didn't
 
-	la	s:tcp:tbase, x			. obtain the connections block
-	sabr	BSOCKET
-						. y -> hash chain[local port]
-	lcal	tcp_add_connection
-	j	connect_reverse			. clear the port socket
+.	ly	connect_socketpointer+1		. the port socket is not based, and this isn't needed
+.	ql	addresses			. mark this port to the outgoing connection
+.	qs	s:socket_address, y		. additional outgoing connections
+						. may replace the network and remote parts
 
 						. x -> new connection
 	lcal	tcp_restart_timer2
@@ -245,8 +246,11 @@ connect_no_tx					. ie send SYN never happened yet
 	dec	send_syn_tries
 	tz	send_syn_tries
 	j	connect_syn_tx
-	la	-COULD_NOT,,xi
-	j	connect_reverse_abandon
+
+	la	TCP_DELETETCB,,xi		. give up in possession of a
+	sa	transmission:state		. transmission control block
+	lr	-COULD_NOT,,xi			. let the state machine pool it
+	j	connect_reverse
 
 connect_syn_sent
 	la	TCP_SYNSENT,,xi
@@ -263,21 +267,29 @@ connect_review
 	aa	TCP_SYNSENT-TCP_ESTABLISHED,,xi
 	jza	connect_return
 
-	la	-REMOTE_REFUSED,,xi
+	lr	-REMOTE_REFUSED,,xi
+	j	connect_reverse			. let the state machine interpret
+						. the state
+. refinement needed
+. only free the outward port here
+. if it wasn't bound before the attempt at outward connection
+. unless it's OK that companion connections on this port stop getting traffic
 
-connect_reverse_abandon				. give up in possession of a
-	lb	TCP_DELETETCB,,xi		. transmission control block
-	sb	transmission:state		. let the state machine pool it
+port_structure_unprepared
+	lr	-99,,xi	
+	j	connect_reverse
+
+you_may_not
+	lr	-ALREADY_CONNECTED,,xi
 
 connect_reverse
-	lr	a
 	la	connect_socketpointer		. give up before or after getting a
 	sabr	BSOCKET				. transmission control block
 	ly	connect_socketpointer+1		. free the port
 	dsr	48
 	ds	6
 	qs	s:socket_address, y
-	la	r
+	la	r				. retrieve result value
 	j	connect_return
 
 connect_no_path
@@ -387,7 +399,8 @@ net_disengage
 	lcal	sock_structure_connection
 	lx	b
 
-	call	(__tcp_disconnect)
+	la	DAYCLOCK$
+	sa	transmission:timer(1)
 	j	disengage_handle
 
 disengage_port?
@@ -435,21 +448,43 @@ port_disengage					. vector name is __port_disengage
 port_disengage_z
 	fret	0
 
-.	connection close vector name __tcp_disconnect
-.	local name is within structure $sockif
-.	parameter is x -> transmission control block
 
-tcp_disconnect
-	la	30000,,xi
-	aa	DAYCLOCK$			. change timeout to 30 seconds
-	sa	transmission:timer(1)
-	la	transmission:state
-	aa	-TCP_ESTABLISHED,,xi
-	jza	tcp_fin1
-	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED,,xi
-	jnza	tcp_disconnect_z
-	la	TCP_FINWAIT2,,xi
-	j	tcp_fin
+.	end connection and fall thru to unbind port
+.	vector name __disconnect_free_tcp
+
+disconnect_free
+	lb	DAYCLOCK$
+	jnzb	$+2
+	xorB	-1,,xi				. change to zenith - 1
+	sb	transmission:timer(1)
+	la	transmission:socket_address+1
+
+.	relinquish tcp port vector name __free_tcp_port
+.	local name is within structure $sockif
+.	parameter is a = port number
+
+free_tcp_port
+	lcal	app_tcp_port
+	jza	free_tcp_port_z
+	z	0, b
+	z	1, b
+	z	2, b
+	z	3, b
+free_tcp_port_z
+	fret	0
+					. application call to address TCP port structure
+app_tcp_port				. unlike tcp_socket called in IP threads every rx segment
+	lb	BSOCKET*/9,,xi		. that is faster because it already has kernel vectors
+	dsr	9			. app_tcp_port is called occasionally
+	rbr	12
+	and	127,,xi			. please only use 16 port number bits
+	lx	tsockb(1),,xi
+	ax	a
+	ii	READ_XVECTOR$		. read kernel vector storage block index
+	jza	app_tcp_port_x		. if there is none don't base it
+	sabr	BSOCKET
+app_tcp_port_x
+	lret	0
 
 tcp_fin1
 	la	TCP_FINWAIT1,,xi
@@ -458,6 +493,7 @@ tcp_fin	sa	transmission:state
 
 tcp_disconnect_z
         fret    0
+	fret	0				. successful return is here
 
 sock_structure_port
 	push	a				. save encoding 1st word

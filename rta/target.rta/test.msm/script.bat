@@ -193,6 +193,7 @@ cd ..\language
 %MASMX% %FLAGS% i_xpr ..\test.rta\i_xpr
 %MASMX% %FLAGS% individu ..\test.rta\individu
 %MASMX% %FLAGS% r2xample ..\test.rta\r2xample
+%MASMX% %FLAGS% ..\language\rtxample ..\test.rta\rtxample
 popd
 pushd oper8
 %MASMX% %FLAGS% oper8 ..\..\test.rta\oper8

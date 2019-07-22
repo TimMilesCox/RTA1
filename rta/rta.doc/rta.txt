@@ -151,11 +151,24 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 <h3>2.1	Executable Space and Array Space</h3>
 
 <p>
-The limit of executable space (or system memory) is 16 gigawords.
+RTA1 places blocks of 4096 words or 262144 words in 64 windows of address space
+
+<p>
+The less block is sometimes called a page and the large block a bank
+
+<p>
+The limit of executable space (or system memory) is 16 gigawords. Executable space
+is not all in the address space at once
+
+<p>
+The primary objective of a compact adress space is compression but there are also
+gains in security and locality of reference
 
 <p>
 Additional arrays up to one teraword total which are not part of executable space
-may be added.<br>
+may be added
+
+<p>
 RTA1 documentation calls these additional arrays devices, and they may each contain up to<br>
 16 gigawords of 8- 16- or 24-bit memory. Device arrays may include among other applications<br>
 video RAMs, dual-ported 16-bit network buffers, and memory-addressable 24-bit filestores
@@ -325,11 +338,11 @@ The 6-bit window index corresponds to a relocation pointer in I/O ports 0..63
 <h3>2.4 Instruction Address Space</h3>
 
 <p>
-Instructions are read in window B0. Window B0 is the physical bank at
-the 4K-word bank-edge pointed by relocation register B0 in I/O Port 0
+Instructions are read in window B0. Window B0 addresses physical memory
+starting at the 4K-word block-edge pointed by relocation register B0 in I/O Port 0
 
 <p>
-B0 is switchable between different physical instruction banks
+Window B0 is switchable between different blocks of instructions in memory
 
 <p>
 Instructions are read from the leading edge of window B0 and not from
@@ -364,7 +377,7 @@ The part of the register stack available to an application is 128 words, and the
 of it organised in an internal stack is 104 words
 
 <p>
-At task switch RTA1 swaps 128 application registers in 32 instructions
+At thread switch RTA1 swaps 128 application registers in 32 instructions
 
 <p>
 The working of the internal stack is somewhat inverse to an external stack.
@@ -447,12 +460,12 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 	Instructions are only obtained from window B0
-	and B0 switches between instruction banks
+	and B0 switches between instruction blocks
 
 	Operands may be obtained from the registers,
-	from part of the actual instruction bank in window B0,
-	from the 63 actual application data banks,
-	from the seven alternative data banks used by the kernel
+	from part of the actual instruction block in window B0,
+	from the 63 actual application data blocks,
+	from the seven alternative data blocks used by the kernel
 
 	An application may have gigawords of storage
 	in blocks from 4096 words to 16 gigawords in size
@@ -462,7 +475,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	Relocation Registers 1..63 are I/O ports 1..63
 
-	Applications can change which storage banks
+	Applications can change which blocks of storage
 	are based in their 63 data address windows
 
 	The thread current data spaces do not need to
@@ -594,10 +607,10 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	When an array is many times the address space in size, address windows
 	are used as cursors in the array, fixing dynamically on buckets of one or
-	two memory blocks or banks
+	two memory blocks
 
-	If structures in the array straddle banks, the cursor should be two or more
-	adjacent physical banks based in adjacent windows
+	If structures in the array straddle blocks, the cursor should be two or more
+	adjacent physical blocks based in adjacent windows
 
 	This allows the physical address of two or four word operands to be generated
 	only once and data read or written in a single burst if memory supports that
@@ -606,8 +619,8 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	For example
 
 			dl		array_offset
-			dsl		6		. separate the bank-id from
-							. the word offset
+			dsl		6		. separate the 262144-word block-id
+							. from the word offset
 
 			orB, xi		WINDOW		. tag the word offset
 			rbr		6		. with an address window
@@ -619,13 +632,13 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 		.					   in register b
 
 
-			sal		6		. position the big-bank index
-			aa		array_start_bank. add to array start for bank-id
+			sal		6		. position the big-block index
+			aa		array_start_bank. add the array start block-id
 
-			sabr		WINDOW		. base the bank where the structure
+			sabr		WINDOW		. base the block where the structure
 							. starts in the address window
 
-			la, i		64, a		. identify the next big-bank id
+			la, i		64, a		. identify the next big block
 			sabr		WINDOW+1	. base that in the adjacent 
 							. address window
 
@@ -656,23 +669,23 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	Burst reads and writes of two or four words are at any word address.
 	There is no bus alignment larger than a word
 
-	Instructions writing an operand which straddles storage banks snoop the next base pointer during execution
+	Instructions writing an operand which straddles storage blocks snoop the next base pointer during execution
 
-	If the pointer selects the bank physically next then the burst write proceeds.
+	If the pointer selects the block physically next then the burst write proceeds.
 	The entire burst write is otherwise abandoned
 
 	Base pointers are relocation registers addressed as I/O ports
-	and select a bank either of 4096 words or 262144 words
+	and select a block either of 4096 words (a "page") or 262144 words a (a "bank")
 
-	No precaution is taken for multiword operand read over bank edge. Burst read is done uncritically.
-	If the next physical bank is not linearly successive application data then the trailing readout is wrong.
+	No precaution is taken for multiword operand read over block edge. Burst read is done uncritically.
+	If the next physical block is not linearly successive application data then the trailing readout is wrong.
 
 	An array greater than a storage block must either have 2- and 4-word operands aligned
 	or must be in physically continuous storage
 
 	Alignment of 2- and 4-word write operands has an advantage in efficiency
 	because the next-base-pointer-snoop is never necessary. It is rarely necessary to snoop the next base,
-	but an unaligned address necessitates an extra check for bank-end and the consequent snoop
+	but an unaligned address necessitates an extra check for block-end and conditionally a snoop
 
 
 </pre>
@@ -744,14 +757,11 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 <a	name="thread"/>
 <h3>2.8 Thread Switch and Address Space</h3>
 
-Task current relocation pointers are not saved on task switch because they are
+Thread current memory block pointers are not saved on thread switch because they are
 already mirrored in the TCB at the point when the application selects memory
 
 <p>
-Typically &frac34; of relocation registers are part of task context, OS depending
-
-<p>
-47 relocation registers are reloaded in 25 instructions
+62 window pointers are reloaded in 31 instructions
 
 
 <a	name="ioport"/>
@@ -819,9 +829,12 @@ and to restart the incrementer by writing Port 96
 	96		high-frequency timer incrementer restart write
 	97		dayclock update advertisement multicast
 	98		preemptive thread switch unicast
-	99		resource attention unicast/multicast
-	124		ROM/RAM threshold
-	128		system memory bank high index
+	99		resource attention unicast / multicast
+	101		timezone seconds difference from GMT	<b>time$zone</b>
+	102		hardware / firmware command pins	<b>INDICATION$</b>
+	103		powersave programmable microseconds	<b>chill$down</b>
+	124		ROM / RAM threshold			<b>ram$threshold</b>
+	128		system memory 4K-block high index
 	129:191		devices 1:63 attributes / array size
 
 </pre>
@@ -830,16 +843,16 @@ and to restart the incrementer by writing Port 96
 <h3>2.10: Interrupt Assignments</h3>
 
 <p>
-The first 4K-word bank of storage or PAGE_0 contains the restart location and is
+The first 4K-word block of storage or PAGE_0 contains the restart location and is
 otherwise reserved for any future restart and image load firmware
 
 <p>
-The second 4K-word bank of storage or PAGE_1 populates certain of its 63 vector
-locations PAGE_1:0 thru PAGE_1:63 with external and internal interrupt vectors
+The second 4K-word storage block PAGE_1 is anticipated for kernel routines and
+vector locations PAGE_1:0 thru PAGE_1:63 are external and internal interrupt vectors
 
 <p>
-These interrupt vectors are assigned to external events. They are classed as external because I/O
-activity or processor contingency raises them
+Following vectors are interrupts raised by I/O, processor contingency or inter-core communication
+
 <pre>
 
 
@@ -848,9 +861,9 @@ activity or processor contingency raises them
 
 				_________________________________
 	GUARD$		1:31	| 000000 000000 000001 | 011111	|	internal stack limit overstep
-				|______________________|________|	device bank base attempt from application
-									storage access outside address space
-									software diagnostic
+				|______________________|________|    or	device bank base attempt from application
+								     or	storage access outside address space
+								     or	software diagnostic
 
 				_________________________________
 	ATTENTION$	1:60	| 000000 000000 000001 | 111100 |	resource service request unicast/multicast
@@ -870,8 +883,7 @@ activity or processor contingency raises them
 
 </pre>
 
-Prototype kernel smaragd7 assigns these vectors in PAGE_1 to kernel calls reached with the
-Internal Interrupt instruction
+Internal interrupt instruction <b>ii</b> calls kernel routines via the 64 vectors at page locations 0..63
 
 <pre>
 
@@ -922,20 +934,20 @@ Internal Interrupt instruction
 				|______________________|________|
 
 				_________________________________
-	READ_XVECTOR$	1:19	| 000000 000000 000001 | 010011 |	retrieve a bank pointer
-				|______________________|________|	from kernel vector bank
+	READ_XVECTOR$	1:19	| 000000 000000 000001 | 010011 |	retrieve a value
+				|______________________|________|	from kernel vector list
 
 				_________________________________
-	WRITE_XVECTOR$	1:20	| 000000 000000 000001 | 010100 |	write a bank pointer in
-				|______________________|________|	kernel vector bank
+	WRITE_XVECTOR$	1:20	| 000000 000000 000001 | 010100 |	write a value
+				|______________________|________|	in kernel vector list
 
 				_________________________________
-	READ_SOCKET$	1:21	| 000000 000000 000001 | 010101 |	retrieve network socket 
-				|______________________|________|	information
+	READ_SOCKET$	1:21	| 000000 000000 000001 | 010101 |	retrieve the internal encoding 
+				|______________________|________|	for a handle number
 
 				_________________________________
-	UHANDLE$	1:22	| 000000 000000 000001 | 010110 |	map port informatiom
-				|______________________|________|	into address space
+	USOCKET$	1:22	| 000000 000000 000001 | 010110 |	complete the internal encoding
+				|______________________|________|	of a network port socket handle
 
 				_________________________________
 	KERNEL$B1	1:23	| 000000 000000 000001 | 010111 |	switch to kernel B1 frame[&nu;]
@@ -986,8 +998,9 @@ Internal Interrupt instruction
 Two registers are not addressable. The program counter which contains an absolute address 48 bits in size, and the Processor State Register, which contains settings and the carry bit
 
 <p>
-The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Bank 0
-is saved on interrupts and calls. On interrupts and far (inter-bank) calls Bank 0 identity is also saved
+The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Window 0
+is saved on interrupts and calls.
+On interrupts and far (inter-bank) calls the identity of the leading block of Window 0 is also saved
 
 <p>
 The Processor State Register is saved on interrupts
@@ -1181,7 +1194,7 @@ is reloaded and all flags are restored
 		Notes
 		_____
 
-		Only registers 0..127 switch with the task
+		Only registers 0..127 switch with the thread
 
 		The internal stack addressed with sp is only large enough for scalars and pointers
 		Frame Pointer register fp is intended to be an external stack pointer for structures and arrays
@@ -1192,7 +1205,7 @@ is reloaded and all flags are restored
 		Stack range violation raises the guard interrupt at vector 1:31
 
 		DAYCLOCK$U:DAYCLOCK$ are a millisecond counter in the interrupt register list
-		All tasks read the dayclock register pair atomically with 48-bit-operand instructions
+		All threads read the dayclock register pair atomically with 48-bit-operand instructions
 
 		Interrupt TIMER$ is sprung for example from a nanosecond incrementer
 		and one designated core updates the 48-bit millisecond dayclock and
@@ -1218,7 +1231,7 @@ is reloaded and all flags are restored
 		The emulated machine retrieves millisecond time periodically from the emulator host
 
 		PRIORITY$ is a copy of the running thread's priority stored by software for
-		rapid retrieval at task switch, and for instant evaluation of SMP inter-processor
+		rapid retrieval at thread switch, and for instant evaluation of SMP inter-processor
 		preemptive interrupt broadcasts
 
 		REALTIME$_CLOCK is a decrementing timer count which switches the running
@@ -4315,22 +4328,22 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|																|
 	|			Bank B1 is a window in a private stack. B1 is out side the scope of sabr and reload instructions	|
 	|																|
-	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern banks B2..B63							|
+	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern windows B2..B63		|
 	|																|
 	|			applications execute sabr instruction to base memory blocks in B2..B63					|
 	|			sabr also copies the relocation values through to the TCB						|
 	|																|
-	|			reload instruction bases some or all of B2..B63 in pairs on the loadup beat of task switch		|
+	|			reload instruction bases some or all of B2..B63 in pairs on the loadup beat of thread switch		|
 	|																|
 	|			Applications manipulate and restore B1 pointer in a different dynamic from B2..63			|
 	|																|
-	|			Task switch inputs B1 from I/O Port 1 and saves it individually						|
-	|			Task switch outputs B1 of the loading task to I/O Port 1 individually					|
+	|			Thread switch inputs B1 from I/O Port 1 and saves it individually					|
+	|			Thread switch outputs B1 of the loading thread to I/O Port 1 individually				|
 	|																|
 	|_______________________________________________________________________________________________________________________________|
 	|																|
 	|																|
-	|			A process has at least one B1 frame or B1 bank								|
+	|			A process has at least one B1 frame or 4K block								|
         |                                                                                                                               |
         |                       a B1 frame contains private data at addresses 4096..8191                                                |
 	|																|
@@ -4341,7 +4354,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|			the owning entity of a B1 frame may be a thread, a service, a function,					|
 	|			or a recursive execution of a function									|
 	|																|
-	|			services base their B1 bank temporarily to use private data on behalf of calling routines		|
+	|			services base a B1 frame temporarily to use private data on behalf of calling routines			|
 	|																|
 	|			the private data in B1 may include mechanical information underlying a service and compiler-generated	|
 	|			information like database subschemas									|
@@ -4703,7 +4716,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	to the program counter				|
 				|							|
 				|	if sp = 128 before lret				|
-				|	task exit interrupt 70 is raised		|
+				|	thread exit interrupt 70 is raised		|
 				|							|
 				|	on internal stack overflow / underflow		|
 				|	[sp < 24 | sp > 128] before operation		|
@@ -4751,7 +4764,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	to the program counter				|
 				|							|
                                 |       if sp = 128 before fret                         |
-                                |       task exit interrupt 70 is raised                |
+                                |       thread exit interrupt 70 is raised		|
                                 |                                                       |
                                 |       on internal stack overflow / underflow		|
                                 |       [sp < 24 | sp > 126 ^ 128] before operation	|

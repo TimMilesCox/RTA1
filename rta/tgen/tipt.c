@@ -797,7 +797,7 @@ static void load_fs(char *path)
       }
 
       devices[1].s.dev24 = (device24 *) loader;
-      base[129] = 0x00E00000 | banks;
+      base[129] = 0x00E00000 | (banks - 1);
 
       memcpy(loader, (char *) &page, sizeof(page));
       loader += sizeof(page);

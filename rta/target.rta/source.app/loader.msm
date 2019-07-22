@@ -1,0 +1,248 @@
+$(3)
+request         $res    180/3
+
+location        $res    60/3
+name            $res    60/3
+directory       $res    2
+file            $res    2
+
+save_sp         0
+window_bias     0
+
+storep          0
+transfer_gate   0L
+storage_size    0
+                0
+
+$(0)
+
+	$base_x	$zenith(3)-03000 4096
+	c	(seg$load)	0,,xi	(loader_data:d),,long
+
+
+load_request
+	fgets	request,,xi	180	stdin
+	printf	$3("loader: %s":10:0),,xi	request,,xi
+
+	$if	0
+	sscanf	request+2,,xi	$3("%s":0),,xi	path,,xi
+
+	c	(open)	path,,xi
+	sa	fd
+	jp	forward
+
+	$else
+
+	sscanf	request+2,,xi	$3("%s:%s":0),,xi	location,,xi	name,,xi
+				.	for example	"loadable"	"gate"
+.	la	(9*4096)
+.	ii	BANK$
+.	jza	trialz
+.	sa	storep
+
+	lc	containing_words	20,,xi	location,,xi
+
+	ly, xi	location
+	dsr	48
+	call	(fs_find)
+	jza	trialx
+	ds	directory
+
+	lc	containing_words	20,,xi	name,,xi
+
+	ly, xi  name
+	dl	directory
+	call	(fs_dsearch)
+	jza	trialx
+	ds	file
+
+	call	(fs_xbase)
+.	ds	file
+
+	lcal	geometry
+	qs	transfer_gate
+	la	6			. read group storage size
+	ii	BANK$
+	jza	trialz
+	sa	storep
+	aa	transfer_gate+1
+	sa	transfer_gate+1
+
+tuple	lcal	load_string
+	j	trialx
+	tz	0, y
+	j	tuple
+
+	$if	1
+	ql	(0800000++transfer_gate, 1, 8192, -1q)
+	ii	SPAWN$
+	jza	nonstarter
+	sabr	32			. look in new process TCB
+	la	*(32*/12++ABT-01000+2)	. read his vector list pointer
+	sabr	32
+	ql	handle(1)		. please use my stdin stdout stderr
+	qs	*(32*/12++handle(1)-02000)
+	ds	*(32*/12++handle(3)-02000)
+	la	(0C00001s)
+	ii	XBASE$32
+	$else
+	call	(0800000++transfer_gate:s)
+	$endif
+
+trialx	fret	0
+trialz	printf	$3("storage unavailable for load":10:0),,xi
+	fret	0
+nonstarter printf $3("process unassigned":10:0),,xi
+	fret	0
+
+geometry				. find the start of code
+	lx	y			. beyond first guide tuple[s]
+	ql	0, x
+	ax	4,,xi
+	jna	$-2
+	ql	64, x
+	lret	0
+
+load_string
+	lr	sp
+	sr	save_sp
+
+stack_tuple
+	qpush	0, y
+	ay	4,,xi
+	tp	0, sp			. a fixup tuple?
+	j	stack_tuple
+
+	la	3, sp			. calculate write address adjustment
+	xor	-4096,,xi		. minus target start page plus 7
+	and	-4096,,xi
+	aa	(08000)
+	sa	window_bias
+
+	la	0, sp			. window the target pages of this string
+	dsr	24
+	da	2, sp
+	lr	storage_size
+	lx	b
+	jxge	too_much
+	dsr	12
+	lr	1, b, i			. relative high_index page + 1 -> limit
+	dl	2, sp
+	dsl	12
+	lx	a			. relative absolute start page -> x
+	aa	storep
+	lb	0,,xi
+
+window	jxge	window_open
+	sabr	7, b
+	la	1, a, i
+	lb	1, b, i
+	ax	1,,xi
+	j	window
+
+window_open
+
+	lx	3, sp
+	ax	window_bias
+	lr	0, sp	
+
+	j	aword?
+aword!	la	0, y
+	sa	0, x
+	ax	1,,xi
+	ay	1,,xi
+aword?	jdr	aword!
+
+	lr	save_sp
+fixup?	qpop	0, sp			. add the load page index
+	lx	sp			. to a pointer constant
+	jxge	fixed
+
+	lx	3, sp
+	ax	window_bias
+	la	0, x
+	aa	storep
+	sa	0, x
+	j	fixup?
+
+fixed	sr	sp
+	lret	1			. good return
+
+too_much
+	printf	$3("load string out of range":10:0),,xi
+	lr	save_sp
+	sr	sp
+	lret	0			. less good return
+
+	$endif
+
+	$if	0
+	lx	storep
+	lcal	readout_extent
+	la	storep
+	sal	6
+	call	a
+trialx	la	storep
+	ii	BANK$FREE
+trialz	fret	0
+
+readout_extent
+	la	r
+	sar	2	. quadwords
+	dsr	10	. pages:quadwords
+	sbr	14
+	lr	a
+	j	page?
+page!	la	x
+	ax	1,,xi
+	sabr	37
+	push	x
+	push	r
+	lr	1024,,xi
+	lcal	page
+	pop	r
+	pop	x
+page?	jdr	page!
+	lr	b
+	la	x
+	sabr	37
+	lcal	page
+	lret	0
+
+page	lx	(37*/12)
+	j	write?
+write!	qpush	0, y
+	qpop	0, x
+	ax	4,,xi
+	ay	4,,xi
+write?	jdr	write!
+	lret	0
+	$endif
+
+containing_words
+	$head_near	 params(possible_words,	int	;
+				stringp,	int	)
+
+. count data words before the 1st all-zero word
+. or up to and including 1st trailing-zero word
+. if maximum possible words are nonzero, that is the result
+
+	lx	stringp
+	ax	possible_words
+	lr	x
+	lx	stringp
+
+containing
+	jxge	contained
+	la	0, x
+	jza	contained
+	ax	1,,xi
+	and	+(1*/$byte)-1,,xi
+	jnza	containing
+
+contained
+	la	x
+	ana	stringp
+	lr	a
+	$ret
+

@@ -179,13 +179,52 @@ socket_receive_tcp?
 
 	lb	transmission:state
 	ab, xi	-TCP_ESTABLISHED
-	jnzb	socket_rx_not_established
-	call	(tcp_rx)
+	jzb	socket_rx_established
+
+	$if	1
+
+	ab	TCP_ESTABLISHED-TCP_LISTEN,,xi
+					. all states except deassigned
+					. can read queued input if it's there
+					. change to _LISTEN when repooling
+	jnzb	socket_rx_readable	. connection block is otherwise never_LISTEN
+
+	$else
+
+	ab	TCP_ESTABLISHED-TCP_SYNSENT,,xi
+	jzb	socket_rx_readable	. block or not is (tcp_rx)
+	ab	TCP_SYNSENT-TCP_SYNRECEIVED,,xi
+	jzb	socket_rx_readable	. block or not is (tcp_rx)
+	ab	TCP_SYNRECEIVED-TCP_CLOSED,,xi
+	jzb	socket_rx_stop_reading
+	ab	TCP_CLOSED-TCP_DELETETCB,,xi
+	jnzb	socket_rx_readable	. connection may be half-closed
+					. while inward data is still queued
+socket_rx_stop_reading			. otherwise return a hands-off status
+
+	$endif
+
+	la	-NO_CONNECTION,,xi
 	j	receive_socket_x
 
+socket_rx_readable
+socket_rx_established
+	call	(tcp_rx)
+					. return is unconditionally to here
+					. return if you got anything
+					. ie part of maximum or -status
+					. if you're blocking and got nothing
+					. you didn't get here either
+	j	receive_socket_x
+
+
+	$if	0
+socket_rx_waiting
 socket_rx_not_established
 	.	something like a remote close has happened
 	.	or you tried to receive before it was established
+
+.	blocking arrives here until something happens
 
 	la	SOCKET_CALL_FLAGS	. blocking
 	jza	receive_socket_x	. report no data
@@ -194,6 +233,7 @@ socket_rx_not_established
 	xor, xi	-1			. ^state
 
 	j	receive_socket_x
+	$endif
 
 receive_socket_protocol_wrong
 	la, xi	-22			. more minus than a negative state
@@ -535,8 +575,11 @@ tcp_rbuffer_x
 	jnza	tcp_rbuffer_complete
 	
 	ii	YIELD$
-	j	tcp_rbuffer_next
-
+	la	transmission:state
+	aa	-TCP_LISTEN,,xi
+	jnza	tcp_rbuffer_next
+	lb	NO_CONNECTION,,xi	. this gets turned into -NO_CONNECTION
+					. fall athru
 tcp_rbuffer_complete
 	la	0,,xi			. store any 1 or 2 bytes waiting in WDATA
 	wsr	16
@@ -551,7 +594,7 @@ tcp_rbuffer_complete
 .	tcp_read far call vector name is (tcp_rx)
 .	x -> transmission control block
 .	a =  bytes
-.	q -> transmission buffer
+.	p -> receive buffer
 
 tcp_read
 	off	b$stream16w	. target store 3 octets / word

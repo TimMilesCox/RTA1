@@ -1,0 +1,265 @@
+
+	$base_x	$zenith(3)-0x003000 1024
+
+	c	(seg$load)	0,,xi	(viewfile_data:d),,long
+
+	fgets	request 172 stdin
+	printf	$3("file viewer: your command line is %s":10),,xi request,,xi
+
+	sscanf	request+2,,xi $3("%s:%s %d"),,xi host,,xi path+6,,xi aport,,xi
+
+				. choose from a list of target servers
+				. this can also be done on a directory
+	ly	5,,xi		. below the POSIX-style API
+target?	ay	-1,,xi
+	lx	(("platform"), ("suse"), ("suse_ro"), ("macmini"), ("airbook")p), y
+	dl	host
+	dan	0, x
+	jdz	target!
+	tz	y
+	j	target?		. fall-thru default is a PC platform hosting this RTA1
+
+target!	ly	(path_platform, path_suse, path_suse_ro, path_macmini, path_airbook:p), y
+	ql	0, y
+	qs	path
+	dl	4, y
+	ds	path+4		. plug the network + mount paths into the file path
+
+	lx	path+6,,xi
+	lcal	strlen		. count the filename bytes
+
+	sal	8		. insert name byte count in path preamble header word
+	or	path
+	lb	r		. add containing words of name to path structure length
+	ax	(2, 2, 1, 1, 1, 0h), b	
+	ax	-path-6,,xi
+	aa	x
+	sa	path
+
+	c	(open)	path,,xi	;
+			O_RDONLY,,xi
+
+	sa	handle
+	jna	neverdid
+
+	lx	buffer,,xi
+
+	dl	(BUFFER*3L)
+	dan	d$save2
+
+	jc	ahead
+
+	la	(262144)
+	ii	BANK$
+	jza	cant
+	sabr	37
+
+	la	(262144*3)
+	sa	d$save3
+
+	lx	(37*/18s)
+
+ahead	sx	cursor
+	sx	start_cursor
+
+	c	(read)	handle	x	 d$save3
+	jna	didsome
+
+	lx	start_cursor
+	lb	2, b, i
+	mf	(0x555556)
+	ax	a
+	sx	end_cursor
+	
+	printf	$3("rx %d words\n":0),,xi	a
+
+.	jna	didsome
+
+
+.	lx	buffer,,xi
+.	sx	cursor
+
+more	lcal	writealine
+	fgets	request,,xi	100,,xi stdin,,xi
+	jna	leave_orderly	. there isn't stdin, so just drop out
+	la	request
+	jna	leave_orderly	. CTRL_D detected, treat as EOF
+	sar	16
+	aa	-'.',,xi	. a period means stop
+	jza	leave_orderly
+	aa	'.'-'0'-10,,xi	. a number means reposition in buffer
+	jc	more		. entered in either decimal or hex
+	aa	10,,xi		. leading zero = hex
+	jnc	more		. anything else means carry on
+	lcal	new_cursor
+	j	more
+
+	fret	0
+
+didsome	printf	$3("read failed %d\n":0),,xi a
+	j	leave_orderly
+
+neverdid
+	printf	$3("bad open %d\n":0),,xi a
+	j	leave_orderly
+
+cant	c	(write)	$3("large file not loaded\n"),,xi	24,,xi
+
+leave_orderly
+	c	(close)	handle	. terminate process
+	fret	0		. dialogue continues in telnet stub
+
+	$list	0
+
+writeaword
+	lcal	normalise_cursor
+	la	0, x
+	inc	cursor
+	call	(display_quartets)
+	ds	output
+	c	(write) 1,,xi output,,xi 7,,xi
+	lret	0
+
+writealine
+	lcal	normalise_cursor
+	la	x
+	ana	start_cursor	. the view wants the file position
+				. not the buffer position
+	call	(display_quartets)
+	ds	output_cursor
+	c	(write) 1,,xi output_cursor,,xi 8,,xi
+	ql	*cursor
+	lcal	edit6
+	ds	output_text+1
+	dl	6
+	lcal	edit6
+	ds	output_text+3
+	$do	4,	lcal	writeaword
+	c	(write)	1,,xi output_text,,xi 16,,xi
+	c	(fsync)	1,,xi
+	lret	0
+
+normalise_cursor
+	lx	cursor
+	lr	end_cursor
+	jxge	restart_cursor
+	lret	0
+
+restart_cursor
+	lx	start_cursor
+	sx	cursor
+	lret	0
+
+edit1	jna	high		. high bit on, nongraphic
+	mta	(0)		.
+	lret	0		. either of bits 6..5 on, graphic 
+low				. 3 high bits off, nongraphic
+high	dsl	8
+	orB	'.',,xi		. rotate nongraphic substitute in
+	lret	1		. skip rotate after return
+
+edit6	lr	6-1,,xi
+	lk	(0x600000)	. test mask character bits 6..5
+editb	lcal	edit1
+	drl	8		. in graphic range
+	jdr	editb
+	lret	0
+
+$(3)
+output_cursor	"000000: "
+output		"000000 "
+output_text	"  \"___|||___|||\""
+$(0)
+
+strlen
+bytes_length
+	push	0,,xi
+	lk	(255*/16s)
+readout	dl	0, x
+	lr	6-1,,xi
+testout	mtane	(0)
+	j	complete
+	inc	0, sp
+	dsl	8
+	jdr	testout
+	ax	2,,xi
+	j	readout
+complete
+	pop	a
+	lret	0
+
+new_cursor
+	ly	a
+	jza	hex_cursor
+	dl	request
+	lcal	madd_decimal
+	j	cursor_range
+
+hex_cursor
+	dl	request
+	lcal	hex_symbols
+
+cursor_range
+	lr	end_cursor
+	jyge	dont
+	ay	start_cursor
+	sy	cursor
+dont	lret	0
+
+madd_decimal
+	lr	5-1,,xi
+madd	dsl	8
+	ds	6
+	sar	16
+	aa	-'0'-10,,xi
+	jc	no_more_digits
+	aa	10,,xi
+	jnc	no_more_digits
+	lb	y
+	sbl	1
+	aa	b
+	sbl	2
+	ly	b
+	ay	a
+	dl	6
+	jdr	madd
+no_more_digits
+	lret	0
+
+hex_symbols
+	lr	5-1,,xi
+	lk	0x40,,xi		. mask for letter range
+					. only for ASCII
+hex_symbol
+	dsl	8
+	ds	6
+	sar	16
+	mta	k			. is bit 22 same as mask bit 22 ?
+	j	hex_digit?
+	and	0x5F,,xi		. translate to uppercase
+	aa	-'A'-6,,xi
+	jc	no_more_symbols
+	aa	6,,xi
+	jnc	no_more_symbols
+	la	10,a,i
+	j	hex_catenate
+
+hex_digit?
+	aa	-'0'-10,,xi
+	jc	no_more_symbols
+	aa	10,,xi
+	jnc	no_more_symbols
+
+hex_catenate
+	sal	20
+	lb	y
+	drl	4
+	ly	b
+	dl	6
+	jdr	hex_symbol
+
+no_more_symbols
+	lret	0
+	
+	$list
+

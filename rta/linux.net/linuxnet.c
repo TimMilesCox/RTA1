@@ -101,7 +101,7 @@ static void diagnose(unsigned char *buffer_start,
 
 static void *async()
 {
-   char                  request[64];
+   char                  request[72];
    int                   symbol;
    int                   x, y;
 
@@ -109,7 +109,7 @@ static void *async()
 
    for (;;)
    {
-      p = fgets(request, 62, stdin);
+      p = fgets(request, 60, stdin);
       if (!p) continue;
 
       switch(request[0])
@@ -334,7 +334,7 @@ static int ip_checksum(unsigned short *q)
    int                   x = iphl << 1;
 
    unsigned short       *uph = q;
-   unsigned long         sum = 0;
+   unsigned int		 sum = 0;
    unsigned short        checksum;
 
    q[5] = 0;
@@ -356,7 +356,7 @@ static int ip_checksum(unsigned short *q)
 static void icmp_checksum(int bytes, char *icmp_message)
 {
    unsigned short               *p = (unsigned short *) icmp_message;
-   unsigned long                 sum = *p++;
+   unsigned int			 sum = *p++;
    unsigned short                delivered = *p++;
    unsigned short                carry;
    unsigned short                x = (bytes + 1) >> 1;
@@ -392,7 +392,7 @@ static unsigned short udp_checksum(int bytes,
    unsigned short               *p = (unsigned short *) net_addresses;
    unsigned short                x = (bytes+1) >> 1;
 
-   unsigned long                 sum = bytes + IPPROTO_UDP;
+   unsigned int			 sum = bytes + IPPROTO_UDP;
    unsigned short                carry;
 
    #ifdef INTEL
@@ -426,7 +426,7 @@ static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addre
    unsigned short               *p = (unsigned short *) net_addresses;
    unsigned short                x = (bytes+1) >> 1;
 
-   unsigned long                 sum = bytes + IPPROTO_TCP;
+   unsigned int			 sum = bytes + IPPROTO_TCP;
    unsigned short                carry;
 
    #ifdef INTEL

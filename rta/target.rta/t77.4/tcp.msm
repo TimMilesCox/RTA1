@@ -257,15 +257,16 @@ tcp4_closed?
 	jnzb	tcp4_globaltime?
 	
 tcp4_free_block
-				. free all buffers attached
-				. first
 
-	lcal	tcp_free_rxtx
+	push	TCP_LISTEN,,xi			. use this state nowhere else
+	pop	transmission:state		. on a transmission block
 
-	lb	transmission:next, x
+	lcal	tcp_free_rxtx			. free all buffers attached
+
+	lb	transmission:next, x		. out of traffic chain
 	sb	transmission:next, y
 	push	*(BSOCKET*/12++tlist:free)
-	pop	0, x
+	pop	0, x				. into free chain
 	sx	*(BSOCKET*/12++tlist:free)
 
 	$if	HVBANK
@@ -593,7 +594,7 @@ tcp_refuse
 	lcal	tcp_ripdown
 	fret	0
 
-tcp_locate_connection
+tcp_locate_connection		. passive connect from remote
 	lx	descriptor:uproto
 	sx	TP_HEADER
 	la	transfer:hl_code, x
@@ -610,20 +611,23 @@ tcp_locate_connection
 	sbl	8
 	dsl	8
 	mlb	11
-	ds	10		. the remote socket
+	ds	6		. the remote socket
 
 	dl	dgram:ipdest, x
 	sbl	8
 	dsl	8
 	mlb	9
-	ds	8		. the local socket
+				. the local socket
+
+tcp_check_connection		. active or passive connect
+	qs	8		. local_net:port:remote_net:port
 
 	$if	HVBANK
 	tz	*(BSOCKET*/12++tlist:hvbuffer)
 	j	tcp_resolve2remotesocket
 	$endif
 
-	dsl	32
+	dsl	32		. isolate local port
 	sar	8
 	call	(tcp_hash_localsocket)
 
@@ -652,7 +656,7 @@ tcp_compare_local
 	dan	8
 
 	jdz	tcp_compare_remote
-	jc	tcp_seek	. socket address > segment address
+	jnc	tcp_seek	. candidate address > address in chain
 
 	lx, xi	0		. insert point is in y
 	lret	0
@@ -662,7 +666,7 @@ tcp_compare_remote
 	dan	10
 
 	jdz	tcp_tbloc_found	. socket addresses = segment addresses
-	jc	tcp_seek	. socket address > sending address
+	jnc	tcp_seek	. candidate address > address in chain
 
 	lx, xi	0		. insert point is in y
 tcp_tbloc_found
@@ -778,7 +782,36 @@ tcp_rxqlong
 tcp_reset_deflect
 	la	transfer:hl_code, x
 	and	TCP_RST,,xi
-	jnza	ipv4_drop		. don't reset a reset
+	jnza	ipv4_rxz		. don't reset a reset
+
+	$if	IPV4_OVERHAUL>144	. protect the internal stack
+					. if the frame in it is too large for more work
+	lr	32,,xi			. make sure 20 word shuffle does not overlap
+	ly	sp			. read the datagram leading edge
+	jyge	tcp_deflect_frame_safe	. do not shuffle unnecessarily or with overlap
+
+	$if	0
+
+	j	ipv4_rxz		. the simpler way may be even better:
+					. i.e. drop the input silently
+	$else				. but it may be helpful to send reset
+
+	lx	TP_HEADER		. read the TCP header leading edge
+	la	ONE_TIME_SAVE1		. take the stack back nearer its origin
+	sa	sp
+	qpush	6, x			. push the minimum TCP header
+	qpush	2, x
+	dpush	0, x
+	la	sp
+	sa	TP_HEADER		. and mark where it is
+	qpush	6, y			. push the minimum datagram header
+	qpush	2, y
+	dpush	0, y			. it's where the stack pointer is
+
+	$endif
+
+tcp_deflect_frame_safe
+	$endif
 
 	push	TP_HEADER		. tcp_reject needs an acw. Make one
 	push	1, sp, i		. datagram address
@@ -1620,24 +1653,26 @@ tcp_read_txq
 	inc	sp
 	lret	0
 
+				. low level far calls
+				. for message-based TCP traffic
 
-tcp_rsegment			. low level far calls
-	push	x		. for message-based TCP traffic
-	lcal	tcp_read_rxq	. tcpr and tcpz 
+tcp_rsegment			. vector name tcpr
+	push	x		. read a descriptor from connection->receiveq
+	lcal	tcp_read_rxq	. under lock
 	pop	x
 	fret	0
 
-tcp_zsegment
-	jza	tcp_xsegment
+tcp_zsegment			. vector name tpcz
+	jza	tcp_xsegment	. pool descriptor a-> +  buffer
 	push	x
 	lcal	net_free
 	pop	x
 tcp_xsegment
 	fret	0
 
-tcp_textline_release
-	push	x
-	lcal	tcp_read_rxq
+tcp_textline_release		. vector name tcp_release_rxline
+	push	x		. read a descriptor + buffer from connection:receiveq
+	lcal	tcp_read_rxq				. under lock and pool it 
 	jza	tcp_textline_not_there
 	lcal	net_free
 tcp_textline_not_there
@@ -1718,6 +1753,15 @@ tcp_rx_rasm
 	lx, xi	tcpq
 	j	net_add_chain
 	$endif
+
+.	do not call tcp_socket from application threads
+.	even in kernel routines called by applications
+.	like send receive read write etc
+.	because tcp_socket reads kernel vectors direct
+.	and is called every rx segment so is minimal
+.	application threads call app_tcp_port
+.	which requests kernel vector
+.	on occasional need to access port structure
 
 tcp_socket
         lb, xi  BSOCKET*/9      .       000 000 000 bbb bbb 000 000 000

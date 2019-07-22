@@ -48,6 +48,7 @@
 extern int		 iselect,
 			 psr,
 			 b0_name,
+                         contingency,
 			 _register[],
 			 base[];
 
@@ -62,6 +63,22 @@ extern char		 uflag[];
 void ii(int ea, int latent_parameter)
 {
    int			*temp_sp;
+
+   if (ea == XBASE_U)
+   {
+      /***************************************************
+         1st: don't do this more than once
+	      in one emulated application instruction
+
+         2nd: advise the current instruction
+              in case it's better not to complete
+      ***************************************************/
+
+      if (contingency < 0) return;
+      contingency = -1;
+
+      if (uflag['Z'-'A'] == 0) indication |= LOCKSTEP;
+   }
 
    iselect = 128;
    sp -= 4;
@@ -87,11 +104,6 @@ void ii(int ea, int latent_parameter)
    }
 
    psr |= 0x00800000;
-
-   if (ea == XBASE_U)
-   {
-      if (uflag['Z'-'A'] == 0) indication |= LOCKSTEP;
-   }
 
    b0_name = (ea >> 6) & 0x0000FFFF;
    base[0] = b0_name;

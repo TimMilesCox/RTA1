@@ -46,6 +46,11 @@ arp_hash
 ?	$do	ARP_STORE,arp_line(?)	arp_cache
 
 arp_next	+	arp_line(1)
+
+	$if	T77_DRIVERS_THREADED
+arpq_tscell	+	0
+	$endif
+
 arp_free	+	0
 
 
@@ -62,7 +67,15 @@ $(0)
 xarp	qpush	r
 xarp_next
 	ly, xi	arpq
+
+	$if	T77_DRIVERS_THREADED	. if device drivers are not in IP main thread
+	LOCK	arpq_tscell		. it must be done this way
 	call	(far_readq)
+	FREE	arpq_tscell
+	$else				. otherwise it can be done this way
+	call	(far_readq)
+	$endif
+
 	jza	xarp_timers
 	sa	fp
 	lcal	glean_and_push
@@ -122,8 +135,14 @@ arp_rx_store
 	jdr	arp_rx_store
 
 	ly	arpq,,xi
-	call	(far_q2)
 
+	$if	T77_DRIVERS_THREADED
+	LOCK	arpq_tscell
+	call	(far_q2)
+	FREE	arpq_tscell
+	$else
+	call	(far_q2)
+	$endif
 
 	lx	0, sp
 	lb	this_if:id

@@ -189,6 +189,7 @@ B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at
 
 USOCKET$*	$vector		usocket_ii
 B1$FRAME*	$vector		b1_frame_ii
+USOCKET$NFS*	$vector		usocket_nfs_ii
 
 	$do		60-$,	ir	0
 
@@ -233,18 +234,18 @@ nothing_banked
 bank_free_ii
 	la		4		. bank ID value
 
-	on		see$1
-	lb, xi		BANK_CHAIN
-	lk, xi		(03FFFFF)	. 22-bit search mask
+	on		see$all		. see TCB +
+	lb, xi		BANK_CHAIN	. descriptors in kernel memory
+	lk		(03FFFFF)	. 22-bit search mask
 
 bank_freewheel
-	ly		b
+	ly		b_x
 	lb		0, y
 	jzb		bank_freed
 	mta		1, b		. skip on equal bank ID value 
 	j		bank_freewheel
 
-	la		b		. bank free wants
+	la		b_x		. bank free wants
 					. a descriptor pointer
 
 	lb		0, a		. take it out of
@@ -414,6 +415,19 @@ handle_out_of_range
 read_handle_ii
 	lcal		check_handle
 	sa		a
+	ir		0
+
+usocket_nfs_ii
+	lcal		check_handle
+	jna		usocket_nane
+	lk		(255*/16s)
+	mta		(AF_INET*/16s)
+	j		usocket_nane
+	lb		x		. application x -> file open descriptor
+	mlb		a_x		. copy 8 high order bits from a to b
+	sb		0, x
+	inB		1		. the file open descriptor is in application B1
+	sb		1, x
 	ir		0
 
 usocket_c_ii

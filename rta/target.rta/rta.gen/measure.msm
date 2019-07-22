@@ -136,9 +136,11 @@ management_pages_based
 	lr	b_x		. save the bank index reached
 	lb	BANKS		. calculate page address highest bank + 1
 	sbl	5
-	jnzb	$+3
+	jnzb	pages_read
 	inB	128
+	andB	(03FFFFF)
 	ab, xi	1
+pages_read
 	lx	first_bdx,,xi
 	aa	03000-2,,xi
 	j	memory_configured
@@ -153,11 +155,12 @@ large_system
 	lr	64+3+1,,xi
 	lb	BANKS		. 2 * memory banks of 262144 words
 	sbl	5		. calculate page address highest bank + 1
-	orB	(0400000)	. think big
-
-base_management_bank
+.	orB	(0400000)	. think big one moment later
+				. in case of maximum memory
+base_management_bank		. where decrement is from 0400000
 	ax	-1,,xi
 	ab	-64,,xi
+	orB	(0400000)	. now think big
 	outB	0, x
 	jxge	base_management_bank
 
@@ -915,7 +918,7 @@ large_bank
 					. but its address
 bsearch	sx	B4
 	lb	0, x
-	lx	b
+	lx	b_x
 
 	jzb	new_large_bank
 
@@ -939,6 +942,7 @@ new_large_bank
 
 	la	3, x
 	ana	REQUIRED	. address of new big bank
+	jnc	bank_not_obtained
 
 	ly	next		. does it overlap the
 	tanu	1, y		. highest assigned small bank?
@@ -1137,8 +1141,8 @@ forward	lb	a_x
 
 	$do	PRIORITIES>8,	$flag	time slice table < priorities
 	andB	+(1*/T$LOG(PRIORITIES))-1,,xi
-	push	(0, T$SLICE*15, T$SLICE*12, T$SLICE*10, T$SLICE*8, T$SLICE*6, T$SLICE*5, T$SLICE*4o), b
-	pop	REALTIME$_CLOCK
+	lb	(0, T$SLICE*15, T$SLICE*12, T$SLICE*10, T$SLICE*8, T$SLICE*6, T$SLICE*5, T$SLICE*4o), b
+	sb	REALTIME$_CLOCK
 				. the quanta are an instruction ration. Thread yields on decrement<0
 	$endif			. PRIORITY=0=realtime=no time slice, no decrement, no automatic yield
 				. no decrementation takes place during interrupt code
@@ -1259,14 +1263,25 @@ set_b1	sb	0, a
 	ds	ABT+4+?*2-2	. application will open what windows it has
 
 	la	0, sp
+	jna	gate		. bit 23 = indirectly over a stored gate
 	sal	1
-
-	jna	application_bank
-
-	dsr	6+1
+	jna	application_bank . bit 22 = 32k instruction frame
+				. everything else = 4k instruction frame
+	dsr	6+1		. 16-bit page pointer
 	sbr	18
 	j	store_upacket
 
+gate	and	(07FFFFF)	. leave bit 23 behind
+	off	see$all		. 48-bit gate descriptor is anywhere
+	dl	0, a		. in calling application address space
+	on	see$all--see$2	. but you need TCB + kernel store again here
+
+	dsl	6		. frame page high index
+				. is not in interrupt return frame
+	drl	18		. but 1 must be in bit 47
+	j	store_upacket	. to get tabled frame high page index
+				. from the 1st code page
+	
 application_bank
 	dsr	3+1
 	sbr	21
@@ -1340,7 +1355,7 @@ priority_out_of_range
 
 	$if	1
 
-	lx	vpointer(2048)+1,,xi
+	lx	$VECTOR_HIGH,,xi
 	lr	vpointer(33),,xi
 	ql	(0C00001C00001C00001C00001q)
 seal32vectors

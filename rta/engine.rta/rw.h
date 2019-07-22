@@ -42,16 +42,16 @@
 
 
 
-extern unsigned int operand_read(int ea, int designator);
-extern void burst_read2(int *list, int ea);
-extern void burst_read4(int *list, int ea);
+extern unsigned int operand_read(unsigned ea, int designator);
+extern void burst_read2(int *list, unsigned ea);
+extern void burst_read4(int *list, unsigned ea);
 
-extern void operand_write(int v, int ea, int designator);
-extern void burst_write2(int *list, int ea);
-extern void burst_write4(int *list, int ea);
+extern void operand_write(int v, unsigned ea, int designator);
+extern void burst_write2(int *list, unsigned ea);
+extern void burst_write4(int *list, unsigned ea);
 
-extern word memory_read(int ea);
+extern word memory_read(unsigned ea);
 
 #ifdef ABSOTS
-extern word *memory_hold(int ea);
+extern word *memory_hold(unsigned ea);
 #endif

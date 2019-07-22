@@ -59,12 +59,19 @@ symbol?	mta	('c')			. right justified character scalar?
 
 integer?
 	mta	('i')
-	j	read_format_byte
+	j	string?
 	call	(iscan)
 	ly	argop
 	ly	0, y
 	sb	0, y
 	j	read_format
+
+string?	mta	('s')
+	j	read_format_byte
+	ly	argop
+	ly	0, y
+	lcal	scan_istring
+	j	read_format	
 
 read_format_end
 	la	argop			. arguments used up to here
@@ -74,6 +81,57 @@ read_format_end
 	pop	x
 	qpop	x			. reload 4 caller registers
 	fret	0			. including result = items read
+
+scan_istring
+	call	(symbol_scan)		. skips spaces
+	jnza	scan_start
+	z	0, y
+	lret	0
+scan_start
+	lb	a			. 1st byte delivered
+	
+	lk	255,,xi
+	lx	16,,xi			. 2 more bytes max 1st word
+scan_next_byte
+	lcal	scan_ibyte
+	j	istring_thru
+	ax	-8,,xi
+	tz	x
+	j	scan_next_byte
+	sb	0, y
+	ay	1,,xi
+	lx	24,,xi
+	j	scan_next_byte
+
+istring_thru
+	sbl	0, x
+	sb	0, y
+	lret	0
+
+scan_ibyte
+	rsr	$byte
+	jza	scan_ibytez
+	sa	LAST_BYTE_READ
+	mtane	(' ')
+	j	scan_ibytez
+	mtane	(HT)
+	j	scan_ibytex
+	mtane	(':')
+	j	scan_ibytex
+	mtane	(',')
+	j	scan_ibytex
+	mtane	(LF)
+	j	scan_ibytez
+	mtane	(CR)
+	j	scan_ibytez
+	sal	$word-$byte
+	drl	$byte
+	lret	1
+scan_ibytex
+	la	' ',,xi
+	sa	LAST_BYTE_READ
+scan_ibytez
+	lret	0
 
 	$root
 

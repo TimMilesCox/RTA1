@@ -50,6 +50,7 @@
 #else
 #include <unistd.h>
 #include <sys/shm.h>
+#include <sys/ipc.h>
 #endif
 
 #include <errno.h>
@@ -61,6 +62,7 @@
 #define	DEVICE_PAGE	2048
 #define	DEVICE_PAGES	256
 
+extern int		 base[];
 extern device		 devices[];
 
 void netbank()
@@ -134,5 +136,65 @@ void netbank()
    }
    #endif SIGALERT
    #endif X86_MSW
+}
+
+
+/****************************************************
+	assign_interface_relay()
+	assigns an extra interface relay device array
+	beyond the default one
+****************************************************/
+
+void assign_interface_relay(int device_id, char *text)
+{  
+   unsigned int          rkey = -1;
+   int                   _x,
+                         _y,
+                         bytes,
+                         block;
+   
+   device16             *_p;
+   device               *_q = devices + device_id;
+   struct shmid_ds       info;
+   
+   sscanf(text + 1, "%x", &rkey);
+   _x = shmget(rkey, 0, 0);
+   
+   if (_x < 0)
+   {  
+      printf("net device %d relay not added\n", device_id, errno);
+      return;
+   }
+   
+   _y = shmctl(_x, IPC_STAT, &info);
+   
+   if (_y < 0)
+   {  
+      printf("net device %d relay not added\n", device_id, errno);
+      return;
+   }
+   
+   _p = shmat(_x, NULL, 0);
+   bytes = info.shm_segsz;
+
+   /**************************************************************
+	the peripheral descriptor port contains a block high index
+	not a size
+	so zero represents 1 block
+        and maximum size 65536 can me represented
+   **************************************************************/
+
+   block = (bytes >> 19) - 1;
+
+   if ((block < 0) || (block > 65535))
+   {
+      printf("net interface block out of range\n");
+      return;
+   }
+   
+   _q->flags = DEVICE | DATA16;
+   _q->s.dev16 = _p;
+   base[128 + device_id] = DATA16_FLAG | block ; 
+   printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);
 }
 

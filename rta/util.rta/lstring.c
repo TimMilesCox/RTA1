@@ -47,16 +47,20 @@
 
 #ifdef DOS
 #include <stdio.h>
+#include <string.h>
 #include <io.h>
 #include <dos.h>
 #include <fcntl.h>
 #include <sys\stat.h>
 #else
 #include <stdio.h>
+#include <string.h>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
+
+#include "../include.rta/argue.h"
 
 #define	BLOCKSUM
 
@@ -65,21 +69,21 @@
 #define BLOCK_BOOT	'B'
 #define S_FORMAT	'F'
 
-static char include[72] = { 1,1,1,1,1,1,1,1,1,1,1,1, 
+static char include[84] = { 1,1,1,1,1,1,1,1,1,1,1,1, 
                             1,1,1,1,1,1,1,1,1,1,1,1,
                             1,1,1,1,1,1,1,1,1,1,1,1,
                             1,1,1,1,1,1,1,1,1,1,1,1,
                             1,1,1,1,1,1,1,1,1,1,1,1,
-                            1,1,1,1,1,1,1,1,1,1,1,1 } ;
+                            1,1,1,1,1,1,1,1,1,1,1,1,
+                            0,0,1,1,1,1,1,1,1,1,1,1 } ;
 
-static unsigned long long bankp[72];
+static unsigned long long bankp[84];
 
-static char				 flag[28];
 static int				 format = S_RECORD;
 static int				 columns = 8-1;
 static int				 first = 73;
 
-void exout(int locator, long loc, char *b, int c, int handle, int flag)
+static void exout(int locator, long loc, char *b, int c, int handle, int xflag)
 {
    static unsigned long long loc0 = 0;
    static char data[3*4096+16];
@@ -96,13 +100,13 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
    if (c % 3) printf("octet count wrong %d\n", c);
    c /= 3;
 
-   if (!include[locator]) return;
+   if ((!include[locator]) && (xflag ^ 1)) return;
 
    switch (format)
    {
       case BLOCK_BOOT:
 
-         if ((loc) || (first != locator) || (flag == 7))
+         if ((loc) || (first != locator) || (xflag == 7))
          {
             first = locator;
 
@@ -145,7 +149,7 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
             data[10] = loc0 >>  8;
             data[11] = loc0;
 
-            if (flag == 7)
+            if (xflag == 7)
             {
                data[0] = 0;
                data[1] = 0;
@@ -226,7 +230,7 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
          }
          #endif
 
-         if  ((flag == 1) && (p))
+         if  ((xflag == 1) && (p))
          {
             data[0] = p >> 16;
             data[1] = p >>  8;
@@ -259,7 +263,7 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
 
       case S_RECORD:
 
-         if ((loc) || (first != locator) || (flag == 7))
+         if ((loc) || (first != locator) || (xflag == 7))
          {
             first = locator;
             if (p)
@@ -282,7 +286,7 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
             loc0 = loc;
             index = 12;
 
-            if (flag == 7)
+            if (xflag == 7)
             {
                sprintf(data, "S804%6.6llX", loc0);
                sum += 4;
@@ -328,7 +332,7 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
             }
          }
    
-         if  ((flag == 1) && (p))
+         if  ((xflag == 1) && (p))
          {
             sum += p*3;
             sum += 4;
@@ -351,13 +355,86 @@ void exout(int locator, long loc, char *b, int c, int handle, int flag)
    }
 }
 
+static void inject_physical_address_tuple(int handle, char *data, long long target)
+{
+   unsigned char request[12];
+
+   int		 label_index;
+   int		 field;
+
+   int		 sum;
+
+   if ((*data == '[') && (*(data + 5) == ']'))
+   {
+      sscanf(data + 1, "%x", &label_index);
+      sscanf(data + 6, "%x", &field);
+
+      target += (long long) label_index;
+
+      field |= 0x00800000;
+      sum = field + target + (target >> 24);
+      sum ^= 0x00FFFFFF;
+      
+      request[0] = field >> 16;
+      request[1] = field >>  8;
+      request[2] = field;
+      request[6]  = target >> 40;
+      request[7]  = target >> 32;
+      request[8]  = target >> 24;
+      request[9]  = target >> 16;
+      request[10] = target >> 8;
+      request[11] = target;
+      request[3] = sum >> 16;
+      request[4] = sum >> 8;
+      request[5] = sum;
+
+      write(handle, request, 12);
+   }
+   else printf("%s only a load label index "
+               "may be forwarded in binary strings\n", data);
+}
+
+/****************************************************
+   a2zu(*, **)
+   returns -1 if there are no digits before delimiter
+   updates input pointer to address of delimiter
+   only returns zero
+   if the value of encountered digits is zero
+****************************************************/
+
+static int a2zu(char *p, char **q)
+{
+   int           symbol,
+                 x = -1;
+
+   while (symbol = *p++)
+   {
+      if (symbol == ' ') continue;
+
+      if ((symbol > '0' - 1) && (symbol < '9' + 1))
+      {
+         x = symbol - '0';
+         while (symbol = *p++)
+         {
+            if (symbol < '0') break;
+            if (symbol > '9') break;
+            x = x * 10 + symbol - '0';
+         }
+      }
+
+      break;
+   }
+   p--;
+   *q = p;
+   return x;
+}
+
 main(int argc, char *argv[])
 {
   int			 i, j;
-  char			 *filename[2] = { NULL, NULL } ;
 
   int c, d, locator, e, f, symbol, x, y = 0, interval;
-  long loc, transfer, offset = 0, index;
+  long loc, transfer, offset = 0, index, aside;
 
   unsigned long long bank;
 
@@ -367,54 +444,90 @@ main(int argc, char *argv[])
   
   register char digit1, digit2;
 
-  for (x = 1; x < argc; x++)
-  {
-      p = argv[x];
-
-      symbol = *p;
-
-      if (symbol == '-')
-      {
-         p++;
-
-         while (symbol = *p++)
-         {
-            symbol |= 0x20;
-            if ((symbol > 0x60) && (symbol < 0x7B)) flag[symbol - 'a'] = 1;
-         }
-      }
-      else
-      {
-         if (y < 2) filename[y++] = p;
-      }
-  }
+  argue(argc, argv);
   
-  if (y < 2)
+  if (arguments < 2)
   {
      printf("an input and an output filename are required\n");
      return 0;
   }
 
+  if (arguments > 2)
+  {
+     p = argument[2];
+
+     if (*p++ == '(')
+     {
+        memset(include, 0, 72);
+        x = 0;
+        
+        for (;;)
+        {
+           /****************************************************
+              a2zu(*, **)
+              returns -1 if there are no digits before delimiter
+              updates input pointer to address of delimiter
+              only returns zero
+              if the value of encountered digits is zero
+           ****************************************************/
+
+           y = a2zu(p, &p);
+
+           if (y < 0)
+           {
+           }
+           else if (y > 71) printf("locator %d skipped\n", y);
+           else
+           {
+              include[y] = 1;
+              if (flag['v'-'a']) printf("locator %d included\n", y);
+              x++;
+           }
+
+           symbol = *p++;
+
+           if (symbol == ',') continue;
+           break;
+        }
+
+        if (symbol ^ ')')
+        {
+           printf("\n\tsyntax undetermined. Abandon for safety. No files changed\n\n");
+           return 0;
+        }
+
+        if (flag['v'-'a']) printf("%d locators included\n", x);
+     }
+     else
+     {
+        printf("\n\t3rd argument has the format \'(locator_number[,locator_number,...])\'\n"
+               "\tthe apostrophes or another escape are necessary\n"
+               "\tby default all locators included\n\n");
+        printf("\tabandon for safety. No files changed\n\n");
+        return 0;
+     }
+  }
+
   y = 0;
 
   #ifdef DOS
-  i = open(filename[0], O_RDONLY|O_BINARY);
-  j = open(filename[1], O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, S_IREAD|S_IWRITE);
+  i = open(argument[0], O_RDONLY|O_BINARY);
+  j = open(argument[1], O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, S_IREAD|S_IWRITE);
   #else
-  i = open(filename[0], O_RDONLY);
-  j = open(filename[1], O_WRONLY | O_CREAT |O_TRUNC,
+  i = open(argument[0], O_RDONLY);
+  j = open(argument[1], O_WRONLY | O_CREAT |O_TRUNC,
                         S_IREAD  | S_IWRITE|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH);
   #endif
 
   if (i < 1)
   {
-     printf("input file %s unavailable\n", filename[0]);
+     printf("input file %s unavailable\n", argument[0]);
      return i;
   }
 
   if (j < 1) 
   {
-     printf("output file %s not written\n", filename[1]);
+     printf("output file %s not written\n", argument[1]);
      return j;
   }
 
@@ -485,7 +598,7 @@ main(int argc, char *argv[])
           if (symbol == 0x0A) break;
           putchar(symbol);
        }
-       printf(" unresolved\n");
+       printf(" %s\n", (uflag['L'-'A']) ? "forwarded" : "unresolved");
        continue;
     }
     
@@ -536,10 +649,21 @@ main(int argc, char *argv[])
     {
        if (digit1 == ':')
        {
-          printf("$%2.2x:%6.6lx relocation information discarded %s\n",
-                           locator, loc + offset + interval / 3, data);
-          e = interval;
-          continue;
+          if (uflag['L'-'A'])
+          {
+             if (include[locator]) inject_physical_address_tuple(j, p - 9,
+             (unsigned long long) loc + offset + interval / 3);
+             e = interval;
+             continue;
+          }             
+          else
+          {
+             if (include[locator])
+             printf("$%2.2x:%6.6lx relocation information discarded %s\n",
+                              locator, loc + offset + interval / 3, data);
+             e = interval;
+             continue;
+          }
        }
 
        if (digit1 == 32)

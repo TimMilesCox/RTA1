@@ -83,6 +83,7 @@
 #include "settings.h"
 #include "../include.rta/argue.h"
 #include "stepping.h"
+#include "time32.h"
 
 int			 indication;
 
@@ -102,10 +103,12 @@ static int		 runout;
 extern void		 execute(word instruction);
 extern word		 memory_read(int ea);
 extern void		 netbank();
+extern void              assign_interface_relay(int device_id, char *text);
 
+static void              assign_array(int device_id, char *text);
 static void		 statement();
 static void		 action(char *request);
-static void		 load_fs(char *path);
+static void		 load_fs(int device_id, char *path);
 
 #ifdef METRIC
 unsigned int             delta,
@@ -117,6 +120,12 @@ static unsigned long long        delta_base,
 
 static void              accumulate_metric();
 #endif
+
+static step_second32	 step_second;
+static int		 interval_seconds_mask;
+static unsigned		 clockr[2];
+
+struct timeval		 xronos;
 
 #ifdef ASYNC
 
@@ -242,7 +251,7 @@ int main(int argc, char *argv[])
    SYSTEMTIME		 stime;
    FILETIME		 ftime;
    #else
-   struct timeval	 time;
+//   struct timeval	 time;
    #endif
 
    int			 instructions = INTERVAL;
@@ -251,17 +260,18 @@ int main(int argc, char *argv[])
 
 
    int			 _x;
+   unsigned char	*_p;
 
-   #ifdef DAYCLOCK
-   unsigned long long	 time_pointer;
-   #endif
+   int			 fields,
+			 device_id;
 
    #ifdef LP_TSLICE_HERE
    /* It's not. It's in engine.rta/rta.c:execute() */
    int			 icount;
    #endif
 
-   char			 command[84];
+//   char			 command[84];
+   unsigned char		 text[72];
 
    int			 index = 1;
    int			 offset;
@@ -290,6 +300,7 @@ int main(int argc, char *argv[])
 
 
    argue(argc, argv);
+   printf("RTA1 " RADIX " emulation stepping " STEPPING "\n");
 
    if (arguments)
    {
@@ -325,7 +336,8 @@ int main(int argc, char *argv[])
       printf("rom image %d target words read\n", image_size);
       image_size += 4095;
       base[124] = image_size >> 12;		/*	ROM boundary port	*/
-      base[128] = PAGES_IN_MEMORY - 1;		/*	system memory size port	*/
+      base[128] = (PAGES_IN_MEMORY - 1) | SYSMEM_FLAG;
+						/*	system memory size port	*/
 
       close(f);
    }
@@ -337,7 +349,23 @@ int main(int argc, char *argv[])
 
    netbank();
 
-   if (arguments > 1) load_fs(argument[1]);
+   if (arguments > 1) load_fs(1, argument[1]);
+
+   for (_x = 2; _x < arguments; _x++)
+   {
+      _p = argument[_x];
+
+      fields = sscanf(_p, "/%d/%s", &device_id, text);
+
+      if      (fields < 2)    printf("argument %d skipped: requires /device number/device info\n", _x);
+      else if (device_id < 3) printf("argument %d skipped: devices 0..2 are fixed\n", _x);
+      else
+      {
+         if      (text[0] == '+') assign_array(device_id, text);
+         else if (text[0] == '#') assign_interface_relay(device_id, text);
+         else load_fs(device_id, text);
+      }
+   }
 
    #ifdef ASYNC
 
@@ -371,6 +399,8 @@ int main(int argc, char *argv[])
    delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
    #endif
 
+   if (uflag['Z'-'A'] == 0) start_second(&step_second);
+
    for (;;)
    {
       if (runout < 0) break;
@@ -395,14 +425,60 @@ int main(int argc, char *argv[])
          time_pointer = ftime.dwLowDateTime;
          #else
 
-         gettimeofday(&time, NULL);
+         gettimeofday(&xronos, NULL);
 
          #endif
 
-         time_pointer = (unsigned) time.tv_usec / 1000
-                      + (unsigned long long) time.tv_sec * 1000;
-         _register[DAYCLOCK]   =  time_pointer & 0x00FFFFFF;
-         _register[DAYCLOCK_U] = (time_pointer >> 24) & 0x00FFFFFF;
+
+         /*****************************************************
+            for 32-bit execution with unchanged library
+            on platforms the same age as this emulator or newer
+
+            it's not known if tv_sec will really wrap for ever
+            because systems may be set to do diagnostics instead
+
+            but if tv_sec does keep wrapping:
+
+            this tweak casts tv_sec to unsigned and prepends
+            32 more bits which are all zeros until year 2110 approx.
+
+            the 64-bit seconds-from-1970 count is store on file
+            every 70 years when tv_sec high-order bit flips.
+
+            on unsigned overflow every 140 years
+            the 32-bit prepend is incremented
+
+            The 2 words on file are read every emulator startup
+            and written once per 70 years
+         *****************************************************/
+
+         if (uflag['Z'-'A'] == 0)
+         {
+            if ((xronos.tv_sec & 0x80000000) ^ (step_second.low & 0x80000000))
+            {
+               /**************************************************
+                  ms bit of tv_sec has changed
+                  change is 1 to 0 approximately every 140 years
+                  and must carry into the high number half
+               ***************************************************/
+
+               if (step_second.low & 0x80000000) step_second.high++;
+               step_second.low = (unsigned) xronos.tv_sec;
+               store_second(&step_second);
+            }
+         }
+
+         clockr[1] = (unsigned) xronos.tv_usec / 1000
+                   + (xronos.tv_sec & 0xFFFF)  * 1000;
+
+         clockr[0] = ((unsigned) xronos.tv_sec >> 16) * 1000
+                   + ((step_second.high * 1000) << 16)
+                   + (clockr[1] >> 16);
+
+         _register[DAYCLOCK]   =  (clockr[1] & 0xFFFF)
+                               | ((clockr[0] & 255) << 16);
+
+         _register[DAYCLOCK_U] = (clockr[0] >>= 8) & 0x00FFFFFF;
 
          /************************************************
 		atomicity writing the two dayclock words
@@ -410,6 +486,14 @@ int main(int argc, char *argv[])
 		because instructions don't happen
 		while this does
          ************************************************/
+
+         /****************************************************************
+            no need for time zone update more often than 2 second interval
+            it might do some GPS I/O
+         *****************************************************************/
+
+         if ((xronos.tv_sec ^ interval_seconds_mask) & 0xFFFFFFFE) tzone();
+         interval_seconds_mask = xronos.tv_sec;
       }
       #endif
 
@@ -503,6 +587,7 @@ static void action(char request[])
                          absolute;
 
    int			 symbol = request[0];
+   int			 device_id;
 
    char			 path[360];
 
@@ -696,8 +781,8 @@ static void action(char request[])
          break;
 
       case 'l':
-         xx = sscanf(&request[1], "%s", path);
-         if (xx == 1) load_fs(path);
+         xx = sscanf(&request[1], "%d %s", &device_id, path);
+         if (xx == 2) load_fs(device_id, path);
          break;
 
       case 'h':
@@ -731,13 +816,13 @@ static void action(char request[])
    }
 }
 
-static void load_fs(char *path)
+static void load_fs(int device_id, char *path)
 {
    int		 xx,
 		 banks,
 		 index = 0;
 
-   char		*loader = (char *) devices[1].s.dev24;
+   char		*loader = (char *) devices[device_id].s.dev24;
 
    #ifdef X86_MSW
    int		 f = open(path, O_RDONLY | O_BINARY, 0444);
@@ -750,7 +835,7 @@ static void load_fs(char *path)
    if (f < 0) printf("file system image %s error %d\n", path, errno);
    else
    {
-      printf("loading file system image %s\n", path);
+      printf("loading device %d file system image %s\n", device_id, path);
       xx = read(f, (void *) &page, sizeof(page));
 
       /**************************************************
@@ -807,8 +892,8 @@ static void load_fs(char *path)
          return;
       }
 
-      devices[1].s.dev24 = (device24 *) loader;
-      base[129] = 0x00E00000 | banks;
+      devices[device_id].s.dev24 = (device24 *) loader;
+      base[128 + device_id] = FSYS24_FLAG | banks - 1;
 
       memcpy(loader, (char *) &page, sizeof(page));
       loader += sizeof(page);
@@ -825,6 +910,30 @@ static void load_fs(char *path)
 
       close(f);
       printf("%d granules loaded\n", index);
+   }
+}
+
+static void assign_array(int device_id, char *text)
+{
+   int           banks;
+   long          words;
+
+   char         *where;
+
+   sscanf(text + 1, "%d", &banks);
+   words = banks << 18;
+   where = malloc(words << 2);
+
+   if (where)
+   {
+      devices[device_id].flags = DEVICE | SYSMEM;
+      devices[device_id].s.pages = (system_memory *) where;
+      base[128 + device_id] = SYSMEM_FLAG | ((banks << 6) - 1);
+      printf("device %d additional %ld words memory array added\n", device_id, words);
+   }
+   else
+   {
+      printf("device %d requested %ld octets are not available\n", device_id, words << 2);
    }
 }
 

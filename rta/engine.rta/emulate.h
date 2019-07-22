@@ -166,11 +166,14 @@
 
 ****************************************************************************/
 
+#define	INSTRUCTION_U	125
+
 #define TIME_UPDATE     1
 #define LOCKSTEP        2
 #define BREAKPOINT      4
 #define CHILLDOWN       8
 
+#define	time_zone	base[101]
 #define chilldown       base[103]
 
 #define	IO_PORTS	192
@@ -188,7 +191,7 @@
 #define	PAGES_IN_MEMORY			32
 #endif
 
-#define	WORDS_IN_MEMORY			4096 * PAGES_IN_MEMORY
+#define	WORDS_IN_MEMORY			(long) 4096 * PAGES_IN_MEMORY
 
 #define	BANKS_IN_DEVICE16		1
 
@@ -208,11 +211,11 @@ typedef struct { word		 w[262144]; } bank;
 
 typedef struct { msw		 w[262144]; } fsbank;
 
-typedef union  { word   array[4096 * PAGES_IN_MEMORY];
-		 int	iaray[4096 * PAGES_IN_MEMORY];
+typedef union  { word   array[WORDS_IN_MEMORY];
+		 int	iaray[WORDS_IN_MEMORY];
                  page	p4k[PAGES_IN_MEMORY]; } system_memory;
 
-typedef union  { msw	array[262144 * BANKS_IN_DEVICE];
+typedef union  { msw	array[(long) 262144 * BANKS_IN_DEVICE];
                  fsbank   b[BANKS_IN_DEVICE]; } device24;
 
 
@@ -243,6 +246,22 @@ typedef struct { unsigned short flags,		 banks;
                  union  { system_memory    *pages;
                           device24         *dev24;
                           device16         *dev16; } s; } device;
+
+/*****************************************************************
+	following 3 values are the high-rder 2 bits
+	of the 24-bit device descriptors in I/O ports 128..191
+*****************************************************************/
+
+#define	SYSMEM_FLAG 0x00800000
+#define	DATA16_FLAG 0x00400000
+#define	FSYS24_FLAG 0x00C00000
+
+/*****************************************************************
+	a 4th value zero = no device corresponds to the descriptor
+	22 other bits in the descriptor are device size
+*****************************************************************/
+
+
 
 
 #define W0	0
@@ -422,6 +441,15 @@ ea &= 0x00FFFFFF;
 #define	WPROTECT
 #define	ABSOTS
 #define	BANK_EDGE_GUARD
+#define	CHECK_ON_BASE
+#undef	WAYPATH		
+
+/************************************************
+	WAYPATH can be switched on
+	to check emulated bus decisions
+	when 2- or 4-word operands
+	straddle non-adjacent memory blocks
+************************************************/
 
 /************************************************
 	default versions with no latent parameter
@@ -437,6 +465,9 @@ ea &= 0x00FFFFFF;
 #define	GUARD_INTERRUPT	ii(XBASE_U,LP_ADDRESS);
 #define	EXIT_INTERRUPT	ii(II_TXIT,0);
 #define	XPO_INTERRUPT	ii(II_XPO,0);
+
+#define GUARD_IIX(X)	ii(XBASE_U, LP_ADDRESS | (X << 4));
+
 
 #define	LP_TSLICE    10 /* latent parameter timeslice YIELD */
 
@@ -500,6 +531,24 @@ ea &= 0x00FFFFFF;
 				__asm__(" shll	$8, %eax");			\
 				__asm__(" movl %%eax,%0" : "=m" (TO) :: "%eax");
 
+#define	WINDOW_READ_RULE(TAG, WINDOW)	\
+				__asm__(" movl %0,%%eax" : "=m" (WINDOW) :: "%eax"); \
+				__asm__(" movb _window_rule(%eax), %al");	\
+				__asm__(" andb _psr+1, %al");			\
+				__asm__(" jz 1f");				\
+				__asm__(" orl $64, %0" : "=m" (WINDOW));	\
+				 __asm__("1:");	
+
+#define  WINDOW_WRITE_RULE(TAG, WINDOW)	\
+				__asm__(" movl %0,%%eax" : "=m" (WINDOW) :: "%eax"); \
+				__asm__(" movb _window_rule(%eax), %al");       \
+				__asm__(" movb %%al,%0" : "=m" (TAG));		\
+				__asm__(" andb _psr+1, %al");                   \
+				__asm__(" jz 1f");				\
+				__asm__(" orl $64, %0" : "=m" (WINDOW));	\
+				__asm__(" movl $128, %0" : "=m" (TAG));		\
+				__asm__("1:");
+
 
 #elif	defined(X86_MSW)
 
@@ -513,7 +562,7 @@ ea &= 0x00FFFFFF;
 
 #define usleep(US)	Sleep(US / 900)
 
-#elif	defined(LLVM_LE)
+#elif	defined(LLVM_LE) || defined(__X64)
 
 	/**********************************************
 		these are for any little-endian
@@ -531,6 +580,19 @@ ea &= 0x00FFFFFF;
 #define ORDER32(TO, FROM) TO = STORE(FROM);
 #define LOAD24(TO, FROM)  TO = LOADL(FROM);
 #define L24SL(TO, FROM)   TO = LOADU(FROM);
+
+#define	WINDOW_READ_RULE(TAG, WINDOW)	\
+	TAG = window_rule[WINDOW] ;	\
+	if (TAG & *(((unsigned char *) &psr) + 1)) WINDOW |= 64;
+
+
+#define	WINDOW_WRITE_RULE(TAG, WINDOW)			\
+	TAG = window_rule[WINDOW] ;			\
+	if (TAG & *(((unsigned char *) &psr) + 1))	\
+	{						\
+	   WINDOW |= 64;				\
+	   TAG = 128;					\
+	}
 
 #else
 

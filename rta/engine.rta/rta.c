@@ -62,13 +62,19 @@ extern int			 indication;
 
 extern system_memory		 memory;
 #define ROM_PAGE		 &memory.p4k[0].w[0];
+extern device			 devices[];
 
 int		 psr = 0x00800000;
 word		*apc = ROM_PAGE;
 
-int		 iselect = 128;
+#ifdef	INSTRUCTION_U
+word		*apcz = &memory.p4k[0].w[4095];
+#endif
 
+int		 iselect = 128;
+int		 contingency;
 int		 b0_name;
+unsigned	 b0_scope;
 page		*b0p = memory.p4k;
 
 int		 _register[REGISTERS];
@@ -179,9 +185,9 @@ int	 base[IO_PORTS] = { 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 			**********************************************/
 
-				0x00800000,
-				0x00E00000,
-				0x00880000 | BANKS_IN_DEVICE16,
+				SYSMEM_FLAG | (PAGES_IN_MEMORY-1),
+				FSYS24_FLAG,
+				DATA16_FLAG | (BANKS_IN_DEVICE16-1),
 
                                          0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -189,19 +195,23 @@ int	 base[IO_PORTS] = { 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  } ;
 
 
-
-
 void execute(word instruction)
 {
    int		 designator = instruction.t1 & 7;
    int		 ea, xtag;
 
-   int		*_p;
+   int		*_p,
+		*_q;
 
-   int		 v, w;
+   int		 v, w, device_index;
+   unsigned	 device_descriptor;
    int		 buffer[4];
+   device	*devicep;
 
    word		*_w;
+
+
+   contingency = 0;		/* no guard fault this far this instruction */
 
    EFFECTIVE_ADDRESS
 
@@ -265,19 +275,20 @@ void execute(word instruction)
 
                 ****************************************************/
 
-               sp--;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp < (GUARD_RANGE_SP + 1))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
+
+               sp--;
 
                _p = &_register[sp];
                *_p = apc - b0p->w;
@@ -592,22 +603,34 @@ void execute(word instruction)
 			if the store target is sp
 			then sp is written without postincrement
 
-               **************************************************/
+                        stepping 06.06.2019
+                        alter the same sp same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
 
-	       v = operand_read(ea, 7) + operand_read(sp, 0);
-               sp++;
+               **************************************************/
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp > GUARD_RANGE_UP)
+                  if (sp < GUARD_RANGE_UP)
+                  {
+                  }
+                  else
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
+
+               _p = &_register[sp];
+               v = *_p;
+               sp++;
+
+	       v += operand_read(ea, 7);
 
                psr &= (0x00FFFFFE);
                psr |= ((v >> 24) & 1);
@@ -698,23 +721,34 @@ void execute(word instruction)
 			compress the value to two-word format
 			and store it
 
+                        stepping 06.06.2019
+                        alter the same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
+
                *************************************************/
 
-               fpp(ea, &_register[sp]);
-	       sp += 4;			/* 4 stack words -> 2 stored words */
+	       /* 4 stack words -> 2 stored words */
+
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp > GUARD_RANGE_UP)
+                  if (sp > (GUARD_RANGE_UP-4))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
+	       _p = &_register[sp];
+               sp += 4;
+//               _q = &sp;
+               fpp(ea, _p);
+//               *_q += 4;	/* _q -> sp[which1] before storage write attempt */
                break;
 
             case FPX:
@@ -729,23 +763,27 @@ void execute(word instruction)
 			expand it to four-word floating-point format
 			and push it on the internal stack
 
+                        stepping 06.06.2019
+                        alter the same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
 
                *************************************************/
-
-               sp -= 4;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp < (GUARD_RANGE_SP + 4))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
+               sp -= 4;
                fpx(ea, &_register[sp]);
                break;
 
@@ -823,8 +861,26 @@ void execute(word instruction)
 			if the store target words include sp
 			then sp is written without postincrement
 
+                        stepping 06.06.2019
+                        alter the same sp same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
+
                *************************************************/
 
+
+               if (psr & 0x00800000)
+               {
+               }
+               else
+               {
+                  if (sp > (GUARD_RANGE_UP - 4))
+                  {
+                     GUARD_INTERRUPT;
+                     break;
+                  }
+               }
 
                #ifdef EDGE
                if (psr & 32768) stacktop4();
@@ -832,11 +888,14 @@ void execute(word instruction)
 
                _p = &_register[sp];
                sp += 4;
+//               _q = &sp;
                burst_write4(_p, ea);
 
                #ifdef EDGE
                if (psr & 32768) stored4(ea);
                #endif
+
+//               *_q += 4;	/*	_q -> sp[which1] before storage write attempt	*/
 
                break;
 
@@ -853,28 +912,31 @@ void execute(word instruction)
 			if the pushed words include sp
 			then sp before decrement is pushed
 
+                        stepping 06.06.2019
+                        alter the same sp same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
+
                *************************************************/
 
-               burst_read4(buffer, ea);
-               sp -= 4;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp < (GUARD_RANGE_SP + 4))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
-               _p = &_register[sp];
-               *_p = buffer[0];
-               *(_p + 1) = buffer[1];
-               *(_p + 2) = buffer[2];
-               *(_p + 3) = buffer[3];
+               _p = &_register[sp - 4];
+               _q = &sp;
+               burst_read4(_p, ea);
+               *_q -= 4;	/* _q -> sp[which1] before storage read attempt */
                break;
 
             case EX:
@@ -904,26 +966,29 @@ void execute(word instruction)
 			if the pushed words include sp
 			then sp before decrement is pushed
 
+                        stepping 06.06.2019
+                        alter the same sp you had
+                        before doing operand read with ea
+                        because if operand read excepts
+                        incremented sp becomes interrupt sp
                *************************************************/
-
-               burst_read2(buffer, ea);
-               sp -=2;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp < (GUARD_RANGE_SP + 2))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
-               _p = &_register[sp];
-               *_p = buffer[0];
-               *(_p + 1) = buffer[1];
+               _p = &_register[sp - 2];
+               _q = &sp;
+               burst_read2(_p, ea);
+               *_q -= 2;	/*	_q -> sp[which1] before operand read attempt */
                break;
 
             case LSC:
@@ -1099,6 +1164,7 @@ void execute(word instruction)
                break;
 		#endif
 
+               #if 0
             case GO:
 
                /***************************************************
@@ -1112,11 +1178,11 @@ void execute(word instruction)
 
                ***************************************************/
 
-               v = operand_read(ea, 7);
+               w = operand_read(ea, 7);
 
-               if (v & 0x00800000)
+               if (w & 0x00800000)
                {
-                  b0_name = v >> 6;
+//                  b0_name = w >> 6;
 
                   /***********************************************
 
@@ -1143,23 +1209,37 @@ void execute(word instruction)
 
                   ************************************************/
 
-                  if (v & 0x00400000)
+                  if (w & 0x00400000)
                   {
-                     b0_name  = v & 0x003FFFF8;
-                     v &= 7;
+                     v = w & 0x003FFFF8; 
+                     b0_scope = v | 7;
+                     w &= 7;
                   }
                   else
                   {
-                     b0_name  = (v & 0x003FFFC0) >> 6;
-                     v &= 63;
+                     v = w >> 6;
+                     b0_scope = v;
+                     w &= 63;
                   }
                }
 
-               base[0] = b0_name;
-               b0p = &memory.p4k[b0_name];
-               apc = &b0p->w[v];
+               if (b0_scope < PAGES_IN_MEMORY)
+               {
+               }
+               else
+               {
+                  GUARD_INTERRUPT
+                  break;
+               }
+
+               b0_name = v;
+               base[0] = v;
+               b0p = &memory.p4k[v];
+               apc = &b0p->w[w];
 
                break;
+
+               #endif
 
             case CALL:
 
@@ -1170,25 +1250,29 @@ void execute(word instruction)
 			stack where far return instruction FRET should
 			find them later
 
-              **********************************************************/
+               **********************************************************/
 
-               sp -= 2;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp < (GUARD_RANGE_SP + 2))
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
+               sp -= 2;
+
                _p = &_register[sp];
                _p[1] = apc - b0p->w;
                _p[0] = b0_name;
+
+
+            case GO:
 
                /***************************************************
 
@@ -1201,23 +1285,22 @@ void execute(word instruction)
 
                ***************************************************/
 
-               v = operand_read(ea, 7);
+               b0_name = operand_read(ea, 7);
 
-               if (v & 0x00800000)
+               if (b0_name & 0x00800000)
                {
-                  b0_name = v >> 6;
-
-                  /***********************************************
-
-			system list of translate base values in B71
-			for descriptor handle values  0x008xxxxx
-
-			or user list of translate base values in TCB
-                        for descriptor handle values  0x00Cxxxxx
-
+                  /************************************************
+			read the gate
                   ************************************************/
+
+                  burst_read2(buffer, b0_name & 0x003FFFFF);
+                  b0_name = buffer[1];
+                  b0_scope = b0_name & 0x003FFFFF;
+                  v = b0_scope;
+                  b0_scope += buffer[0] >> 18;
+                  w = buffer[0] & 262143; 
                }
-               else
+               else if (b0_name & 0x00400000)
                {
                   /***********************************************
 
@@ -1232,21 +1315,35 @@ void execute(word instruction)
 
                   ************************************************/
 
-                  if (v & 0x00400000)
-                  {
-                     b0_name  = v & 0x003FFFF8;
-                     v &= 7;
-                  }
-                  else
-                  {
-                     b0_name  = (v & 0x003FFFC0) >> 6;
-                     v &= 63;
-                  }
+                  v = b0_name & 0x003FFFF8;
+                  w = b0_name & 7;
+                  b0_scope = v | 7;
+               }
+               else
+               {
+                  w = b0_name & 63;
+                  b0_name >>= 6;
+                  v = b0_name;
+                  b0_scope = v;
                }
 
-               base[0] = b0_name;
-               b0p = &memory.p4k[b0_name];
-               apc = &b0p->w[v];
+               if (b0_scope < PAGES_IN_MEMORY)
+               {
+               }
+               else
+               {
+                  GUARD_INTERRUPT
+                  break;
+               }
+
+               base[0] = v;
+               b0p = &memory.p4k[v];
+               apc = &b0p->w[w];
+
+               #ifdef INSTRUCTION_U
+               base[INSTRUCTION_U] = b0_scope;
+               apcz = &memory.p4k[b0_scope].w[4095];
+               #endif
 
                break;
          }
@@ -1467,7 +1564,6 @@ void execute(word instruction)
                break;
 
             case SB:
-               if (designator ==  I) usleep(ea);
                if (designator ==  I) break;
                if (designator == XI) break;
 
@@ -1494,25 +1590,69 @@ void execute(word instruction)
 
                      if (v & 0x00400000)
                      {
-                        if (v & 63)
+                        /*********************************************
+                           device array outside system memory
+                           only interrupt code may base it
+                        *********************************************/
+
+                        device_index = v & 63;
+
+                        if ((device_index == 0) || (psr & 0x00800000))
                         {
-                           /*********************************************
+                           /******************************************
+                              allowed for interrupt code but check
+                           ******************************************/
 
-				device array outside system memory
-				only interrupt code may base it
-
-                           *********************************************/
-
-                           if (psr & 0x00800000)
+                           #ifdef CHECK_ON_BASE
+                           device_index = v & 63;
+                           device_descriptor = base[128 + device_index];
+                              
+                           switch (device_descriptor & 0x00C00000)
                            {
+                              case SYSMEM_FLAG:
+                                 if (((v & 0x003FFFC0) | 63)
+                                 > (device_descriptor & 0x003FFFFF))
+                                    v = 0x00C00001;
+
+                                 break;
+
+                              case DATA16_FLAG:
+                              case FSYS24_FLAG:
+                                 if (((v >> 6) & 65535)
+                                 > (base[128 + device_index] & 65535))
+                                    v = 0x00C00001;
+
+                                 break;
+
+                              default:
+                                 v = 0x00C00001;
+
                            }
-                           else
-                           {
-                              ii(XBASE_U, LP_PERMISSION);
-                              break;
-                           }
+                           #endif
+                        }
+                        else
+                        {
+                           ii(XBASE_U, LP_ADDRESS);
+                           break;
                         }
                      }
+
+                     #ifdef CHECK_ON_BASE
+                     else if ((v & 0x003FFFFF) < PAGES_IN_MEMORY)
+                     {
+                        /***********************************************
+                           you're fine
+                        ***********************************************/
+                     }
+                     else
+                     {
+                        /***********************************************
+                           no such block of storage
+                        ***********************************************/
+
+                        v = 0x00C00001;
+                     }
+                     #endif
 
                      w = base[65] & 0x0000FFFF;
 
@@ -1567,9 +1707,12 @@ void execute(word instruction)
 
                   v = *_p;
                   v += ea;
-                  v &= 0x00FFFFFF;
+//                  v &= 0x00FFFFFF;
 
-                  if ((unsigned) v > 262143)
+                  if ((b0_name + ((unsigned) v >> 12)) < PAGES_IN_MEMORY)
+                  {
+                  }
+                  else
                   {
                      GUARD_INTERRUPT
                      break;
@@ -1603,73 +1746,67 @@ void execute(word instruction)
                {
                   /******************************************************
                         FRET instruction (far routine return)
-                  *******************************************************/
 
-                  _p = &_register[sp];
-                  sp += 2;
+                        stepping 06.06.2019
+                        alter the sp which you had before reading memory
+                        because if the read gets a guard exception
+                        sp is then name of the interrupt sp [iselect | SP]
+                  *******************************************************/
 
                   if (psr & 0x00800000)
                   {
                   }
                   else
                   {
-                     if (sp == GUARD_RANGE_UP + 2)
+                     if (sp == GUARD_RANGE_UP)
                      {
                         EXIT_INTERRUPT;
                         break;
                      }
 
-                     if (sp > GUARD_RANGE_UP)
+                     if (sp > (GUARD_RANGE_UP - 1))
                      {
                         GUARD_INTERRUPT
                         break;
                      }
                   }
 
+                  _p = &_register[sp];
+                  sp += 2;
 
-                  v = *_p++;
+                  b0_name = *_p;
 
-                  b0_name = v;
+                  v = *(_p + 1);
+                  v += ea;
+                  
+                  base[0] = b0_scope = b0_name & 0x003FFFFF;
+                  b0_name = *_p;
+                  b0p = &memory.p4k[b0_scope];
+                  apc = &b0p->w[v];
 
-                  if (v & 0x00800000)
+                  if (b0_name & 0x00800000)
+                  {
+                     b0_scope += b0p->w[64].t1 >> 2;
+                  }
+                  else if (b0_name & 0x00400000) b0_scope += 7;
+
+                  if (b0_scope < PAGES_IN_MEMORY)
                   {
                   }
                   else
                   {
-                     if (v & 0x00400000)
-                     {
-                        v &= 0x003FFFF8;
-                     }
-                     #if 0
-                     else
-                     {
-                        v >>= 6;
-                        v &= 0x0000FFFF;
-                     }
+                     #if 1
+                     GUARD_INTERRUPT;
+                     #else
+                     b0_scope = base[128] & 0x3FFFFF;
                      #endif
                   }
 
-                  base[0] = v;
+                  #ifdef INSTRUCTION_U
+                  base[INSTRUCTION_U] = b0_scope;
+                  apcz = &memory.p4k[b0_scope].w[4095];
+                  #endif
 
-                  if ((unsigned) v > (PAGES_IN_MEMORY-1))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-
-                  b0p = &memory.p4k[v];
-
-                  v = *_p;
-                  v += ea;
-
-                  if ((unsigned) v > 262143)
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-
-                  v &+ 0x00FFFFFF;
-                  apc = &b0p->w[v];
                   break;
                }
 
@@ -1680,26 +1817,34 @@ void execute(word instruction)
 
 			unchanged on stepping 28.02.2019
 			if the store target is sp
-			then sp is written without postincrement 
+			then sp is written without postincrement
+
+                        stepping 06.06.2019
+                        alter the sp which you had before reading memory
+                        because if the read gets a guard exception
+                        sp is then name of the interrupt sp [iselect | SP]
 
                ***********************************************************/
-
-               _p = &_register[sp];
-               sp++;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp > GUARD_RANGE_UP)
+                  if (sp < GUARD_RANGE_UP)
+                  {
+                  }
+                  else
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
+               _p = &_register[sp];
+               sp++;
                operand_write(*_p, ea, designator);
+
                break;
 
             case LR:
@@ -1812,7 +1957,7 @@ void execute(word instruction)
                         JDZ instruction
                   *******************************************************/
 
-                  if ((a | b) & 0x00FFFFFF)
+                  if (((a) | (b)) & 0x00FFFFFF)
                   {
                   }
                   else apc = &b0p->w[ea];
@@ -1830,33 +1975,32 @@ void execute(word instruction)
                   sp += 4;
                   _p++;
                   psr = *_p++;
-                  v = *_p++;
+                  b0_name = *_p++;
 
-                  b0_name = v;
+                  b0_scope = v = b0_name & 0x003FFFFF;
 
-                  if (v & 0x00800000)
+                  if (b0_name & 0x00800000)
                   {
+                     b0_scope += b0p->w[64].t1 >> 2;
+                  }
+                  else if (b0_name & 0x00400000)
+                  {
+                     b0_scope += 7;
+                     v &= 0x003FFFF8;
                   }
                   else
                   {
-                     if (v & 0x00400000)
-                     {
-                        v &= 0x003FFFF8;
-                     }
-                     else
-                     {
-                        #if 1
-                        v &= 0x003FFFFF;
-                        #else
-                        v >>= 6;
-                        v &= 0xFFFF;
-                        #endif
-                     }
+                     v &= 0x003FFFFF;
                   }
 
                   base[0] = v;
 
                   b0p = &memory.p4k[v];
+
+                  #ifdef INSTRUCTION_U
+                  base[INSTRUCTION_U] = b0_scope;
+                  apcz = &memory.p4k[b0_scope].w[4095];
+                  #endif
 
                   v = *_p;
                   v += ea;
@@ -2160,25 +2304,31 @@ void execute(word instruction)
 			if the pushed word is sp
 			then sp before decrement is pushed
 
+			stepping 06.06.2019
+			alter the sp which you had before reading memory
+			because if the read gets a guard exception
+			sp is then name of the interrupt sp [iselect | SP]
                **********************************************************/
-
-               v = operand_read(ea, designator);
-               sp--;
 
                if (psr & 0x00800000)
                {
                }
                else
                {
-                  if (sp < GUARD_RANGE_SP)
+                  if (sp > GUARD_RANGE_SP)
+                  {
+                  }
+                  else
                   {
                      GUARD_INTERRUPT
                      break;
                   }
                }
 
-               _p = &_register[sp];
-               *_p = v;
+               _p = &_register[sp - 1];
+               _q = &sp;
+               *_p = operand_read(ea, designator);
+               *_q -= 1;	/* _q -> sp[which1] before operand read attempt */
                break;
          }
    }

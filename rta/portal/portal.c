@@ -161,9 +161,13 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
       printf(" %d launched %s\n", x, ofile2);
       y = waitpid(x, &j, 0);
       printf(" %d returned %s, %d\n", y, ofile2, j);
-      if (y < 0) printf("%d\n", errno);
+      if (y < 0) printf("**E** %d\n", errno);
    }
-   else execlp(ofile2, "blanco", (char *) 0);
+   else
+   {
+      y = execlp(ofile2, "blanco", (char *) 0);
+      if (y < 0) printf("E %d nonstart ./%s\n", errno, ofile2);
+   }
    #endif
 
    return 0;
