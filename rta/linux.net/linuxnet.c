@@ -499,6 +499,8 @@ static void forward(int x, unsigned char *p, int bytes)
 
    unsigned char	 showrow[16];
 
+   if (rxdata->preamble.flag) return;
+
          switch (iftype[x])
          {
             case DLT_NULL:
