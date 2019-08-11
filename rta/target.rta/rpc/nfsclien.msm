@@ -234,10 +234,13 @@ nfs_open_path*	$tree
 							. in address space
 
 	c	(claim_fob)	(FS$NFS,,FS$NFS_WORDS)	. file open descriptor in application B1
-	lr	-NO_STORAGE,,xi
-	jza	nfs_open_path_e
-	sy	fobloc
 
+	tz	y
+	j	forward
+	lr	-NO_STORAGE,,xi
+	j	nfs_open_path_e
+
+forward	sy	fobloc
 	dsr	48				. initialise 72-bit position in file
 	z	openfile_bloc:quantum_pointer
 	ds	openfile_bloc:quantum_pointer+1
@@ -395,7 +398,7 @@ data!	lx	fobloc
 	lr	a			. this should be the handle #
 	jna	nfs_open_path_s
 	lx	fobloc			. this should be the file open structure
-	ii	USOCKET$NFS
+	ii	FILE$HANDLE
 					. unwind, status is cached in r
 nfs_open_path_s				. drop message segment from server
 	sr	status
@@ -429,8 +432,11 @@ nfs_open_path_x
 	$root				. end nfsopen -> nfs_open_path
 
 nfs_close_path
-	dsr	16
-	sbr	8
+	$head_far		 params(close_handle,	int)
+
+	la	close_handle
+	ii	READ_SOCKET$
+
 	la	openfile_bloc:socket, b		. address the
 	lx	openfile_bloc:socket+1, b	. TCP connection
 	sabr	BSOCKET
@@ -451,7 +457,7 @@ nfs_data_read $tree
 				bufferp,		int	;
 				bytes,			int)	;
 								;
-			scalars(connectionp,		int	;
+			scalars(connectionp,		long	;
 				foblocp,		int	;
 				segment_axw,		int	;
 				wdatac_wdata,		long	;
@@ -459,12 +465,13 @@ nfs_data_read $tree
 				record_mark,		long	;
 				record_net_bytes,	long	)
 
-	ii	ON_NETB$
-	and	4095,,xi	. B1 block index in B must be based already
-	or	4096,,xi	. because this call is from application space
 
-	sa	foblocp
-	dl	openfile_bloc:socket, a
+	ii	ON_NETB$
+	la	handle
+	ii	READ_SOCKET$
+	sb	foblocp
+
+	dl	openfile_bloc:socket, b
 	sabr	BSOCKET
 	sb	connectionp
 
@@ -528,6 +535,9 @@ net_response_fail
 	lr	1, a, i
 
 nfs_data_read_z
+	la	foblocp
+	la	openfile_bloc:socket,a
+	sabr	BSOCKET
 	lx	connectionp
 	call	(__disconnect_free_tcp)		. close the connection
 						. and free the privileged port
@@ -618,11 +628,15 @@ complete_record
 
 	dl	total
 	ly	foblocp
-	da	openfile_bloc:quantum_pointer
-	dl	total
+	da	openfile_bloc:quantum_pointer+1
+	ds	openfile_bloc:quantum_pointer+1
+	sc	a
+	aa	openfile_bloc:quantum_pointer
+	sa	openfile_bloc:quantum_pointer
 
 	la	0,,xi
 	wsr	16		. push final octets out of WDATA
+	dl	total
 
 nfs_data_read_x
 	ii	FREE_NETB$
@@ -630,6 +644,35 @@ nfs_data_read_x
 	$ret
 
 	$root				. end nfsread -> nfs_data_read
+
+
+.	vector name nfs_seek
+
+nfs_file_position	$tree
+	$head_far	 params(handle,		int	;
+				position,	long)	;
+							;
+			scalars(caller_y,	int, y	;
+				octet_position,	triple	)
+
+
+	la	handle
+	ii	READ_SOCKET$
+	ly	b
+	lb	position+1
+	mf	3,,xi
+	ds	octet_position+1
+	lb	position
+	mf	3,,xi
+	da	octet_position
+	ds	openfile_bloc:quantum_pointer
+	pop	0, sp
+	pop	0, sp
+	pop	openfile_bloc:quantum_pointer+2
+	pop	y
+	fret	0
+
+			$root
 
 nfs	$tree
 startrq
@@ -752,7 +795,8 @@ counted_send_opaque
 				opaque_string,	int		;
 				opaque_flags,	int	)	;
 								;
-			scalars(opaque_count,	long	)
+			scalars(opaque_count,	long		;
+				opaque_pad,	int	)
 
 	lx	connexiopaque
 
@@ -762,14 +806,22 @@ counted_send_opaque
 	lb	opaque_count,,i
 	lcal	send16to16i
 
-	lb	opaque_flags
+	lb	05010,,xi
 	sb	SOCKET_CALL_FLAGS
 
 	la	opaque_bytes
-	la	3, a, i
-	and	-4,,xi
-
 	lb	opaque_string
+	sb	q
+	call	(tcp_tx)
+
+	lb	opaque_flags
+	sb	SOCKET_CALL_FLAGS
+
+	la	4,,xi
+	ana	opaque_bytes
+	and	3,,xi
+
+	lb	opaque_pad,,i
 	sb	q
 	call	(tcp_tx)
 	

@@ -369,7 +369,23 @@ static void inject_physical_address_tuple(int handle, char *data, long long targ
       sscanf(data + 1, "%x", &label_index);
       sscanf(data + 6, "%x", &field);
 
+      #ifdef NEVER
+
+      #error this is wrong
+
+	assembly currently points
+        to the 1st word of a 2-word gate
+        and always says index zero
+	or a predetermined application index
+	for export / self-reference
+        dynamic loader in target system image
+	shall use other unresolved index values
+	for import
+	and updates the 2nd word of gates
+
       target += (long long) label_index;
+
+      #endif
 
       field |= 0x00800000;
       sum = field + target + (target >> 24);

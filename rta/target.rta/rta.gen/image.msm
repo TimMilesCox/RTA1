@@ -188,8 +188,9 @@ B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at
 	$endif
 
 USOCKET$*	$vector		usocket_ii
-B1$FRAME*	$vector		b1_frame_ii
-USOCKET$NFS*	$vector		usocket_nfs_ii
+FO$FRAME*	$vector		file_open_frame_ii
+FO$HEAP*	$vector		files_open_heap_ii
+FILE$HANDLE*	$vector		file_handle_ii
 
 	$do		60-$,	ir	0
 
@@ -417,16 +418,13 @@ read_handle_ii
 	sa		a
 	ir		0
 
-usocket_nfs_ii
+file_handle_ii
 	lcal		check_handle
 	jna		usocket_nane
 	lk		(255*/16s)
-	mta		(AF_INET*/16s)
+	mta		(AF_INET*/16s)	. more file types go here
 	j		usocket_nane
 	lb		x		. application x -> file open descriptor
-	mlb		a_x		. copy 8 high order bits from a to b
-	sb		0, x
-	inB		1		. the file open descriptor is in application B1
 	sb		1, x
 	ir		0
 
@@ -739,21 +737,21 @@ tag_iiz	la	(0C00001s)		. prevent accidental access
 	ir	0
 
 
-b1_frame_ii				. only ISRs may write vectors:B1_TABLEP
-	lx	B1_TABLEP
-	lr	01000+1024,,xi		. impose a lower limit
-	la	a			. read descriptor request - 1
-	and	255,,xi
-	xor	-1,,xi			. change it to minus descriptor request
-	ax	a_x			. decrement
-	jxge	b1_tablep_store		. new pointer still high enough
-	z	a			. or no descriptor space grant
+file_open_frame_ii			. only ISRs may write vectors:FOPEN_HEAP,FOPEN_HEAPU
+	lx	a
+	tz	FILE_OPEN_HEAPU
+	sx	FILE_OPEN_HEAPU
 	ir	0
 
-b1_tablep_store
-	sx	a			. descriptor space grant
-	sx	 B1_TABLEP		. descriptor space update
+files_open_heap_ii
+	la	a
+	lcal	file_open_heap
 	ir	0
+
+file_open_heap
+	sa	FILE_OPEN_HEAP
+	sa	FILE_OPEN_HEAPU
+	lret	0
 
 TRANSFER_PAGE_HIGH
 
