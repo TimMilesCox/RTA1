@@ -2,7 +2,7 @@
 .model	small
 .code
 _execute:
-;        mov     dword ptr [__register+152*4], esp
+        mov     dword ptr [__register+287*4], esp
 	mov	ecx, eax
 	shl	ecx, 8
 	shr	ecx, 24-5	; instruction index in ch
@@ -21,7 +21,7 @@ derive_ea:
 	test	ax, 32768	; indexing / indirection ?
 	jz	ea_derived	; no
 
-	mov	bx, ax
+	mov	ebx, eax
 	and	ax, 32767
 	shr	bx, 12		; position index tag
 	test	bl, 6		; indirect or indexed ?
@@ -37,10 +37,11 @@ indexed_4bit:
 	add	eax, dword ptr [ebp+ebx*4]
 	jmp	ea_derived
 
-indirect:				; indirect via page B0 / B1
-	shl	ecx, 16		; zero designator
+indirect:			; indirect via page B0 / B1
+	mov	bx, cx
+	mov	cx, 0		; cl must be zero to read 1-word indirection pointer
 	call	_operand_read
-	shr	ecx, 16		; retrieve designator
+	mov	cx, bx		; retrieve instruction:class into cx
 
 ea_derived:
 	movzx	ebx, ch		; instruction index
@@ -50,9 +51,9 @@ ea_derived:
 	jnz	integer_operations
 	jmp	large_operations
 
-joshi:	jmp	shifts_jumps
-
 escape:	ret
+
+joshi:	jmp	shifts_jumps
 
 integer_operations:
 	mov	ebx, dword ptr [operations1+ebx*4]

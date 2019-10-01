@@ -108,7 +108,7 @@ void netbank()
    }
 
    dpointer = (mm_netbuffer *) (void *) shmat(mhandle, NULL, 0);
-   devices[2].s.dev16 = (void *) dpointer;
+   devices[2].dev16 = (void *) dpointer;
    printf("netbase %p\n", dpointer);
 
    if ((long) dpointer < 0) printf("E %d\n", errno);
@@ -157,12 +157,12 @@ void assign_interface_relay(int device_id, char *text)
    device               *_q = devices + device_id;
    struct shmid_ds       info;
    
-   sscanf(text + 1, "%x", &rkey);
+   sscanf(text, "%x", &rkey);
    _x = shmget(rkey, 0, 0);
    
    if (_x < 0)
    {  
-      printf("net device %d relay not added\n", device_id, errno);
+      printf("net device %d relay not assigned %d\n", device_id, errno);
       return;
    }
    
@@ -170,7 +170,7 @@ void assign_interface_relay(int device_id, char *text)
    
    if (_y < 0)
    {  
-      printf("net device %d relay not added\n", device_id, errno);
+      printf("net device %d relay not staticised %d\n", device_id, errno);
       return;
    }
    
@@ -192,8 +192,8 @@ void assign_interface_relay(int device_id, char *text)
       return;
    }
    
-   _q->flags = DEVICE | DATA16;
-   _q->s.dev16 = _p;
+//   _q->flags = DEVICE | DATA16;
+//   _q->s.dev16 = (bank16 *) _p;
    base[128 + device_id] = DATA16_FLAG | block ; 
    printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);
 }

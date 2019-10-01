@@ -96,7 +96,7 @@ extern unsigned int	 base[];
 extern system_memory	 memory;
 extern device		 devices[];
 
-static word		*breakpoint;
+word			*breakpoint;
 
 static int		 runout;
 
@@ -107,16 +107,17 @@ extern void              assign_interface_relay(int device_id, char *text);
 
 static void              assign_array(int device_id, char *text);
 static void		 statement();
-static void		 action(char *request);
-static void		 load_fs(int device_id, char *path);
+extern			 void print_register_row(int index);
+extern void		 action(char *request);
+void			 load_fs(int device_id, char *path);
 
 #ifdef METRIC
 unsigned int             delta,
                          metric;
 
-static unsigned long long        delta_base,
-                                 total_delta,
-                                 total_metric;
+unsigned long long	 delta_base,
+                         total_delta,
+                         total_metric;
 
 static void              accumulate_metric();
 #endif
@@ -156,7 +157,15 @@ static void *async()
       request[0] = 0;
       _p = fgets(request, 360, stdin);
 
-      if      (_p) action(_p);
+      if      (_p)
+      {
+         if (*_p == '.')
+         {
+            runout = -1;
+            indication &= -1 ^ LOCKSTEP;
+         }
+         else action(_p);
+      }
       else if (request[0]) action(request);
       else printf("please key console input again\n");
 
@@ -172,35 +181,13 @@ static int msw2i(msw w)
    return (w.t1 << 16) | (w.t2 << 8) | w.t3;
 }
 
-static void print_register_row(int index)
-{
-   #if 1
-   int		 xx = 8;
-
-   printf("%2.2x:", index);
-   while ((xx--) && (index < REGISTERS))
-   {
-      if (index < 256) printf(" %6.6x", _register[index++]);
-      else             printf(" %8.8x", _register[index++]);
-   }
-   
-   #else
-   printf("%2.2x: %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x %6.6x",
-           index,
-           _register[index],   _register[index+1],
-           _register[index+2], _register[index+3],
-           _register[index+4], _register[index+5],
-           _register[index+6], _register[index+7]);
-   #endif
-}
-
 static void statement()
 {
    int			 index = iselect;
    int			 index2;
 
    instruction_display(apc - 1, 1, flag['l'-'a']);
-   printf("%6.6x %8.8x\n", psr, apc - memory.array);
+   printf("%6.6x %8.8x\n", psr, apc - memory.p4k[0].w);
    instruction_display(apc, 6, flag['l'-'a']);
 
    while (index < (iselect | 24))
@@ -280,7 +267,7 @@ int main(int argc, char *argv[])
 
    int			 f, count, image_size = 0;
 
-   word			*load_address = memory.array;
+   word			*load_address = memory.p4k[0].w;
    word			 data_word = { 0, 0, 0, 0 } ;
 
    #ifdef METRIC
@@ -574,255 +561,13 @@ int main(int argc, char *argv[])
 *************************************************/
 
 
-static void action(char request[])
-{
-   word			 sample;
-   word			*departure;
-
-   int			 xx,
-			 index,
-                         base_tag,
-                         base_index,
-                         offset,
-                         absolute;
-
-   int			 symbol = request[0];
-   int			 device_id;
-
-   char			 path[360];
-
-   #ifdef METRIC
-   double                average,
-                         quantum;
-
-   if (symbol == 'i')
-   {
-      average = total_metric;
-      quantum = total_delta;
-      average /= quantum;
-      printf("instructions %lld usecs %lld approximate MIPS %f\n",
-              total_metric, total_delta, average);
-
-      putchar(':');
-      fflush(stdout);
-      return;
-   }
-   #endif
-
-   if (flag['s'-'a'] == 0)
-   {
-      if ((symbol ^ 's') && (symbol ^ '.'))
-      {
-         printf("key s for single step\n");
-         return;
-      }
-   }
-
-   switch(symbol)
-   {
-      case 's':
-         flag['s'-'a'] = 1;
-         break;
-
-      case 'g':
-         xx = sscanf(request + 1, "%x:%x", &index, &offset);
-
-         if (xx == 1) breakpoint = &b0p->w[index];
-         if (xx == 2) breakpoint = &memory.p4k[index].w[offset];
-
-         if (xx) indication |= BREAKPOINT;
-         flag['s'-'a'] = 0;
-         indication &= -1 ^ LOCKSTEP;
-         putchar(':');
-         fflush(stdout);
-         break;
-
-      case '+':
-         index = sp;
-         index += 23;
-      case '0':
-      case 'r':
-         if (symbol ^ '+') index = iselect | 24;
-
-         if      (symbol == '0') sscanf(request,     "%x", &index);
-         else if (symbol == 'r') sscanf(request + 1, "%d", &index);
-
-         while (index < REGISTERS)
-         {
-            print_register_row(index);
-            index += 8;
-            fgets(request, 48, stdin);
-            if (request[0] == '.') break;
-         }
-
-         break;
-
-      case 'm':
-
-         xx = sscanf(&request[1], "%x:%x", &base_index, &offset);
-
-         if (xx < 2)
-         {
-            offset = base_index;
-
-            for (;;)
-            {
-               index = offset + 8;
-
-               printf("%6.6x :", offset);
-
-               while (offset < index)
-               {
-                  sample = memory_read(offset++);
-                  printf(" %2.2x%2.2x%2.2x", sample.t1, sample.t2, sample.t3);
-               }
-
-               fgets(request, 48, stdin);
-               if (request[0] == '.') break;
-            }
-         }
-         else
-         {
-            absolute = (base_index << 12) + offset;
-
-            for (;;)
-            {
-               index = absolute + 8;
-               printf("%6.6x:%6.6x :", base_index, offset);
-               offset += 8;
-
-               while (absolute < index)
-               {
-                  if (absolute > (WORDS_IN_MEMORY - 1)) break;
-                  sample = memory.array[absolute++];
-                  printf(" %2.2x%2.2x%2.2x", sample.t1, sample.t2, sample.t3);
-               }
-
-               fgets(request, 48, stdin);
-               if (request[0] == '.') break;
-            }
-         }
-
-         break;
-
-      case 'd':
-
-	/*****************************************************
-		for viewing peripheral device arrays
-	*****************************************************/
-
-         absolute = 0;		/* the device or the offset */
-         offset = 0;
-         base_tag = 0;
-
-         xx = sscanf(request +1, "%x:%x", &absolute, &offset);
-
-         if (xx < 2)
-         {
-            offset = absolute;	/* one or zero values read	*/
-            absolute = 0;	/* device comes from base_index	*/
-
-            if (base_tag = offset & 0x00FC0000)
-            {
-               base_tag >>= 18;
-               offset &= 0x0003FFFF;
-            }
-            else
-            {
-               base_tag = offset & 0x0003F000;
-               base_tag >>= 12;
-               offset &= 0x00000FFF;
-            }
-
-            if ((base_tag)
-            &&  (base_tag < 8)
-            &&  (psr & (32768 >> base_tag))) base_tag += 64;
-
-            base_index = base[base_tag];
-            if (base_index & 0x00400000) absolute = base_index & 63;
-//            printf("[%x %x %x %x]\n", absolute, base_tag, base_index, offset);
-         }
-         else base_index = 0x400000 | absolute;
-
-         for (;;)
-         {
-            printf("%6.6x:%6.6x :", base_index, offset);
-            index = offset + 8;
-
-            while (offset < index)
-            {
-               xx = device_read(absolute, base_index, offset++);
-               printf(" %6.6x", xx);
-            } 
-
-            fgets(request, 48, stdin);
-            if (request[0] == '.') break;
-         }
-
-         break;
-
-      case 'b':
-         for (xx = 0; xx < 72; xx++)
-         {
-            if (!(xx & 7)) printf("\n%2.2x:", xx);
-            printf(" %6.6x", base[xx]);
-         }
-
-         printf("\n7c                             ");
-
-         for (xx = 124; xx < 192; xx++)
-         {
-            if (!(xx & 7)) printf("\n%2.2x:", xx);
-            printf(" %6.6x", base[xx]);
-         }
-
-         putchar('\n');
-
-         break;
-
-      case 'l':
-         xx = sscanf(&request[1], "%d %s", &device_id, path);
-         if (xx == 2) load_fs(device_id, path);
-         break;
-
-      case 'h':
-         printf("LF\texecute one instruction and display new state\n");
-         printf("+\tdisplay more internal stack registers\n");
-         printf("0n\tdisplay registers starting at hex address\n");
-         printf("r n\tdisplay registers starting at decimal address\n");
-         printf("b\tdisplay relocation / configuration ports\n\n");
-         printf("m [[page:]offset]\tdisplay system memory\n");
-         printf("\tdefault page[s] in current address space\n\n");
-         printf("d [[device:]offset]\tdisplay peripheral memory array[s]\n");
-         printf("\tdefault device[s] in current address space\n\n");
-         printf("g [[page:]breakpoint]\trun [to breakpoint]\n");
-         printf("\tdefault page is current instruction section\n");
-         printf("\tto remove breakpoint g0:0\n\n");
-         printf(".\texit emulator\n");
-         break;
-
-      case '.':
-         runout = -1;
-         indication &= -1 ^ LOCKSTEP;
-         break;
-
-      case '?':
-         printf("Stepping %s\n", STEPPING);
-         break;
-
-      default:
-         indication &= -1 ^ LOCKSTEP;
-         break;
-   }
-}
-
-static void load_fs(int device_id, char *path)
+void load_fs(int device_id, char *path)
 {
    int		 xx,
 		 banks,
 		 index = 0;
 
-   char		*loader = (char *) devices[device_id].s.dev24;
+   char		*loader = (char *) devices[device_id].dev24;
 
    #ifdef X86_MSW
    int		 f = open(path, O_RDONLY | O_BINARY, 0444);
@@ -892,7 +637,7 @@ static void load_fs(int device_id, char *path)
          return;
       }
 
-      devices[device_id].s.dev24 = (device24 *) loader;
+      devices[device_id].dev24 = (fsbank *) loader;
       base[128 + device_id] = FSYS24_FLAG | banks - 1;
 
       memcpy(loader, (char *) &page, sizeof(page));
@@ -921,13 +666,20 @@ static void assign_array(int device_id, char *text)
    char         *where;
 
    sscanf(text + 1, "%d", &banks);
+
+   if ((banks < 1) || banks > 65536)
+   {
+      printf("+storage banks requested must be decimal 1..65536\n");
+      return;
+   }
+
    words = banks << 18;
    where = malloc(words << 2);
 
    if (where)
    {
-      devices[device_id].flags = DEVICE | SYSMEM;
-      devices[device_id].s.pages = (system_memory *) where;
+//      devices[device_id].flags = DEVICE | SYSMEM;
+      devices[device_id].pages = (page *) where;
       base[128 + device_id] = SYSMEM_FLAG | ((banks << 6) - 1);
       printf("device %d additional %ld words memory array added\n", device_id, words);
    }

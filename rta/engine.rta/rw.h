@@ -55,3 +55,5 @@ extern word memory_read(unsigned ea);
 #ifdef ABSOTS
 extern word *memory_hold(unsigned ea);
 #endif
+
+int device_read(int device_index, int relocation_base, unsigned offset, int designator);

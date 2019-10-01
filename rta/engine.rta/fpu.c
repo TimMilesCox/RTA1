@@ -302,7 +302,6 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
    **********************************************************/
 
-
    for (;;)
    {
       carry += left[to];
@@ -382,7 +381,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
 
          ****************************************************/
 
-         sleft(signs, mantissa_words + 1, left);
+         sleft(signs, mantissa_words, left + 1);
          scale--;
          if (scale < downscale) break;
       }
@@ -696,6 +695,14 @@ void fm(int ea)
 		all those adds carried up to the normalising bit
 
          ************************************************************/
+
+         #define FP_EITHER_OR
+         #ifdef  FP_EITHER_OR
+         if (psr & FLOATING_RESIDUE) around[3] = 0;
+         shift = add(add_words + 1, result + 1, around);
+         characteristic += shift;                  /*      1 or 0     */
+         if (shift) sright(shift, add_words, result + 1);
+         #endif
       }
       else
       {
@@ -705,7 +712,7 @@ void fm(int ea)
 
          ***********************************************************/
 
-         sleft(0, add_words, result + 1);
+         sleft(0, add_words + 1, result + 1);
          characteristic--;
       }
 
@@ -719,10 +726,12 @@ void fm(int ea)
 		bits, so they are added afterwards
       **************************************************************/
 
+      #ifndef FP_EITHER_OR
       if (psr & FLOATING_RESIDUE) around[3] = 0;
       shift = add(add_words + 1, result + 1, around);
       characteristic += shift;			/*      1 or 0     */ 
       if (shift) sright(shift, add_words, result + 1); 
+      #endif
 
       if (characteristic & 0xFF800000)
       {
@@ -869,12 +878,10 @@ void fd(int ea)
          remainder[2] = lookaside[1];
          remainder[3] = lookaside[2];
 
-         if (psr & FLOATING_RESIDUE)
-         {
-            remainder[4] = lookaside[3];
-            remainder[5] = lookaside[4];
-            remainder[6] = lookaside[5];
-         }
+         remainder[4] = lookaside[3];
+         remainder[5] = lookaside[4];
+         remainder[6] = lookaside[5];
+         remainder[7] = lookaside[6];
       }
 
       sleft(carry, mantissa_words, reciprocal + 1);
@@ -882,12 +889,6 @@ void fd(int ea)
    }
 
    reciprocal[0] = remainder[0] - divisor[0] + 0x00400001;
-
-   #if 0
-   printf("[%8.8x:%8.8x:%8.8x:%8.8x:%8.8x:%8.8x:%8.8x]\n",
-           reciprocal[0], reciprocal[1], reciprocal[2],
-           reciprocal[3], reciprocal[4], reciprocal[5], reciprocal[6]);
-   #endif
 
    if (reciprocal[1] & 0x00800000)
    {

@@ -355,12 +355,33 @@ static void exout(int locator, long loc, char *b, int c, int handle, int xflag)
    }
 }
 
+/**********************************************************************************
+	inject a request to resolve storage page index[es] at later load
+
+	a single code word designating a 4K-word storage page
+	is marked for update with load location
+
+        request applied to a single code word
+	only one request like this per superword is actioned
+
+	to do 2+ of these in a structure assembly must generate superwords
+	which do not span > 1 of these requests
+
+	assembly does multiword superwords for $form or for length suffix like :D
+
+	word address relocations are resolved at earlier links
+**********************************************************************************/
+
 static void inject_physical_address_tuple(int handle, char *data, long long target)
 {
    unsigned char request[12];
 
    int		 label_index;
    int		 field;
+   int		 scale = 0;
+   int		 superword = 0;
+   int		 symbol;
+   char		*rewind = data;
 
    int		 sum;
 
@@ -369,37 +390,63 @@ static void inject_physical_address_tuple(int handle, char *data, long long targ
       sscanf(data + 1, "%x", &label_index);
       sscanf(data + 6, "%x", &field);
 
-      #ifdef NEVER
+      data += 8;
 
-      #error this is wrong
+      if (*data == '*')
+      {
+         if (data[1] == '/')
+         {
+            sscanf(data + 2, "%x", &scale);
+            data += 4;
+         }
+         else
+         {
+            printf("load fixup scale encoding error: %s\n", rewind);
+            return;
+         }
+      }
 
-	assembly currently points
-        to the 1st word of a 2-word gate
-        and always says index zero
-	or a predetermined application index
-	for export / self-reference
-        dynamic loader in target system image
-	shall use other unresolved index values
-	for import
-	and updates the 2nd word of gates
+      if (*data++ == ':')
+      {
+         while (symbol = *data++)
+         {
+            if (symbol == ' ') break;
+            if (symbol == '\n ') break;
+            if (symbol == '\r ') break;
 
-      target += (long long) label_index;
+            if (symbol == ':')
+            {
+               printf("multiple load fixups must be "
+                      "in separate assembly output superwords: %s\n", rewind);
+               return;
+            }
 
-      #endif
+            superword += 4;
+         }
+      }
+      else
+      {
+          printf("load fixup encoding dislocation: %s\n", rewind);
+          return;
+      }
 
-      field |= 0x00800000;
-      sum = field + target + (target >> 24);
+      target += (superword - scale) / 24 - 1;
+
+      label_index |= 0x00800000;
+      sum = label_index + target + (target >> 24);
       sum ^= 0x00FFFFFF;
       
-      request[0] = field >> 16;
-      request[1] = field >>  8;
-      request[2] = field;
+      request[0] = label_index >> 16;
+      request[1] = label_index >>  8;
+      request[2] = label_index;
+
       request[6]  = target >> 40;
       request[7]  = target >> 32;
       request[8]  = target >> 24;
       request[9]  = target >> 16;
       request[10] = target >> 8;
       request[11] = target;
+
       request[3] = sum >> 16;
       request[4] = sum >> 8;
       request[5] = sum;
@@ -456,7 +503,8 @@ main(int argc, char *argv[])
 
   char data[256];
   char internal[128];
-  char *p;
+  char *p,
+       *q;
   
   register char digit1, digit2;
 
@@ -619,11 +667,13 @@ main(int argc, char *argv[])
     }
     
     data[c] = 0;
+
     if (data[0] == '$')
     {
        if (data[4] == '*')
        {
-          printf("Relocatable Counter Not Used\n");
+          locator = atoi(data + 1);
+          if (include[locator]) printf("Relocatable Counter Not Used\n");
           continue;
        }
 
@@ -661,13 +711,15 @@ main(int argc, char *argv[])
     e = 0;
     interval = 0;
     p = data;
+    q = p;
+
     while (digit1 = *p++)
     {
        if (digit1 == ':')
        {
           if (uflag['L'-'A'])
           {
-             if (include[locator]) inject_physical_address_tuple(j, p - 9,
+             if (include[locator]) inject_physical_address_tuple(j, q,
              (unsigned long long) loc + offset + interval / 3);
              e = interval;
              continue;
@@ -684,6 +736,7 @@ main(int argc, char *argv[])
 
        if (digit1 == 32)
        {
+          q = p;
           interval = e;
           continue;
        }

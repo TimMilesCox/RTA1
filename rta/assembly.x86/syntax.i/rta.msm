@@ -277,13 +277,13 @@ _dl:	call	_burst_read2
 
 _spare:	ret
 
-_ex:	call	_memory_read
+_ex:	call	memory_read
 	and	edi, edi
 	jz	_ex_
 	jmp	_execute
 _ex_:	ret
 
-_ts:	call	_memory_read
+_ts:	call	memory_read
 	and	edi, edi
 	jz	_ts_
 	or	dword ptr [edi+esi*4], 008000h	; claim the TS word
@@ -307,7 +307,7 @@ simin:	mov	ecx, dword ptr [_psr]	; hand back EA in eax unchanged
 
 _sim:	test	eax, 00FFFF00h		; storage or register?
 	jz	_sim_register
-	call	_memory_read		; storage, system memory only
+	call	memory_read		; storage, system memory only
 	and	edi, edi		; is that where this location is?
 	jz	_sim_			; if not don't do this request
 	mov	ebx, eax
@@ -332,16 +332,45 @@ _go:	call	_operand_read	; may be memory or register
 ;	mov	[__register+128*4], eax
 ;	ret
 	mov	edx, eax	; lookaside to calculate the vector
-	test	eax, 0400000h
-	jz	_go_4k_bank
+	test	eax, 00C00000h
+	jz	_go2_4k_frame
+	test	eax, 00800000h
+	jz	_go2_32k_frame
+
+	and	eax, 007FFFFFh	; read the gate constant
+	call	_burst_read2	;
+	mov	edx, eax	; page high index ++ word offset
+	mov	eax, ebx	; storage block base page index
+	rol	edx, 6+8
+	mov	ebx, edx	; instruction frame page high index
+	and	ebx, 63
+	shr	edx, 6+8	; net word offset
+
+	jmp	_go2_frame
+	
+_go2_32k_frame:
 	and	edx, 7		; target is in 32k block, 8 vectors
 	and	eax, -8		; new b0_name
-	jmp	_go2_bank
-_go_4k_bank:
+	mov	ebx, 7		; frame high page index
+	jmp	_go2_frame
+
+_go2_4k_frame:
 	and	edx, 63		; target is in 4k block, 64 vectors
 	shr	eax, 6		; new b0_name
-_go2_bank:
+	xor	ebx, ebx	; frame high page index
+
+_go2_frame:
 	mov	dword ptr [_b0_name], eax
+	shl	eax, 2+8		; remove the flag bits in name
+	shr	eax, 2+8		; to make block pointer 0
+	add	ebx, eax	; calulate frame limit page
+	mov	dword ptr [_base+64*4], ebx
+
+	shl	ebx, 12
+	lea	ebx, [_memory+ebx*4+4095*4]
+
+	mov	dword ptr [_apcz], ebx	; set execution limit pointer
+
 	mov	dword ptr [_base], eax
 	shl	eax, 12+2	; 4kword block multiplied by 4 for word
 	add	eax, _memory	; add the platform location of executable space

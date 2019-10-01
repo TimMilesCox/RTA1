@@ -166,7 +166,7 @@
 
 ****************************************************************************/
 
-#define	INSTRUCTION_U	125
+#define	INSTRUCTION_U	64
 
 #define TIME_UPDATE     1
 #define LOCKSTEP        2
@@ -205,15 +205,14 @@ typedef struct { unsigned char		t1,
 
 typedef struct { unsigned char    octet[6]; } dmsw;
 
-typedef struct { word		   w[4096]; } page;
+typedef union  { int		   i[4096];
+		 word		   w[4096]; } page;
 
 typedef struct { word		 w[262144]; } bank;
 
 typedef struct { msw		 w[262144]; } fsbank;
 
-typedef union  { word   array[WORDS_IN_MEMORY];
-		 int	iaray[WORDS_IN_MEMORY];
-                 page	p4k[PAGES_IN_MEMORY]; } system_memory;
+typedef struct { page	p4k[PAGES_IN_MEMORY]; } system_memory;
 
 typedef union  { msw	array[(long) 262144 * BANKS_IN_DEVICE];
                  fsbank   b[BANKS_IN_DEVICE]; } device24;
@@ -240,15 +239,16 @@ typedef struct { word16		 w[262144]; } bank16;
 typedef union  { word16 array[262144 * BANKS_IN_DEVICE16];
 		 bank16	b[BANKS_IN_DEVICE16]; } device16;
 
+/*
+typedef struct { unsigned short flags,	 banks;
+*/
 
-
-typedef struct { unsigned short flags,		 banks;
-                 union  { system_memory    *pages;
-                          device24         *dev24;
-                          device16         *dev16; } s; } device;
+typedef union  { page		*pages;
+                 fsbank		*dev24;
+                 bank16		*dev16; } device;
 
 /*****************************************************************
-	following 3 values are the high-rder 2 bits
+	following 3 values are the high-order 2 bits
 	of the 24-bit device descriptors in I/O ports 128..191
 *****************************************************************/
 

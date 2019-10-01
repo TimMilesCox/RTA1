@@ -130,6 +130,8 @@ int main(int argc, char *argv[])
 
    argue(argc, argv);
 
+   printf("RTA1 " RADIX " emulation stepping " STEPPING "\n");
+
    if (arguments)
    {
       #ifdef X86_MSW

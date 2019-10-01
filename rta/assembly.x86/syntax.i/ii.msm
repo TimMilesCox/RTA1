@@ -5,6 +5,11 @@ _off:	xor	ax, 0000FFFFh
 	and	word ptr [_psr], ax	; only touch low-order 16 bits
 	ret
 
+guard_ii_escape
+	mov	eax, II_GUARD
+_ii_escape:
+	mov	esp, dword ptr [__register+287*4]
+
 _ii:	cmp	eax, II_GUARD
 	jnz	_ii_
 ;	mov	byte ptr [_flag+'e'-'a'], 1	; needs to be done via indication
@@ -32,7 +37,7 @@ _ii_ii:	or	edx, 00800000h		; ISR active
 	and	edx, 63			; address from interrupt vector
 	shr	eax, 6
 	and	eax, 000003FFh
-	jmp	_go2_bank
+	jmp	_go2_frame
 	ret
 
 _ir:	mov	ebx, dword ptr [ebp+S_P]
@@ -48,6 +53,27 @@ _ir_ir:	mov	edx, eax
 	mov	eax, [ebx*4+__register+8]	; return b0_name
 	add	edx, [ebx*4+__register+12]	; +- return displacement
 	and	edx, 00FFFFFFh
-	jmp	_go2_bank
+
+	xor	ebx, ebx		; default frame high page index
+
+	test	eax, 00C00000h
+	jz	_ir_frame4k
+	test	eax, 00800000h
+	jz	_ir_frame32k
+	mov	ebx, eax
+	shl	ebx, 12			; any pages you like instruction frame
+
+	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; our special friend Mr Endian
+	shr	ebx, 2					; strikes again
+
+;	mov	ebx, dword ptr [ebx*4+_memory+64*4]
+;	shr	ebx, 18			; read from sample gate
+
+	jmp	_go2_frame		; at instruction frame location 64
+
+_ir_frame32k;
+	mov	bl, 7			; 8 page instruction frame
+_ir_frame4k:
+	jmp	_go2_frame		; 1 page instruction frame
 	ret
 

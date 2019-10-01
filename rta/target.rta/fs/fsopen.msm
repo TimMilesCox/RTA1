@@ -1,0 +1,99 @@
+
+fspath_walk	$tree
+
+.	(fs_find)
+.	(fs_dsearch)
+.	(fs_xbase)
+
+	$head_far	 params(inputp,		int)			;
+									;
+			scalars(device,		6			;
+				directory,	2			;
+				extract,	24			)
+
+	lb	inputp			. initialise the input stream
+	call	(rstream_starta)
+
+	lc	component	device,,i	'/',,xi
+
+
+	dsr	24
+	tnz	r			. anything in front of root?	j	root
+
+	j	root
+	
+
+root	lcal	test_forward
+	j	no_next
+
+	lc	component	extract,,i	'/',,xi
+
+	ly	extract,,i
+	dl	directory
+	call	(fs_find)
+	jza	no_next
+	ds	directory
+
+next	lcal	test_forward
+	j	no_next
+
+	lc	component	extract,,i	'/',,xi
+
+					. length in words returned in r
+	ly	extract,,i
+	dl	directory
+	call	(fs_dsearch)		. and needed here
+	jza	no_next
+	ds	directory
+
+	j	next
+
+no_next	$ret	0
+
+test_forward
+	dpush	a
+	la	LAST_BYTE_READ
+	lb	' ',,xi
+	sb	LAST_BYTE_READ
+	lk	255,,xi
+	mtane	('/')
+	inc	2, sp			. that means inc by 1 the word @ [sp + 2]
+	pop	a			. which is the near return address
+	pop	b
+	lret	0
+	
+		$root
+
+fspath_openfile	$tree
+
+	$head_near	 params(inputp,		int)
+	
+	c	(fspath)	inputp
+	jdz	no_file
+
+no_file
+	$ret	0
+
+		$root
+
+
+
+
+
+component	$tree
+	$head_near	 params(targetp,	int	;
+				sentinel,	int	)
+
+	la	sentinel
+	ly	targetp
+	call	(string_scana_sentinel)
+	n	targetp
+	jzb	final_zeroword		. y -> zero word after string
+	ay	1,,xi			. y -> the last string word
+					. not after it
+final_zeroword
+	ay	targetp
+	lr	1, y, i			. containing words
+	$ret
+		$root
+

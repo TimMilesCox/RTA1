@@ -1,3 +1,9 @@
+_autoexit:
+	mov	eax, II_EXIT
+	jmp	_ii_escape
+
+_guard:	jmp	guard_ii_escape	
+
 _lret:	mov	ebx, dword ptr [ebp+S_P]
 	test	dword ptr [_psr], 0800000h
 	jnz	_lret_
@@ -24,16 +30,30 @@ _fret_:	add	dword ptr [ebp+S_P], 2
 	mov	edx, eax	; +- displacement
 	add	edx, dword ptr [ebx*4+__register+4]
 	mov	eax, dword ptr [ebx*4+__register]
-	jmp	_go2_bank
+	xor	ebx, ebx			; frame page high index
+
+	test	eax, 00C00000h
+	jz	_fret2_4Kframe
+	test	eax, 0800000h
+	jz	_fret2_32Kframe
+	mov	ebx, eax
+	shl	ebx, 12
+
+	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; our special friend Mr Endian
+	shr	ebx, 2					; strikes again
+
+;	mov	ebx, dword ptr [_memory+ebx*4+64*4]
+;	shr	ebx, 18				; frame page high index
+
+	jmp	_go2_frame
+
+_fret2_32Kframe
+	mov	bl, 7				; frame page high index
+_fret2_4Kframe
+	jmp	_go2_frame
 	ret
 
-_autoexit:
-	mov	eax, II_EXIT
-	jmp	_ii
-
-_guard:	mov	eax, II_GUARD
-	jmp	_ii
 
 _fpxpo:	mov	eax, II_FPXPO
-	jmp	_ii
+	jmp	_ii_escape
 

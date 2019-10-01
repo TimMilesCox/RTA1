@@ -32,27 +32,66 @@ _reload:
 
 _emulator_cool: ret
 
-_sabr:	test	eax, 0000003Eh		; target must be 2..63
-	jz	_sabrx
+;	sabr checks what it places in operand space windows
+;	there are no subsequent range checks on reference
+
+_sabr:	test	eax, 0000003Eh		; target window must be 2..63
+	jz	near _sabrx
 	test	eax, 00FFFFC0h
-	jnz	_sabrx
+	jnz	near _sabrx
+	mov	esi, eax		; target window
+	mov	eax, dword ptr [ebp+A]	; requested storage block index
+	mov	ebx, eax		; cache a copy
 
-	test	ebx, 00400000h		; memory block must be executable space
-	jz	_sabr_			; unless kernel ISR is making this request
-	test	bl, 63
-	jz	_sabr_
+	mov	ecx, dword ptr [_base+128*4]
+					; device zero = executable space
+					; load its size parameter
+	test	eax, 00400000h		; big and maybe not system memory?
+	jz	_sabr_executable_space	; yes executable space
+	and	ebx, 63
+	jz	_sabr_executable_space	; yes executable space
+					; no some other space
+
+	mov	ecx, dword ptr [_base+128*4+ebx*4]
+	test	ecx, 00C00000h		; nice device?
+	jz	_sabr_guard		; substitute with no-access value
+	jpe	_sabr_device_array	; FS24_FLAG
+	test	ecx, DATA16_FLAG	; to avoid accident
+	jnz	_sabr_device_array	; applications can only base
+					; devices usable as system memory
+	
+_sabr_executable_space:			; has the device this much memory?
+	mov	ebx, eax		; refresh the requested block index
+	and	ebx, 003FFFFFh		; 4K-word page index requested
+	and	ecx, 003FFFFFh		; 4K-word page high index of device
+					; has the device this many pages?
+	sub	ecx, ebx
+	jns	_sabr_thru		; yes
+	jmp	_sabr_guard		; no
+
+_sabr_device_array:
 	test	dword ptr [_psr], 00800000h
-	jnz	_sabr_
-	mov	ebx, 00C00001h		; nothing based on reference
+	jz	_sabr_guard		; only be here if you are an ISR
+	mov	ebx, eax		; refresh the requested block index
+	and	ebx, 003FFFFFh
+	shr	ebx, 6			; align it with high index from device port
+	and	ecx, 003FFFFFh		; has the device array this many blocks?
 
-_sabr_:	mov	ebx, dword ptr [_base+65*4]
-	shl	ebx, 12+2	; 4K page * 4 platform bytes
-	add	ebx, 64*4	; ABT within TCB. Keep the final displacement < 256
-	mov	edi, _memory
-	add	edi, ebx
-	mov	ebx, dword ptr [ebp+A]
-	mov	dword ptr [eax*4+_base], ebx
-	bswap	ebx
-	mov	dword ptr [edi+eax*4], ebx
+	sub	ecx, ebx
+	jns	_sabr_thru		; yes
+					; no
+_sabr_guard:
+	mov	eax, 00C00001h		; no-access value
+					; will trip on reference in target window
+_sabr_thru:
+	mov	dword ptr [_base+esi*4], eax
+					; esi = target window
+	mov	ebx, dword ptr [_base+65*4]	; thread TCB
+	shl	ebx, 12+2		; 4K page * 4 platform bytes
+	mov	edi, _memory		; so system memory of emulated machine
+	add	edi, ebx		; + offset of TCB 
+	bswap	eax			; big endian store at TCB + ABT + esi * 4 
+	mov	dword ptr [edi+esi*4+64*4], eax
+					; -> TCB + ABT + window index
 _sabrx:	ret
 

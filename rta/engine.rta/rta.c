@@ -79,6 +79,8 @@ page		*b0p = memory.p4k;
 
 int		 _register[REGISTERS];
 
+unsigned	*register_set = _register + 128;
+
 			/*********************************************
 				The IO ports are given the name
 				base[] because the first 72 of them

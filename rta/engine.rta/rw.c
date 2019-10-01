@@ -54,10 +54,9 @@ extern device24			*f_s[];
 extern device16			 i_f[];
 #endif
 
-device				 devices[64] = 
-	{ { DEVICE | SYSMEM,  BANKS_IN_DEVICE,   { &memory } } ,
-	  { DEVICE | FSYS24,  BANKS_IN_DEVICE,   { NULL    } } ,
-	  { DEVICE | DATA16,  BANKS_IN_DEVICE16, { NULL    } } } ;
+device				 devices[64] = { { memory.p4k } } ;
+//	{  NULL     } ,
+//	{  NULL    }  } ;
 
 extern int			 _register[256];
 extern int			 base[128];
@@ -102,19 +101,30 @@ static unsigned char	 window_rule[72] = {	128, 64, 128 | 32, 16, 8, 4, 2, 1,
 
 int device_read(int device_index, int relocation_base, unsigned offset, int designator)
 {
-   int			*iarayp;
+//   int			*iarayp;
    msw			*w24p;
    word16		*w16p;
 
+   bank16		*bank16p;
+   fsbank		*fsbankp;
+   page			*pagep;
+
    int			 v;
-
+   int			 device_type = base[128 + device_index] & 0x00C00000;
+// int			 device_type = device_configuration & 0x00C00000;
    device		*devicep = &devices[device_index];
-   int			 bank = (relocation_base >> 6) & 65535;
-   unsigned long	 absolute = (unsigned long) (bank << 18) | offset;
+   
+//   int			 bank_index = (relocation_base >> 6) & 65535;
+//   unsigned long	 absolute = (unsigned long) (bank << 18) | offset;
 
-   if (devicep->flags & DEVICE)
-   {
-      if (devicep->flags & DATA16)
+   relocation_base &= 0x003FFFC0;
+
+
+//   if (devicep->flags & DEVICE)
+//   {
+//    if (devicep->flags & DATA16)
+
+      if (device_type == DATA16_FLAG)
       {
          #ifndef CHECK_ON_BASE
          if (bank > base[128 + device_index] & 65535)
@@ -124,13 +134,19 @@ int device_read(int device_index, int relocation_base, unsigned offset, int desi
          else
          #endif
          {
-            w16p = devicep->s.dev16->array + absolute;
+            relocation_base >>= 6;
+
+            bank16p = devicep->dev16 + relocation_base;
+            w16p = bank16p->w + offset;
+
+//            w16p = devicep->s.dev16->array + absolute;
 
             v = (w16p->left << 8)
               |  w16p->right;
          }
       }
-      else if (devicep->flags & FSYS24)
+
+      else if (device_type == FSYS24_FLAG)
       {
          #ifndef CHECK_ON_BASE
          if (bank > base[128 + device_index] & 65535)
@@ -140,14 +156,18 @@ int device_read(int device_index, int relocation_base, unsigned offset, int desi
          else
          #endif
          {
-            w24p = devicep->s.dev24->array + absolute;
+            relocation_base >>= 6;
+
+            fsbankp = devicep->dev24 + relocation_base;
+            w24p = fsbankp->w + offset;
+//            w24p = devicep->s.dev24->array + absolute;
 
             v = (w24p->t1 << 16)
               | (w24p->t2 <<  8)
               |  w24p->t3;
          }
       }
-      else if (devicep->flags & SYSMEM)
+      else if (device_type ==SYSMEM_FLAG)
       {
          /**************************************************
             system memory can also be accessed here
@@ -164,13 +184,17 @@ int device_read(int device_index, int relocation_base, unsigned offset, int desi
          else
          #endif
          {
-            v = mread(devicep->s.pages->array + absolute, designator);
-//            LOAD24(v, devicep->s.pages->iaray[absolute]);
+            pagep = devicep->pages + relocation_base;
+            v = mread(pagep->w + offset, designator);
+//            v = mread(devicep->s.pages->array + absolute, designator);
+//            LOAD24(v, devicep->s.pages->iaray[(unsigned long) absolute]);
          }
       }
       else v = 0x00A5A5A5;
-   }
-   else v = 0x005A5A5A;
+
+
+//   }
+//   else v = 0x005A5A5A;
 
    return v;
 }
@@ -196,21 +220,26 @@ word memory_read(unsigned ea)
    static word	 nop                      = { 0, LK, 0, 128 + 1 } ;
 
    device	*devicep;
+   int		 device_type;
 
    unsigned	 relocation_base;
-   unsigned long absolute;
+//   unsigned long absolute;
    int		 index = ea >> 18;
+   unsigned	 offset;
    int		 device_index;
    int		 tag;
 
+   page		*pagep;
+   word		*wordp;
+
    if (index)
    {
-      absolute = ea & 0x0003FFFF;
+      offset = ea & 0x0003FFFF;
    }
    else
    {
       index  = ea >> 12;
-      absolute = ea & 0x00000FFF;
+      offset = ea & 0x00000FFF;
    }
 
    #ifdef WINDOW_READ_RULE
@@ -223,9 +252,9 @@ word memory_read(unsigned ea)
    {
       if ((32768 >> index) & psr) index |= 64;
    }
-   #endif
 
    relocation_base = base[index];
+   #endif
 
    #if 0
    if ((index) && (index < 8))
@@ -236,7 +265,9 @@ word memory_read(unsigned ea)
 
    if (relocation_base & 0x00400000)
    {
-      if (relocation_base & 63)
+      device_index = relocation_base & 63;
+
+      if (device_index)
       {
          #ifdef WPROTECT
 
@@ -255,23 +286,29 @@ word memory_read(unsigned ea)
                GUARD_INTERRUPT
             }
 
-            return;
+            if (psr & 0x00800000) return nop;
+            return outside_executable_space;
          }
 
          #endif
+
          devicep = devices + device_index;
-         if (devicep->flags == DEVICE | SYSMEM)
+         device_type = base[128 + device_index] & 0x00C00000;
+
+         if (device_type == SYSMEM_FLAG)
          {
-            relocation_base >>= 6;
-            relocation_base &= 65535;
+            relocation_base &= 0x003FFFC0;
 
             /************************************************************
                 devices with system memory characteristic
-                are configured as executable space with # 4K pages
+                are configured like executable space with # 4K pages
             ************************************************************/
 
             #ifndef CHECK_ON_BASE
-            if (relocation_base > (base[128 + device_index] >> 6) & 65535)
+            if (relocation_base < (base[128 + device_index] & 0x003FFFFF))
+            {
+            }
+            else
             {
                if (psr & 0x00800000)
                {
@@ -285,8 +322,12 @@ word memory_read(unsigned ea)
             else
             #endif
             {
-               absolute |= relocation_base << 18;
-               return devicep->s.pages->array[absolute];
+//               absolute = (unsigned long) relocation_base << 12;
+//               absolute += (unsigned long) offset;
+//               wordp = devicep->s.pages->array + (unsigned long) absolute;
+               pagep = (page *) devicep->pages + relocation_base;
+               wordp = pagep->w + offset;
+               return *wordp;
             }
          }
 
@@ -297,7 +338,7 @@ word memory_read(unsigned ea)
    #ifdef WPROTECT
    else
    {
-      if (absolute & 0x0003F000)
+      if (offset & 0x0003F000)
       {
          if (psr & 0x00800000) return nop;
          return outside_executable_space;
@@ -305,9 +346,14 @@ word memory_read(unsigned ea)
    }
    #endif
 
-   absolute |= (unsigned long) (relocation_base & 0x003FFFFF) << 12;
+   relocation_base &= 0x003FFFFF;
 
-   return memory.array[absolute];
+   pagep = memory.p4k + relocation_base;
+   wordp = pagep->w + offset;
+
+//   printf("[%p %p %p %p]\n", &memory, &memory.p4k[PAGES_IN_MEMORY], pagep, wordp);
+
+   return *wordp;
 }
 
 #ifdef ABSOTS
@@ -328,18 +374,20 @@ word *memory_hold(unsigned ea)
    unsigned      relocation_base;
    unsigned	 alternate = 0;
    int           index = ea >> 18;
-   unsigned long absolute;
+   unsigned	 offset;
    device	*devicep;
+   int		 device_type;
+   page		*pagep;
    int		 device_index;
 
    if (index)
    {
-      absolute = ea & 0x0003FFFF;
+      offset = ea & 0x0003FFFF;
    }
    else
    {
       index  = ea >> 12;
-      absolute = ea & 0x00000FFF;
+      offset = ea & 0x00000FFF;
    }
 
    #ifdef WINDOW_WRITE_RULE
@@ -419,15 +467,18 @@ word *memory_hold(unsigned ea)
                GUARD_INTERRUPT
             }
 
-            return;
+            return NULL;
          }
 
          #endif
          devicep = devices + device_index;
-         if (devicep->flags == DEVICE | SYSMEM)
+         device_type == base[128 + device_index] & 0x00C00000;
+
+         if (device_type == SYSMEM_FLAG)
          {
-            relocation_base >>= 6;
-            relocation_base &= 65535;
+//            relocation_base >>= 6;
+//            relocation_base &= 65535;
+              relocation_base &= 0x003FFFC0;
 
             /************************************************************
 		devices with system memory characteristic
@@ -448,8 +499,10 @@ word *memory_hold(unsigned ea)
             else
             #endif
             {
-               absolute |= (unsigned long) relocation_base << 18;
-               return devicep->s.pages->array + absolute;
+               pagep = devicep->pages + relocation_base;
+               return pagep->w + offset;
+//               absolute |= (unsigned long) relocation_base << 18;
+//               return devicep->s.pages->array + absolute;
             }
          }
 
@@ -473,7 +526,7 @@ word *memory_hold(unsigned ea)
    #ifdef WPROTECT
    else
    {
-      if (absolute & 0x0003F000)
+      if (offset & 0x0003F000)
       {
          /********************************************
             you can't do offsets > 4095
@@ -493,9 +546,11 @@ word *memory_hold(unsigned ea)
    }
    #endif
 
-   absolute |= (relocation_base & 0x003FFFFF) << 12;
-
-   return memory.array + absolute;
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   return pagep->w + offset;
+//   absolute |= (relocation_base & 0x003FFFFF) << 12;
+//   return memory.array + absolute;
 }
 
 #endif		/*	ABSOTS	*/
@@ -509,9 +564,11 @@ unsigned int operand_read(unsigned ea, int designator)
    int			 v;
    unsigned		 offset;
 
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
 
+   page			*pagep;
    word			*w24p;
+
    int			 device_index;
 
    if (designator ==  I) return ea;
@@ -585,7 +642,7 @@ unsigned int operand_read(unsigned ea, int designator)
                GUARD_INTERRUPT
             }
 
-            return;
+            return 0x00AAAAAA;
          }
 
          #endif
@@ -611,12 +668,12 @@ unsigned int operand_read(unsigned ea, int designator)
             GUARD_INTERRUPT
          }
 
-         return;
+         return 0x00FFFFFF;
       }
    }
    #endif
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
    #ifndef CHECK_ON_BASE
    if (offset > (WORDS_IN_MEMORY-1))
@@ -632,7 +689,9 @@ unsigned int operand_read(unsigned ea, int designator)
    }
    #endif
 
-   return mread(memory.array + absolute, designator);
+   relocation_base &=0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   return mread(pagep->w + offset, designator);
 }
 
 static int mread(word *w24p, int designator)
@@ -689,9 +748,10 @@ void burst_read2(int *list, unsigned ea)
 {
    unsigned		 index, relocation_base, device_index;
    unsigned		 offset;
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
    int			 tag;
 
+   page			*pagep;
    int			*w24p;
 
    if (ea < 256)
@@ -834,9 +894,11 @@ void burst_read2(int *list, unsigned ea)
    }
    #endif
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
-   w24p = &memory.iaray[absolute];
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   w24p = pagep->i + offset;
    LOAD24(*list, *w24p);
    LOAD24(*(list + 1), *(w24p + 1));
 }
@@ -870,9 +932,10 @@ void burst_read4(int *list, unsigned ea)
 {
    unsigned		 device_index, index, relocation_base;
    unsigned		 offset;
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
    int			 tag;
 
+   page			*pagep;
    int			*w24p;
 
    if (ea < 256)
@@ -1018,9 +1081,11 @@ void burst_read4(int *list, unsigned ea)
    }
    #endif
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
-   w24p = &memory.iaray[absolute];
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   w24p = pagep->i + offset;
    LOAD24(*list, *w24p);
    LOAD24(*(list + 1), *(w24p + 1));
    LOAD24(*(list + 2), *(w24p + 2));
@@ -1030,19 +1095,29 @@ void burst_read4(int *list, unsigned ea)
 
 static void device_write(int v, int device_index, int relocation_base, unsigned offset, int designator)
 {
-   int			*iarayp;
    msw			*w24p;
    word16		*w16p;
 
+   page			*pagep;
+   fsbank		*fsbankp;
+   bank16		*bank16p;
+
    device               *devicep = &devices[device_index];
-   int			 bank = (relocation_base >> 6) & 65535;
-   unsigned long	 absolute = (unsigned long) (bank << 18) | offset;
+   int			 device_type = base[128 + device_index] & 0x00C00000;
+
+//   int			 bank = (relocation_base >> 6) & 65535;
+//   unsigned long	 absolute = (unsigned long) (bank << 18) | offset;
+
+   relocation_base &= 0x003FFFC0;
 
 
-   if (devicep->flags & DEVICE)
-   {
-      if (devicep->flags & DATA16)
-      {
+   
+//   if (devicep->flags & DEVICE)
+//   {
+//      if (devicep->flags & DATA16)
+
+     if (device_type == DATA16_FLAG)
+     {
          #ifndef CHECK_ON_BASE
          if (bank > base[128 + device_index] & 65535)
          {
@@ -1050,13 +1125,16 @@ static void device_write(int v, int device_index, int relocation_base, unsigned 
          else
          #endif
          {
-            w16p = devicep->s.dev16->array + absolute;
+            relocation_base >>= 6;
+
+            bank16p = devicep->dev16 + relocation_base;
+            w16p = bank16p->w + offset;
 
             w16p->right = v;
             w16p->left  = v >> 8;
          }
       }
-      else if (devicep->flags & FSYS24)
+      else if (device_type == FSYS24_FLAG)
       {
          #ifndef CHECK_ON_BASE
          if (bank > base[128 + device_index] & 65535)
@@ -1065,19 +1143,26 @@ static void device_write(int v, int device_index, int relocation_base, unsigned 
          else
          #endif
          {
-            w24p = devicep->s.dev24->array + absolute;
+            relocation_base >>= 6;
+
+            fsbankp = devicep->dev24 + relocation_base;            
+            w24p = fsbankp->w + offset;
 
             w24p->t3 = v;
             w24p->t2 = v >> 8;
             w24p->t1 = v >> 16;
          }
       }
-      else if (devicep->flags & SYSMEM)
+      else if (device_type == SYSMEM_FLAG)
       {
          /**************************************************
-            devices of sysmem character are configured
-            as executable space with # 4K pages because
-            executable space can also be accessed here
+            devices of system memory character are configured
+            like executable space with # 4K pages because
+            because that's how executable space is
+            in 256K blocks
+
+            a page pointer is supplied and gets pointed to
+            a 256K bank edge
          **************************************************/
 
          #ifndef CHECK_ON_BASE
@@ -1087,11 +1172,13 @@ static void device_write(int v, int device_index, int relocation_base, unsigned 
          else
          #endif
          {
-            mwrite(devicep->s.pages->array + absolute, designator, v);
+            pagep = devicep->pages + relocation_base;
+            
+            mwrite(pagep->w + offset, designator, v);
 //            ORDER32(*iarayp, v);
          }
       }
-   }
+//   }
 }
 
 #define OPERAND_WRITE1(DATA, EA) operand_write(DATA, EA, 7)
@@ -1102,9 +1189,10 @@ void operand_write(int v, unsigned ea, int designator)
    unsigned		 alternate = 0;
    unsigned		 offset;
 
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
 
    word			*w24p;
+   page			*pagep;
 
    if (ea < 256)
    {
@@ -1271,7 +1359,7 @@ void operand_write(int v, unsigned ea, int designator)
    }
    #endif
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
    #ifndef CHECK_ON_BASE
    if (offset > (WORDS_IN_MEMORY-1))
@@ -1288,7 +1376,9 @@ void operand_write(int v, unsigned ea, int designator)
    }
    #endif
 
-   mwrite(memory.array + absolute, designator, v);
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   mwrite(pagep->w + offset, designator, v);
 }
 
 static void mwrite(word *w24p, int designator, int v)
@@ -1329,8 +1419,9 @@ void burst_write2(int *list, unsigned ea)
    unsigned		 alternate = 0;
    unsigned		 offset;
 
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
 
+   page			*pagep;
    int			*w24p;
 
    int			 v = *list,
@@ -1550,9 +1641,11 @@ void burst_write2(int *list, unsigned ea)
    #endif
 
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
-   w24p = memory.iaray + absolute;
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   w24p = pagep->i + offset;
    ORDER32(*w24p, v);
    ORDER32(*(w24p + 1), w);
 }
@@ -1589,8 +1682,9 @@ void burst_write4(int *list, unsigned ea)
    unsigned		 alternate = 0;
    unsigned 		 offset;
 
-   unsigned long	 absolute;
+//   unsigned long	 absolute;
 
+   page			*pagep;
    int			*w24p;
 
    int			 v = *list,
@@ -1813,9 +1907,11 @@ void burst_write4(int *list, unsigned ea)
    }
    #endif
 
-   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
+//   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
-   w24p = memory.iaray + absolute;
+   relocation_base &= 0x003FFFFF;
+   pagep = memory.p4k + relocation_base;
+   w24p = pagep->i + offset;
    ORDER32(*w24p, v);
    ORDER32(*(w24p + 1), w);
    ORDER32(*(w24p + 2), _u);

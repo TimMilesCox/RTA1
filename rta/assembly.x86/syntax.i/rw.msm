@@ -30,14 +30,14 @@
 ;	before write to conform with RTA1 canonical storage order
 
 ;       RTA1 architecture has registers in the first 256 locations
-;       of address space and access differentiates registers from
+;       of address space and access %ifferentiates registers from
 ;       from memory according to effective address
 
 ;	location of registers and storage are handed to read / write
 ;	routines as RTA1 word linear effective addresses
 
 ;	These routines maintain the RTA1 linear addresses passed
-;	in x86 registers and apply them with shifted scale plus
+;	in x86 registers and apply them with s%ifted scale plus
 ;	displacement, for example
 
 ;		mov	eax, dword ptr [edi+esi*4+_memory]
@@ -73,7 +73,7 @@
 ;	to preserve linear address consistency, application instruction
 ;	work areas, where needed in addition to x86 registers, are
 ;	implemented as sub-architectural extra RTA1 registers at the end
-;	of the 256-longword register stack. x86 register ebp+ebx*4 identify
+;	of the 256-longword register stack. x86 register ebp+ebx*4 iden%ify
 ;	these locations by linear RTA1 word quantum as "registers"
 
 ;	RTA1 registers and storage alike are in 24-bit word address quantum space
@@ -134,7 +134,7 @@
 ;		mov	ebx, dword ptr [bp+MANTISSA2]	; the very same!
 ;		mov	ebx, dword ptr [bp+mantissa2*4]	; the very same
 
-;	but to identify an instruction-implied register to these operand routines
+;	but to iden%ify an instruction-implied register to these operand routines
 
 ;		mov	ebx, mantissa2		; bp already says which register set
 
@@ -146,8 +146,8 @@
 ;	simple instructions receive operand mode in cl from instruction
 ;	evaluation
 
-;	shifts and jumps use the ea which is already indexed or indirected
-;	if necessary and make no operand call
+;	s%ifts and jumps use the ea which is already indexed or indirected
+;%if necessary and make no operand call
 
 ;	instructions call _burst_read2 or _burst_write2 for two-word operand cycles
 ;	instructions call _burst_read4 or _burst_write4 for four-word operand cycles
@@ -187,15 +187,15 @@
 ;		shr	eax, 8
 ;		mov	dword ptr [ebp+A], eax
 
-;	emulated RTA1 instructions which both read and write (modify)
+;	emulated RTA1 instructions which both read and write (mo%ify)
 ;	storage use the address in [edi+esi*4] to rewrite. edi is
-;	NULL if it's not a suitable memory for a modify operation
+;	NULL%if it's not a suitable memory for a modify operation
 
-;	modify instructions which may have a register operand (not TS)
+;	mo%ify instructions which may have a register operand (not TS)
 ;	call _operand_write to rewrite a register. This guards aganst
 ;	applications writing interrupt registers.
  
-;	the effect of storage buses characteristically different
+;	the effect of storage buses characteristically %ifferent
 ;	from RTA1 executable space is emulated in the routines
 ;	device_read and device_write
 
@@ -219,7 +219,7 @@
 ;		24-bit filestore array
 ;		16-bit network interface array
 
-;	devices are identified in RTA1 memory relocation pointers and
+;	devices are iden%ified in RTA1 memory relocation pointers and
 ;	tagged with device type. Executable space is device zero
 
 	%if	0				; position-independent jump pad jump
@@ -286,21 +286,45 @@ _operand_read:			; call here with designator coded in cx
 	ret 
 
 _bus_read:			; readout any memory
+
+	%if	1
+
+	call	base_read_pointer
+	test	eax, 00400000h		; big block?
+	je	memory_read_4k_block
+	test	al, 63
+	je	memory_read_256k_block
+
+	jmp	device_read
+
+memory_read_4k_block:
+	test	esi, 0003F000h	; inside 4k block?
+	jnz	near guard_ii_escape	; no
+
+memory_read_256k_block:
+	shl	eax, 12		; multiply by page and lose bit 00400000
+	add	esi, eax
+
+	%else
+
 	call	base_pointer
-;	mov	dword ptr [__register+278*4], eax
-;	mov	dword ptr [__register+279*4], esi
+
 	test	eax, 00400000h	; big block?
 	je	memory_read_4k_block
 	test	eax, 63		; executable space or device array? 
 	je	memory_read_256k_block
-	jmp	_device_read
+	jmp	device_read
 
 memory_read_4k_block:		; readout system memory
 				; test here, esi may not be > 4095
 memory_read_256k_block:
 	shl	eax, 12		; page pointer * 4096
 	add	esi, eax	; linear absolute word pointer
+
+	%endif
+
 	mov	edi, _memory	; byte address
+
 
 memory_read_on:
 
@@ -309,7 +333,7 @@ memory_read_on:
 	mov	eax, dword ptr [read_action+eax*4]
 	jmp	eax
 read_action:
-	dd	memory_read
+	dd	memory_read_w0
 	dd	memory_t1
 	dd	memory_t2	; or h1
 	dd	memory_t3	; or h2
@@ -332,7 +356,7 @@ read_action:
 	dw	memory_read4-read_action
 	%endif
 
-memory_read:			; readout system memory 1 word
+memory_read_w0:			; readout system memory 1 word
 ;	mov	dword ptr [__register+154*4], edi
 ;	mov	dword ptr [__register+155*4], esi
 	mov	eax, dword ptr [edi+esi*4]
@@ -474,6 +498,28 @@ write1_register:
 	ret
 
 bus_write:				; write any memory
+
+	%if	1
+
+	call	base_write_pointer
+
+	test	eax, 00400000h		; big block?
+	je	memory_write_4k_block	; no
+	test	eax, 63			; device array
+	je	memory_write_256k_block	; no
+	jmp	_device_write
+
+
+memory_write_4k_block
+	test	esi, 0003F000h		; inside a 4k page?
+	jnz	near guard_ii_escape	; no
+
+memory_write_256k_block
+	shl	eax, 12			; mutiply by page and lose bit 00400000
+	add	esi, eax		; add offset
+
+	%else
+
 	call	base_pointer
 	test	eax, 00400000h		; big block?
 	je	memory_write_4k_block
@@ -486,10 +532,16 @@ memory_write_4k_block:			; write system memory
 memory_write_256k_block:
 	shl	eax, 12
 	add	esi, eax
+
+	%endif
+
 	mov	edi, _memory
+
+
 
 memory_write_on:
 	%if	1
+
 	movzx	eax, cl
 	mov	eax, dword ptr [write_action+eax*4]
 	jmp	eax
@@ -590,7 +642,68 @@ memory_write4:				; store system memory 4 words
 	ret
 
 				; for execute and modify instructions
-_memory_read:			; read only executable space and similar memory types
+memory_read:			; read only executable space and similar memory types
+
+	%if	1
+
+	call	base_read_pointer
+	test	eax, 00400000h
+	jz	_xspace_read4K
+
+	test	eax, 63
+	jz	_xspace_read
+	jmp	_yspace_read	; ie a device either appropriate or not
+
+_xspace_read4K:
+	test	esi, 003F000h
+	jnz	near guard_ii_escape
+
+_xspace_read:
+	mov	edi, _memory
+	jmp	_memory_deliver			; device array zero
+
+
+_yspace_read:
+	test	eax, 00800000h			; a tripsy non-space?
+	jnz	_zspace_read			; not allowed
+	mov	ebx, eax
+	and	ebx, 63
+	mov	ebx, dword ptr [_base+128*4+eax*4]
+	and	ebx, SYSMEM_FLAG
+	xor	ebx, SYSMEM_FLAG
+	jnz	_zspace_read			; not allowed
+
+	mov	ebx, eax
+	and	ebx, 63
+	and	eax, -64
+	mov	edi, dword ptr [_devices+ebx*4]	;  device array [ebx]
+	
+
+_memory_deliver
+	shl	eax, 12		; multiply by page and lose bit 00400000
+	add	esi, eax
+	mov	eax, dword ptr [edi+esi*4]
+	bswap	eax
+	ret
+
+_zspace_read
+	xor	edi, edi	; tell instructions they can't have it
+
+	test	dword ptr [_psr], 00800000h	; ISR ?
+	jz	_zspace_applications
+				; tell console it's not there
+
+	mov	eax, 00480081h		; no-op in ISR-speak
+	ret				; lk	128+k
+
+_zspace_applications
+				; tell console it's not there
+
+	mov	eax, 0075005Fh		; ii GUARD$
+	ret
+
+	%else
+
 	call	base_pointer
 	test	eax, 00400000h
 	jz	mword_go_0
@@ -620,30 +733,111 @@ mword_go_x:
 	shl	eax, 12
 	add	esi, eax	; report target address
 	mov	eax, dword ptr [edi+esi*4]
+
+
 	mov	al, 0
 	bswap	eax
-	ret	
+	ret
 
-;	TS calls _memory_read without checking for register range
+	%endif	
+
+;	TS calls memory_read without checking for register range
 ;	because you don't and may not test and set a register.
 ;	TS and EX instructions always have a storage operand
 
 ;	N INC DEC SIM POPA SRC SLC check register range and
 ;	operate directly on registers. operand write trips
-;	if applications try to write interrupt registers
+;%if applications try to write interrupt registers
 
-;	N INC DEC SIM POPA SRC SLC call _memory_read if their 
+;	N INC DEC SIM POPA SRC SLC call memory_read%if their 
 ;	operand is not a register. If the EA doesn't resolve to
 ;	a system-memory block then edi is NULL which can't
 ;	be used. edi is the sub-architectural part of storage
 ;	location = address in X86 where the RTA1 memory is modeled
 
 
+	%if	1
+
+base_read_pointer:
+	ror	ecx, 16		; save designator
+	ror	eax, 18
+	test	al, 63
+	jz	page_read_pointer
+	mov	cl, al
+	shr	eax, 14
+	jmp	read_pointer
+
+page_read_pointer:
+	rol	eax, 6
+	mov	cl, al
+	shr	eax, 20
+
+read_pointer:
+        mov	esi, eax
+	mov	eax, dword ptr [_psr]
+	and	cl, 63
+	test	cl, 56
+	jnz	direct_pointer	; shift radix 32-1 might get slipped
+
+alternate_pointer?:
+	shl	ah, cl		; so long as radix 31 applies to 8-bit shifts
+	shr	ah, 1		; any base-tag > 7 delivers zero
+	and	ah, 64
+	or	cl, ah
+
+direct_pointer:
+	movzx	eax, cl
+	mov	eax, dword ptr [eax*4+_base]
+	ror	ecx, 16		; restore designator
+
+	ret
+
+base_write_pointer:
+	ror	ecx, 16		; save designator
+	ror	eax, 18
+	test	al, 63
+	jz	page_write_pointer
+	mov	cl, al
+	shr	eax, 14
+	jmp	write_pointer
+
+page_write_pointer:
+	rol	eax, 6
+	mov	cl, al
+	shr	eax, 20
+
+write_pointer:
+	mov	esi, eax
+	mov	eax, dword ptr [_psr]
+	and	cl, 63
+	test	cl, 56
+	jnz	write_allowed	; shift radix 32-1 might get slipped
+	test	eax, 00800000h	; interrupt space ?
+
+	jnz	alternate_pointer?
+				; ISRs may write anything which exists
+	mov	al, ah		; gate windows [ 0 2 TCB kernel ]
+	or	al, 128+32	; applications may not write them
+	shl	al, cl
+
+	and	al, 128
+	jnz	near guard_ii_escape	; not allowed
+
+write_allowed:
+	movzx	eax, cl		; allowed
+	mov	eax, dword ptr [eax*4+_base]
+
+	ror	ecx, 16		; restore designator
+	ret
+
+	%else
+	
+
 base_flag_mask db 128, 64, 128+32, 16, 8, 4, 2, 1	; test psr for kernel memory select
 
 base_pointer:			; find handle to memory block containing operand
 	mov	esi, eax	; the tag is EA bits 23..18 (=0) EA bits 17..12
-;	mov	dword ptr [__register+153*4], eax
+
 	sar	eax, 18
 	test	al, 63
 	jz	page_pointer
@@ -657,9 +851,9 @@ page_pointer:
 	jz	base_selected		; B0 has no see$ alternative
 					; big bank pointer is nonzero
 alternative_pointer?:
-	test	al, 56			; shift radix is 32, skip test if bits 111000
+	test	al, 56			; s%ift radix is 32, skip test if bits 111000
 	jnz	base_selected		; because values 32+1..7
-					; would not shift value 128 off the map
+					; would not s%ift value 128 off the map
 					; 
 					; should not need the opcode value in ch again
 
@@ -675,6 +869,8 @@ base_selected:
 ;	or	dword ptr [__register+152*4], 00800000h
 	ret
 
+	%endif
+
 ;	sub-architectural measure on sabr and reload instructions
 
 ;	check the target memory block is in range and the bus characteristic
@@ -682,7 +878,7 @@ base_selected:
 ;	accessing them. Use 8 spare bits in the word containing _base[]
 ;	for a quick recall of the emulated bus attribute on reference
 
-;	because this software emulation needs to act differently for
+;	because this software emulation needs to act %ifferently for
 
 ;		executable space	rta1 24-bit words canonical memory
 ;					modeled in platform 32-bit words
@@ -693,11 +889,11 @@ base_selected:
 ;		24-bit filestore array	3-octet words stored big-endian
 ;					in packed array
 
-;	concept RTA1 device arrays with bus behaviour differences are completely
+;	concept RTA1 device arrays with bus behaviour %ifferences are completely
 ;	emulated on PC emulations because device arrays are modeled in PC RAM.
 
 ;	Various bus behaviours are emulated transparently to RTA1 target software
-;	in anticipation	that different memories for different uses may be attached
+;	in anticipation	that %ifferent memories for different uses may be attached
 ;	on product boards, making core-emulated RTA1s much more efficient for not
 ;	needing this part of emulation
 
@@ -722,22 +918,24 @@ base_selected:
 ;	you get here with the relocation handle in ebx
 ;	and the target window tag in eax, because that is the EA of a sabr instruction
 
+	%if	0
+
 _truebase:
 	cmp	eax, 2
 	jl	NEAR true_nothing
-	cmp	eax, 63		; if the window tag range makes no sense at all
+	cmp	eax, 63		;%if the window tag range makes no sense at all
 	ja	true_nothing	; don't start trying to make sense of it
 
 	mov	dword ptr [eax+_base], ebx	
 
 				; start by assuming it's good. That saves it away
-	test	ebx, 0400000h	; if it's not big block pointer it's device zero
+	test	ebx, 0400000h	;%if it's not big block pointer it's device zero
 	jz	truebase_memory_page
-	test	ebx, 63		; if it's device zero it can only be system memory
+	test	ebx, 63		;%if it's device zero it can only be system memory
 	jnz	truebase_device	;
 				; device other than zero may be system memory
 				; or 16-bit network memory. In emulation, filestore
-				; is a different sort because it's 24-bit packed
+				; is a %ifferent sort because it's 24-bit packed
 				; and executable space is modeled in 32-bit words
 truebase_memory_page:
 	ror	ebx, 6		;    00000000  0?pppp pppppp pppppp pppppp
@@ -769,7 +967,7 @@ truebase_device:
 	ja	truebase_none	; turn nothing-based back on and leave
 
 	; now we are certain of allowing this storage selection
-	; if we recognise the device type
+	;%if we recognise the device type
 	; otherwise we're certain that we won't allow it
 
 	ror	ebx, 16
@@ -794,6 +992,7 @@ true_nothing:
 	ret
 
 
+
 device_array:
 	shl	eax, 2			; al = device id * 4 : 0000FF01 BBBBBBB BBBBBBBB device00 
 	mov	ch, al
@@ -806,9 +1005,37 @@ device_array:
 	mov	edi, dword ptr [edi+eax*2+4]	; physical platform address of device storage
 	ret
 
-_device_read:				; readout device arrays
+	%endif
+
+
+device_read:				; readout device arrays
         test    eax, 0800000h           ; the vilainous bank index?
-        jnz     device_read_void
+        jnz     device_read_escape
+
+	%if	1
+	shl	eax, 2			;  al = device pointer * 4
+	movzx	edi, al			; edi = device pointer * 4
+	xor	al, al			; eax = memory block * 256
+	shl	eax, 10			; eax = memory block * 262144
+	add	esi, eax		; offset += base
+	mov	eax, edi
+	mov	edi, dword ptr [_devices+eax] ; physical array storage
+_device_read_xpanded:
+	mov	eax, dword ptr [_base+128*4+eax]
+
+	shr	eax, 22			; following conditions use parity
+					; parity only generated from LS octet
+					; how dumb can you get?
+
+	and	al, 3			; what sort of device array?
+
+	jz	device_read_escape	; that's double-checked option 00
+	jpe	device_read_array24	; and option 11 shorten
+	test	al, SYSMEM_FLAG>>22
+	jz	device_read_data16	; and option 01
+	jmp	device_read_sysmem	; and option 10
+	
+	%else
 
 	call	device_array
 
@@ -817,15 +1044,16 @@ _device_read:				; readout device arrays
 	test	ch, FSYS24
 	jz	device_read_data16
 	jmp	device_read_array24
+	%endif
 
-device_read_void:
-	mov	eax, II_GUARD
-	call	_ii
-	ret
+
+device_read_escape
+	jmp	guard_ii_escape
+
 
 device_read_sysmem:			; readout system memory array
 	jmp	memory_read_on		; allow all variations partial word / multiword
-	ret
+;	ret
 
 device_read_data16:			; readout 16-bit array
 	cmp	cl, 7
@@ -860,6 +1088,7 @@ device_read_data16_1:			; readout 1 word of 16-bit array
 
 device_read_data16_2:			; readout 2 words of 16-bit array
 	mov	eax, dword ptr [edi+esi*2]	; 4.3.2.1
+
 	bswap	eax				; 1.2.3.4
 	movzx	ebx, ax				; 0.0.3.4
 	shr	eax, 16				; 0.0.1.2
@@ -905,7 +1134,7 @@ device_read24_action:
 	dw	device_read_array24_4-device_read24_action
 	%endif
 
-device_read_array24_1:			; readout a wowrd of packed 24-bit array
+device_read_array24_1:			; readout a word of packed 24-bit array
 	movzx	ax, byte ptr [edi+esi]
 	shl	eax, 8
 	mov	al, byte ptr [edi+esi+1]
@@ -943,7 +1172,30 @@ device_read_array24_4:			; readout 4 words of packed 24-bit array
 
 _device_write:				; store device arrays
 	test	eax, 0800000h		; the vilainous bank index?
-	jnz	device_write_void
+	jnz	device_write_escape
+
+	%if	1
+					; write value is in ebx
+	shl	eax, 2			;  al = device ID * 4
+	movzx	edi, al			; edi = device ID * 4
+	xor	al, al			; eax = 256 * block ointer
+	shl	eax, 10			; block pointer *= 262144
+	add	esi, eax
+	mov	eax, edi
+	mov	edi, dword ptr [eax+_devices]	; physical buffer device array
+	mov	eax, dword ptr [eax+_base+128*4] ; descriptor port of device
+
+	shr	eax, 22			; following conditions use parity
+					; which is only generated from LS octet
+
+	and	al, 3			; isolate the device type
+	jz	device_write_escape
+	jpe	device_write_array24
+	test	al, SYSMEM_FLAG>>22
+	jz	device_write_data16
+	jmp	device_write_sysmem
+
+	%else
 
 	call	device_array
 	test	ch, DATA16_or_FSYS24
@@ -953,15 +1205,17 @@ _device_write:				; store device arrays
 	test	ch, FSYS24
 	jnz	device_write_array24
 
-device_write_void:			; store in array of target system memory
-	mov	eax, II_GUARD
-	call	_ii
-	ret
+	%endif
+
+device_write_escape
+	jmp	guard_ii_escape
+
 
 device_write_sysmem:
 	jmp	memory_write_on		; allow all variations partial word / multiword
 
 device_write_data16:
+
 	cmp	cl, 7
 	jz	device_write_data16_4
 	cmp	cl, 6

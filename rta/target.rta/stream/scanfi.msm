@@ -87,8 +87,14 @@ string_sentinel?
 	ly	argop
 	ly	0, y
 	lcal	scan_istring
-	j	read_format
 
+	la	LAST_BYTE_READ		. SENTINEL value must get cancelled here
+	xor	SENTINEL		. if that's what ended the scan
+	jnza	read_format		. otherwise it ends the next scan
+	la	' ',,xi			. before it starts
+	sa	LAST_BYTE_READ
+	j	read_format		. independent callers to istring
+					. cancel SENTINEL as required
 read_format_end
 	la	argop			. arguments used up to here
 	ana	caller_xyab+2		. starting from here
@@ -101,9 +107,15 @@ read_format_end
 
 scan_istring
 	call	(symbol_scan)		. skips spaces
-	jnza	scan_start
+	lk	255,,xi
+	jza	scan_stop_void		. hit an end before accepting data
+	mta	SENTINEL		. a is certainly nonzero
+	j	scan_start		. if a ^= SENTINEL start
+					. or else stop already
+scan_stop_void
 	z	0, y
 	lret	0
+
 scan_start
 	lb	a			. 1st byte delivered
 	
@@ -140,8 +152,8 @@ scan_ibyte
 .	j	scan_ibytex
 
 	mtane	SENTINEL
-	j	scan_ibytex
-
+	j	scan_ibytez		. dont knock that out
+					. let the caller do it
 	mtane	(LF)
 	j	scan_ibytez
 	mtane	(CR)
