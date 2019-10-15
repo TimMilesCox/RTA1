@@ -201,9 +201,9 @@ round1:	movzx	ebx, ch
 	mov	eax, dword ptr [__register+FP_GUARD]
 	shr	eax, cl
 	shl	eax, 8
-	mov	dword ptr [__register+280*4], edi
-	mov	dword ptr [__register+281*4], esi
-	mov	dword ptr [__register+282*4], ebx
+;	mov	dword ptr [__register+280*4], edi
+;	mov	dword ptr [__register+281*4], esi
+;	mov	dword ptr [__register+282*4], ebx
 	xor	dword ptr [edi+ebx*4+2*4], eax
 	ret
 
@@ -218,13 +218,61 @@ round2more:
 	jnz	round2more
 	ret
 
+LONG_CARRY equ	1
+LONG_BORROW equ -1
+
+	%if	LONG_CARRY=0
+
+end_around_down:
+	mov	eax, LONG_BORROW
+	sar	eax, cl
+	not	eax
+	movzx	ebx, ch
+	add	dword ptr [edi+ebx*4+2*4], eax	; 1st "borrow" is truncated -1 in eax
+	mov	eax, LONG_BORROW
+	jmp	end_around
+
+end_around_carry:				; eax is LONG_CARRY or LONG_BORROW
+	mov	eax, LONG_CARRY
+	ror	eax, cl
+	ror	ecx, 16
+	movzx	ebx, ch
+	add	dword ptr [edi+ebx*4+2*4], eax	; 1st "carry" is rotated 1 in eax
+	mov	eax, 0				; do not change carry
+	jmp	end_around
+
+end_around_repeat:
+	adc	dword ptr [edi+ebx*4+2*4], eax
+
+end_around:
+	dec	ebx
+	jns	end_around_repeat
+
+	mov	eax, dword ptr [edi+7*4]
+	mov	dword ptr [__register+286*4], eax
+        mov     eax, dword ptr [edi+6*4]
+        mov     dword ptr [__register+285*4], eax
+        mov     eax, dword ptr [edi+5*4]
+        mov     dword ptr [__register+284*4], eax
+        mov     eax, dword ptr [edi+4*4]
+        mov     dword ptr [__register+283*4], eax
+        mov     eax, dword ptr [edi+3*4]
+        mov     dword ptr [__register+282*4], eax
+        mov     eax, dword ptr [edi+2*4]
+        mov     dword ptr [__register+281*4], eax
+        mov     eax, dword ptr [edi+1*4]
+        mov     dword ptr [__register+280*4], eax
+
+	ret
+
+	%else
+
 end_around_down:
 	mov	eax, -1
 	shr	eax, cl
 	not	eax
 	jmp	eoc1
-
-end_around_carry:				; frame mantissa has programmed ch:cl
+end_around_carry:
 	mov	eax, 1				; don't call this if there is no carry
 	ror	eax, cl
 
@@ -237,11 +285,16 @@ eoc1:	movzx	ebx, ch
 eoc:	adc	dword ptr [edi+ebx*4], eax
 	dec	ebx
 	jnz	eoc
-	ret	
+	ret
+
+	%endif
 
 restore_trailing_signs:
 	movzx	ebx, ch
 	mov	eax, dword ptr [edi+1*4]
+
+	mov	dword ptr [edi+7*4], eax
+
 	and	eax, eax
 	js	restore_trailing_ones
 	not	eax
@@ -466,6 +519,7 @@ fa_promote_magnitude:
 fa_add:	;	call	frame_mantissa
 	push	eax
 	call	round1
+
 	pop	eax
 
 	and	eax, eax
@@ -485,15 +539,6 @@ fa_addfast:
 	movzx	ebx, cx				; index / count
 	ror	ecx, 16
 
-;	clc
-
-;	mov	eax, dword ptr [edi+1*4]	; before state of target signs
-;	push	eax
-;	inc	ebx				; add mantissa words + signs word
-
-	ror	ecx, 16
-	movzx	ebx, cx
-	ror	ecx, 16
 	clc
 
 fa_action:
@@ -502,14 +547,15 @@ fa_action:
 	dec	ebx				; process word 1
 	jnz	fa_action			; leave word 0 alone
 
-	%if	1
 	mov	eax, dword ptr [__register+272*4]
 	xor	eax, dword ptr [edi+1*4]
 	jns	fa_testcarry
 	not	dword ptr [__register+272*4]	; thru zero
 	test	dword ptr [__register+272*4], -1
 	js	fa_change2negative
+
 	call	end_around_carry
+
 	jmp	fa_testcarry
 
 fa_change2negative:
@@ -536,118 +582,11 @@ fa_testcarry:
 						; complete word of signs again
 	jmp	fa_normalised
 
-	%else
-
-	mov	eax, dword ptr [edi+1*4]
-	jnc	fa_polarity?			; examine carry just once
-	and	eax, eax			; carry is a fact
-	js	fa_carry			; increment if -
-						; drop thru test - to +
-fa_polarity?:
-	mov	ebx, dword ptr [__register+272*4]
-	xor	ebx, eax			; thru zero?
-	jns	fa_nocarry			; no
-
-fa_polarity:
-	and	eax, eax	
-	jns	fa_carry
-	call	end_around_down
-	jmp	fa_nocarry
-
-fa_carry:
-	call	end_around_carry
-fa_nocarry:
-
-;	overflow into signs
-
-	mov	ebx, dword ptr [edi+1*4]
-	rol	ebx, 1				; one sign to foot
-	rcl	ebx, 1				; one sign to carry
-	lahf					; don't change carry with xor
-	xor	ebx, dword ptr [edi+1*4]	; compare signs 31 and 0
-	and	bl, 1
-	jz	fa_normalise
-
-	sahf					; retrieve the carry from rol 1
-	rcr	dword ptr [edi+1*4], 1	; looping and indexing
-	rcr	dword ptr [edi+2*4], 1	; are a waste of time
-	rcr	dword ptr [edi+3*4], 1
-	rcr	dword ptr [edi+4*4], 1
-	rcr	dword ptr [edi+5*4], 1
-	rcr	dword ptr [edi+6*4], 1
-	rcr	dword ptr [edi+7*4], 1
-	inc	dword ptr [edi]		; exponent++
-	ret
-
-
-;	pop	eax
-;	mov	eax, dword ptr [edi+1*4]
-;	mov	ebx, dword ptr [edi+1*4]	; overflow into signs?
-;	ror	ebx, 1
-;	xor	ebx, eax			;              after
-
-;	jns	fa_renormalise			; did not travel thru zero
-;	add	dword ptr [edi], 1
-;	jmp	fa_downwards
-;	sar	eax, 1
-
-
-						; it is ones in eax and
-;	not	eax				; correct in signs field
-;	add	ebx, -2
-;	mov	dword ptr [edi+1*4], eax	; update final signs
-
-;	call	frame_mantissa			; get platform words rounded down / bit offset 
-;	call	initial_polar_carry		; get polarity + value + bias
-
-;	mov	dword ptr [__register+272*4], eax
-;	mov	dword ptr [__register+273*4], ebx
-
-;	push	eax
-;	sar	eax, 31				; do this before setting carry
-;	xchg	eax, dword ptr [esp]
-;	add	dword ptr [edi+ebx*4+2*4], eax ; adjust low-order mantissa word
-;	pop	eax				; subsequent adjusting words = signs
-						; ebx = mantissa words - 2
-; fa_carry_round
-;	adc	dword ptr [edi+ebx*4+1*4], eax
-;	dec	ebx
-;	jnz	fa_carry_round
-
-;	lahf					; read carry from PSR
-;	xchg	ah, al
-
-;	mov	ebx, dword ptr [edi+1*4]
-;	sar	ebx, 31
-;	mov	dword ptr [edi+1*4], ebx
-;	xor	eax, ebx
-;	xor	eax, dword ptr [edi+1*4]	; detect an unsign has flowed out
-
-; fa_assign:
-;	and	eax, 1				; added mantissa 1 bit above fractional point?
-;	jz	fa_normalise
-						
-;	mov	eax, dword ptr [edi+1*4]	; more than normal
-;	sar	eax, 1				; shift the unsign down the mantissa
-;	mov	dword ptr [edi+1*4], eax	; and make the sign all signs for future XOR
-
-;	rcr	dword ptr [edi+2*4], 1
-;	rcr	dword ptr [edi+3*4], 1
-;	rcr	dword ptr [edi+4*4], 1
-;	rcr	dword ptr [edi+5*4], 1
-;	rcr	dword ptr [edi+6*4], 1
-;	rcr	dword ptr [edi+7*4], 1
-;	add	dword ptr [edi], 1		; uprate the scale
-;	jmp	fa_normalised
-
-	%endif
-
 fa_normalise:
 	call	renormalise			; in case the sum is plenty positions
 fa_normalised					; below the fractional point
 	ret
 	
-
 fm:	mov	esi, _OUTPUT			; initialise final accumulation
 	call	zoutput
 
@@ -739,14 +678,11 @@ fmadx:	dec	cl
 	rcl	dword ptr [esi+3*4], 1
 	rcl	dword ptr [esi+2*4], 1
 
-	%if	1
 	jmp	fm_inrange
-	%endif
 
 fm_normalised:
 	mov	edi, _OUTPUT
 
-	%if	1
 	call	round2
 
 	jnc	fm_inrange
@@ -757,8 +693,6 @@ fm_normalised:
 	rcr	dword ptr [esi+6*4], 1
 	rcr	dword ptr [esi+7*4], 1
 	add	dword ptr [_INPUTR], 1
-
-	%endif
 
 fm_inrange
 
@@ -786,10 +720,21 @@ fd:	mov	esi, _OUTPUT
 fdnop:	ret					; not normalised = zero divisor
 
 fdgo:	mov     eax, dword ptr [_INPUTR+1*4]	; make sure the dividend is present
-	xor	eax, dword ptr [_INPUTR+2*4]
-	jns	fdnop				; no go after all
+	xor	eax, dword ptr [_INPUTR+2*4]	; normalising bit must be not sign
+	js	fdop				; go after all
+						; unnormalised = 0 = unnormalised
+	mov	eax, dword ptr [_INPUTR+1*4]	; read the signs I tell you
+	mov	dword ptr [_OUTPUT], 0		; exponent magnitude of nowhere
+	mov	dword ptr [_OUTPUT+1*4], eax	; signs
+	mov	dword ptr [_OUTPUT+2*4], eax	; and as much mantissa as you like
+	mov	dword ptr [_OUTPUT+3*4], eax
+	mov	dword ptr [_OUTPUT+4*4], eax
+	mov	dword ptr [_OUTPUT+5*4], eax
+	mov	dword ptr [_OUTPUT+6*4], eax
+	mov	dword ptr [_OUTPUT+7*4], eax
+	ret
 
-	and	ebx, ebx			; divisor either is negative magnitude
+fdop:	and	ebx, ebx			; divisor either is negative magnitude
 	js	fd_comp1	
 	mov	esi, _INPUT2			; or shall be
 	call	zover
@@ -882,53 +827,17 @@ fd_72level:
 	add	cl, -1
 	jc	fd_72
 
-	%if	1
-	mov	eax, dword ptr [_OUTPUT+4*4]
-	mov	dword ptr [__register+284*4], eax
-	mov	eax, dword ptr [_OUTPUT+3*4]
-	mov	dword ptr [__register+283*4], eax
-	mov	eax, dword ptr [_OUTPUT+2*4]
-	mov	dword ptr [__register+282*4], eax
-	%endif
-
 fd_restore:	pop	ecx
 		pop	edx				; hand the program counter back
 		mov	eax, dword ptr [_INPUTR]	; + magnitude dividend exponent
 		sub	eax, dword ptr [_INPUT2]	; + magnitude divisor exponent
 		add	eax, 00400001h			; midpoint + 1
-;		and	eax, 007FFFFFh
 		mov	dword ptr [_OUTPUT], eax	; magnitude of quotient scale
 							; -> front of delivery string
 
-;		mov	cl, ch				; retrieve 2nd copy of beats count
 		mov	edi, _OUTPUT
-;		call	frame_mantissa
-;		call	restore_trailing_signs
 
-		%if	1
 		call	renormalise
-		%else
-		call	restore_trailing_signs
-
-	fd_normalise:					; quotient mantissa normalised?
-		mov	eax, dword ptr [_OUTPUT+2*4]
-		and	eax, eax
-		js	fd_normalised
-		clc					; shift replacement value = 0
-		rcl	dword ptr [_OUTPUT+7*4], 1
-		rcl	dword ptr [_OUTPUT+6*4], 1
-		rcl	dword ptr [_OUTPUT+5*4], 1
-		rcl	dword ptr [_OUTPUT+4*4], 1
-		rcl	dword ptr [_OUTPUT+3*4], 1
-		rcl	dword ptr [_OUTPUT+2*4], 1
-
-		add	dword ptr [_OUTPUT], -1		; decrement magnitude of scale
-		add	cl, -1
-		jc	fd_normalise
-		mov	dword ptr [_OUTPUT], 0		; if mantissa is zero 
-							; so is everything else
-	fd_normalised:
-		%endif
 
 		mov	esi, _OUTPUT			; tell rewrite where it is
 		mov	eax, dword ptr [_INPUTR+1*4]	; determine sign of quotient
@@ -941,11 +850,6 @@ fd_restore:	pop	ecx
 		xor	dword ptr [esi+5*4], eax	; switch the long mantissa
 		xor	dword ptr [esi+6*4], eax
 		xor	dword ptr [esi+7*4], eax
-
-	;	add	ch, -24
-	;	mov	edi, esi
-	;	call	frame_mantissa
-	;	call	restore_trailing_signs
 
 		ret
 
@@ -976,7 +880,7 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	mov	ecx, 00040208h
 	test	dword ptr [_psr], FP_R
 	jz	_fa_
-	mov	ecx, 00060410h
+	mov	ecx, 00070410h
 _fa_	call	fa
 	pop	ebx				; retrieve target register name
 	pop	ebp
@@ -998,7 +902,7 @@ _fan:	push	ebp
 	mov	ecx, 00040208h
 	test	dword ptr [_psr], FP_R
 	jz	_fan_
-	mov	ecx, 00060410h
+	mov	ecx, 00070410h
 _fan_:	call	fan
 	pop	ebx				; retrieve target register name
 	pop	ebp

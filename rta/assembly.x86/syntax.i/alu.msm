@@ -681,14 +681,33 @@ _slc_register:
 	call	ring25_l
 	jmp	_operand_write
 
-_da:	call	_burst_read2
+_da:	mov	dword ptr [__register+282*4], eax
+	call	_burst_read2
 	jmp	_da_
+
 _dan:	call	_burst_read2
 	xor	ebx, 00FFFFFFh
 	xor	eax, 00FFFFFFh
-	add	ebx, 1
+	add	ebx, 1			; carry from bit 23 
+					; remains in bit 24 for now
+	%if	1
+_da_:	add	ebx, dword ptr [ebp+B]
+	mov	dword ptr [ebp+B], ebx
+	and	dword ptr [ebp+B], 00FFFFFFh
+	shr	ebx, 24			; zone carry value from bit 23
+	add	eax, ebx
+	add	eax, dword ptr [ebp+A]
+	mov	dword ptr [ebp+A], eax
+	and	dword ptr [ebp+A], 00FFFFFFh
+	shr	eax, 24
+	mov	ebx, dword ptr [_psr]
+	and	bl, 254
+	or	bl, al
+	mov	dword ptr [_psr], ebx
+	ret
+
+	%else
 _da_:	add	ebx, [ebp+B]
-;	mov	dword ptr [__register+279*4], ebx
 	rol	ebx, 8
 	movzx	ecx, bl
 	shr	ebx, 8
@@ -701,6 +720,7 @@ _da_:	add	ebx, [ebp+B]
 	shr	eax, 8
 	mov	[ebp+A], eax
 	ret
+	%endif
 
 scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0
 
