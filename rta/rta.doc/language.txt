@@ -26,27 +26,34 @@ This document is about
 
 <ol>
 	<li>
-	<a href="#vector">far call targets: $vector macro</a>
-	</li>
-	<li>
-	<a href="#sequence">formal calling sequences used in structured assembly language code</a>
+	<a href="#far_call">Far Call Targets</a>
 	<ol>
-		<li><a href="#realtime">structured realtime in the internal stack</a></li>
-		<li><a href="#argument">calling and constructing the call argument stream</a></li>
-		<li><a href="#transform">macro conversion of call arguments</a></li>
-		<li><a href="#dynamic">the called routine: parameters and dynamic data</a></li>
-		<li><a href="#zeronet">recursive programming and zero-net internal stack</a></li>
-		<li><a href="#trapping">trapping wrong argument lists</a></li>
+		<li><a href="#vector">$vector Macro</a></li>
+		<li><a href="#gate">Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Location</a></li>
+		<li><a href="#iframe">Constructing Large and Loadable Applications: $iframe Macro</a></li>
 	</ol>
 	</li>
 	<li>
-	<a href="#algo">runtime algorithmic expressions</a>
+	<a href="#sequence">Formal Calling Sequences used in Structured Assembly Language Code</a>
+	<ol>
+		<li><a href="#realtime">Structured Realtime in the Internal Stack</a></li>
+		<li><a href="#argument">Calling and Constructing the Call Argument Stream</a></li>
+		<li><a href="#transform">Macro Conversion of Call Arguments</a></li>
+		<li><a href="#dynamic">The Called Routine: Parameters and Dynamic Data</a></li>
+		<li><a href="#zeronet">Recursive Programming and Zero-Net Internal Stack</a></li>
+		<li><a href="#trapping">Trapping Wrong Argument Lists</a></li>
+	</ol>
+	</li>
+	<li>
+	<a href="#algo">Runtime Algorithmic Expressions</a>
 	</li>
 
 </ol>
 
+<a	name="far_call"/>
 <a	name="vector"/>
-<h2>1. Far Call Targets: $vector Macro</h2>
+<h2>1. Far Call Targets</h2>
+<h3>1.1 $vector Macro</h3>
 
 <b>$vector</b> publishes routines which are the target
 of a far <b>call</b> instruction. It's a procedural macro coded
@@ -59,8 +66,8 @@ identifies its <b>bank:vector</b> tuple
 <pre>
 
 .	<b>$vector</b> goes in the first 64 words of an
-.	instruction bank
-.	64 words at bank start are externally addressable
+.	instruction frame
+.	64 words at instruction frame start are externally addressable
 .	They are a jump pad
 
 $(0::LOAD_LOCATION)	
@@ -87,38 +94,197 @@ variable operand of <b>go</b> and <b>call</b> instructions
 handle		+	handle_name
 
 </pre>
-The handle value  encodes the target bank identifier and
-six-bit offset location where <b>$vector</b> macro is assembled
+or more frequently
 <pre>
 
+		call	(handle_name)	. literal constant of the vector value
+					. generated in storage by reference
+</pre>
+The handle value  encodes the target frame identifier and vector offset
 
-        vector encoding at a 4K word bank edge
+See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</a>
+<pre	style="font-size:12pt">
+
+
+
+        vector encoding at a 4K word page edge
 	______________________________________
+
+
+        vector descriptors flagged 00 in two high order bits
+	identify a 4K-word instruction frame at a 4K address boundary
+	in the first 256 Megawords of memory
+
+	the frame has 64 entry vectors
+
+        call or go instruction reads the descriptor as
+        a constant or variable operand at location[EA]
+
 
         23  21                 6|5    0
         ________________________|_______
-        |00|   bank identifier  |offset|
+        |00| 4K page identifier |offset|
         |__|____________________|______|
 
+        the name of a 4K-word instruction frame
+        is its 4K page identifier represented in 22 bits and tagged 00 in two high-order bits
+
+	   |21                        0
+	___|____________________________
+	|00|     4K page identifier    |
+	|__|___________________________|
+
+	page identifier becomes B0 window pointer on go or call
+
+        new B0 page identifier is copied to frame high index I/O port 125 on call or return into the frame
+        indicating that the application may execute instructions in one page or 4096 words
+
+	far return and interrupt return retrieve the frame name
+	and next instruction offset from the internal stack
+
+	47  45                       24|23                            0   
+	_______________________________|________________________________
+	|00|     4K page identifier    |    next instruction offset    |
+	|__|___________________________|_______________________________|
 
 
-	vector encoding at a 32K word bank edge
-	_______________________________________
 
-        Instruction banks at addresses from 256 Megawords
-        to 16 Gigawords are assigned at a granularity of 32K words
+	vector encoding at a 32K word frame edge
+	________________________________________
+
+	vector descriptors flagged 01 in two high-order bits
+        identify an instruction frame at any 32K-word boundary
+        in the 16 gigaword executable space
         and have eight entry vectors
+
+        call or go instruction reads the descriptor as
+	a constant or variable operand at location[EA]
+
 
         23  21                    3|2 0
         ___________________________|____
-        |01|   bank identifier     |off|
+        |01|  32K frame identifier |off|
         |__|_______________________|set|
 
 
+        the name of a 32K-word instruction frame is the 32k-aligned frame identifier
+	shifted three positions left to form a 4K page identifier on a 32K boundary
+	and tagged 01 in two high-order bits
+
+
+	23  21                    3|2 0
+	___________________________|____
+	|01|  32K frame identifier |000|
+	|__|_______________________|___|
+
+
+        page identifier becomes B0 window pointer on go or call
+
+        new B0 page identifier plus seven is transferred to frame high index I/O port 125 on call or return into the frame
+        indicating that the application may execute instructions in eight pages or 32768 words
+
+        far return and interrupt return retrieve the frame name
+        and next instruction offset from the internal stack
+
+        47  45                       24|23                            0
+        _______________________________|________________________________
+        |01|     4K page identifier    |    next instruction offset    |
+        |__|___________________________|_______________________________|
+
+
+
+</pre>
+
+<a	name="gate"/>
+<h3>1.2 Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</h3>
+<pre	style="font-size:12pt">
+
+	go or call operand flagged 1 in high order bit 23 is a pointer to a 48-bit gate
+	in the first 8 megawords of application address space
+
+	the gate describes an instruction frame of any size at any 4K-word boundary
+	entry point is not restricted to 64 vector offsets
+
+
+
+        23|22                         0          47     41                   24|  |21                         0
+	__|_____________________________	_______________________________|__|_____________________________
+	|1|      pointer to gate       |------->|pppppp|   entry point offset  |00|   4k start page identifier |
+	|_|____________________________|	|______|_______________________|10|____________________________|
+									        01
+
+	bits 47..42 of the 48-bit gate are the target frame page high index
+
+	if page high index is zero then the last page of the instruction frame is also its first page
+
+	the frame possesses one page more than the high-index value
+
+        the name of the instruction frame is the start page identifier tagged { 00 | 01 | 10 } in two high order bits
+
+		00 if page high index is zero
+
+	           |21                        0
+        	___|____________________________
+	        |00|  4K start page identifier |
+        	|__|___________________________|
+
+
+		01 if page high index is seven
+
+        	   |21                        0
+	        ___|____________________________
+        	|01|  4K start page identifier |
+	        |__|___________________________|
+
+
+		10 if page high index is neither zero nor seven
+
+	           |21                        0
+        	___|____________________________
+	        |10|  4K start page identifier |
+        	|__|___________________________|
+
+
+        page identifier becomes B0 window pointer on go or call
+
+        new B0 page identifier plus page high index is transferred to frame high index I/O port 125
+	on call or return into the frame indicating that the application may execute instructions in
+	page identifier plus one pages or (page identifier + 1) * 4096 words
+
+        far return and interrupt return retrieve the frame name
+        and next instruction offset from the internal stack
+
+        47  45                       24|23                            0
+        _______________________________|________________________________
+        |tt|  4K start page identifier |    next instruction offset    |
+        |__|___________________________|_______________________________|
+
+
+	the gate is not refetched on return from ISR or another instruction frame
+	and the pointer to the gate is not retained after this frame is called
+
+	if high order tag bits tt of the popped name are
+
+		00: page high index zero is applied
+
+		01: page high index seven is applied
+
+		10: page high index is obtained from a sample gate at location 64 within the frame
+
+
+	|<--------------- page high index at frame location 64
+	|
+	|_______________________________________________________________
+	|pppppp|     zero offset       |10|   4k start page identifier |
+	|______|_______________________|__|____________________________|
+	|47    |45                   24|                              0
+
 </pre>
 <p>
-The target bank is any size, but
-only 64 or 8 vector locations are externally addressable
+
+<a	name="iframe"/>
+<h3>Constructing Large and Loadable Applications: $iframe Macro</h3>
+
 
 <a	name="sequence"/>
 <a	name="realtime"/>

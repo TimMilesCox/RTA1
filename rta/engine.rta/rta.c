@@ -1295,7 +1295,7 @@ void execute(word instruction)
 			read the gate
                   ************************************************/
 
-                  burst_read2(buffer, b0_name & 0x003FFFFF);
+                  burst_read2(buffer, b0_name & 0x007FFFFF);
                   b0_name = buffer[1];
                   b0_scope = b0_name & 0x003FFFFF;
                   v = b0_scope;
@@ -1319,6 +1319,7 @@ void execute(word instruction)
 
                   v = b0_name & 0x003FFFF8;
                   w = b0_name & 7;
+                  b0_name &= -8;
                   b0_scope = v | 7;
                }
                else

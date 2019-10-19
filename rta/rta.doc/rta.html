@@ -69,7 +69,7 @@ SNMP, HTTP, ICMP and floating point server interact with other computers
 			<li><a href="#exar">Executable Space and Array Space</a></li>
 			<li><a href="#aspace">Address Space</a></li>
 			<li><a href="#ospace">Operand Address Space</a></li>
-			<li><a href="#ispace">Instruction Address Space</a></li>
+			<li><a href="#ispace">Instruction Frame and IFrame Name</a></li>
 			<li><a href="#istack">The Internal Stack</a></li>
 			<li><a href="#asum">Address Space Summary and Diagram</a></li>
 			<ol>
@@ -151,11 +151,24 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 <h3>2.1	Executable Space and Array Space</h3>
 
 <p>
-The limit of executable space (or system memory) is 16 gigawords.
+RTA1 places blocks of 4096 words or 262144 words in 64 windows of address space
+
+<p>
+The less block is sometimes called a page and the large block a bank
+
+<p>
+The limit of executable space (or system memory) is 16 gigawords. Executable space
+is not all in the address space at once
+
+<p>
+The primary objective of a compact adress space is compression but there are also
+gains in security and locality of reference
 
 <p>
 Additional arrays up to one teraword total which are not part of executable space
-may be added.<br>
+may be added
+
+<p>
 RTA1 documentation calls these additional arrays devices, and they may each contain up to<br>
 16 gigawords of 8- 16- or 24-bit memory. Device arrays may include among other applications<br>
 video RAMs, dual-ported 16-bit network buffers, and memory-addressable 24-bit filestores
@@ -322,27 +335,71 @@ The 6-bit window index corresponds to a relocation pointer in I/O ports 0..63
 (or to certain switchable alternatives in I/O ports 65..71)
 
 <a	name="ispace"/>
-<h3>2.4 Instruction Address Space</h3>
+<h3>2.4 Instruction Frame and IFrame Name</h3>
 
 <p>
-Instructions are read in window B0. Window B0 is the physical bank at
-the 4K-word bank-edge pointed by relocation register B0 in I/O Port 0
+Instructions are read from the Instruction Frame window B0
 
 <p>
-B0 is switchable between different physical instruction banks
+Window B0 is memory starting at the 4K-word block-edge pointed by I/O Port 0
 
 <p>
-Instructions are read from the leading edge of window B0 and not from
+The last page of the the Instruction Frame is pointed in I/O Port 64
+
+<p>
+The simplest iframe is a single page
+
+<p>
+Extensive system images may be built completely from iframes of one 4K-word page. Iframes of many pages may instead be constructed
+
+<p>
+If IFrame is one page in size I/O Port 64 contains the same value as I/O Port 0
+
+<p>
+I/O port 64 contains [B0] + IFrame Pages - 1.
+
+<p> 
+I/O ports 0 and 64 are written by far call and return instructions which switch IFrame
+
+<p>
+Instructions are read from the leading edge of IFrame B0 and not from
 registers or any different address window
 
 <p>
-Window B0 is any size in 4K-granularity. The 48-bit program counter is absolute, and B0 base value<br>
-is added to make jump addresses absolute and subtracted to make saved addresses program-relative
+The 48-bit program counter is absolute. B0 Page Index * 4096
+is added to make jump addresses absolute and subtracted to make saved addresses relative
 
 <p>
 Words 256..4095 of window B0 are in the operand address space as well as the
 instruction window
 
+<p>
+IFrame Name is the 22-bit Iframe Start Page Index and two flag bits determining IFrame Size.
+<pre>
+
+					__________________________________
+					| ff |       B0 Page Index	 |
+					|____|___________________________|
+					   22|				0
+
+</pre>
+IFrame Name is derived when the iframe is entered and is stacked for return when the iframe calls out or interrupts
+
+<p>
+IFrame Start Page Index stripped of flags is written to base B0 in I/O Port 0 for operand addressing,
+and is used to form an absolute program counter address B0 * 4096 + offset on entry or return into the iframe
+
+<p>
+The way flag bits 23:22 determine IFrame Size is explained with instructions
+<pre>
+
+	<a	href="#gocall">far go and call</a>
+
+	<a      href="#fret">far return</a>
+
+	<a      href="#ir">interrupt return</a>
+
+</pre>
 <a	name="istack"/>
 <h3>2.5 The Internal Stack</h3>
 <p>
@@ -364,7 +421,7 @@ The part of the register stack available to an application is 128 words, and the
 of it organised in an internal stack is 104 words
 
 <p>
-At task switch RTA1 swaps 128 application registers in 32 instructions
+At thread switch RTA1 swaps 128 application registers in 32 instructions
 
 <p>
 The working of the internal stack is somewhat inverse to an external stack.
@@ -447,12 +504,12 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 	Instructions are only obtained from window B0
-	and B0 switches between instruction banks
+	and B0 switches between instruction blocks
 
 	Operands may be obtained from the registers,
-	from part of the actual instruction bank in window B0,
-	from the 63 actual application data banks,
-	from the seven alternative data banks used by the kernel
+	from part of the actual instruction block in window B0,
+	from the 63 actual application data blocks,
+	from the seven alternative data blocks used by the kernel
 
 	An application may have gigawords of storage
 	in blocks from 4096 words to 16 gigawords in size
@@ -462,7 +519,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	Relocation Registers 1..63 are I/O ports 1..63
 
-	Applications can change which storage banks
+	Applications can change which blocks of storage
 	are based in their 63 data address windows
 
 	The thread current data spaces do not need to
@@ -594,20 +651,13 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	When an array is many times the address space in size, address windows
 	are used as cursors in the array, fixing dynamically on buckets of one or
-	two memory blocks or banks
-
-	If structures in the array straddle banks, the cursor should be two or more
-	adjacent physical banks based in adjacent windows
-
-	This allows the physical address of two or four word operands to be generated
-	only once and data read or written in a single burst if memory supports that
-
+	two memory blocks
 
 	For example
 
 			dl		array_offset
-			dsl		6		. separate the bank-id from
-							. the word offset
+			dsl		6		. separate the 262144-word block-id
+							. from the word offset
 
 			orB, xi		WINDOW		. tag the word offset
 			rbr		6		. with an address window
@@ -619,13 +669,13 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 		.					   in register b
 
 
-			sal		6		. position the big-bank index
-			aa		array_start_bank. add to array start for bank-id
+			sal		6		. position the big-block index
+			aa		array_start_bank. add the array start block-id
 
-			sabr		WINDOW		. base the bank where the structure
+			sabr		WINDOW		. base the block where the structure
 							. starts in the address window
 
-			la, i		64, a		. identify the next big-bank id
+			la, i		64, a		. identify the next big block
 			sabr		WINDOW+1	. base that in the adjacent 
 							. address window
 
@@ -641,11 +691,10 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	Ultra-Large and Distributed Arrays
 	__________________________________
 
-	Alternatively, successive blocks of a large array need not be in physically continuous storage
-	so long as storage operands of two or four words are aligned
+	Successive blocks of a large array need not be in physically continuous storage
+	but if they are not, a list of lookup pointers is needed, in for example a vector block
 
-	Applications may process arrays up to 64 gigawords in size distributed over
-	multiple device arrays with the help of system calls to prototype kernel smaragd7
+	Applications may process arrays up to a teraword in size distributed over multiple device arrays
 
 
 
@@ -656,23 +705,10 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	Burst reads and writes of two or four words are at any word address.
 	There is no bus alignment larger than a word
 
-	Instructions writing an operand which straddles storage banks snoop the next base pointer during execution
-
-	If the pointer selects the bank physically next then the burst write proceeds.
-	The entire burst write is otherwise abandoned
+	Instructions reading or writing an operand which straddles storage blocks serialise the operation to word pairs or to single words
 
 	Base pointers are relocation registers addressed as I/O ports
-	and select a bank either of 4096 words or 262144 words
-
-	No precaution is taken for multiword operand read over bank edge. Burst read is done uncritically.
-	If the next physical bank is not linearly successive application data then the trailing readout is wrong.
-
-	An array greater than a storage block must either have 2- and 4-word operands aligned
-	or must be in physically continuous storage
-
-	Alignment of 2- and 4-word write operands has an advantage in efficiency
-	because the next-base-pointer-snoop is never necessary. It is rarely necessary to snoop the next base,
-	but an unaligned address necessitates an extra check for bank-end and the consequent snoop
+	and select a block either of 4096 words (a "page") or 262144 words a (a "bank")
 
 
 </pre>
@@ -681,6 +717,17 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 <a	name="protection"/>
 <h3>2.7 Protection and Safety</h3>
 <pre>
+
+	<a	name="xlimit"/>
+	Execution Protection
+	____________________
+
+	Instruction execution advance or jump outside the current instruction frame raises interrupt GUARD$
+
+	There es no restriction on far <a href="#call">call</a> or <a href="#go">go</a> within executable space
+
+	Targets of the <a href="#ex">execute</a> instruction may be anywhere in actual operand space unless the memory accessed is restricted as unsuitable
+
 
 	<a	name="safety"/>
 	System Data Protection
@@ -744,14 +791,11 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 <a	name="thread"/>
 <h3>2.8 Thread Switch and Address Space</h3>
 
-Task current relocation pointers are not saved on task switch because they are
+Thread current memory block pointers are not saved on thread switch because they are
 already mirrored in the TCB at the point when the application selects memory
 
 <p>
-Typically &frac34; of relocation registers are part of task context, OS depending
-
-<p>
-47 relocation registers are reloaded in 25 instructions
+62 window pointers are reloaded in 31 instructions
 
 
 <a	name="ioport"/>
@@ -819,9 +863,12 @@ and to restart the incrementer by writing Port 96
 	96		high-frequency timer incrementer restart write
 	97		dayclock update advertisement multicast
 	98		preemptive thread switch unicast
-	99		resource attention unicast/multicast
-	124		ROM/RAM threshold
-	128		system memory bank high index
+	99		resource attention unicast / multicast
+	101		timezone seconds difference from GMT	<b>time$zone</b>
+	102		hardware / firmware command pins	<b>INDICATION$</b>
+	103		powersave programmable microseconds	<b>chill$down</b>
+	124		ROM / RAM threshold			<b>ram$threshold</b>
+	128		system memory 4K-block high index
 	129:191		devices 1:63 attributes / array size
 
 </pre>
@@ -830,16 +877,16 @@ and to restart the incrementer by writing Port 96
 <h3>2.10: Interrupt Assignments</h3>
 
 <p>
-The first 4K-word bank of storage or PAGE_0 contains the restart location and is
+The first 4K-word block of storage or PAGE_0 contains the restart location and is
 otherwise reserved for any future restart and image load firmware
 
 <p>
-The second 4K-word bank of storage or PAGE_1 populates certain of its 63 vector
-locations PAGE_1:0 thru PAGE_1:63 with external and internal interrupt vectors
+The second 4K-word storage block PAGE_1 is anticipated for kernel routines and
+vector locations PAGE_1:0 thru PAGE_1:63 are external and internal interrupt vectors
 
 <p>
-These interrupt vectors are assigned to external events. They are classed as external because I/O
-activity or processor contingency raises them
+Following vectors are interrupts raised by I/O, processor contingency or inter-core communication
+
 <pre>
 
 
@@ -848,9 +895,9 @@ activity or processor contingency raises them
 
 				_________________________________
 	GUARD$		1:31	| 000000 000000 000001 | 011111	|	internal stack limit overstep
-				|______________________|________|	device bank base attempt from application
-									storage access outside address space
-									software diagnostic
+				|______________________|________|    or	device bank base attempt from application
+								     or	storage access outside address space
+								     or	software diagnostic
 
 				_________________________________
 	ATTENTION$	1:60	| 000000 000000 000001 | 111100 |	resource service request unicast/multicast
@@ -870,8 +917,7 @@ activity or processor contingency raises them
 
 </pre>
 
-Prototype kernel smaragd7 assigns these vectors in PAGE_1 to kernel calls reached with the
-Internal Interrupt instruction
+Internal interrupt instruction <b>ii</b> calls kernel routines via the 64 vectors at page locations 0..63
 
 <pre>
 
@@ -922,20 +968,20 @@ Internal Interrupt instruction
 				|______________________|________|
 
 				_________________________________
-	READ_XVECTOR$	1:19	| 000000 000000 000001 | 010011 |	retrieve a bank pointer
-				|______________________|________|	from kernel vector bank
+	READ_XVECTOR$	1:19	| 000000 000000 000001 | 010011 |	retrieve a value
+				|______________________|________|	from kernel vector list
 
 				_________________________________
-	WRITE_XVECTOR$	1:20	| 000000 000000 000001 | 010100 |	write a bank pointer in
-				|______________________|________|	kernel vector bank
+	WRITE_XVECTOR$	1:20	| 000000 000000 000001 | 010100 |	write a value
+				|______________________|________|	in kernel vector list
 
 				_________________________________
-	READ_SOCKET$	1:21	| 000000 000000 000001 | 010101 |	retrieve network socket 
-				|______________________|________|	information
+	READ_SOCKET$	1:21	| 000000 000000 000001 | 010101 |	retrieve the internal encoding 
+				|______________________|________|	for a handle number
 
 				_________________________________
-	UHANDLE$	1:22	| 000000 000000 000001 | 010110 |	map port informatiom
-				|______________________|________|	into address space
+	USOCKET$	1:22	| 000000 000000 000001 | 010110 |	complete the internal encoding
+				|______________________|________|	of a network port socket handle
 
 				_________________________________
 	KERNEL$B1	1:23	| 000000 000000 000001 | 010111 |	switch to kernel B1 frame[&nu;]
@@ -986,8 +1032,9 @@ Internal Interrupt instruction
 Two registers are not addressable. The program counter which contains an absolute address 48 bits in size, and the Processor State Register, which contains settings and the carry bit
 
 <p>
-The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Bank 0
-is saved on interrupts and calls. On interrupts and far (inter-bank) calls Bank 0 identity is also saved
+The program counter is never stored as its absolute 48-bit value. Its value relative to the start of Window 0
+is saved on interrupts and calls.
+On interrupts and far (inter-bank) calls the identity of the leading block of Window 0 is also saved
 
 <p>
 The Processor State Register is saved on interrupts
@@ -1181,7 +1228,7 @@ is reloaded and all flags are restored
 		Notes
 		_____
 
-		Only registers 0..127 switch with the task
+		Only registers 0..127 switch with the thread
 
 		The internal stack addressed with sp is only large enough for scalars and pointers
 		Frame Pointer register fp is intended to be an external stack pointer for structures and arrays
@@ -1192,7 +1239,7 @@ is reloaded and all flags are restored
 		Stack range violation raises the guard interrupt at vector 1:31
 
 		DAYCLOCK$U:DAYCLOCK$ are a millisecond counter in the interrupt register list
-		All tasks read the dayclock register pair atomically with 48-bit-operand instructions
+		All threads read the dayclock register pair atomically with 48-bit-operand instructions
 
 		Interrupt TIMER$ is sprung for example from a nanosecond incrementer
 		and one designated core updates the 48-bit millisecond dayclock and
@@ -1218,7 +1265,7 @@ is reloaded and all flags are restored
 		The emulated machine retrieves millisecond time periodically from the emulator host
 
 		PRIORITY$ is a copy of the running thread's priority stored by software for
-		rapid retrieval at task switch, and for instant evaluation of SMP inter-processor
+		rapid retrieval at thread switch, and for instant evaluation of SMP inter-processor
 		preemptive interrupt broadcasts
 
 		REALTIME$_CLOCK is a decrementing timer count which switches the running
@@ -4313,24 +4360,24 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|						    BANK B1 PRIVATE STORAGE FRAME						|
 	|_______________________________________________________________________________________________________________________________|
 	|																|
-	|			Bank B1 is a window in a private stack. B1 is out side the scope of sabr and reload instructions	|
+	|			window B1 is a frame in a private stack. B1 is out side the scope of sabr and reload instructions	|
 	|																|
-	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern banks B2..B63							|
+	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern windows B2..B63		|
 	|																|
 	|			applications execute sabr instruction to base memory blocks in B2..B63					|
 	|			sabr also copies the relocation values through to the TCB						|
 	|																|
-	|			reload instruction bases some or all of B2..B63 in pairs on the loadup beat of task switch		|
+	|			reload instruction bases some or all of B2..B63 in pairs on the loadup beat of thread switch		|
 	|																|
 	|			Applications manipulate and restore B1 pointer in a different dynamic from B2..63			|
 	|																|
-	|			Task switch inputs B1 from I/O Port 1 and saves it individually						|
-	|			Task switch outputs B1 of the loading task to I/O Port 1 individually					|
+	|			Thread switch inputs B1 from I/O Port 1 and saves it individually					|
+	|			Thread switch outputs B1 of the loading thread to I/O Port 1 individually				|
 	|																|
 	|_______________________________________________________________________________________________________________________________|
 	|																|
 	|																|
-	|			A process has at least one B1 frame or B1 bank								|
+	|			A process has at least one B1 frame or 4K block								|
         |                                                                                                                               |
         |                       a B1 frame contains private data at addresses 4096..8191                                                |
 	|																|
@@ -4341,7 +4388,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|			the owning entity of a B1 frame may be a thread, a service, a function,					|
 	|			or a recursive execution of a function									|
 	|																|
-	|			services base their B1 bank temporarily to use private data on behalf of calling routines		|
+	|			services base a B1 frame temporarily to use private data on behalf of calling routines			|
 	|																|
 	|			the private data in B1 may include mechanical information underlying a service and compiler-generated	|
 	|			information like database subschemas									|
@@ -4703,7 +4750,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	to the program counter				|
 				|							|
 				|	if sp = 128 before lret				|
-				|	task exit interrupt 70 is raised		|
+				|	thread exit interrupt 70 is raised		|
 				|							|
 				|	on internal stack overflow / underflow		|
 				|	[sp < 24 | sp > 128] before operation		|
@@ -4732,35 +4779,50 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	<a	name="fret"/>
 	Far Return		fret
-	__________		___
+	__________		____
 
-				_________________________________________________________
-				|							|
-				|	identifier of return target instruction window 	|
-				|	is popped from the internal stack to B0		|
-				|							|
-				|	return address relative to retrieved instruction|
-				|	window is popped from Internal Stack		|
-				|							|
-				|	sign extended immediate operand of the return	|
-				|	instruction is added to the relative address	|
-				|							|
-				|	B0 * 4096 is added to the relative address	|
-				|							|
-				|	the resulting absolute address is transferred	|
-				|	to the program counter				|
-				|							|
-                                |       if sp = 128 before fret                         |
-                                |       task exit interrupt 70 is raised                |
+												internal stack frame
+
+												 23						       0
+				_________________________________________________________	_________________________________________________________
+				|							|	|			offset				| sp + 1
+				|	start page index of the return target iframe	|	|_______________________________________________________|
+				|	is popped from the internal stack to B0		|	| f f |			iframe start page index		| <-- sp
+				|							|	|_____|_________________________________________________|
+				|	return address relative to retrieved instruction|	|   22						       0
+				|	window is popped from Internal Stack		|	|
+				|							|	|
+				|	sign extended immediate operand of the return	|	|
+				|	instruction is added to the relative offset	|	|
+				|							|	|
+				|	B0 * 4096 is added to the relative offset	|	|
+				|							|	| 0 0 | page high index = 0 : iframe pages 1
+				|	the resulting absolute address is transferred	|	| 0 1 | page high index = 7 : iframe pages 8
+				|	to the program counter				|	|
+				|							|	| 1 0 |	gate descriptor @ target iframe + 64
+                                |       if sp = 128 before fret                         |	|	page high index <- gate descriptor bits 47:42
+                                |       thread exit interrupt 70 is raised		|
                                 |                                                       |
                                 |       on internal stack overflow / underflow		|
                                 |       [sp < 24 | sp > 126 ^ 128] before operation	|
 				|	guard interrupt 95 is raised			|
-                                |                                                       |
-				|_______________________________________________________|
-				|	DISPLACEMENT is 16-bit sign extended immediate	|
-				|_______________________________________________________|
-
+                                |_______________________________________________________|
+				|	I/O Port 64 points to the new highest page for	|
+				|	instruction execution = B0 + Page High Index	|
+				|	derived from flag values { 00 | 01 | 10 } in	|
+				|	in bit positions 47:46 of the stack frame	|
+				|							|
+				|	flag values					|
+				|	00 gives Page High Index 0: iframe size 1 page	|
+				|	01 gives Page High Index 7: iframe size 8 pages	|	sample gate @ target iframe + 64
+				|							|
+				|	flags value					|	 47	     42					      24
+				|	10 reads Page High Index from the bits 47:42 of	|	_________________________________________________________
+				|	the sample gate at location 64 of taget iframe	|	| page high idx| 	offset 0    			|	gate 1st word
+				|_______________________________________________________|	|______________|________________________________________|
+				|	DISPLACEMENT is 16-bit sign extended immediate	|	| f f |			iframe start page index		|	gate 2nd word
+				|_______________________________________________________|	|_____|_________________________________________________|
+												    22						       0
 
 
 	assembler syntax	fret		SKIP_STEPS
@@ -4788,7 +4850,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|																|
 	|			absolute Program Counter minus B0 * 4096 is pushed onto the Interrupt Internal Stack			|
 	|																|
-	|			B0 is pushed onto the Interrupt Internal Stack								|
+	|			iframe name (ff:B0) is pushed onto the Interrupt Internal Stack					|
 	|																|
 	|			PSR is pushed onto the Interrupt Internal Stack								|
 	|																|
@@ -4809,9 +4871,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|																|
 	|			 95			 71			 47			 23		       0	|
 	|			_________________________________________________________________________________________________	|
-	|			|    latent parameter	|	saved PSR	|	saved B0	|   saved relative PC	|	|
+	|			|    latent parameter	|	saved PSR	|   saved iframe name	| 	saved offset	|	|
 	|			|_______________________|_______________________|_______________________|_______________________|	|
-	|																|
+	|			 *sp			 +1,sp		 	 +2,sp			 +3,sp				|
 	|_______________________________________________________________________________________________________________________________|
 
 
@@ -4821,8 +4883,10 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Internal Interrupt	ii
 	__________________	__
 
+
+
 				_________________________________________________________
-				|							|
+				|							|	
 				|	B0 * 4096 is subtracted from the value of	|
 				|	the absolute program counter			|
 				|							|
@@ -4872,23 +4936,26 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Interrupt Return	ir
 	________________	__
 
-				_________________________________________________________
-				|							|
-				|							|
-				|	interrupted PSR is retrieved from		|
-				|	[interrupt internal stack pointer + 1]		|
-				|							|
-				|	interrupted instruction window identity is	|
-				|	retrieved to B0 from				|
-				|	[interrupt internal stack pointer + 2]		|
-				|							|
-				|	interrupted address relative to instruction	|
-				|	window is retrieved from			|
-				|	[interrupt internal stack pointer + 3]		|
-				|							|
-				|	the sign extended immediate operand of the ir	|
-				|	instruction is added to the relative address	|
-				|							|
+												interrupt / return internal stack frame
+
+												 23						       0
+				_________________________________________________________	_________________________________________________________
+				|							|	|			saved offset			| sp + 3
+				|							|	|_______________________________________________________|
+				|	interrupted PSR is retrieved from		|	| f f |			saved iframe start page index	| sp + 2
+				|	[interrupt internal stack pointer + 1]		|	|_____|_________________________________________________|
+				|							|	|   22			saved PSR			| sp + 1
+				|	interrupted instruction window identity is	|	|			________________________________|
+				|	retrieved to B0 from				|	|			latent parameter		| <-- sp
+				|	[interrupt internal stack pointer + 2]		|	|			________________________________|
+				|							|	|
+				|	interrupted address relative to instruction	|	|
+				|	window is retrieved from			|	|
+				|	[interrupt internal stack pointer + 3]		|	| 0 0 | page high index = 0 : iframe pages 1
+				|							|	| 0 1 | page high index = 7 : iframe pages 8
+				|	the sign extended immediate operand of the ir	|	|
+				|	instruction is added to the relative address	|	| 1 0 | gate descriptor @ target iframe + 64
+				|							|	|       page high index <- gate descriptor bits 47:42
 				|	B0 * 4096 is added to the relative address	|
 				|							|
 				|	the resulting absolute address is transferred	|
@@ -4896,10 +4963,23 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|	interrupt internal stack pointer		|
 				|	is incremented by 4				|
-				|_______________________________________________________|
-				|	DISPLACEMENT is 16-bit sign extended immediate	|
-				|_______________________________________________________|
-
+                                |_______________________________________________________|
+                                |       I/O Port 64 points to the new highest page for  |
+                                |       instruction execution = B0 + Page High Index    |
+                                |       derived from flag values { 00 | 01 | 10 } in    |
+                                |       in bit positions 47:46 of the stack frame       |
+                                |                                                       |
+                                |       flag values                                     |
+                                |       00 gives Page High Index 0: iframe size 1 page  |
+                                |       01 gives Page High Index 7: iframe size 8 pages |       sample gate @ target iframe + 64
+                                |                                                       |
+                                |       flags value                                     |        47          42                                       24
+                                |       10 reads Page High Index from the bits 47:42 of |       _________________________________________________________
+                                |       the sample gate at location 64 of taget iframe  |       | page high idx|        offset 0                        |	gate 1st word
+				|_______________________________________________________|	|______________|________________________________________|
+				|	DISPLACEMENT is 16-bit sign extended immediate	|	| f f |		   iframe start page index		|	gate 2nd word
+				|_______________________________________________________|	|_____|_________________________________________________|
+												    22						       0
 
 	assembler syntax	ir	SKIP_STEPS
 
@@ -7266,6 +7346,22 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	<div	style="margin-left:28pt;font-family:times-roman;font-size:12.75pt;color:0000FF">	
 	<i>3.6.16	Far Go and Call</i>
 	</div>
+
+	Simple system images may only need fixed 4K iframes [and fixed 32k iframes] for [kernel and] applications
+
+	Dynamically loadable iframes can only be located with a gate
+
+	Iframes of which are not 4K at a 4K boundary and are not 32K at a 32K boundary can only be located with a gate
+
+	4k iframes can only be called easily without a gate if they are at a location less than 256 Megawords. They have 64 entry points
+
+	32K iframes can be at any 32K boundary in executable space and have eight entry points
+
+	Gates can reach any offset location in fixed or dynamic iframes of any useable size in 4K pages anywhere in executable space
+
+
+
+
 	_________________________________________________________________________________________
 	|				go and call Between Banks				|
 	|_______________________________________________________________________________________|
@@ -7273,7 +7369,16 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	Inter-bank jumps <b>go</b> and <b>call</b> read a single word storage operand			|
 	|	of format									|
 	|											|
-	|											|
+	|											|	48-bit gate to execution space location
+	|			   22                         0					|
+	|			________________________________				|	________________________________________________________________
+	|			|1|	  gate address	       |-------------------------------------->	|pagehx|   instruction offset  |ff|  iframe start page index   |
+	|			|_|____________________________|				|	|______|_______________________|__|____________________________|
+	|			   23-bit pointer to gate constant or variable			|	|47  42			     24| 22
+	|											|	|			       |
+	|											|	|page high index	       |00: page high index = 0 = pages 1
+	|											|	|= iframe pages - 1	       |01: page high index = 7 = pages 8
+	|			OR								|				       |10: page high index in bits 47:42
 	|											|
 	|											|
         |        		    21                6       0					|
@@ -7281,7 +7386,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
         |       		|00|bbbb bbbb bbbb bbbb| vector|				|
 	|	                |__|___________________|_______|				|
         |       		    16-bit pointer       6-bit					|
-	|	                    to 4K bank edge      vector					|
+	|	                    to 4K iframe edge      vector				|
 	|											|
 	|											|
         |       		OR								|
@@ -7292,7 +7397,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
         |       		|01|bbbb bbbb bbbb bbbb bbb|vvv|				|
 	|	                |__|_______________________|___|				|
         |       		    19-bit pointer          3-bit				|
-	|	                    to 32K bank edge        vector				|
+	|	                    to 32K iframe edge        vector				|
 	|											|
 	|											|
 	|											|
@@ -7369,29 +7474,34 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|	Far Bank Jump					|
 				|							|
-				|							|
+				|							|	indirect vector value
 				|	target vector value is read from		|
-				|	storage word or register at EA			|
-				|							|
-				|	depending bit 22 the storage operand contains	|
-				|							|
-				|		a 16-bit pointer to a bank at a 4Kword	|
-				|		boundary and a 6-bit vector offset:	|
-				|							|
-				|		target bank starts at a 4Kword block in |
-				|		first 256 Megawords of executable space	|
-				|		and has 64 entry points			|
-				|							|
-				|	or	a 19-bit pointer to a bank at a 32Kword	|
-				|		boundary and a 3-bit vector offset:	|
-				|							|
-				|		target bank starts at any 32Kword	|
-				|		boundary in 16 Gigawords of executable	|
-				|		space and has 8 entry points		|
-				|							|
-				|							|
-				|	operand bit 22 = 0:				|
-				|							|
+				|	storage word or register at EA			|	 23
+				|							|	_________________________________________________________
+                                |       if vector value bit 23 = 1 -------------------------->  | 1 |               address of gate                     |_______
+                                |       bits 22:0 point to a constant or variable	|       |___|___________________________________________________|       |
+                                |       containing a 48-bit gate value                  |                                                                       |
+                                |                                                       |                                                                       |
+                                |       if vector value bit 23 = 0                      |                                                                       |
+				|	depending bit 22 the storage operand contains	|									|
+				|							|									|
+				|		a 16-bit pointer to a bank at a 4Kword	|									|
+				|		boundary and a 6-bit vector offset:	|									|
+				|							|									|
+				|		target bank starts at a 4Kword block in |									|
+				|		first 256 Megawords of executable space	|									|
+				|		and has 64 entry points			|									|
+				|							|									|
+				|	or	a 19-bit pointer to a bank at a 32Kword	|									|
+				|		boundary and a 3-bit vector offset:	|	gate to target iframe:offset					|
+				|							|									|
+				|		target bank starts at any 32Kword	|	 47	     42					     24		|
+				|		boundary in 16 Gigawords of executable	|	_________________________________________________________	|
+				|		space and has 8 entry points		|	| page high idx|        target instruction offset       |	|gate 1st word
+				|							|	|______________|________________________________________|<------+
+				|							|	| f f |                 iframe start page index         |	 gate 2nd word
+				|	operand bit 22 = 0:				|	|_____|_________________________________________________|
+				|							|	    22						       0
 				|		B0 = operand bits 21..6			|
 				|		PC = B0 * 4096 + operand 5..0		|
 				|							|
@@ -7399,11 +7509,6 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|		B0 = operand word bits 21..3 * 8	|
 				|		PC = B0 * 4096 + operand 2..0		|
-				|							|
-				|	operand bit 23 = 1:				|
-				|							|
-				|		translating target bank identifier	|
-				|		not implemented				|
 				|							|
 				|_______________________________________________________|
 				| 00 |       pointer to 4K-aligned bank   |       vector|
@@ -7447,30 +7552,34 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	is pushed to internal stack			|
 				|							|
 				|	B0 is pushed to Internal Stack			|
-				|							|
+				|							|	indirect vector value
 				|	target vector value is read from		|
-				|	storage word or register at EA			|
-				|							|
-				|	depending bit 22 the storage operand contains	|
-				|							|
-				|		a 16-bit pointer to a bank at a 4Kword	|
-				|		boundary and a 6-bit vector offset:	|
-				|							|
-				|		target bank starts at a 4Kword block in |
-				|		first 256 Megawords of executable space	|
-				|		and has 64 entry points			|
-				|							|
-				|	or	a 19-bit pointer to a bank at a 32Kword	|
-				|		boundary and a 3-bit vector offset:	|
-				|							|
-				|		target bank starts at any 32Kword	|
-				|		boundary in 16 Gigawords of executable	|
-				|		space and has 8 entry points		|
-				|							|
-				|							|
-				|	operand bit 22 = 0:				|
-				|							|
-				|		B0 = operand bits 21..6			|
+				|	storage word or register at EA			|	 23
+				|							|	_________________________________________________________
+				|	if vector value bit 23 = 1 -------------------------->	| 1 |		    address of gate			|_______
+				|	bits 22:0 point to a constant or variable	|	|___|___________________________________________________|	|
+				|	containing a 48-bit gate value			|									|
+				|							|									|
+				|	if vector value bit 23 = 0			|									|
+				|	depending bit 22 the storage operand contains	|									|
+				|							|									|
+				|		a 16-bit pointer to a bank at a 4Kword	|									|
+				|		boundary and a 6-bit vector offset:	|									|
+				|							|									|
+				|		target bank starts at a 4Kword block in |									|
+				|		first 256 Megawords of executable space	|									|
+				|		and has 64 entry points			|									|
+				|							|									|
+				|	or	a 19-bit pointer to a bank at a 32Kword	|									|
+				|		boundary and a 3-bit vector offset:	|	gate to target iframe:offset					|
+				|							|									|
+				|		target bank starts at any 32Kword	|	 47	     42							|
+				|		boundary in 16 Gigawords of executable	|	_________________________________________________________	|
+				|		space and has 8 entry points		|	| page high idx|	target instruction offset	|	|gate 1st word
+				|							|	|______________|________________________________________|<------+	
+				|	operand bit 22 = 0:				|	| f f |			iframe start page index		|	 gate 2nd word
+				|							|	|_____|_________________________________________________|
+				|		B0 = operand bits 21..6			|	    22						       0
 				|		PC = B0 * 4096 + operand 5..0		|
 				|							|
 				|	operand bit 22 = 1:				|
@@ -7478,11 +7587,6 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|		B0 = operand word bits 21..3 * 8	|
 				|		PC = B0 * 4096 + operand 2..0		|
 				|							|
-				|	operand bit 23 = 1:				|
-				|							|
-				|		translating target bank identifier	|
-				|		not implemented				|
-                                |                                                       |
                                 |       on internal stack overflow / underflow		|
                                 |       [sp < 26 | sp > 128] before operation           |
                                 |       guard interrupt 95 is raised                    |
