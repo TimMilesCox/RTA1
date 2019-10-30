@@ -23,6 +23,7 @@ _fret:	mov	ebx, dword ptr [ebp+S_P]
 	jnz	_fret_
 	cmp	ebx, 128
 	jz	_autoexit
+	cmp	ebx, 127
 	jae	_guard
 	cmp	ebx, 24
 	jb	_guard
@@ -30,29 +31,18 @@ _fret_:	add	dword ptr [ebp+S_P], 2
 	mov	edx, eax	; +- displacement
 	add	edx, dword ptr [ebx*4+__register+4]
 	mov	eax, dword ptr [ebx*4+__register]
-	xor	ebx, ebx			; frame page high index
 
-	test	eax, 00C00000h
-	jz	_fret2_4Kframe
-	test	eax, 0800000h
-	jz	_fret2_32Kframe
-	mov	ebx, eax
-	shl	ebx, 12
+	xor	ebx, ebx		; frame page high index
+	test	eax, 00800000h
+	jz	near _go2_frame		; 1-page frame
+
+	mov	ebx, eax		; address the target iframe
+	shl	ebx, 12			; extract 6 leading bits from word 64
 
 	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; our special friend Mr Endian
 	shr	ebx, 2					; strikes again
 
-;	mov	ebx, dword ptr [_memory+ebx*4+64*4]
-;	shr	ebx, 18				; frame page high index
-
 	jmp	_go2_frame
-
-_fret2_32Kframe
-	mov	bl, 7				; frame page high index
-_fret2_4Kframe
-	jmp	_go2_frame
-	ret
-
 
 _fpxpo:	mov	eax, II_FPXPO
 	jmp	_ii_escape

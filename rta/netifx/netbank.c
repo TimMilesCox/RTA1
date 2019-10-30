@@ -59,6 +59,10 @@
 #include "../include.rta/address.h"
 #include "sifr_mm.h"
 
+#ifdef	LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+
 #define	DEVICE_PAGE	2048
 #define	DEVICE_PAGES	256
 

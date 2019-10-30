@@ -64,36 +64,30 @@ else
 	echo	constructing for Intel byte order
 fi
 
-
-pushd   ../netifx
-gcc -m32 -c -funsigned-char $IFLAG -o ../emulator.rel/netbank.o netbank.c
-cd	../rta.run
-gcc -m32 -c -funsigned-char -o ../emulator.rel/time32.o ../rta.run/time32.c
-gcc -m32 -c -o ../emulator.rel/tzone.o tzone.c
-gcc -m32 -c -funsigned-char -o ../emulator.rel/idisplay.o idisplay.c
-popd
-
 if	[ -z $RTA_MBANKS ]
 then
 export	RTA_MBANKS=2
 fi
 
+rm	$RTA_BINARY/tipa$RTA_MBANKS
 echo	emulated RTA executable space $RTA_MBANKS banks image tipa$RTA_MBANKS
 
 PLATFORM=`uname`
 if [ "$PLATFORM" == "Linux" ]
 then
-echo	Linux
-THREADS=-lpthread
-ICORE=../assembly.x86/linux86.alt/rta_x86M.o
-#	pushd ../assembly.x86/syntax.i
+	echo	Linux
+	THREADS=-lpthread
+	ICORE=../assembly.x86/linux86.alt/rta_x86M.o
+	OSFLAG=-DLINUX
+	echo	constructing for some _imports
+#	pushd ../assembly.x86/linux86.alt/
 #	./makelf
 #	popd
 else
-echo	OSX
-ICORE=../assembly.x86/osx_x86.alt/rta_x86M.o
-pushd ../assembly.x86/syntax.i
-./amacho
+	echo	OSX
+	ICORE=../assembly.x86/osx_x86.alt/rta_x86M.o
+	pushd ../assembly.x86/syntax.i
+	./amacho
 popd
 fi
 
@@ -106,29 +100,39 @@ else
 	echo	constructing x86 specific
 fi
 
-#	pushd	../engine.rta
-#	./genrel $ARCHFLAG
-#	popd
+pushd   ../netifx
+gcc -m32 -c -funsigned-char $IFLAG $OSFLAG -o ../emulator.rel/netbank.o netbank.c
+cd      ../rta.run
+gcc -m32 -c -funsigned-char -o ../emulator.rel/time32.o ../rta.run/time32.c
+gcc -m32 -c $OSFLAG -o ../emulator.rel/tzone.o tzone.c
+gcc -m32 -c -funsigned-char $OSFLAG -o ../emulator.rel/idisplay.o idisplay.c
+popd
 
 gcc -m32 -c -funsigned-char -DARGUMENTS=64      \
                 -o      ../emulator.rel/argue.o \
                         ../netifx/argue.c
 
-gcc -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS  -DGCCA        \
-                                -DMETRIC                        \
+gcc -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS		\
+                                -DMETRIC $OSFLAG                \
                                 -o ../emulator.rel/console.o    \
                                 ../tgen.x64/console.c
+
+gcc -m32 -funsigned-char -c -DMBANKS=$RTA_MBANKS -UGCC -DLLVM_LE $OSFLAG \
+			 -o 	../emulator.rel/rwk.o			\
+				../engine.rta/rw.c
+
 ls -l $ICORE
 
-gcc -m32 -DMBANKS=$RTA_MBANKS -DMETRIC -DGCCA $THREAD		\
+gcc -m32 -DMBANKS=$RTA_MBANKS -DMETRIC $THREAD $OSFLAG		\
 				 -o $RTA_BINARY/tipa$RTA_MBANKS	\
-				$ICORE				\
+				$ICORE	$THREADS		\
 				../emulator.rel/argue.o		\
 				../emulator.rel/netbank.o	\
 				../emulator.rel/time32.o	\
 				../emulator.rel/tzone.o		\
 				../emulator.rel/idisplay.o	\
 				../emulator.rel/console.o	\
+				../emulator.rel/rwk.o		\
 				../tgen.x64/tipt64.c
 
 echo	binaries in $RTA_BINARY

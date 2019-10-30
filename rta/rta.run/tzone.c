@@ -4,6 +4,10 @@
 #include <sys/time.h>
 #include "../engine.rta/emulate.h"
 
+#ifdef  LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+
 extern int		 base[];
 extern struct timeval	 xronos;
 

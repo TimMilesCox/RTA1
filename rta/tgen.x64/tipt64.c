@@ -31,6 +31,13 @@
 #include "../rta.run/time32.h"
 #endif
 
+#ifdef	GCC
+#else
+#ifdef	LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+#endif
+
 #define ROM_PAGE	&memory.p4k[0].w[0]
 
 word			*breakpoint;
@@ -45,7 +52,7 @@ static struct pollfd	 attention = { 0, POLLIN } ;
 struct timeval		 xronos;
 #endif
 
-#if	defined(GCC) ||	defined(GCCA)
+#ifdef	GCC
 
 extern int		 iselect;
 extern word		*apc;
@@ -82,9 +89,9 @@ unsigned int    	 _register[REGISTERS];
 unsigned int		*register_set = _register+128;
 // unsigned int     	 base[192];
 // system_memory    	 memory;
-// device           	 devices[64];
+extern device          	 devices[64];
 #include "../tgen.x64/ioports.c"
-#include "../tgen.x64/devices.c"
+// device                           devices[64] = { { memory.p4k } } ;
 device			*pdevice = devices;
 
 #endif

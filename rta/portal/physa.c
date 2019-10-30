@@ -8,6 +8,7 @@
 #ifdef	LINUX
 #include <linux/if_packet.h>
 #else
+#include <sys/types.h>
 #include <net/if_dl.h>
 #endif
 

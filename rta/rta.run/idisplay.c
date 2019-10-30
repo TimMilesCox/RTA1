@@ -46,6 +46,10 @@
 #include "../engine.rta/emulate.h"
 #include "idisplay.h"
 
+#ifdef  LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+
 extern int		 _register[256];
 extern int		 iselect;
 extern system_memory	 memory;

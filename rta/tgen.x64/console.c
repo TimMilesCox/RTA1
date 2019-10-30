@@ -7,7 +7,11 @@
 #ifdef  GCC
 #include "../engine.rta/rw.h"
 #else
-extern word              memory_read(int ea);
+
+#ifdef  LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+
 extern int		 device_read(int device_index, int block, int offset, int designator);
 #endif
 
@@ -52,11 +56,17 @@ void action(char request[])
 
    unsigned		 xx,
 			 index,
+			 datum,
 			 device_sense,
                          device_index,
                          base_index,
-                         offset,
+			 block,
+			 pointer,
+			 base_tag,
+                         limitb,
                          guide;
+
+   unsigned long	 offset;
 
    page			*pagep;
 
@@ -67,11 +77,12 @@ void action(char request[])
    int			 prompt = 0;
 
    char			 path[360];
-
+   char			*text;
 
    #ifdef METRIC
    double		 average,
                          quantum;
+
 
    if (symbol == 'i')
    {
@@ -166,18 +177,58 @@ void action(char request[])
 
          if (xx < 2)
          {
-            offset = base_index;
+            offset = base_index & 0x00FFFFFF;
 
             for (;;)
             {
                index = offset + 8;
-
                printf("%6.6x :", offset);
+               guide = 262143;
 
+               if (base_tag = (offset >> 18)) pointer = offset & 0x0003FFFF;
+               else
+               {
+                  base_tag = offset >> 12;
+                  pointer = offset & 0x00000FFF;
+                  guide = 4095;
+               }
+
+               if ((base_tag) && (base_tag < 8))
+               {
+                  if ((0x8000 >> base_tag) & psr) base_tag |= 64;
+               }
+
+               base_index = base[base_tag];
+               device_index = 0;
+
+               if (base_index & 0x00400000) device_index = base_index & 63;
+
+               if (device_index == 0)
+               {
+                  pagep = memory.p4k + (base_index & 0x003FFFFF);
+                  wordp = pagep->w + pointer;
+               }
+
+               printf(" [%6.6x:%6.6x] :", base_index, pointer);
+                  
                while (offset < index)
                {
-                  sample = memory_read(offset++);
-                  printf(" %2.2x%2.2x%2.2x", sample.t1, sample.t2, sample.t3);
+                  if (device_index)
+                  {
+                     if (base_index & 0x00800000) printf(" ******");
+                     else printf(" %6.6x",
+                                 device_read(device_index, base_index, pointer, 0));
+                  }
+                  else
+                  {
+                     sample = *wordp++;
+                     printf(" %2.2x%2.2x%2.2x", sample.t1, sample.t2, sample.t3);
+                  }
+
+                  pointer++;
+                  offset++;
+
+                  if (pointer > guide) break;
                }
 
                fgets(request, 48, stdin);
@@ -244,61 +295,64 @@ void action(char request[])
          offset = 0;
          base_index = 0;
 
-         sscanf(request + 1, "%x:%x:%x", &device_index, &base_index, &offset);
+         text = request + 1;
+         sscanf(text, "%x", &device_index);
+         while ((datum = *text++) && (datum ^ ':')) ;
+
+         if (datum == ':')
+         {
+            sscanf(text, "%x", &base_index);
+            while ((datum = *text++) && (datum ^ ':')) ;
+            if (datum == ':') sscanf(text, "%lx", &offset);
+         }
 
          if (device_index < 0) break;
          if (device_index > 63) break;
 
          device_sense = base[128 + device_index];
-         guide = device_sense & 0x003FFFFF;
+         limitb = device_sense & 0x003FFFFF;
          device_sense &= 0x00C00000;
 
          if (device_sense == 0) break;
 
-         if (device_sense ^ SYSMEM_FLAG)
-         {   
-             base_index <<= 6;
-             guide <<= 6;
-         }
+         base_index <<= 6;
 
+         guide = 262143;
+
+         if (device_sense == SYSMEM_FLAG)
+         {
+            guide = limitb << 12;
+            guide |= 4095;
+            guide &= 262143;
+         }
+         else limitb <<= 6;
+
+         base_index &= 0x003FFFC0;
+         limitb &= 0x003FFFC0;
          base_index |= 0x00400000;
-         guide |= 0x00400000;
+         base_index |= device_index;
+         limitb |= 0x00400000;
+         limitb |= device_index;
 
          for (;;)
          {
-            if (xx = offset >> 18)
-            {
-               base_index += xx << 6;
-               offset &= 262143;
-               index -= xx << 18;
-            }
+            block = base_index + ((offset >> 18) << 6);
+            pointer = offset & 0x0003FFFF;
 
-            printf("%6.6x:%6.6x :", device_index | base_index, offset);
+            printf("%6.6x:%6.6x :", block, pointer);
             index = offset + 8;
+            if (block > limitb) break;
 
             while (offset < index)
             {
-               if (xx = offset >> 18)
-               {
-                  base_index += xx << 6;
-                  offset &= 262143;
-                  index -= xx << 18;
-               }
+               if (pointer > guide) break;               
 
-               if (device_index == 0)
-               {
-                  if ((offset >> 12) > (guide & 0x003FFFFF))
-                  base_index = guide + 64;
-               }
-
-               if (base_index > guide) break;               
-
-               xx = device_read(device_index, base_index, offset++, 0);
-
+               xx = device_read(device_index, block, pointer, 0);
                printf(" %6.6x", xx);
+               offset++;
+               pointer++;
             }
 
-            if (base_index > guide) break;
 
             fgets(request, 48, stdin);
             if (request[0] == '.') break;

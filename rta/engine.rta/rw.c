@@ -47,6 +47,10 @@
 #include "rw.h"
 #include "ii.h"
 
+#ifdef	LINUX
+#include "../tgen.x64/_mnames.h"
+#endif
+
 extern system_memory		 memory;
 #if 1
 #else
@@ -99,6 +103,13 @@ static unsigned char	 window_rule[72] = {	128, 64, 128 | 32, 16, 8, 4, 2, 1,
 
 #endif
 
+/******************************************************************************
+	gcc device_read() is in all emulators because debug console() calls it
+	machine-code written emulator core has its own non-exported device_read
+	but policy is to avoid calling assembler from gcc with arguments
+	because a change in tools can mean a change in calling sequence
+******************************************************************************/
+
 int device_read(int device_index, int relocation_base, unsigned offset, int designator)
 {
 //   int			*iarayp;
@@ -117,8 +128,7 @@ int device_read(int device_index, int relocation_base, unsigned offset, int desi
 //   int			 bank_index = (relocation_base >> 6) & 65535;
 //   unsigned long	 absolute = (unsigned long) (bank << 18) | offset;
 
-   relocation_base &= 0x003FFFC0;
-
+     relocation_base &= 0x003FFFC0;
 
 //   if (devicep->flags & DEVICE)
 //   {
@@ -199,17 +209,71 @@ int device_read(int device_index, int relocation_base, unsigned offset, int desi
    return v;
 }
 
+static int mread(word *w24p, int designator)
+{
+   int		 v;
+
+   L24SL(v, *((int *) w24p));
+
+   /******************************************
+	c for each platform
+	needs to do algebraic right shifts
+	true of gcc and cl
+   ******************************************/
+
+   switch (designator)
+   {
+      case 0:
+      case 7:
+         break;				/*	word	*/
+      case 1:
+         v >>= 16;			/*	word.t1	*/
+         break;
+      case 2:
+         if (psr & HALFWORD)
+         {
+            v >>= 12;			/*	word.h1	*/
+            break;
+         }
+
+         v = (v << 8) >> 16;		/*	word.t2	*/
+         break;
+      case 3:
+         if (psr & HALFWORD)
+         {
+            v = (v << 12) >> 12;	/*	word.h2	*/
+            break;
+         }
+
+         v = (v << 16) >> 16;		/*	word.t3	*/
+         break;
+      default:
+         break;
+   }
+
+   /**********************************
+	leave 8 zeros at position 31
+	signs from position 24
+   **********************************/
+
+   return (unsigned) v >> 8;
+}
+
+#ifdef  GCC
+
+/***********************************************************************
+	following are in emulators entirely written in gcc
+***********************************************************************/
+
 
 /***************************************************************
-   memory_read() is called by instructions which take
-   only a single word memory operand and never a register,
-   notably the instructions
+	memory_read() is called by instructions which take
+	only a single word memory operand and never a register,
+	notably the instructions
 
-	execute
+		execute
 
-   and therefore has different rules from operand_read()
-
-   memory_read() is also callable from emulator debug console
+	and therefore has different rules from operand_read()
 
 ***************************************************************/
 
@@ -278,6 +342,11 @@ word memory_read(unsigned ea)
                don't read from nowhere whoever you are
             *********************************************/
 
+            #if 0
+            not needed because only execute calls this
+            and outside_executable_space is a constant
+            of the instruction ii GUARD$
+
             if (psr & 0x00800000)
             {
             }
@@ -285,6 +354,7 @@ word memory_read(unsigned ea)
             {
                GUARD_INTERRUPT
             }
+            #endif
 
             if (psr & 0x00800000) return nop;
             return outside_executable_space;
@@ -692,56 +762,6 @@ unsigned int operand_read(unsigned ea, int designator)
    relocation_base &=0x003FFFFF;
    pagep = memory.p4k + relocation_base;
    return mread(pagep->w + offset, designator);
-}
-
-static int mread(word *w24p, int designator)
-{
-   int		 v;
-
-   L24SL(v, *((int *) w24p));
-
-   /******************************************
-	c for each platform
-	needs to do algebraic right shifts
-	true of gcc and cl
-   ******************************************/
-
-   switch (designator)
-   {
-      case 0:
-      case 7:
-         break;				/*	word	*/
-      case 1:
-         v >>= 16;			/*	word.t1	*/
-         break;
-      case 2:
-         if (psr & HALFWORD)
-         {
-            v >>= 12;			/*	word.h1	*/
-            break;
-         }
-
-         v = (v << 8) >> 16;		/*	word.t2	*/
-         break;
-      case 3:
-         if (psr & HALFWORD)
-         {
-            v = (v << 12) >> 12;	/*	word.h2	*/
-            break;
-         }
-
-         v = (v << 16) >> 16;		/*	word.t3	*/
-         break;
-      default:
-         break;
-   }
-
-   /**********************************
-	leave 8 zeros at position 31
-	signs from position 24
-   **********************************/
-
-   return (unsigned) v >> 8;
 }
 
 void burst_read2(int *list, unsigned ea)
@@ -1918,3 +1938,4 @@ void burst_write4(int *list, unsigned ea)
    ORDER32(*(w24p + 3), _l);
 }
 
+#endif	/*	GCC	*/

@@ -1147,102 +1147,6 @@ void execute(word instruction)
                dlsc(ea);
                break;
 
-		#ifdef DTAB
-            case DTAB:
-
-               /*************************************************
-
-			double test AB			alu.c
-
-			test-subtract the two-word storage
-			operand from accumulators A:B
-
-			set or clear CARRY MINUS ZERO PARITY ODD
-			discard data result
-
-               *************************************************/
-
-               dtab(ea);
-               break;
-		#endif
-
-               #if 0
-            case GO:
-
-               /***************************************************
-
-			switch instruction base B0 according to
-			bits 23..6 of the operand word loaded from
-			storage
-
-			jump to location 0..63 of the new B0 bank
-			according to bits 6..0 of the operand word
-
-               ***************************************************/
-
-               w = operand_read(ea, 7);
-
-               if (w & 0x00800000)
-               {
-//                  b0_name = w >> 6;
-
-                  /***********************************************
-
-			system list of translate base values in B71
-			for descriptor handle values  0x008xxxxx
-
-			or user list of translate base values in TCB
-                        for descriptor handle values  0x00Cxxxxx
-
-                  ************************************************/
-               }
-               else
-               {
-                  /***********************************************
-
-			absolute values
-			32K bank on any 8-page boundary
-			in the executable space = 16 gigawords
-			with 8 entry vectors at the bank start
-
-			or bank on any page boundary
-			in the first 256 megawords of storage
-			with 64 entry vectors
-
-                  ************************************************/
-
-                  if (w & 0x00400000)
-                  {
-                     v = w & 0x003FFFF8; 
-                     b0_scope = v | 7;
-                     w &= 7;
-                  }
-                  else
-                  {
-                     v = w >> 6;
-                     b0_scope = v;
-                     w &= 63;
-                  }
-               }
-
-               if (b0_scope < PAGES_IN_MEMORY)
-               {
-               }
-               else
-               {
-                  GUARD_INTERRUPT
-                  break;
-               }
-
-               b0_name = v;
-               base[0] = v;
-               b0p = &memory.p4k[v];
-               apc = &b0p->w[w];
-
-               break;
-
-               #endif
-
             case CALL:
 
                /*********************************************************
@@ -1297,33 +1201,15 @@ void execute(word instruction)
 
                   burst_read2(buffer, b0_name & 0x007FFFFF);
                   b0_name = buffer[1];
+                  if (buffer[0] & 0x00FC0000) b0_name |= 0x00800000;
                   b0_scope = b0_name & 0x003FFFFF;
                   v = b0_scope;
                   b0_scope += buffer[0] >> 18;
                   w = buffer[0] & 262143; 
                }
-               else if (b0_name & 0x00400000)
-               {
-                  /***********************************************
-
-			absolute values
-			32K bank on any 8-page boundary
-			in the executable space = 16 gigawords
-			with 8 entry vectors at the bank start
-
-			or bank on any page boundary
-			in the first 256 megawords of storage
-			with 64 entry vectors
-
-                  ************************************************/
-
-                  v = b0_name & 0x003FFFF8;
-                  w = b0_name & 7;
-                  b0_name &= -8;
-                  b0_scope = v | 7;
-               }
                else
                {
+                  b0_name &= 0x003FFFFF;	/* bit 22 is reserved */
                   w = b0_name & 63;
                   b0_name >>= 6;
                   v = b0_name;
@@ -1791,7 +1677,6 @@ void execute(word instruction)
                   {
                      b0_scope += b0p->w[64].t1 >> 2;
                   }
-                  else if (b0_name & 0x00400000) b0_scope += 7;
 
                   if (b0_scope < PAGES_IN_MEMORY)
                   {
@@ -1985,11 +1870,6 @@ void execute(word instruction)
                   if (b0_name & 0x00800000)
                   {
                      b0_scope += b0p->w[64].t1 >> 2;
-                  }
-                  else if (b0_name & 0x00400000)
-                  {
-                     b0_scope += 7;
-                     v &= 0x003FFFF8;
                   }
                   else
                   {

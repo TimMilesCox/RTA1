@@ -328,14 +328,11 @@ _call:	add	dword ptr [ebp+S_P], -2
 	mov	dword ptr [ebx*4+__register+4], edx
 	mov	edx, dword ptr [_b0_name]	; identity of emulated executing bank
 	mov	dword ptr [ebx*4+__register], edx
+
 _go:	call	_operand_read	; may be memory or register
-;	mov	[__register+128*4], eax
-;	ret
 	mov	edx, eax	; lookaside to calculate the vector
-	test	eax, 00C00000h
+	test	eax, 00800000h	; gate?
 	jz	_go2_4k_frame
-	test	eax, 00800000h
-	jz	_go2_32k_frame
 
 	and	eax, 007FFFFFh	; read the gate constant
 	call	_burst_read2	;
@@ -344,30 +341,30 @@ _go:	call	_operand_read	; may be memory or register
 	rol	edx, 6+8
 	mov	ebx, edx	; instruction frame page high index
 	and	ebx, 63
+	jz	_go_gate	; one page iframe
+	or	eax, 00800000h	; two+ page iframe
+
+_go_gate:
 	shr	edx, 6+8	; net word offset
 
 	jmp	_go2_frame
 	
-_go2_32k_frame:
-	and	edx, 7		; target is in 32k block, 8 vectors
-	and	eax, -8		; new b0_name
-	mov	ebx, 7		; frame high page index
-	jmp	_go2_frame
-
 _go2_4k_frame:
 	and	edx, 63		; target is in 4k block, 64 vectors
 	shr	eax, 6		; new b0_name
+	and	eax, 0000FFFFh	; bit 22 of GO / CALL word reserved
 	xor	ebx, ebx	; frame high page index
 
 _go2_frame:
 	mov	dword ptr [_b0_name], eax
-	shl	eax, 2+8		; remove the flag bits in name
-	shr	eax, 2+8		; to make block pointer 0
-	add	ebx, eax	; calulate frame limit page
+	and	eax, 003FFFFFh		; remove name pages flag
+					; and reserved bit 22	
+
+	add	ebx, eax		; calulate frame limit page
 	mov	dword ptr [_base+64*4], ebx
 
 	shl	ebx, 12
-	lea	ebx, [_memory+ebx*4+4095*4]	; last instruction in iframe
+	lea	ebx, [_memory+ebx*4+4095*4]	; last instruction word in iframe
 						; higher = wrong
 	mov	dword ptr [_apcz], ebx	; set execution limit pointer
 
