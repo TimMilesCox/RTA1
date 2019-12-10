@@ -1,0 +1,626 @@
+<div	style="font-size:14pt">
+<h2	style=2"color:0000FF">The Simplest Application Structure</h2>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+The small file listed includes a slightly larger one containing the view application
+
+<p>
+It's done like this because there are other ways of having this application. <a	style="color:red">viewfile</a> can be included from a different wrapper to have a different environment
+
+<p>
+There's a lot of $list 0 here which will stop too much kernel material appearing in any name list you might choose to generate
+
+<p>
+At the same time, the wrapper is printed out to show what kind of system headers an application is likely to need. That's those .def files at the top
+
+
+<p>
+The application is assembled straight into absolute code starting address zero, and thats how applications are in RTA1
+
+<p>
+There is a <a href="#vector">$vector</a> jump pad with just one entry at the start of the memory page containing viewfile application
+
+<p>
+<a href="#vector">$vector</a> macro exports the entry point view* and jumps to the application
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat rta/target.rta/viewfile.app/viewfile.msm
+        $path           ../
+        $list           0
+        $include        def/rta.def
+        $include        def/vector.def
+        $include        def/ii.def
+        $include        language/stack.def
+        $include        stream/stream.def
+        $include        fs/request.def
+        $include        fs/mntaddrs.def
+        $include        t77.4/ip.def
+	$list
+	$path
+	$include	../image.app/imports.def
+        $list
+        $path
+
+_BASE	$equ	0
+
+$(0)
+view*	$vector	viewfile
+	$list	0
+	$do	64-$,	fret	0
+	$list
+
+viewfile
+	$include	../source.app/<a style="color:FF0000">viewfile.msm</a>
+
+	$do	$<256,$(0:256)	. force literals into operand memory space
+				. operand addresses 0..255 are registers
+
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+Next is what you see if you assemble this wrapper
+
+<p>
+Blocks called $(3) and $(1) appear. They are data
+
+<p>
+Many automatic constants called literals appear at the end of the code
+
+<p>
+Some literals are forced into $3() data space. That's so a different $(0) instruction frame can address these literals as arguments. This is an important matter to understand. RTA1 only addresses one iframe at one time. So if you are calling library, scalars and pointers are in the internal stack, and that's just fine. If a pointer in the internal stack is pointing to something larger, like a string, that string has to be somewhere the called iframe can see it. Like your $(3) data space
+
+<p>
+
+This application encodes NFS remote mount points in file open path strings. Of course there are other ways of doing this, and other ways of doing the remote host search which is coded inline here. Just to show a few instructions can be a powerful thing in RTA1
+
+<p>
+C-language number/string style has been opted in order to show escape sequences in a way most developers recognise them
+
+<p>
+Macro <a href="#base_x">$base_x</a> places data storage assigned to the process in address window $(3) 003000 hex
+
+<p>
+Kernel routine <a href="#seg_load">seg$load</a> is called to unpack initial data values from a read-only file system embedded in the application image. All RTA1 code is shared code
+</div>
+
+<pre	style="font-size:12pt">
+
+$ masmx -lnke viewfile
+MASMX 7r3A Build 8
+3/viewfile.msm
+*EOF*
+  :                            1         $path           ../
+  :                            11 	$list
+  :                            12 	$path
+  :                            13: 	$include	../image.app/imports.def
+  :                            14         $list
+  :                            15         $path
+  :                            16 
+  :                            17 _BASE	$equ	0
+  :                            18 
+  :                            19 $(0)
+00:000000  B60040              +20 view*	$vector	viewfile
+  :                            23 	$list
+  :                            24 
+  :                            25 viewfile
+  :                            26: 	$include	../source.app/viewfile.msm
+  :                            17 	$list	2
+  :                            18 
+  :                            19 $(1:01000/$1)
+01:001000  000000 000000        +20 cursor		0L
+  :                            21 
+  :                            22 $(3:03000/$3)
+  :                            23 
+  :                            24 BUFFER	$equ	32
+  :                            25 
+03:003000  000000              +26 handle  0
+  :                            27 
+  :                            28 
+  :                            29 	$list	2
+03:003001  020005 000000 000000 AC1D07 060801 003007
+                              +30 path_platform	mount_path	PLATFORM_NFSD::mount_platform:""
+03:003007  021F10 000000 000000 AC1D07 0603FF 000000 2F5573 657273
+                              +31 mount_platform	mount_path	PLATFORM_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
+03:00300F  2F7469 6D636F 782F6E 667364 726976 652F66 73696D 616765
+                              +31 
+03:003017  732020              +31 
+  :                            32 
+03:003018  020005 000000 000000 C0A800 0E0801 00301E
+                              +33 path_suse	mount_path	SUSE_NFSD::mount_suse:""
+03:00301E  021E0F 000000 000000 C0A800 0E03FF 000000 2F686F 6D652F
+                              +34 mount_suse	mount_path	SUSE_MOUNTD:::"/home/laclimpide/online_files/"
+03:003026  6C6163 6C696D 706964 652F6F 6E6C69 6E655F 66696C 65732F
+                              +34 
+  :                            35 
+03:00302E  020005 000000 000000 C0A800 0F0801 003034
+                              +36 path_suse_ro	mount_path	SUSE_NFSDW::mount_suse_ro:""
+03:003034  021E0F 000000 000000 C0A800 0F03FF 000000 2F686F 6D652F
+                              +37 mount_suse_ro	mount_path	SUSE_MOUNTDW:::"/home/laclimpide/lookup_files/"
+03:00303C  6C6163 6C696D 706964 652F6C 6F6F6B 75705F 66696C 65732F
+                              +37 
+  :                            38 
+03:003044  020005 000000 000000 C0A800 0A0801 00304A
+                              +39 path_macmini    mount_path      MACMINI_NFSD::mount_macmini:""
+03:00304A  021F10 000000 000000 C0A800 0A03FF 000000 2F5573 657273
+                              +40 mount_macmini   mount_path      MACMINI_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
+03:003052  2F7469 6D636F 782F6E 667364 726976 652F66 73696D 616765
+                              +40 
+03:00305A  732020              +40 
+  :                            41 
+03:00305B  020005 000000 000000 C0A800 100801 003061
+                              +42 path_airbook	mount_path	AIRBOOK_NFSD::mount_airbook:""
+03:003061  021F10 000000 000000 C0A800 1003FF 000000 2F5573 657273
+                              +43 mount_airbook	mount_path	AIRBOOK_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
+03:003069  2F7469 6D636F 782F6E 667364 726976 652F66 73696D 616765
+                              +43 
+03:003071  732020              +43 
+  :                            44 
+  :                            45 
+  :                            46 path		$res	120/3
+  :                            47 host		$res	8
+  :                            48 file		$res	72
+  :                            49 
+  :                            50 
+  :                            51 request $res    72/3
+  :                            52 buffer  $res    BUFFER
+  :                            53 
+  :                            54 $(0)
+  :                            55 
+  :                            56 	$set_option	"c"		. that makes escape sequences easier to read
+  :                            57 					. it means C Language number and string syntax
+  :                            58 	<a	name="base_x"/>
+00:000040  60207F              +59 	$base_x	$zenith(3)-0x003000 1024*2
+00:000041  340003              +59 
+00:000042  60016B              +59 
+00:000043  75007A              +59 
+00:000044  654000              +59 
+00:000045  20000E              +59 
+  :                            60 	<a	name="seg_load"/>
+00:000046  9F016C              +61 	c	(seg$load)	0,,xi	(viewfile_data:d),,long
+00:000047  FD0000              +61 
+00:000048  FCF003              +61 
+00:000049  FF016E              +61 
+00:00004A  38000F              +61 
+  :                            62 
+00:00004B  FD00AC              +63 	fgets	request 172 stdin
+00:00004C  FC30EA              +63 
+00:00004D  FD0000              +63 
+00:00004E  FCF003              +63 
+00:00004F  FF016F              +63 
+00:000050  38000F              +63 
+00:000051  E60054              +63 
+00:000052  160018              +63 
+00:000053  1D0018              +63 
+00:000054  FD30EA              +64 	printf	$3("file viewer: %s":10),,xi request,,xi
+00:000055  FD312E              +64 
+00:000056  FD0001              +64 
+00:000057  FCF003              +64 
+00:000058  FF0170              +64 
+00:000059  38000F              +64 
+  :                            65 
+00:00005A  FD309A              +66 	sscanf	request+2,,xi $3("%:@%s"),,xi path+6,,xi host,,xi
+00:00005B  FD3078              +66 
+00:00005C  FD3134              +66 
+00:00005D  FD30EC              +66 
+00:00005E  FCF004              +66 
+00:00005F  FF0171              +66 
+00:000060  38000F              +66 
+  :                            67 
+  :                            68 
+00:000061  FD30EC              +69 	printf	$3("speed dial %s\n"),,xi	request+2,,xi
+00:000062  FD3136              +69 
+00:000063  FD0001              +69 
+00:000064  FCF003              +69 
+00:000065  FF0170              +69 
+00:000066  38000F              +69 
+  :                            70 
+  :                            71 					. speed dial remote file@container
+  :                            72 
+  :                            73 					. choose from a list of target servers
+  :                            74 					. this can alteranitvely be done on a directory
+00:000067  5D0005              +75 	ly	5,,xi			. below the POSIX-style API
+00:000068  8DFFFF              +76 target?	ay	-1,,xi
+00:000069  50B183              +77 	lx	(("platform/fsimages"), ("suse"), ("suse_ro"), ("macmini"), ("airbook")p), y
+00:00006A  CF309A              +78 	dl	host
+00:00006B  DFA000              +79 	dan	0, x
+00:00006C  7C006F              +80 	jdz	target!
+00:00006D  700003              +81 	tz	y
+00:00006E  B60068              +82 	j	target?			. fall-thru default is a PC platform hosting this RTA1
+  :                            83 
+00:00006F  58B188              +84 target!	ly	(path_platform, path_suse, path_suse_ro, path_macmini, path_airbook:p), y
+00:000070  4FB000              +85 	ql	0, y
+00:000071  473072              +86 	qs	path			. path preamble contains NFS server socket address
+00:000072  CFB004              +87 	dl	4, y			. + [default] local socket address
+00:000073  C73076              +88 	ds	path+4			. + link to mountd path
+  :                            89 
+00:000074  553078              +90 	lx	path+6,,xi
+00:000075  3E015D              +91 	lcal	strlen			. count the filename bytes
+  :                            92 
+00:000076  260008              +93 	sal	8			. insert name byte count in path preamble header word
+00:000077  903072              +94 	or	path
+00:000078  680000              +95 	lb	r			. add containing words of name to path structure length
+00:000079  80D18D              +96 	ax	(2, 2, 1, 1, 1, 0h), b	
+00:00007A  85CF88              +97 	ax	-path-6,,xi
+00:00007B  C00002              +98 	aa	x
+00:00007C  203072              +99 	sa	path			. update the path preamble
+  :                            100 
+                                	c	(open)	path,,xi	;
+00:00007D  FD0000              +102 			O_RDONLY,,xi
+00:00007E  FD3072              +102 
+00:00007F  FCF002              +102 
+00:000080  FF0193              +102 
+00:000081  38000F              +102 
+  :                            103 
+00:000082  203000              +104 	sa	handle
+00:000083  E600B3              +105 	jna	neverdid
+  :                            106 
+00:000084  FD0020              +107 more	c	(read)	handle	buffer,,xi	 BUFFER,,xi
+00:000085  FD3102              +107 
+00:000086  F83000              +107 
+00:000087  FCF003              +107 
+00:000088  FF016F              +107 
+00:000089  38000F              +107 
+00:00008A  E600AC              +108 	jna	didsome
+  :                            109 
+00:00008B  553102              +110 	lx	buffer,,xi		. calculate display limit pointer
+00:00008C  800004              +111 	ax	a			. = &buffer + data words
+00:00008D  400002              +112 	lr	x
+00:00008E  553102              +113 	lx	buffer,,xi
+  :                            114 
+00:00008F  F60092              +115 owrite	jxge	ocomplete
+00:000090  3E00CF              +116 	lcal	writealine
+00:000091  B6008F              +117 	j	owrite
+  :                            118 ocomplete
+  :                            119 	
+  :                            120 
+00:000092  FD0064              +121 	fgets	request,,xi	100,,xi stdin,,xi
+00:000093  FC30EA              +121 
+00:000094  FD0000              +121 
+00:000095  FCF003              +121 
+00:000096  FF016F              +121 
+00:000097  38000F              +121 
+00:000098  E6009B              +121 
+00:000099  160018              +121 
+00:00009A  1D0018              +121 
+00:00009B  E600BA              +122 	jna	leave_orderly		. if stdin has disconnected just drop out
+00:00009C  6030EA              +123 	la	request
+00:00009D  E600BA              +124 	jna	leave_orderly		. CTRL_D detected, treat as EOF
+00:00009E  060010              +125 	sar	16
+00:00009F  C5FFD2              +126 	aa	-'.',,xi		. a period means stop
+00:0000A0  C600BA              +127 	jza	leave_orderly
+00:0000A1  C5FFF4              +128 	aa	'.'-'0'-10,,xi		. a number entered in either decimal or hex
+00:0000A2  7E0084              +129 	jc	more			. means reposition within the target file
+00:0000A3  C5000A              +130 	aa	10,,xi			. leading zero = hex, 1..9 = decimal
+00:0000A4  5E0084              +131 	jnc	more			. anything else means carry on
+00:0000A5  3E0107              +132 	lcal	new_cursor
+00:0000A6  9F0004              +133 	c	(seek)	handle	a,,long
+00:0000A7  F83000              +133 
+00:0000A8  FCF003              +133 
+00:0000A9  FF0194              +133 
+00:0000AA  38000F              +133 
+00:0000AB  B60084              +134 	j	more
+  :                            135 
+00:0000AC  F80004              +136 didsome	printf	$3("read failed %d\n":0),,xi a
+00:0000AD  FD313B              +136 
+00:0000AE  FD0001              +136 
+00:0000AF  FCF003              +136 
+00:0000B0  FF0170              +136 
+00:0000B1  38000F              +136 
+00:0000B2  B600BA              +137 	j	leave_orderly
+  :                            138 
+  :                            139 neverdid
+00:0000B3  F80004              +140 	printf	$3("bad open %d\n":0),,xi a
+00:0000B4  FD3141              +140 
+00:0000B5  FD0001              +140 
+00:0000B6  FCF003              +140 
+00:0000B7  FF0170              +140 
+00:0000B8  38000F              +140 
+00:0000B9  B600BA              +141 	j	leave_orderly
+  :                            142 
+  :                            143 
+  :                            144 leave_orderly
+00:0000BA  F83000              +145 	c	(close)	handle		. terminate process
+00:0000BB  FCF001              +145 
+00:0000BC  FF0195              +145 
+00:0000BD  38000F              +145 
+00:0000BE  3D0000              +146 	fret	0			. dialogue continues in telnet stub
+  :                            147 					. if stdin socket is still connected
+  :                            30 
+  :                            31 	$do	$<256,$(0:256)	. force literals into operand memory space
+  :                            32 				. operand addresses 0..255 are registers
+  :                            33 
+*EOF*
+00:00016b+[0000]18:000000
+00:00016c+[0001]30:000000000000
+00:00016e+0001CD
+00:00016f+0001D3
+00:000170+0001DB
+00:000171+0001D8
+00:000172+706C6174666F726D2F6673696D6167657300
+00:000178+737573650000
+00:00017a+737573655F726F0000
+00:00017d+6D61636D696E690000
+00:000180+616972626F6F6B0000
+00:000183+00017200017800017A00017D000180
+00:000188+00300100301800302E00304400305B
+00:00018d+000002000002000001000001000001000000
+00:000193+0001D2
+00:000194+0001D5
+00:000195+0001D7
+00:000196+000231
+00:000197+0001D4
+00:000198+0001D6
+00:000199+000000
+00:00019a+600000
+00:00019b+000000000000
+00:00019d+FF0000
+03:00312e+66696C65207669657765723A2025730A0000
+03:003134+253A40257300
+03:003136+7370656564206469616C2025730A00
+03:00313b+72656164206661696C65642025640A000000
+03:003141+626164206F70656E2025640A000000
+:$(00):000000:00019E :$(01):001000:001002 :$(02):002000:002821 :$(03):003000:003146 
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+You need directory rta/target.rta/image.app in your path to construct applications
+
+<p>
+You also need some <a href="masmx7r3.html#binary_utilities">binary utilities</a> in your path. They should be in $RTA_BINARY
+
+<p>
+If viewfile is the only fixed application in your lookup path, you do this build
+</div>
+
+<pre	style="font-size:12pt">
+
+	cd rta/target.rta/viewfile.app
+	./make
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+This constructs viewfile and joins it to the kernel
+
+<p>
+This is how it does it. Commands make1 profile1 and lookup are scripts in rta/target.rta/image.app
+<p>
+A data file lookups must be present in the directory where the the application is developed. lookups guides
+the construction of the lookups readonly file system
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat target.rta/viewfile.app/make
+rm *.txo
+rm *.abs
+rm *.fs
+rm *.rom
+rm storage
+rm outrigger
+rm viewfile
+rm viewfile_profile
+
+make1 viewfile				# assemble the application
+profile1 viewfile view 7 1 APPLICATION	# assemble its launch parameters
+
+lookup					# construct the lookup file system
+					# join applications to the kernel
+cat ../rta.gen/minimal.rom lookup.fs viewfile.rom > sysimage.rom
+cmp lookup.zak lookup.fs
+cmp viewfile.zak viewfile.rom
+cmp sysimage.zak sysimage.rom		# see if anything changed
+
+
+$ cat target.rta/viewfile.app/lookups
+volume apps_interface.fs
+tree lookup
+file view viewfile_profile.rom
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+
+The first page where fixed applications go is an address called APPLICATION in a file rta/target.rta/def.sys/banks.def
+
+<p>
+If multiple applications and libraries are fixed in the load image, then their position in NVRAM must advance from address APPLICATION as pages are filled
+
+<p>
+A header file list defining these addresses, say apps.def, might take the form
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat apps.def
+
+APPLICATION1	$equ	APPLICATION+4096*1
+ANOTHER_APP	$equ	APPLICATION+4096*2
+
+</pre>
+
+<div	style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+application1 and another_app would need to be catenated into sysimage and listed in lookups
+
+<p>
+Applications need not be exactly one 4K-word page each. They can be larger or less than 4K
+
+<p>
+It's likely you want more than a file viewer as a system application
+
+<p>
+A simple way to construct applications is to put them in successive one page iframes like viewfile and join them all to the kernel at fixed locations to make a load image, but it's feasible to construct more sparingly
+
+<p>
+RTA1 is about miniaturisation and a page of 4096 words can hold several applications like viewfile
+
+<p>
+So the prototype of a loader for dynamic application loads has been packed into the same page as viewfile, and the system image is constructed like this
+</div>
+
+
+<pre	style="font-size:12pt">
+
+	cd rta/target.rta/initial.app
+	./make
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+This takes some relocatable assembly and some linking, but the difference is all in the ./make script and the different wrapper files initial.app/viewfile.msm and initial.app/loader.msm
+
+<p>
+This is how it does it. Commands relt mcombine mprofile and lookup are scripts in rta/target.rta/image.app
+<p>
+A data file lookups must be present in the directory where the the application is developed. lookups guides
+the construction of the lookups readonly file system
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat target.rta/initial.app/make
+rm *.abs
+rm *.rel
+rm *.txo
+rm *.rom
+rm *.fs
+rm outrigger
+rm storage
+rm loader_profile
+rm viewfile_profile
+rm apps
+
+relt loader					# assemble applications relocatable
+relt viewfile
+mcombine apps					# link them in one iframe
+mprofile apps load 7 1 APPLICATION loader	# construct the launch parameters
+mprofile apps view 7 1 APPLICATION viewfile	# of each application
+lookup						# construct the lookup file system
+						# join applications to the kernel
+cat ../rta.gen/minimal.rom lookup.fs apps.rom > sysimage.rom
+
+cmp sysimage.zak sysimage.rom
+cmp apps.zak apps.rom
+cmp lookupfs.zak lookup.fs			# see if anything changed
+
+
+$ cat target.rta/initial.app/lookups
+volume apps_interface.fs
+tree lookup
+file load loader_profile.rom
+file view viewfile_profile.rom
+.
+.
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+If more applications start to need more NVRAM pages then their load profile address advances from address APPLICATION in increments of 4096 words
+
+<p>
+Here is the different wrapper to generate viewfile relocatable
+
+<p>
+The *1 in $(4:*1 and $(0:*1 means <a href="masmx7r3.html#locator">program section relocatable</a>. These are code and constant sections
+
+<p>
+Data sections $(3) $(1) remain absolute in runtime windows 003000 hex and 001000 hex
+
+<p>
+The asterisk on viewfile* exports it
+
+</div>
+
+<pre	style="font-size:12pt">
+
+cat rta/target.rta/initial.app/viewfile.msm
+
+        $path           ../
+        $list           0
+        $include        def/rta.def
+        $include        def/vector.def
+        $include        def/ii.def
+        $include        language/stack.def
+        $include        stream/stream.def
+        $include        fs/request.def
+        $include        fs/mntaddrs.def
+        $include        t77.4/ip.def
+	$path
+
+	$include	../image.app/imports.def
+        $list
+        $path
+
+_BASE	$equ	0
+
+	$lit	4
+
+$(4:*1/$4)
+$(0:*1)
+
+viewfile*
+	$include	../source.app/viewfile.msm
+
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+<p>
+Here is the step that gets back to absolute code and contains the entry point <a href="#vector">vectors</a>
+
+<p>
+This file is an assembly language source assembled with masmx
+
+<p>
+Link rules from rta/target.rta/def/map1.def are needed
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat target.rta/initial.app/apps.msm
+	$include	../def/rta.def
+	$include	../language/stack.def
+	$include	../def/map1.def
+
+$(0:0)
+load*	$vector	loader
+view*	$vector	viewfile
+ 	$list	0
+ 	$do	64-$,	fret	0
+ 	$list
+ 	$include,$binary	loader.rel	$(0)
+ 	$include,$binary	viewfile.rel	$(0)
+ 
+ 	$do	$<256,$(0:256)	. iframe literals here
+$(4:$(0))
+ 	$include,$binary	loader.rel	$(4)
+ 	$include,$binary	viewfile.rel	$(4)
+
+OUTRIGGER* $set	$zenith+63**-64	. export a link location
+				. for the data segments file system
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+Fixed iframes larger than one page may be constructed. They are accessed via <a href="rta.html#gate">gate</a>
+
+<p>
+If you update the kernel instead of the application, do ./reload instead of ./make
+
+<p>
+./reload builds the kernel, ./make builds the application, both join the kernel and application
+
+<p>
+That was application iframes fixed in the system load image
+
+<p>
+Construct <a href="rta.html#gate">gate</a> is also used to access <a href="iframe.html">loadable applications</a>
+
+<p>
+Application <a href="iframe.html#loader">loader</a> loads these
+</div>
+</div>

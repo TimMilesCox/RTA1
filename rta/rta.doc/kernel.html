@@ -1,0 +1,812 @@
+<div	style="font-size:14pt">
+<center>
+
+<h1>RTA1 Kernel and API</h1>
+
+<i>
+Copyright Tim Cox, 2012<br>
+This document is part of the RTA1 Processor Programmable Architecture Specification<br>
+The RTA1 Architecture is freeware licensed with the GNU General Public Licence Version 3<br>
+The same licence encompasses all accompanying software and documentation <br>
+The full licence text is included with these materials<br>
+See also the licensing notice at the foot of this document
+</i>
+
+</center>
+
+
+<div	style="font-size:12pt">
+<ol>
+<li><a href="#preamble">Kernel and API</a></li>
+	<ol>
+	<li><a href="#posix_api">POSIX API and Lower Level Interface</a></li>
+	<li><a href="#ii_call">Kernel Call Interface and Internal Interrupt Interface</a></li>
+	</ol>
+<li><a href="#api">API</a></li>
+	<ol>
+	<li><dl><a	href="#ii">Internal Interrupt for Processes, Threads and Storage</a></li>
+		<dd><a	href="#spawn_ii">SPAWN$</a></dd>
+		<dd><a	href="#thread_ii">THREAD$</a></dd>
+		<dd><a	href="#tag_ii">TAG$</a></dd>
+		<dd><a	href="#bank_ii">BANK$</a></dd>
+		<dd><a	href="#array_ii">ARRAY$</a></dd>
+		<dd><a	href="#bfree_ii">BANK$FREE</a></dd>
+                <dd><a  href="#fpguard_ii">FP_GUARD$</a></dd>
+                <dd><a  href="#evw_ii">EVENT_WAIT$ </a></dd>
+		<dd><a	href="#xpof_ii">FP_XPO$FLAG</a></dd>
+		<dd><a	href="#yield_ii">YIELD$</a></dd>
+		<dd><a	href="#twait_ii">TWAIT$</a></dd>
+		<dd><a	href="#exit_ii">EXIT$</a></dd>
+	</dl>
+	<li><dl><a	href="#so_calls">Network Socket Calls</a></li>
+	<dt><a href="#net_posix">POSIX Network Calls</a></dt>
+		<dd><a href="#__socket">__socket</a></dd>
+        	<dd><a href="#connect">connect</a></dd>
+	        <dd><a href="#bind">bind</a></dd>
+        	<dd><a href="#recv">recv</a></dd>
+	        <dd><a href="#send">send</a></dd>
+                <dd><a href="#tcp_listen">tcp_listen</a></dd>
+                <dd><a href="#tcp_accept">tcp_accept</a></dd>
+                <dd><a href="#socket_close">close</a></dd>
+	</dl>
+	<li><dl><a	href="#fs_calls">File System Calls</li>
+		<dt><a href="#fs_posix">POSIX File System Calls</a></dt>
+			<dd><a href="#open">open</a></dd>
+			<dd><a href="#read">read</a></dd>
+			<dd><a href="#write">write</a></dd>
+			<dd><a href="#seek">seek</a></dd>
+			<dd><a href="#fsync">fsync</a></dd>
+			<dd><a href="#close">close</a></dd>
+		<dt><a href="#fs_loadgo">Process Load Calls</a></dt>
+			<dd><a href="#seg$load">seg$load</a></dd>
+			<dd><a href="#recursive$seg$load">recursive$seg$load</a></dd>
+			<dd><a href="#array$seg$load">array$seg$load"</a></dd>
+			<dd><a href="#iframe_load">iframe_load</a></dd>
+			<dd><a href="#qstart">qstart</a></dd>
+		<dt><a href="#fs_stream">File Stream Calls</a></dt>
+			<dd><a href="#scanform">scanform</a>	macro name		. sscanf</dd>
+			<dd><a href="#sprintf">sprintf</a>	macro name		. sprintf</dd>
+			<dd><a href="#fscanform">fscanform</a>	macro names		. scanf fscanf</dd>
+			<dd><a href="#fprintf">fprintf</a>	macro names		. printf fprintf</dd>
+	</dl>
+	</ol>
+
+
+<li><a href="#api">Kernel Internal API</a></li>
+	<div	style="background-color:E0E0E0">
+        <ol>
+        <li><dl><a href="#fsio_calls">File I/O Calls</li>
+		<dt><a href="#nfs_cdtent">Remote File System Calls</a></dt>
+			<dd><a href="#nfsmount">nfsmount</a>	nfs_fsmount</dd>
+			<dd><a href="#nfsopen">nfsopen</a>	nfs_open_path</dd>
+			<dd><a href="#nfsread">nfsread</a>	nfs_data_read</dd>
+			<dd><a href="#nfs_seek">nfs_seek</a>	nfs_file_position</dd>
+			<dd><a href="#nfsclose">nfsclose</a>	nfs_close_path</dd>
+		<dt><a href="#fs24_walk">Device Array File System Calls</a></dt>
+			<dd><a href="#fs_1st">fs_1st</a>	fs_first		. low level extent-view commands</dd>
+			<dd><a href="#fs_read">fs_read</a>	fs_next			. 256K-maxextent device-array FS</dd>
+			<dd><a href="#fs_find">fs_find</a>	fs_search</dd>
+			<dd><a href="#fs_dsearch">fs_dsearch</a>	fs_directory_search</dd>
+			<dd><a href="#fs_xbase">fs_xbase</a>	fs_base_extent_advance</dd>
+			<dd><a href="#fspath">fspath</a>	fspath_walk</dd>
+			<dd><a href="#fspath_open">fspath_open</a>	fspath_openfile</dd>
+			<dd><a href="#fs24_open">fs24_open</a>	fs24:fs24_aim</dd>
+			<dd><a href="#fs24_read">fs24_read</a>	fs24:fs24_words</dd>
+			<dd><a href="#fs24_advance">fs24_advance</a>	fs24position:fs24_forward</dd>
+		<dt><a href="#fsrom_walk">ROM / RAM File System Calls</a></dt>
+			<dd><a href="#fsrom_da">fsrom_da</a>	fsrom_direct		. word-oriented R/W data transfer routines,</dd>
+			<dd><a href="#fsrom_read">fsrom_read</a>	fsrom_words		. 4K-maxextent FS in executable space</dd>
+			<dd><a href="#fsrom_find">fsrom_find</a>	fsrom_locate</dd>
+		<dt><a href="#fs_stream">File Stream Calls</a></dt>
+			<dd><a href="#net_scan_tcp">net_scan_tcp</a>	scan_tcp		. fscanf socket</dd>
+		<dt><a href="#fs_fob">File I/O Descriptor Calls</a></dt>
+			<dd><a href="#claim_fob">claim_fob</a>	claimfob</dd>
+	</dl>
+	<li><dl><a	href="#ii_contingency">Contingency Interrupts</a></li>
+                <dd><a  href="#xpo_ii">FP_XPO$</a>      79      .       bank 1  vector  15      . exponent overflow | underflow</dd>
+		<dd><a	href="#guard_ii">GUARD$</a>	95	.	bank 1	vector	31</dd>
+
+
+		<dd><a	href="#guard_ii">XBASE_U$</a>	GUARD$	.	bank 1 vector 31</dd>
+
+		<dd><a	href="#guard_ii">RUNAWAY$</a>	GUARD$	.	macro code issued this</dd>
+
+		<dd><a	href="#guard_ii">STACK_LIMIT$</a>	GUARD$	.	same vector again</dd>
+	</dl>
+	</ol>
+	</div>
+<li><a	href="#library">Library</a></li>
+	<div    style="background-color:E0E0E0">
+	<ol>
+	<li><dl><a href="#scan_edit_lib">Field Scan and Edit</a></li>
+	</dl>
+	<li><dl><a href="#arith_lib">Large Arithmetic Library</a></li>
+	</dl>
+	<li><dl><a href="#app_lib">Application Library</a></li>
+	</dl>
+	</ol>
+	</div>
+</ol>
+</div>
+<a	name="posix_api"/>
+<h2>1. API</h2>
+
+<h3>1.1 POSIX API and Low Level Interface</h3>
+
+<p>
+RTA1 kernel has services with POSIX-like API
+
+<p>
+The services are also addressable at a lower layer than the handle-based
+POSIX model
+
+<p>
+Low level interfaces allow services on a far larger scale as well
+as shorter instruction paths
+
+<p>
+POSIX APIs are centred on the handle, an integer token for a network socket
+or a file. Socket and file handles share a number space
+
+<p>
+A single server application may have
+several million sustained TCP connections. The remote client session
+is carried on a sustained TCP connection.
+
+<p>
+Applications do not have millions of socket handles, but may serve
+millions of TCP connections over a low-level API
+
+<a      name="ii_call"/>
+
+<h3>1.2 Kernel Call Interface and Internal Interrupt Interface</h3>
+
+Most kernel routines have a call interface and their
+arguments are on the internal stack
+
+<p>
+Some calls are internal interrupts. They are called with
+the <b>ii</b> internal interrupt instruction
+
+<p>
+Functional wrappers will be placed around internal interrupt system calls
+for a single and simple C-Language interface
+
+<p>
+Macro language supports a <a href="language.html">structured call interface</a> for application
+calls and kernel calls
+
+<p>
+Kernel routines which temporarily alter the address space are
+implemented as internal interrupts
+
+<p>
+Return from interrupt restores the caller's environment
+
+<p>
+Arguments for internal interrupts are typically in the application
+accumulator registers
+
+<pre	style="font-size:12pt">
+
+        la      <i>argument</i>
+        ii      <i>isr_vector</i>
+
+
+</pre>
+
+<p>
+An interrupt vector is a value with a 16-bit page pointer and a 6-bit offset<br>
+The sign extended immediate operand of ii instruction only has 10 page bits
+
+<pre	style="font-size:12pt">
+
+        [ii opcode] pp pppp pppp offset
+
+</pre>
+
+The instruction code <a href="rta.html#ii">ii</a> is 750000 hex and the vector name THREAD$ is 000047 hex = Page Index 1 offset 7
+
+<pre	style="font-size:12pt">
+
+        <b>
+        00:00004C 750047              +50       ii              THREAD$
+        </b>
+
+</pre>
+
+<p>
+The operand of the far call instruction <b>call</b>
+is a variable or a constant containing the vector value
+of the target routine, or an indirect pointer to a <a href="rta.html#gate">gate<a>
+
+<p>
+The instruction code <a href="rta.html#call">call</a> is FF0000 hex and the literal at 00:000e74 is vector name __socket at Page Index 2 offset 1
+
+
+<pre	style="font-size:12pt">
+
+        <b>
+        00:000047 FF0E74              +122      call    (__socket)
+
+
+        00:000e74+000081
+        </b>
+
+</pre>
+
+An ISR reads parameters from application registers,
+and returns by executing an interrupt return instruction <a href="rta.html#ir">ir</a>
+
+<p>
+A far call routine executes in application mode and reads parameters
+from the internal stack. It returns by executing a far return instruction <a href="rta.html#fret">fret</a>
+
+<p>
+ISRs are in 4096-word page at absolute address 4096, i.e. the second page of storage at Page Index 1.
+
+<p>
+Instruction frames can be any size, but kernel iframes are each one page in size
+
+<p>
+Network call routines are in page 2 at address 8192
+
+<p>
+Device driver call routines are in page 4 at address 16384
+
+<p>
+File system call routines are in page 7 at address 28672
+
+<p>
+Math Library system call routines are in page 6 at address 24576
+
+<p>
+Data-Code sensitive ASCII library is in page 8 at address 32768
+
+<a	name="ii"/>
+<h3>2.1: Internal Interrupt for Processes, Threads and Storage</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="spawn_ii"/>
+	SPAWN$		66	= Page Index 1	offset 2
+
+				process launch
+		                4 parameters in application registers a b mantissa2 mantissa3
+				= { start_vector | gate_pointer, priority, data_memory_size, B1_frames }
+
+
+	<a	name="thread_ii"/>
+	THREAD$		71	= Page Index 1  offset 7
+
+		                start a new thread of the current process
+
+                		4 parameters in application registers a b mantissa2 mantissa3
+				= { start_address_this_iframe, priority, latent_parameter, fp_value  }
+
+	<a	name="tag_ii"/>
+	TAG$		73	= Page Index 1  offset 9
+
+				name a thread
+				application register a -> target Thread Control Block, zero = calling thread
+				application register b -> name string, low order octet final work = zero
+
+
+	<a	name="bank_ii"/>
+	BANK$		67	= Page Index 1  offset 3
+
+                		storage acquire
+		                words requested in application register a
+                		start page index returned in a / zero if no grant
+		                descriptor is linked to thread memory estate
+
+	<a	name="array_ii"/>
+	ARRAY$		68	= Page Index 1  offset 4
+
+                		very large storage acquire
+		                4096-word blocks requested in application register a
+                		start page index returned in a / zero if no grant
+		                descriptor is linked to thread memory estate
+
+	<a	name="bfree_ii"/>
+	BANK$FREE	69	= Page Index 1  offset 5
+
+                		storage relinquish
+                		start page index in application register a
+		                descriptor is unlinked from thread memory estate
+
+	<a	name="fpguard_ii"/>
+	FP_GUARD$	94	= Page Index 1  offset 30
+
+				set floating point rounding guard pattern in interrupt register 147
+				to the value in application register a
+				returns old value in application register a
+
+	<a	name="evw_ii"/>
+	EVENT_WAIT$	92	= Page Index 1  offset 28
+
+				wait for the event flagged in application register a
+
+	<a	name="xpof_ii"/>
+	FP_XPO$FLAG	78	= Page Index 1  offset 14
+
+				retrieve + clear exponent overflow flag
+				interrogate OR-sum of exponent underflow / overflow events in this thread
+				reset the sum
+				return skips one instruction if the the sum is not set at interrupt start
+
+	<a	name="yield_ii"/>
+	YIELD$		65	= Page Index 1  offset 1
+
+				thread switch	on preemptive event
+                		                or event wait
+                                		or voluntarily
+
+	<a	name="twait_ii"/>
+	TWAIT$		91	= Page Index 1	offset 27
+
+                		thread switch and wait millisecond count in
+                		application registers a:b
+
+	<a	name="exit_ii"/>
+	EXIT$		70	= Page Index 1	offset 6
+
+         			end thread
+	 			end initial thread ends all other threads of process
+
+</pre>
+<a	name="so_calls"/>
+<h3>2.2: Network Socket Calls</h3>
+
+<pre	style="font-size:12pt">
+
+
+<a	name="net_posix"/>
+POSIX Network Calls
+
+<a	name="__socket"/>
+	__socket
+	________
+
+	get a socket
+
+        <b>la   ([IPPROTO_TCP|IPPROTO_UDP]*/16)
+        call    (__socket)</b>
+
+        result in application register a
+        +integer = socket ID
+        -1      = handle not available
+        -2      = protocol not supported
+
+
+
+<a	name="bind"/>
+	bind
+	____
+
+        bind a handle to a port and optionally to a network address
+
+        <b>{ dl ($net_socket 10.0.0.63:PORT) | dsr      48 }
+        ds      6
+        la      socket_handle
+        [lb, xi 0]
+        call    (bind)</b>
+
+
+        result in application register a
+        0       = good
+        -2      = handle is not TCP or UDP
+        -3      = port number specified and not free
+        -4      = no resource to model the socket
+
+
+<a	name="connect"/>
+	connect
+	_______
+
+        c       (connect)       socket_handle                           ;
+                                ($net_socket 10.0.0.65:REMOTE_PORT),,long
+
+        connect UDP socket
+        __________________
+
+        <b>connect</b> in UDP associates the local
+        socket with a remote socket, but causes no
+        external protocol activity. UDP socket connect
+        therefore returns immediately
+
+
+        connect TCP socket
+        __________________
+
+        <b>connect</b> in TCP changes the socket to a
+        connection handle and negotiates that connection
+        with the remote socket over TCP and IP protocols
+
+        The handle may already be bound to a port
+        and optionally to a local network address
+
+        Otherwise connect() binds the socket to an available
+        unique local port, and to the default network address
+        of the outgoing interface
+
+        A small number of application protocols have a
+        well-known and constant client port number
+
+        Some port numbers therefore support being bound to
+        multiple sockets for outgoing connect. The sockets
+        may be of one process or many
+
+        However an outgoing connection with all addresses and
+        ports identical to an existing connection is declined
+        internally, so that the remote host does not reset
+        the existing connection
+
+        The kernel call
+
+                c       (share_port)    {IPPROTO_TCP,,xi|IPPROTO_UDP,,xi}               ;
+                                        {PORT_NUMBER,,xi|port_number_variable}
+
+        allows multiple sockets to bind to the local port number
+
+        The individual socket moves from the port to
+        the connection on connect() and is lost on close()
+
+        To use that local port for another connect() a new
+        socket must first be bound to it
+
+        TCP socket <b>connect</b> is a blocking call
+
+        NON_BLOCKING call <b>tcp_start_connection</b> in the
+        low-level interface starts the negotiation of
+        a remote connection for asynchronous completion
+
+        a <b>connect()</b> function which reads addresses from
+        a <b>sockaddr_in</b> structure will be added with
+        C compiler development
+
+        The sequence for outgoing connections is, starting with
+        the optional separate bind() step
+
+                                 _______________
+                                (    bind()     )
+                                 ---------------
+                                        |
+                        any port        |   specific port
+                        ________________|________________
+                        |                               |
+                ________|________                       |
+                | TCP names port|                       |
+                |_______________|                       |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                ________|________
+                                | bind the port |
+                                | to address:   |
+                                | may be 0.0.0.0|
+                                |_______________|
+                                        |
+                                ________|________
+                                | handle -> port|
+                                |_______________|
+
+
+
+
+                                 _______________
+                                (   connect()   )
+                                 ---------------
+                                        |
+                                        |
+                        not bound       |           bound
+                        ________________|________________
+                        |                               |
+                ________|________                       |
+                |   bind to     |                       |
+                |   0.0.0.0:0   |                       |
+                |_______________|                       |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                        |
+                                ________|________
+                                |   construct   |
+                                |   connection  |
+                                |_______________|
+                                        |
+                                ________|________
+                                | copy local net|
+                                | address from  |
+                                | port socket   |
+                                |_______________|
+                                        |
+                                        |
+                                        |
+                        local network   |  local network
+                        address=0.0.0.0 |address^0.0.0.0
+                        ________________|________________
+                        |                               |
+                        |                               |
+                        |                               |
+                ________|________                       |
+                |local address  |                       |
+                |of connection =|                       |
+                |default address|                       |
+                |of interface on|                       |
+                |default route  |                       |
+                |to remote host |                       |
+                |_______________|                       |
+                        |                               |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                        |
+                                        |
+                                ________|________
+                                |       handle  |
+                                | -> connection |
+                                |_______________|
+                                        |
+                                        |
+                                ________|________
+                                | send TCP_SYN  |
+                                |_______________|
+                                        |
+                                        |
+                                ________|________
+                                | await SYN_ACK |
+                                |_______________|
+                                        |
+                                        |
+                                        |
+
+
+<a	name="recv"/>
+	recv
+	____
+
+        <b>c    (recv)  socket_handle   buffer  bytes   flags</b>
+
+        socket handle is the integer handle number
+
+        For UDP sockets bit 23 of flags has a <b>PEEK</b> effect
+        -the user datagram stays on the input queue
+
+        flag bit 22 has <b>NON_BLOCKING</b> effect.
+        <b>recv</b> is by default <b>BLOCKING</b>
+
+        if a UDP socket has no user datagram available it
+        blocks if flag bit 22 = 0
+
+        if a TCP connection has less data available than
+        requested it blocks if flag bit 22 = 0
+
+        TCP sockets receiving XDR data require BLOCKING to
+        obtain a complete result atomically
+
+        Application protocols with BLOCKING sockets must be
+        separate processes or threads from the IP main thread
+
+        <b>recv</b> returns bytes read in register <b>a</b>
+
+        result -22 means the handle is neither a UDP socket
+        nor a TCP connection
+
+        result 0 on a BLOCKING receive means a TCP connection
+        has received remote close
+
+        On a NON_BLOCKING receive, result 0 means there
+        is no data
+
+	There is no errno in RTA1. If a connection is not
+	TCP_ESTABLISHED a negative value file not open is returned
+
+
+        receive from
+	____________
+
+        source addresses of User Datagrams can be retrieved
+        on receive from the containing IP datagram
+
+
+<a	name="send"/>
+	send
+	____
+
+        <b>c    (send)  socket_handle   buffer  bytes   flags</b>
+
+        socket_handle is the integer handle number
+
+        for TCP sockets bit 3 of flags is TCP_PSH which sends
+        immediately instead of on full segment
+
+        result in application register a is bytes sent
+
+        If the socket is NON_BLOCKING,
+        if the transmission could not be immediately resourced
+        actual bytes sent is in <b>a</b> and outstanding count in <b>b</b>
+
+        a result of -2 indicates that the handle is neither
+        a UDP socket not a TCP connection
+
+
+        send to
+	_______
+
+        destination addresses for User Datagrams can be set
+        before send
+
+	<a	name="tcp_listen"/>
+	tcp_listen
+	__________
+
+        Argument 1 is the socket bound to a TCP port,
+        not to a TCP connection
+
+        Argument 2 sets the socket in BLOCKING or in
+        NON_BLOCKING mode
+
+        NON_BLOCKING    $equ    0
+
+                la      handle1                         . no limit
+                lb, xi  NON_BLOCKING                    . = NON_BLOCKING
+                call    (tcp_listen)
+
+                la      handle2                         . nonzero limit
+                lb, xi  CONNECTION_WAITQ_MAXIMUM        . = BLOCKING
+                call    (tcp_listen)
+
+        there will be an error return in <b>a</b> if
+        the handle in <b>a</b> is not a bound TCP port
+
+        If the socket is BLOCKING, connections are
+        only admitted with <b>tcp_accept</b> which
+        always blocks
+
+        If the socket is NON_BLOCKING, connections
+        are accepted automatically
+
+	<a	name="tcp_accept"/>
+
+        tcp_accept
+        __________
+
+
+                c       (tcp_accept)    handle
+
+        <b>tcp_accept</b> awaits an incoming connection
+        on a listening socket
+
+        The remote address is in the new transmission control
+        block, and if it is required anywhere else it must be
+        copied from there
+
+        <b>accept</b> is a blocking call
+
+        Incoming connections are accepted automatically on
+        NON_BLOCKING sockets
+
+
+	<a	name="socket_close"/>
+
+	close
+	_____
+
+        close UDP socket
+        ________________
+
+        <b>close</b> in UDP frees the port and makes
+        the socket handle number reassignable within
+        the process. The free port accepts no traffic
+
+        close TCP connection
+        ____________________
+
+
+        close() removes the connection and makes the socket
+        handle number free reassignable within the process
+
+        a shareable port remains available for <b>bind()</b>
+        and may still have sockets bound to it
+
+        a port not configured for sharing becomes available
+        for binding to one socket
+
+        close() returns immediately. There is no blocking
+
+
+</pre>
+
+
+<a	name="fs_calls"/>
+<h3>2.3: File System Calls</h3>
+
+<a name="fs_posix"/><h3>POSIX File System Calls</h3>
+
+<pre	style="font-size:12pt"
+
+	$include	language/stack.def>
+
+<pre>
+Initially only remote files are in the POSIX framework and other file system types are accessed with
+routines in the <a href="#fs_calls">File I/O Libraries</a>
+
+<p>
+Remote files addresses are encoded in the open path with with macros
+<pre	style="font-size:12pt">
+
+	rta/target.rta/t77.4/ip.def:	$neta
+	rta/target.rta/fs/mntaddrs.def:	mount_path
+
+SUSE_NFSD       $equ    $neta(192.168.0.14:2049)        . server enet
+SUSE_MOUNTD     $equ    $neta(192.168.0.14:1023)
+
+path_suse       mount_path      SUSE_NFSD::mount_suse:"EXAMPLE_FILENAME"
+mount_suse      mount_path      SUSE_MOUNTD:::"/home/laclimpide/online_files/"
+
+		# protocol NFSv3
+		# server must have mountd bound to TCP port 1023
+
+</pre>
+
+<a name="open"/>
+<h4>open</h4>
+
+<b>open()</b> returns a handle identifier unique within the process
+<pre	style="font-size:12pt">
+
+	c	(open)	path,,xi flags,,xi
+	jna	no_handle
+	sa	handle
+
+</pre>
+The open file is a stream of RTA1 24-bit words. Argument 3 and return value
+of read() and write() plus target-position and result-position of lseek()
+are a count of words
+
+<p>
+An open flag O_8 makes the open file a stream of octets instead of words.
+Return value and length argument of read() and write() are then a count of
+octets. So are the target-position and result-position of lseek()
+
+
+<a name="read"/>
+<h4>read</h4>
+<pre	style="font-size:12pt">
+
+	c	(read)	handle buffer,,xi MAXIMUM_WORDS|OCTETS,,xi	
+
+</pre>
+<a name="write"/>
+<h4>write</h4>
+<pre	style="font-size:12pt">
+
+	c	(write)	handle buffer,,xi WORDS|OCTETS,,xi
+
+</pre>
+<a name="seek"/>
+<h4>seek</h4>
+<pre	style="font-size:12pt">
+
+	c	(seek)	handle position,,triple HOW,,xi
+
+</pre>
+<a name="fsync"/>
+<h4>fsync</h4>	files:sync_by_handle</h4>
+<pre	style="font-size:12pt">
+
+	c	(fsync)	handle
+
+</pre>
+<a name="close"/>
+<h4>close</h4>	files:close_by_handle</h4>
+<pre	style="font-size:12pt">
+
+	c	(close)	handle
+
+</pre>
+</div>
+
