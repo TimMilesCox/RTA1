@@ -49,6 +49,7 @@
 //	typedef char TCHAR;
 #else
 #include <unistd.h>
+#include <stdlib.h>
 #include <sys/shm.h>
 #include <sys/ipc.h>
 #endif
@@ -58,6 +59,7 @@
 #include "../rta.run/settings.h"
 #include "../include.rta/address.h"
 #include "sifr_mm.h"
+#include "ifconfig.h"
 
 #ifdef	LINUX
 #include "../tgen.x64/_mnames.h"
@@ -71,7 +73,7 @@ extern device		 devices[];
 
 void netbank()
 {
-   mm_netbuffer	*dpointer;
+   mm_netbuffer		*dpointer;
 
    #ifdef SIGALERT
    int		*wrpid;
@@ -104,18 +106,31 @@ void netbank()
 
    if (mhandle < 0)
    {
-      printf("no network bank is available\n"
-             "enter '.' to stop the emulator\n");
-      printf("run portal first\n");
+      printf("default network space not available\n");
+      printf("runL first\n");
       printf("code %d\n", errno);
-      return;
+      exit(0);
    }
 
    dpointer = (mm_netbuffer *) (void *) shmat(mhandle, NULL, 0);
    devices[2].dev16 = (void *) dpointer;
    printf("netbase %p\n", dpointer);
 
-   if ((long) dpointer < 0) printf("E %d\n", errno);
+   if ((long) dpointer < 0)
+   {
+      printf("network space not mapped E %d\n", errno);
+      exit(0);
+   }
+
+   if ((dpointer->preamble.flag & FRAME)
+   &&  (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
+   {
+   }
+   else
+   {
+      printf("default network space unsynchronised. Restart runL\n");
+      exit(0);
+   }
 
    #ifdef SIGALERT
    else
@@ -160,13 +175,15 @@ void assign_interface_relay(int device_id, char *text)
    device16             *_p;
    device               *_q = devices + device_id;
    struct shmid_ds       info;
+
+   mm_netbuffer		*dpointer;
    
    sscanf(text, "%x", &rkey);
    _x = shmget(rkey, 0, 0);
    
    if (_x < 0)
    {  
-      printf("net device %d relay not assigned %d\n", device_id, errno);
+      printf("net device %d space not available E %d\n", device_id, errno);
       return;
    }
    
@@ -174,11 +191,21 @@ void assign_interface_relay(int device_id, char *text)
    
    if (_y < 0)
    {  
-      printf("net device %d relay not staticised %d\n", device_id, errno);
+      printf("net device %d space not staticised E %d\n", device_id, errno);
       return;
    }
    
    _p = shmat(_x, NULL, 0);
+
+   _x = (int) _p;
+
+   if (_x < 0)
+   {
+      printf("net device %d space not mapped E %d\n", device_id, errno);
+      return;
+   }
+
+   dpointer = (mm_netbuffer *) _p;
    bytes = info.shm_segsz;
 
    /**************************************************************
@@ -198,7 +225,16 @@ void assign_interface_relay(int device_id, char *text)
    
 //   _q->flags = DEVICE | DATA16;
 //   _q->s.dev16 = (bank16 *) _p;
-   base[128 + device_id] = DATA16_FLAG | block ; 
-   printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);
+
+   if ((dpointer->preamble.flag & FRAME)
+   &&  (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
+   {
+      base[128 + device_id] = DATA16_FLAG | block ; 
+      printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);
+   }
+   else
+   {
+      printf("net device %d space unsynchronised. Restart osserv / linuxnet process\n", device_id);
+   }
 }
 

@@ -21,7 +21,6 @@
 #include "../include.rta/address.h"
 #include "fp.h"
 
-#define	RESENDS	5
 
 #ifdef	LINUX
 static struct sockaddr_in target = {     AF_INET, PORT(I_SERVICE) } ;

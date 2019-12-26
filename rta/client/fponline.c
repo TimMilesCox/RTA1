@@ -54,7 +54,6 @@ extern char **environ;
 #define	RAMFS	"/Volumes/rta/"
 #endif
 
-#define	RESENDS	5
 //	"\033[38;5;94m"
 #ifdef  MSW
 #define BLUE

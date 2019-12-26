@@ -60,7 +60,7 @@ $(0)
 
 	c	(seg$load)	0,,xi	(viewfile_data:d),,long
 
-	fgets	request 172 stdin
+	fgets	request,,i 172 stdin
 	printf	$3("file viewer: %s":10),,xi request,,xi
 
 	sscanf	request+2,,xi $3("%:@%s"),,xi path+6,,xi host,,xi
@@ -87,15 +87,12 @@ target!	ly	(path_platform, path_suse, path_suse_ro, path_macmini, path_airbook:p
 	dl	4, y			. + [default] local socket address
 	ds	path+4			. + link to mountd path
 
-	lx	path+6,,xi
-	lcal	strlen			. count the filename bytes
+	c	(strlenx) path+6,,xi	. count the filename bytes -> a containing words -> b
 
 	sal	8			. insert name byte count in path preamble header word
 	or	path
-	lb	r			. add containing words of name to path structure length
-	ax	(2, 2, 1, 1, 1, 0h), b	
-	ax	-path-6,,xi
-	aa	x
+
+	aa	b			. add containing words of name to path structure length
 	sa	path			. update the path preamble
 
 	c	(open)	path,,xi	;
@@ -118,7 +115,7 @@ owrite	jxge	ocomplete
 ocomplete
 	
 
-	fgets	request,,xi	100,,xi stdin,,xi
+	fgets	request,,i 100 stdin
 	jna	leave_orderly		. if stdin has disconnected just drop out
 	la	request
 	jna	leave_orderly		. CTRL_D detected, treat as EOF
@@ -129,8 +126,9 @@ ocomplete
 	jc	more			. means reposition within the target file
 	aa	10,,xi			. leading zero = hex, 1..9 = decimal
 	jnc	more			. anything else means carry on
-	lcal	new_cursor
-	c	(seek)	handle	a,,long
+
+	sscanf	request,,xi	$3("%I"),,xi	cursor,,xi	. read 48-bit number
+	c	(seek)	handle	cursor,,long
 	j	more
 
 didsome	printf	$3("read failed %d\n":0),,xi a
@@ -208,20 +206,6 @@ output_cursor	"000000: "
 output		"000000 "
 output_text	"  \"___|||___|||\"\n"
 $(0)
-
-
-new_cursor
-	ly	a
-	jza	hex_cursor
-	dl	request
-	lc	decimo	request,,xi
-	ds	cursor
-	lret	0
-
-hex_cursor
-	lc	ahex2b	request,,xi
-	ds	cursor
-	lret	0
 
 	
 	$list

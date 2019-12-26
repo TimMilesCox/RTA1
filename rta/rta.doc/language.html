@@ -5,6 +5,10 @@
 
 <h1>Towards Compiler Languages for RTA1 Architecture</h1>
 
+<h1><a href="#structural_macros">Structural Macros</a></h1>
+
+<h1><a href="#application_structure">Application structure</h1>
+
 
 <i>
 Copyright Tim Cox, 2012<br>
@@ -22,6 +26,7 @@ There are no compiler languages yet for RTA1. Every instruction in it
 has been assembled with the masmx meta-assembler
 
 <p>
+<a	name="structural_macros"/>
 This document is about
 
 <ol>
@@ -30,7 +35,6 @@ This document is about
 	<ol>
 		<li><a href="#vector">$vector Macro</a></li>
 		<li><a href="#gate">Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Location</a></li>
-		<li><a href="#iframe">Constructing Large and Loadable Applications: $iframe Macro</a></li>
 	</ol>
 	</li>
 	<li>
@@ -49,21 +53,26 @@ This document is about
 	</li>
 
 </ol>
+<blockquote>
+
+	<a href="#application_structure">Appendix A: Application Structure</a><br>
+	<a href="#licence_note">Appendix Z: Licence Note</a>
+
+</blockquote>
+
 
 <a	name="far_call"/>
 <a	name="vector"/>
 <h2>1. Far Call Targets</h2>
-<h3>1.1 $vector Macro</h3>
+<h3>1.1 1-Page Instruction Frame and $vector Macro</h3>
 
 <b>$vector</b> publishes routines which are the target
-of a far <b>call</b> instruction. It's a procedural macro coded
-at the front of the target bank
+of far <b>call</b> or <b>go</b> instructions. <b>$vector</b> is a procedural macro coded
+in the leading 64 locations of the target iframe
 
 <p>
-<b>$vector</b> generates the jump instruction at one of the
-64 jump pad positions and labels the handle value which
-identifies its <b>bank:vector</b> tuple
-<pre>
+<b>$vector</b> exports the entry point name and jumps to the target routine
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 .	<b>$vector</b> goes in the first 64 words of an
 .	instruction frame
@@ -85,7 +94,7 @@ routine2
 </pre>
 The handle value is the single-word constant or
 variable operand of <b>go</b> and <b>call</b> instructions
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 		call	handle
@@ -95,7 +104,7 @@ handle		+	handle_name
 
 </pre>
 or more frequently
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 		call	(handle_name)	. literal constant of the vector value
 					. generated in storage by reference
@@ -103,7 +112,7 @@ or more frequently
 The handle value  encodes the target frame identifier and vector offset
 
 See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</a>
-<pre	style="font-size:12pt">
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 
@@ -136,7 +145,7 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
 	page identifier becomes B0 window pointer on go or call
 
-        new B0 page identifier is copied to frame high index I/O port 125 on call or return into the frame
+        new B0 page identifier is copied to frame high index I/O port 64 on call or return into the frame
         indicating that the application may execute instructions in one page or 4096 words
 
 	far return and interrupt return retrieve the frame name
@@ -149,55 +158,12 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
 
 
-	vector encoding at a 32K word frame edge
-	________________________________________
-
-	vector descriptors flagged 01 in two high-order bits
-        identify an instruction frame at any 32K-word boundary
-        in the 16 gigaword executable space
-        and have eight entry vectors
-
-        call or go instruction reads the descriptor as
-	a constant or variable operand at location[EA]
-
-
-        23  21                    3|2 0
-        ___________________________|____
-        |01|  32K frame identifier |off|
-        |__|_______________________|set|
-
-
-        the name of a 32K-word instruction frame is the 32k-aligned frame identifier
-	shifted three positions left to form a 4K page identifier on a 32K boundary
-	and tagged 01 in two high-order bits
-
-
-	23  21                    3|2 0
-	___________________________|____
-	|01|  32K frame identifier |000|
-	|__|_______________________|___|
-
-
-        page identifier becomes B0 window pointer on go or call
-
-        new B0 page identifier plus seven is transferred to frame high index I/O port 125 on call or return into the frame
-        indicating that the application may execute instructions in eight pages or 32768 words
-
-        far return and interrupt return retrieve the frame name
-        and next instruction offset from the internal stack
-
-        47  45                       24|23                            0
-        _______________________________|________________________________
-        |01|     4K page identifier    |    next instruction offset    |
-        |__|___________________________|_______________________________|
-
-
 
 </pre>
 
 <a	name="gate"/>
 <h3>1.2 Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</h3>
-<pre	style="font-size:12pt">
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 	go or call operand flagged 1 in high order bit 23 is a pointer to a 48-bit gate
 	in the first 8 megawords of application address space
@@ -211,65 +177,60 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 	__|_____________________________	_______________________________|__|_____________________________
 	|1|      pointer to gate       |------->|pppppp|   entry point offset  |00|   4k start page identifier |
 	|_|____________________________|	|______|_______________________|10|____________________________|
-									        01
 
-	bits 47..42 of the 48-bit gate are the target frame page high index
 
-	if page high index is zero then the last page of the instruction frame is also its first page
+	bits 47..42 of the 48-bit gate are the target frame Page High Index
 
-	the frame possesses one page more than the high-index value
+	if Page High Index is zero then the last page of the instruction frame is also its first page
 
-        the name of the instruction frame is the start page identifier tagged { 00 | 01 | 10 } in two high order bits
+	the frame size is one page more than Page High Index
+
+        the name of the instruction frame is the start page identifier tagged { 00 | 10 } in two high order bits
+
 
 		00 if page high index is zero
 
-	           |21                        0
-        	___|____________________________
-	        |00|  4K start page identifier |
-        	|__|___________________________|
+	           |21                         0
+        	___|_____________________________
+	        |00|	Start Page Index	|
+        	|__|____________________________|
 
 
-		01 if page high index is seven
 
-        	   |21                        0
-	        ___|____________________________
-        	|01|  4K start page identifier |
-	        |__|___________________________|
+		 10 if page high index is nonzero
 
-
-		10 if page high index is neither zero nor seven
-
-	           |21                        0
-        	___|____________________________
-	        |10|  4K start page identifier |
-        	|__|___________________________|
+        	   |21                         0
+	        ___|_____________________________
+        	|10|	Start Page Index	|
+	        |__|____________________________|
 
 
-        page identifier becomes B0 window pointer on go or call
+	Flag bits 23:22 + Start Page Index are the Iframe Name
 
-        new B0 page identifier plus page high index is transferred to frame high index I/O port 125
-	on call or return into the frame indicating that the application may execute instructions in
-	page identifier plus one pages or (page identifier + 1) * 4096 words
+        B0 window pointer is set to Start Page Index on go or call
+
+        Start Page Index plus Page High Index is transferred to execution limit pointer I/O port 64
+	on call or return into the instruction frame
 
         far return and interrupt return retrieve the frame name
         and next instruction offset from the internal stack
 
         47  45                       24|23                            0
         _______________________________|________________________________
-        |tt|  4K start page identifier |    next instruction offset    |
+        |F0|  4K start page identifier |    next instruction offset    |
         |__|___________________________|_______________________________|
 
 
 	the gate is not refetched on return from ISR or another instruction frame
-	and the pointer to the gate is not retained after this frame is called
+	and the pointer to the gate is not retained after the instruction frame is called
 
-	if high order tag bits tt of the popped name are
+	high order flag bits 47:46 of the far return frame are
 
-		00: page high index zero is applied
+		00: Page High Index is zero and Iframe is one 4K page in size
 
-		01: page high index seven is applied
+		10: Page High Index is six leading bits from the sample gate at iframe location 64
 
-		10: page high index is obtained from a sample gate at location 64 within the frame
+		    iframe size is Page High Index plus one pages
 
 
 	|<--------------- page high index at frame location 64
@@ -282,8 +243,7 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 </pre>
 <p>
 
-<a	name="iframe"/>
-<h3>Constructing Large and Loadable Applications: $iframe Macro</h3>
+See also <a href="iframe.html">Large and Loadable Instruction Frames<a>
 
 
 <a	name="sequence"/>
@@ -291,26 +251,15 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 <h2>2. Formal Calling Sequences used in Structured Assembly Language Code</h2>
 <h3>2.1 Structured Realtime in the Internal Stack</h3>
 <p>
-These calling sequences have made some parts of the kernel simpler to write
+These calling sequences make many functions simpler to write
 
 <p>
-They  construct a non-volatile register list in the internal stack
+They  construct a non-volatile argument and dynamic variable list in the internal stack
 
 <p>
-They sacrifice no efficiency at all
+Many simple subroutines are easier to write without this structuring,
+because they then have more freedom for internal stack manipulation
 
-<p>
-Many simpler assembly language subroutines are easier to write without this structuring,
-because they then have more freedom for stack manipulation
-
-<p>
-These call sequences support development of assembler code especially where
-subroutine arguments are several and where register use is hard to remember.
-
-<p>
-They are intended to support future C compilers
-and to make a single call interface available for any style of
-programming language
 
 <a	name="argument"/>
 <h3>2.2 Calling and Constructing the Argument Stream</h3>
@@ -325,7 +274,7 @@ the <b>call / lcal</b> instruction and popping the internal stack pointer on
 return. If there are no parameters, it doesn't. Then the effect is the same
 as issuing a <b>call</b> or <b>lcal</b> instruction directly
 
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 $ masmx ruxample -lnk
@@ -373,7 +322,7 @@ ruxample.msm: object code 174 bytes: 0 errors: 1 undefined labels
 
 Between the data name and the data type of each <b>c / lc</b> argument is an index register
 subfield which is not always typed
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 	lc	routine	left,,float	;
@@ -394,13 +343,14 @@ default index base. Names like this have the masmx label type <b>$equf</b>
 which is an equate to a tuple of attributes
 
 <p>
-The index field is typed to use indexed addressing, where the
-name or value  is not associated with an index register, or in order
-to override a default index register
+The index field may typed to apply or to override an index register
 
 <p>
-The third subfield in each argument may be a a type known to RTA1 macro language
-<pre>
+
+The third argument subfield is a default source type defaulting to integer variable
+and may be immediate and byte types which push as one word, or a larger object
+
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx loademup -ln
 MASMX 7r3
@@ -433,8 +383,10 @@ MASMX 7r3
 :$(00):000040:000101 :$(03):003000:003014 
 
 </pre>
-or parameters may be of type known to <b>c / lc</b> macro
-<pre>
+<b>c / lc</b> macro also takes parameters of two, three, four or eight words
+and expands compressed floating 2-word source to 4-word float in the stack
+  
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx -ln types
 MASMX 7r3
@@ -487,7 +439,7 @@ generate, convert or format actual parameters as they are pushed
 
 <p>
 The macro name takes the place of the data type subfield 3
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx -lnk newtotal
 MASMX 7r3
@@ -588,7 +540,7 @@ and <b>xframe</b> in the external stack
 <p>
 A routine without large dynamic data may have <b>params()</b> and <b>scalars()</b> but not <b>xframe()</b>
 
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 $ masmx rtxample -ln
@@ -651,7 +603,7 @@ internal stack based on <b>sp</b>
 in the external stack based on <b>fp</b>. <b>xframe()</b> is for
 structures and arrays. The internal stack is only large enough for scalars
 and pointers
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx -ln tempbuff.msm
 MASMX 7r3
@@ -719,7 +671,7 @@ The practical way within this macro framework to save a register
 during a routine is to assign it to a dynamic variable in the
 <b>scalars()</b> list. This saves the register at routine start,
 because the dynamic frame is constructed by pushing things
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx -ln saverlod.msm
 MASMX 7r3
@@ -781,7 +733,7 @@ The internal stack contains approaching twice this intended maximum
 
 <p>
 Here a routine is called with two  parameter words on the internal stack
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
   :                            242
 00:000553 FCF003              +243      lc   ber_sequence_scan a snmp_rseq,,i
@@ -837,7 +789,7 @@ The addition of the <b>$zero_stack</b> keyword keeps the internal stack
 pointer <b>sp</b> at the same place however many nested calls routines
 with <b>$zero_stack</b> make to themselves or to each other
 
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx recursiv -ln
 MASMX 7r3
@@ -905,7 +857,7 @@ is opted. There is no faster or better way of delivering a parameter list
 of arbitrary size. The <b>lc</b> macro shown above pushes twelve parameter
 words and a walkback pointer, then calls the target routine, itself in
 this example
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 	.------>_________________________________________________________________
 	|	|   floating parameter three					|
@@ -933,7 +885,7 @@ Its <b>xframe()</b> is larger than otherwise by the size of the expected call fr
 <b>xframe()</b> must be declared when <b>$zero_stack</b> is opted, even if
 <b>xframe()</b> is otherwise void. <b>head_near/far</b> macro uses uppercase <b>-V</b>
 option to highlight its path. masmx has not assigned <b>-VUOS</b> for itself
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
                                 inwego	$head_near,$zero_stack	 params(one,	float	;
                                 					two,	float	;
@@ -967,7 +919,7 @@ The default behaviour of a <b>$zero_stack</b> routine before return is to
 push the stack walkback word if parameters were expected and then to push
 the return address. Because there is optional behaviour, a <b>$ret</b>
 macro is supplied to match the <b>$head_near/far</b> macro
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
   :                            23 
   :                            24 enough
@@ -988,7 +940,7 @@ Alternatively the <b>-S</b> flag opts to push all of the call frame back
 into the internal stack. This mostly makes no difference, because <b>c/lc</b>
 macro immediately frees the call frame by popping the walkback word onto the
 internal stack pointer
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
   :                            23 
   :                            24 enough
@@ -1093,7 +1045,7 @@ locations. Even if they don't they're reading the wrong inputs
 <p>
 The check for exact parameters is <b>-U</b> assembly flag. The check for enough
 parameters is <b>-O</b> 
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
                                 inwego	$head_near,$zero_stack	 params(one,	float	;
                                 					two,	float	;
@@ -1108,7 +1060,7 @@ Note: recursiv.msm Line 12: check absolute arguments -U
 </pre>
 The argument check interrupts to guard interrupt if the call frame appears wrong.
 Here it's checking for 14 words beyond the actual stack pointer value
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 	+ a near return address one word in size
@@ -1149,7 +1101,7 @@ resolved at assembly time, but left of <b>++</b> a multiply, two adds and a
 shift must take place at runtime
 
 
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 $ masmx boolean -lnk
 MASMX 7r3
@@ -1193,7 +1145,7 @@ in size
 <p>
 Here a simple algorithm with five inputs is executed in five instructions, including
 operand acquisition from storage
-<pre>
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
 
 
 $ masmx -ln r2xample.msm
@@ -1253,8 +1205,319 @@ Other details of <b>$xqt_fp</b> and <b>$xqt_i</b> directives are in the manuals
 <b>masmx.7r3</b> and <b>masmx.7r3 for RTA1</b>
 
 
+<a	name="application_structure"/>
+<h2>Appendix A: Application Structure</h2>
+<h2>Application Memory, Location Counters and Dynamic Data Segment Load</h2>
+
+Instruction memory begins at address zero in the current instruction frame
+
+<p>
+Words 0..255 of operand space are registers
+
+<h3>Location Counters</h3>
+
+Location counters correspond to program sections. masmx has 72 location counters.
+Their RTA1 usage convention with smaragd7 kernel is
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+
+	_________________________________________________________________________________________________________________
+        |       location counter|       address window			|		purpose / address range		|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(0) [ + $(4) ] |       instruction frame B0            |[ispace]000000..007FFF / [dspace]000100..000FFF|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(1:01000)	|       private stack frame B1		|	     data memory space 001000..001FFF	|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(2)            |       vector list B2			|	     data memory space 002000..002FFF	|	    
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(3:03000)	|       data windows  B3..B31		|	application data space 003000..01FFFF	|
+        |_______________________|_______________________________________|___________________________or 0C0000..7FFFFF___|
+        |			|       data windows B32..B47		|	application context kernel interface	|
+        |_______________________|_______________________________________|_______________________________________________|
+        |			|       data windows B48..B63           |		kernel				|
+        |_______________________|_______________________________________|_______________________________________________|
+        |       $(66::,x)	|       pointer in index register x	|
+        |_______________________|_______________________________________|
+        |       $(67::,y)	|       pointer in index register y	|
+        |_______________________|_______________________________________|
+        |       $(68::,a)	|       pointer in arithmetic register a|
+        |_______________________|_______________________________________|
+        |       $(69::,b)	|       pointer in arithmetic register b|
+        |_______________________|_______________________________________|
+        |       $(70::,fp)	|       frame at external stack pointer |
+        |_______________________|_______________________________________|
+        |       $(71::,sp)      |       frame at internal stack pointer |
+        |_______________________|_______________________________________|
+
+
+</pre>
+$(0) : window B0 is the current instruction frame and contains locally accessed constants
+
+<p>
+See also <a href="app.html">The Simplest Application Structure</a> and <a href="iframe.html">Large and Loadable Instruction Frames</a>
+
+<p>
+Program visible addresses start at zero
+
+<p>
+The third field of the $(0::) declaration contains a load address
+which may be known at buîld or known at load
+
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$(0::IFRAME_LOAD_ADDRESS)
+
+
+</pre>
+<p>
+If the application contains multiple instruction frames, successive load addresses are larger relative to the first
+
+<h3>7.3: Data Sections $(1) and $(3)</h3>
+
+<p>
+$(1) contains private data in bank B1 starting at program-visible address 4096
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$(1:01000)
+
+</pre>
+
+<p>
+The kernel constructs the vector list window $(2) and places the containing page in address space 002000..002FFF
+
+<p>
+The vector list  is defined in including target.rta/def/vector.def and is shared by all threads of the process.
+
+<p>
+File and socket handles are in the vector list and are common to all threads of the process
+
+<p>
+The kernel places initial B1 frame pointer in I/O port 1
+
+<p>
+Application static data buffer is in the vector list. Macro $base_d or $base_x reads this value and places
+pages in address windows $(3) from address 003000
+
+<p>
+A simple application example might be
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+	$include	def/rta.def		. registers and instruction set
+	$include	def/vector.def		. this defines the vector list
+						. in address window 02000
+
+$(0::INSTRUCTIONS_LOAD_ADDRESS)
+$(1:01000)					. private RAM
+	+	variables
+$(3:03000)					. application RAM
+	+	data
+
+$(0)
+callname* $vector get_going
+	$do	64-$,	fret	0
+
+get_going	<a	name="base_d"/>
+	$base_d	APPLICATION_DATA_SIZE [EXTERNAL_STACK_SIZE]
+						. macro base_d reads VECTOR_D static 1st page index
+						. and bases enough windows for application data in B3..B31
+						. and points external stack pointer fp
+						. to the high end of APPLICATION_DATA_SIZE + EXTERNAL_STACK_SIZE
+						. and open-file-descriptor heap pointer
+						. to the high end of APPLICATION_DATA_SIZE
+
+	<a	name="seg_load"/>
+	c	(seg$load)	CORE_FS,,xi	;	. this call copies initialised
+				(my_data_segments:d),,long  . variables to process RAM space
+
+	.
+	.
+
+	fret	0
+
+</pre>
+
+<p>
+The second argument of $base_d or $base_x EXTERNAL_STACK_SIZE is needed
+
+<blockquote>
+ 
+	if the application uses any external stack for
+	<blockquote>
+		loading dynamic data sections<br><br>
+		paging internal stack with $zero_stack flag<br><br>
+		xframe dynamic variables
+	</blockquote>
+	for fprintf or printf because formatting takes a 1024-word frame<br><br>
+	for open data file descriptors but not for network sockets
+
+</blockquote>
+Data file open descriptors are in a heap from the end of static data mounting towards external stack top
+and are common to threads as their handles in the vector list are common to threads
+
+<p>
+External stack must be large enough for all threads which use any
+
+
+<h3>seg$load Realtime RAM Initialisation</h3>
+Application code is reentrant shared code and each process instance of the application
+loads initial data to B1 and $(3) spaces with kernel call seg$load
+
+
+<p>
+seg$load unpacks initial values from the micro-filesystem embedded in the application image
+
+<p>
+BANK_INDEX_OF_CORE_FS_START is usually zero to mean <i>this iframe Start Page Index</i>
+
+The 48-bit file pointer <i>my_ram_loadup_filename</i> is exported from the link of the
+micro-filesystem into the application image and is known not searched
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+	$base_d MY_APPLICATION_DATA_SIZE EXTERNAL_STACK_SIZE	. base the memory space
+
+	c	(seg$load)	BANK_INDEX_OF_CORE_FS_START,,xi	;
+				(my_ram_loadup_filename:d),,long	
+
+</pre>
+
+
+<h3>Void Sections and Structure by Pointer</h3>
+
+A program section may have no addresses but instead a pointer.
+
+<p>
+The pointer is a register capable of indexing [ x y a b fp sp ] and reference may override which register that is 
+
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$(66::,x)
+label	$res	4
+label2	structure
+
+$(70::,fp)
+descriptor acw
+
+</pre>
+If address and load address are both declared zero then the program section number is reusable
+for different pointer-based structures
+
+<p>
+Locator numbers are not fixed to any pointer register, but as specific purposes have been assigned
+to [ $(0) $(1) $(2) $(3) $(4) ] supplied code keeps a convention of assigning to index registers 
+[ $(66) $(67) $(68) $(69) $(70) $(71) ]
+
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$(66::,x)
+$(67::,y)
+$(68::,a)
+$(69::,b)
+$(70::,fp)
+$(71::,sp)
+
+</pre>
+
+The indentifiers inside these sections are base + displacement tuples.
+masmx calls these names $equf labels. In the example
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+	$include	dq.def
+
+$(70::,fp)
+descriptor	acw
+
+	la	descriptor:bytes
+
+</pre>
+is the same as
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+	la	descriptor:bytes, fp
+
+</pre>
+The base register assigned at the section head can be overriden on reference
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$(70::,fp)
+descriptor      acw
+
+$(67::,y)
+dgram           datagram
+
+$(0)
+
+        ly      descriptor:dgram
+        dl      dgram:ipsource
+
+
+	lx	descriptor:next
+	lr	descriptor:bytes, x
+
+</pre>
+
+
+No data is generated inside void sections.
+macros which generate data do not generate any data in a void section
+
+<h3>Data-Tables with Base +  Displacement View</h3>
+
+It is also possible to have data tables at high addresses accessed by base register plus displacement
+
+<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+
+$ masmx oreilly -lnke oreilly
+MASMX 7r3A Build 8
+3/oreilly.msm
+*EOF*
+  :                            1: 	$include	..//def/rta.def
+  :                            2 
+  :                            3 TABLE1	$equ	79*1024
+  :                            4 
+  :                            5 $(20:TABLE1,x)
+14:000000  400001 C00000 000000 000000
+                              +6 one	+	1.5
+14:000004  400001 D00000 000000 000000
+                              +7 two	+	1.625
+14:000008  400001 E00000 000000 000000
+                              +8 three	+	1.75
+14:00000C  400001 F00000 000000 000000
+                              +9 "O'Leary" +	1.875
+  :                            10 
+  :                            11 $(0:64)
+00:000040  500100              +12 	lx	(TABLE1)
+00:000041  77A000              +13 	fm	one
+00:000042  67A004              +14 	fa	two
+00:000043  6FA008              +15 	fan	three
+00:000044  7FA00C              +16 	fd	"O'Leary"
+  :                            17 
+  :                            18 	$do	$<256,$(0:256)	. force literal table above register addresses
+*EOF*
+00:000100+013C00
+:$(00):000040:000101 :$(14):013C00:013C10 
+
+$ cat oreilly.txo
+
+$14:013C00
+400001C00000000000000000 400001D00000000000000000
+400001E00000000000000000 400001F00000000000000000
+$00:000040
+500100 77A000 67A004 6FA008 7FA00C
+$00:000100
+013C00
+
+:$00*000000:000040:000101
+:$14*000000:013C00:013C10
+
+</pre>
+
+
+
+
+<a	name="licence_note"/>
+<h2>Appendix Z: Licence Note</h2>
+
 <i>
-<pre>
+<pre	style="font-size:12pt">
 
 _______________________________________________________________________________________
 

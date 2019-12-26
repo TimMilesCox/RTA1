@@ -9,4 +9,4 @@
 
 #define MAXTRY          1200
 #define TWARP           2400
-
+#define	RESENDS		10

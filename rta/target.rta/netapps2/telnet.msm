@@ -59,7 +59,10 @@ tn_help_bytes	$equ	$bits/$byte
 tn_editline	$res	12
 applookupp	filep	APPLICATION_BBOUNDARY/*12
 
+telnet_istring
 telnet_run_name	$res	160//3
+telnet_repeats	$res	1
+telnet_start_time $res	2
 
 $(0)
 telnet_i
@@ -197,6 +200,9 @@ telnet_command
 	anu	('e'*/16:s)
 	jzb	telnet_echo
 
+	anu	('u'*/16:s)
+	jzb	telnet_library_speedtest
+
 	anu	('q'*/16s)
 	jzb	telnet_quicktimeout	. a test
 
@@ -269,7 +275,7 @@ telnet_print_dayclock
 	$else
 
 	call	(dayclock_ydsm_gmt)
-	c	(sprintf)	tn_editline,,xi			;
+	c	(__sprintf)	tn_editline,,xi			;
 				$3("%d.%d:%d.%d":10:0),,xi	;
 				8 9 10 11
 
@@ -278,6 +284,29 @@ telnet_print_dayclock
 	la	BYTES
 	$endif
 
+	j	telnet_respond
+
+telnet_library_speedtest
+
+	call	(iscan)
+	sb	telnet_repeats
+
+	dl	DAYCLOCK$U
+	ds	telnet_start_time
+
+telnet_test_repeat
+	lc	telnet_atest	telnet_istring,,xi
+	dec	telnet_repeats
+	tz	telnet_repeats
+	j	telnet_test_repeat
+
+	dl	DAYCLOCK$U
+	dan	telnet_start_time
+
+	c	(__sprintf)	tn_editline,,xi	$3("%d mS %s":10:0),,xi    b	telnet_istring,,xi
+	lb	tn_editline,,xi
+	la	BYTES
+	lx	telnet_tpaside
 	j	telnet_respond
 
 telnet_quicktimeout
@@ -494,5 +523,78 @@ telnet_task_display
 	lcal	telnet_respond
 	pop	r
 	pop	y
+	lret	0
+
+telnet_atest $head_near	 params(tn_ostringp,	int	)	;
+								;
+			scalars(save_BYTES,	int,	BYTES	;
+				save_q,		int,	q	;
+				save_RDATACD,	long,	RDATAC	;
+				tn_left,	float		;
+				tn_right,	float		;
+				tn_tight_repeat,int		;
+				tn_operation,	int		)
+
+	call	(floating_scan)
+	qs	tn_left
+	call	(symbol_scan)
+	sa	tn_operation
+	call	(floating_scan)
+	qs	tn_right
+
+	la	LAST_BYTE_READ
+	aa	-',',,xi
+	jnza	tn_operate
+	call	(iscan)
+	jzb	$+2
+	ab	-1,,xi
+	sb	tn_tight_repeat
+	
+tn_operate
+	lr	tn_tight_repeat
+	la	tn_operation
+	aa	-'+',,xi
+	jza	tn_add
+	aa	'+'-'-',,xi
+	jza	tn_negadd
+	aa	'-'-'*',,xi
+	jza	tn_mul
+	aa	'*'-'/',,xi
+	jza	tn_div
+	ql	tn_left
+	j	tn_edit
+
+tn_add	ql	tn_left
+	fa	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_negadd
+	ql	tn_left
+	fan	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_mul	ql	tn_left
+	fm	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_div	ql	tn_left
+	fd	tn_right
+	jdr	$-1
+
+tn_edit	lx	tn_ostringp
+	call	(wstream_starta)
+	call	(fedita)
+	la	0,,xi
+	wsr	24
+
+	push	save_RDATACD,,i
+	pop	sp
+	pop	RDATAC
+	pop	RDATA
+	pop	q
+	pop	BYTES
 	lret	0
 

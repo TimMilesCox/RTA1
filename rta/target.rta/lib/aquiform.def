@@ -1,69 +1,24 @@
-.
-.    Copyright Tim Cox, 2012
-.    TimMilesCox@gmx.ch
-.
-.    This file is instruction code for the freeware processor architecture
-.
-.                RTA1
-.
-.    RTA1 is a free processor architecture specification.
-.
-.    The executable emulation of RTA1 is free software.
-.
-.    This instruction code for the target RTA1 architecture is free software
-.
-.    Software programs delivered with this software to connect the
-.    emulated RTA1 with real network interfaces in the emulator host
-.    are free software
-.
-.    Scripts and programs delivered with this software for running
-.    on other computers and interacting with the RTA1 are free software
-.
-.    Scripts and utility programs for constructing RTA1 target
-.    executable software are free software
-.
-.    You can redistribute it and/or modify RTA1
-.    under the terms of the GNU General Public License as published by
-.    the Free Software Foundation, either version 3 of the License, or
-.    (at your option) any later version.
-.
-.    RTA1 is distributed in the hope that it will be useful,
-.    but WITHOUT ANY WARRANTY; without even the implied warranty of
-.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-.    GNU General Public License for more details.
-.
-.    You should have received a copy of the GNU General Public License
-.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
-.
-.
-
-"$$EOS_FLAG"	$set	0	. deliver zero iteravely after delivering counted field
-				. nonzero = deliver BYTES + 1 bytes, then -1 iteravely
-
-
-. this equate goes in the assembly wrapper
-. COUNTED_STREAM $equ 1	. a field or message size limit
-			. in register BYTES is heeded
-
-			. BYTES can be progressively
-			. decremented in several scan
-			. primitive routine calls
-
 
 READ_STREAM_START* $proc
 
 	$if	COUNTED_STREAM
 	sa	BYTES
+	$else
+	z	BYTES
 	$endif
 
 	sb	q	. once per input buffer
 	z	RDATAC
+	READ_START
+	la	' ',,xi
+	sa	LAST_BYTE_READ
 	$end
 
 WRITE_STREAM_START* $proc
 	z	BYTES
 	sx	p
 	z	WDATAC
+	WRITE_START
 	$end
 
 READ_START* $proc	. once per input specification
@@ -77,39 +32,6 @@ READ_START* $proc	. once per input specification
 	$end		. it is up to the calling application
 			. to change b$stream16R back if it needs
 
-
-.	RBYTE is a simple byte read which does not cache
-.	in LAST_BYTE_READ and does not use the optional
-.	record- or message-byte-count BYTES
-
-RBYTE*	$proc
-	$if	AQUIFORM_NET16**$byte>16
-	rsr	16
-	rsr	$byte-16
-	$else
-	rsr	$byte
-	$endif
-	$end
-
-READ_BYTE* $proc *
-	$if	COUNTED_STREAM
-	la	BYTES
-
-	$if	$$EOS_FLAG	. for counted data including zero value bytes
-	jna	already	. deliver BYTES + 1 bytes and then deliver -1 iteravely
-	$else			. for data terminated by zero or by count
-	jza	already	. deliver BYTES bytes and then deliver zero iteravely
-	$endif
-
-	dec	BYTES
-	$endif		. otherwise data is zero-terminated and not counted
-
-	RBYTE
-
-already	. $equ	$	. in case within a $tree. Location labels become twigs
-	sa	LAST_BYTE_READ
-	$end
-
 WRITE_START* $proc
 	$if	AQUIFORM_NET16
 	on	b$stream16w
@@ -119,73 +41,41 @@ WRITE_START* $proc
 	$endif
 	$end
 
-WRITE_OBYTE* $proc
-	.	if the output is already full-sized in current character code
-	$if	AQUIFORM_NET16**($byte>16)
-	wsr	16
-	wsr	$byte-16
-	$else
-	wsr	$byte
-	$endif
-	$do	1,	inc	BYTES	. output always COUNTED
+READ_BYTE* $proc *
+	la	LAST_BYTE_READ
+	jza	thats_all
+	rsr	$byte
+	sa	LAST_BYTE_READ
+	tz	BYTES
+	lcal	counted_stream
+thats_all
 	$end
 
-WRITE_BYTE* $proc
+p	$proc
+WRITE_BYTE* $name
 	sal	$word-$byte
-	$if	AQUIFORM_NET16**($byte>16)
+WRITE_UBYTE* $name
+	wsr	$byte
+	inc	BYTES
+	$end
+
+WRITE3_BYTES* $proc		. only works for 3 octets
 	wsr	16
-	wsr	$byte-16
-	$else
-	wsr	$byte
-	$endif
-	$do	1,	inc	BYTES	. output always COUNTED
-	$end
-
-WRITE_UPPER_BYTE* $proc
-WRITE_UBYTE*	$name
-	$if	$byte=8
-	wsr	$byte
-	$else
-	lcal	write_udigit_data
-	$endif
-	$do	1,	inc	BYTES	. output always COUNTED
-	$end
-
-WRITE3_BYTES* $proc
-	$if	$byte=8
-	$if	AQUIFORM_NET16
-	wsr	$byte*2
-	wsr	$byte
-	$else
-	wsr	24
-	$endif
-	$else
-	lcal	write_udigit_code(3)
-	$endif
-
-	$if	1	. output always COUNTED_STREAM
-	push,xi	3
+	wsr	8
+	push	3,,xi
 	popA	BYTES
-	$endif
 	$end
 
-WRITE_BYTES*	$proc
-bits	$set	WRITE_BYTES(1, 1)*$byte
-
-	$if	$byte=8
-	$if	AQUIFORM_NET16**(bits>16)
+WRITE_BYTES* $proc
+BITS	$set	WRITE_BYTES(1, 1)*$byte
+	$if	BITS>16
 	wsr	16
-	wsr	bits-16
+	wsr	BITS-16
 	$else
-	wsr	bits
+	wsr	BITS
 	$endif
-	$else
-	lcal	write_udigit_code(WRITE_BYTES(1, 1))
-	$endif
-
-	$if	1	. output always COUNTED_STREAM
-	push, xi bits/$byte
+	push	BITS/$byte,,xi
 	popA	BYTES
-	$endif
 	$end
+
 
