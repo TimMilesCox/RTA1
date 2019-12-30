@@ -116,8 +116,14 @@ void netbank()
    devices[2].dev16 = (void *) dpointer;
    printf("netbase %p\n", dpointer);
 
-   if ((long) dpointer < 0)
+   if ((long) dpointer == -1)
    {
+      /***********************************************************
+         condition must be ( == -1) not ( < 0)
+         because 32-bit machines with 2GByte+ memory
+         can test negative with a genuine address
+      ***********************************************************/
+
       printf("network space not mapped E %d\n", errno);
       exit(0);
    }
@@ -132,28 +138,6 @@ void netbank()
       exit(0);
    }
 
-   #ifdef SIGALERT
-   else
-   {
-      /***************************************************
-
-	one-time microprotocol write to the interface
-	process at startup
-
-	hand it the pid of the RTA1 emulator for signals
-
-	the interface task receives it in a microPDU in
-	the first buffer of the output ring
-
-      ***************************************************/
-
-      dpointer += DEVICE_PAGES / 2;
-      wrpid = (int *) dpointer + 1;
-      *wrpid = getpid();
-      dpointer->preamble.flag = OUT_OF_BAND_TARGET_PROTOCOL;
-      printf("[ID %d @ %p]\n", *wrpid, wrpid);
-   }
-   #endif SIGALERT
    #endif X86_MSW
 }
 
@@ -197,10 +181,14 @@ void assign_interface_relay(int device_id, char *text)
    
    _p = shmat(_x, NULL, 0);
 
-   _x = (int) _p;
-
-   if (_x < 0)
+   if ((long) _p == -1)
    {
+      /***********************************************************
+         condition must be ( == -1) not ( < 0)
+         because 32-bit machines with 2GByte+ memory
+         can test negative with a genuine address
+      ***********************************************************/
+
       printf("net device %d space not mapped E %d\n", device_id, errno);
       return;
    }
@@ -223,9 +211,6 @@ void assign_interface_relay(int device_id, char *text)
       return;
    }
    
-//   _q->flags = DEVICE | DATA16;
-//   _q->s.dev16 = (bank16 *) _p;
-
    if ((dpointer->preamble.flag & FRAME)
    &&  (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
    {
