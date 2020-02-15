@@ -11,6 +11,7 @@ scan_fi $tree
 				argop,		int	)	;
 								;
 			scalars(caller_xyab,	float,	x	;
+				delivery_words,	int		;
 				column,		int		;
 				specificationp,	int		)
 
@@ -20,14 +21,23 @@ scan_fi $tree
 	sx	specificationp
 
 read_format
+	lcal	scanover_cr_lf
+
+	la	LAST_BYTE_READ
+	jza	read_format_end		. stream end
 	lx	specificationp
 	lk	+(1*/$byte)-1,,xi
+
+	inc	argop
+	ly	argop
+	lr	limit
+	jyge	read_format_end
 
 read_format_byte
 	ly	column
 	inc	column
 	call	(read_octet_column)
-	jza	read_format_end
+	jza	read_format_end		. format string end
 
 	mta	('%')
 	j	read_format_byte	. stuff to consume nonspace goes near here
@@ -35,23 +45,62 @@ read_format_byte
 	ly	column
 	inc	column
 	call	(read_octet_column)
+	jza	read_format_end		. format string end
 
-	inc	argop			. next input pointer
-	ly	argop
-	lr	limit			. stack walkback word = end of arguments	
-	jyge	read_format_end		. if there aint none left ya can stop
+	z	delivery_words		. set default to type default
+	lcal	edit_fo:size?		. is there a size tag before the type tag?
+	j	target?			. no
 
-	mta	('f')			. 4-word float ?
+	sa	delivery_words		. yes, remember it
+	ly	column
+	inc	column
+	call	(read_octet_column)	. read again for the type tag
+	jza	read_format_end
+
+target?
+.	inc	argop			. next input pointer
+.	ly	argop
+.	lr	limit			. stack walkback word = end of arguments	
+.	jyge	read_format_end		. if there aint none left ya can stop
+
+	mta	('f')			. float ?
 	j	symbol?
 
-	call	(floating_scan)
-	ly	argop			. position in argument array
-	ly	0, y			. pointer from argument array
-	qs	0, y			. put it thayer
+	la	delivery_words
+	jza	fp96
+	mta	('q')			. quad is accepted. It is the size of a float
+	j	fp192?	
+
+fp96	call	(floating_scan)		. 4-word float
+	ly	argop
+	ly	0, y
+	qs	0, y
 	j	read_format
 
+fp192?	mta	('L')
+	j	fp_compress?		. don't know don't write target memory
+
+	call	(floating_scan192)	. 8-word float
+	ly	argop
+	ly	0, y
+	qs	0, y
+	ql	$residue
+	qs	4, y
+	j	read_format
+
+fp_compress?
+	mta	('l')
+	j	read_format_byte	. that only leaves j and we don't input 3-word floats
+	call	(floating_scan)		. with l you may input...
+	ly	argop
+	ly	0, y
+	qpush	a			. ...and compress a float unbeautifully not-rounded
+	fpp	0, y			. into a long which is 48 bits
+					. and won't be unrounded if it's ever re-expanded...
+	j	read_format		. ...and won't ever be computed unless it is re-expanded
+
 symbol?	mta	('c')			. right justified character scalar?
-	j	integer?
+	j	decimal?
 
 	call	(symbol_scan)
 	ly	argop			. position argument array
@@ -59,26 +108,121 @@ symbol?	mta	('c')			. right justified character scalar?
 	sa	0, y
 	j	read_format
 
-integer?
-	mta	('i')
-	j	i48?
-	call	(iscan)
+decimal?
+	mta	('d')
+	j	hex?
+
+	la	delivery_words
+	jnza	decimal_48?
+
+	call	(iscana)		. 24 bits base 10
 	ly	argop
 	ly	0, y
 	sb	0, y
 	j	read_format
+	
+decimal_48?
+	mta	('l')
+	j	decimal_72?
 
-i48?	mta	('I')
-	j	i72?
-	call	(ixscan48)
+	call	(iscan48a)		. 48 bits base 10
 	ly	argop
 	ly	0, y
 	ds	0, y
 	j	read_format
 
-i72?	mta	('J')
+decimal_72?
+	mta	('j')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(iscan72a)		. 72 bits base 10
+	ly	argop
+	ly	0, y
+	sa	0, y
+	dl	6
+	ds	1, y
+	j	read_format
+
+hex?	mta	('x')
+	j	integer?
+
+	la	delivery_words
+	jnza	hex_48?
+
+	call	(scanhex)		. 24 bits base 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	j	read_format
+
+hex_48?	mta	('l')
+	j	hex_72?
+
+	call	(scanhex48)		. 48 bits base 16 
+	ly	argop
+	ly	0, y
+	ds	0, y
+	j	read_format
+
+hex_72?	mta	('j')
+	j	hex_96?
+
+	call	(scanhex72)		. 72 bits base 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	dl	6
+	ds	1, y
+	j	read_format
+
+hex_96?	mta	('q')
+	j	hex_192?
+
+	call	(qscanquartets)		. 96 bits base 16
+	ly	argop
+	ly	0, y
+	qs	0, y
+	j	read_format
+
+hex_192?
+	mta	('L')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(oscanquartets)		. 192 bits base 16
+	ly	argop
+	ly	0, y
+	qs	0, y
+	ql	$residue
+	qs	4, y
+	j	read_format
+
+
+integer?
+	mta	('i')
 	j	string?
-	call	(ixscan72)
+
+	la	delivery_words
+	jnza	i48?
+
+	call	(ixscan)		. 24 bits base 10 or 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	j	read_format
+
+i48?	mta	('l')
+	j	i72?
+
+	call	(ixscan48)		. 48 bits base 10 or 16
+	ly	argop
+	ly	0, y
+	ds	0, y
+	j	read_format
+
+i72?	mta	('j')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(ixscan72)		. 72 bits base 10 or 16
 	ly	argop
 	ly	0, y
 	sb	0, y
@@ -88,7 +232,8 @@ i72?	mta	('J')
 
 string?	mta	('s')
 	j	string_sentinel?
-	ly	argop
+
+	ly	argop			. string by default rules
 	ly	0, y
 	z	SENTINEL
 	lcal	scan_istring
@@ -96,63 +241,58 @@ string?	mta	('s')
 
 string_sentinel?
 	mta	(':')
-	j	qwordhex?
-	ly	column
+	j	read_format_byte	. none of the above, keep walking
+					. string until named symbol
+	ly	column			. read delimiter
 	inc	column
 	call	(read_octet_column)
 	jza	read_format_end
-	sa	SENTINEL
-	ly	argop
+	sa	SENTINEL		. set delimiter
+	ly	argop			. transfer string until delimiter
 	ly	0, y
 	lcal	scan_istring
 
+	$if	1
+	push	' ',,xi
+	pop	LAST_BYTE_READ
+	$else
 	la	LAST_BYTE_READ		. SENTINEL value must get cancelled here
 	xor	SENTINEL		. if that's what ended the scan
 	jnza	read_format		. otherwise it ends the next scan
 	la	' ',,xi			. before it starts
 	sa	LAST_BYTE_READ
+	$endif
+
 	j	read_format		. independent callers to istring
 					. cancel SENTINEL as required
-qwordhex?
-	mta	('Q')
-	j	owordhex?
-	call	(qscanquartets)
-	ly	argop
-	ly	0, y
-	qs	0, y
-	j	read_format
-
-owordhex?
-	mta	('O')
-	j	read_format_byte
-	call	(oscanquartets)
-	ly	argop
-	ly	0, y
-	qs	0, y
-	ql	8
-	qs	4, y
-	j	read_format
 
 read_format_end
 	la	argop			. arguments used up to here
 	ana	caller_xyab+2		. starting from here
 	sa	caller_xyab+2		. result in caller register a
 
-	pop	x
-	pop	x
+	pop	x			. relinquish specification pointer
+	pop	x			. relinquish column offset
+	pop	x			. relinquish words tag
 	qpop	x			. reload 4 caller registers
 	fret	0			. including result = items read
 
 scan_istring
+
+	$if	0
+	la	LAST_BYTE_READ
+	$else
 	call	(symbol_scan)		. skips spaces
+	$endif
 	lk	255,,xi
 	jza	scan_stop_void		. hit an end before accepting data
 	mta	SENTINEL		. a is certainly nonzero
 	j	scan_start		. if a ^= SENTINEL start
 					. or else stop already
 scan_stop_void
-	z	0, y
+.	z	0, y
 	lret	0
+
 
 scan_start
 	lb	a			. 1st byte delivered
@@ -184,14 +324,9 @@ scan_ibyte
 	mtane	(HT)
 	j	scan_ibytex
 
-.	mtane	(':')
-.	j	scan_ibytex
-.	mtane	(',')
-.	j	scan_ibytex
-
 	mtane	SENTINEL
-	j	scan_ibytez		. dont knock that out
-					. let the caller do it
+	j	scan_ibytez
+
 	mtane	(LF)
 	j	scan_ibytez
 	mtane	(CR)
@@ -206,6 +341,23 @@ scan_ibytex
 	sa	LAST_BYTE_READ
 scan_ibytez
 	lret	0
+
+scanover_cr_lf
+scanover?
+	la	LAST_BYTE_READ
+	jza	scan_out
+
+	aa	-LF,,xi
+	jza	scanover!
+	aa	LF-CR,,xi
+	jza	scanover!
+
+scan_out
+	lret	0
+
+scanover!
+	READ_BYTE
+	j	scanover?
 
 	$root
 

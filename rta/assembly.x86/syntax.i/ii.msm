@@ -5,6 +5,8 @@ _off:	xor	ax, 0000FFFFh
 	and	word ptr [_psr], ax	; only touch low-order 16 bits
 	ret
 
+guard_ii_authority
+	mov	esi, LP_AUTHORITY
 guard_ii_escape
 	mov	eax, II_GUARD
 _ii_escape:
@@ -12,11 +14,14 @@ _ii_escape:
 
 _ii:	cmp	eax, II_GUARD
 	jnz	_ii_
-;	mov	byte ptr [_flag+'e'-'a'], 1	; needs to be done via indication
+	test	byte ptr [_uflag+'Z'-'A'], 1	; break to debug console?
+	jz	_ii_				; not if not opted
 	or	byte ptr [_indication], 2
 	
 _ii_:	mov	ebp, __register+128*4
+	mov	dword ptr [_register_set], ebp
 	mov	dword ptr [_iselect], 128
+;	mov	dword ptr [__register+280*4], 128
 	add	dword ptr [ebp+S_P], -4
 	mov	ebx, dword ptr [ebp+S_P]
 	sub	edx, dword ptr [_b0p]
@@ -26,7 +31,7 @@ _ii_:	mov	ebp, __register+128*4
 	mov	dword ptr [ebx*4+__register+8], edx	; save bank ID
 	mov	edx, dword ptr [_psr]
 	mov	dword ptr [ebx*4+__register+4], edx
-	mov	dword ptr [ebx*4+__register], 0
+	mov	dword ptr [ebx*4+__register], esi
 	test	edx, 00800000h			; nested interrupt ?
 	jnz	_ii_ii
 	mov	dword ptr [ebp+FP], ebx	; if not, mark interrupted
@@ -37,32 +42,47 @@ _ii_ii:	or	edx, 00800000h		; ISR active
 	and	edx, 63			; address from interrupt vector
 	shr	eax, 6
 	and	eax, 000003FFh
+	xor	ebx, ebx		; single page ISR
 	jmp	_go2_frame
 	ret
 
-_ir:	mov	ebx, dword ptr [ebp+S_P]
-	add	dword ptr [ebp+S_P], 4
-	mov	ecx, dword ptr [ebx*4+__register+4]
-	mov	dword ptr [_psr], ecx
-	shr	ecx, 16
-	and	cx, 128
-	mov	dword ptr [_iselect], ecx
-	jnz	_ir_ir		; returned to another ISR?
-	mov	ebp, __register	; point to application registers
-_ir_ir:	mov	edx, eax
-	mov	eax, [ebx*4+__register+8]	; return b0_name
-	add	edx, [ebx*4+__register+12]	; +- return displacement
-	and	edx, 00FFFFFFh
+;	_ir	sign extended ea is in eax
 
-	xor	ebx, ebx		; default frame high page index
+_ir:	test	byte ptr [_psr+2], 128	; eax = EA = variation on return offset
+	jz	guard_ii_authority		; not good to do Interrupt Return from application space
+	mov	edi, edx		; save in case the operation interrupts itself
+	mov	edx, eax		; +- displacement operand, offset in stack added later
+
+	call	stack_read4		; [ebp+ebx*4] -> interrupt stack frame
+					; interrupt stack pointer is already updated ebx+4
+
+;	mov	esi, dword ptr [ebp+S_P]
+;	add	dword ptr [ebp+S_P], 4
+;	mov	eax, dword ptr [esi*4+__register+2*4]	; return b0_name
+
+	mov	eax, dword ptr [ebp+ebx*4+2*4]		; interrupted b0_name
+
+	mov	ecx, dword ptr [ebp+ebx*4+1*4]		; interrupted psr
+	add	edx, dword ptr [ebp+ebx*4+3*4]		; add interrupted iframe offset to EA
+
+	xor	ebx, ebx				; 
 	test	eax, 00800000h
-	jz	near _go2_frame		; 1-page iframe
+	jz	ir_4k_iframe				; 1-page iframe return target
 
-	mov	ebx, eax		; address the target iframe
-	shl	ebx, 12			; extract 6 leading bits from word 64
+	mov	ebx, eax				; larger
+	shl	ebx, 12					; read page high index
+	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; from high order 6 bits
+	shr	ebx, 2					; of sample gate at iframe+64 
 
-	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; our special friend Mr Endian
-	shr	ebx, 2					; strikes again
+ir_4k_iframe:
+	mov	dword ptr [_psr], ecx
+	test	ecx, 00800000h				; returning ISR -> ISR ?
+	jz	ir_application				; no
+	jmp	_go2_frame				; yes
 
-	jmp	_go2_frame		; at instruction frame location 64
+ir_application:
+	mov	ebp, __register
+	mov	dword ptr [_register_set], ebp
+	mov	dword ptr [_iselect], 0
+	jmp	_go2_frame
 

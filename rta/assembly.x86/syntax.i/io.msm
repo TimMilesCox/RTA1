@@ -36,9 +36,9 @@ _emulator_cool: ret
 ;	there are no subsequent range checks on reference
 
 _sabr:	test	eax, 0000003Eh		; target window must be 2..63
-	jz	near _sabrx
+	jz	near guard_ii_authority
 	test	eax, 00FFFFC0h
-	jnz	near _sabrx
+	jnz	near guard_ii_authority
 	mov	esi, eax		; target window
 	mov	eax, dword ptr [ebp+A]	; requested storage block index
 	mov	ebx, eax		; cache a copy
@@ -48,30 +48,38 @@ _sabr:	test	eax, 0000003Eh		; target window must be 2..63
 					; load its size parameter
 	test	eax, 00400000h		; big and maybe not system memory?
 	jz	_sabr_executable_space	; yes executable space
-	and	ebx, 63
+
+	test	ebx, 63
 	jz	_sabr_executable_space	; yes executable space
 					; no some other space
 
+	and	ebx, 63
 	mov	ecx, dword ptr [_base+128*4+ebx*4]
-	test	ecx, 00C00000h		; nice device?
-	jz	_sabr_guard		; substitute with no-access value
-	jpe	_sabr_device_array	; FS24_FLAG
-	test	ecx, DATA16_FLAG	; to avoid accident
-	jnz	_sabr_device_array	; applications can only base
-					; devices usable as system memory
+	test	ecx, DATA16_FLAG
+	jnz	 _sabr_device_array
+	test	ecx, 00800000h
+	jz	_sabr_guard		; range issue. The device is void
+
+	mov	ebx, eax
+	and	ebx, 003FFFC0h		; blocks of 64 pages if not device zero
+	jmp	_sabr_executable_type	; devices usable as system memory
 	
-_sabr_executable_space:			; has the device this much memory?
-	mov	ebx, eax		; refresh the requested block index
-	and	ebx, 003FFFFFh		; 4K-word page index requested
+_sabr_executable_space:			; is the target page @+ application space?
+	and	ebx, 003FFFFFh		; just the page, not any flags
+	cmp	ebx, dword ptr [_base+72*4]
+	js	guard_ii_authority	; neither ISrs nor applications may base ISR space
+
+_sabr_executable_type:			; has the device this much memory?
 	and	ecx, 003FFFFFh		; 4K-word page high index of device
 					; has the device this many pages?
 	sub	ecx, ebx
+
 	jns	_sabr_thru		; yes
 	jmp	_sabr_guard		; no
 
 _sabr_device_array:
 	test	dword ptr [_psr], 00800000h
-	jz	_sabr_guard		; only be here if you are an ISR
+	jz	guard_ii_authority	; only be here if you are an ISR
 	mov	ebx, eax		; refresh the requested block index
 	and	ebx, 003FFFFFh
 	shr	ebx, 6			; align it with high index from device port

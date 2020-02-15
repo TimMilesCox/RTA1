@@ -75,7 +75,9 @@ extern system_memory	 memory;
 system_memory            memory;
 
 int              	 iselect = 128;
+int			 iselectu = 256;
 word		    	*apc = ROM_PAGE;
+word			*apcu;
 
 #ifdef	INSTRUCTION_U
 word			*apcz = &memory.p4k[0].w[4095];
@@ -118,9 +120,11 @@ static void		 statement();
 extern void		 action(char request[]);
 void			 load_fs(int device_id, char *path);
 extern void		 assign_interface_relay(int device_id, char *text);
-static void		 assign_array(int device_id, char *text);
+       void		 assign_array(int device_id, char *text);
 static int		 msw2i(msw w);
-extern void		 print_register_row(int index);
+extern int		 print_register_row(int index);
+extern			 int print7_registers(int index);
+extern int		 register_pointer;
 
 #ifdef METRIC
 unsigned int		 delta,
@@ -147,7 +151,8 @@ static int		 interval_seconds_mask;
 
 int main(int argc, char *argv[])
 {
-   int			 _x;
+   int			 _x,
+			 _y;
 
    int			 fields,
 			 device_id;
@@ -157,8 +162,12 @@ int main(int argc, char *argv[])
 
    #ifdef X86_MSW
    #else
+   #define MID_PRIORITY	50
+
    pthread_attr_t        asyncb;
    pthread_t             asyncid;
+   struct sched_param	 asyncp = { MID_PRIORITY } ;
+
    #endif
 
    int                   f, count, image_size = 0;
@@ -250,7 +259,28 @@ int main(int argc, char *argv[])
    {
       _x = pthread_create(&asyncid, &asyncb, &emulate, NULL);
       if (_x < 0) printf("async thread start %d %d\n", _x, errno);
-      else       printf("async thread ID %p\n", asyncid);
+      else
+      {
+         printf("async thread ID %p\n", asyncid);
+
+         if (uflag['O'-'A'])
+         {
+            /******************************************************************
+
+	       keeps the MIPs reading steady when doing many slower instructions
+               which give SCHED_RR more chance of intervening
+
+            ******************************************************************/
+
+            _x = pthread_setschedparam(asyncid, SCHED_FIFO, &asyncp);
+            if (_x < 0) printf("switch FIFO E%d\n", errno);
+
+            _x = pthread_getschedparam(asyncid, &_y, &asyncp);
+
+            if (_x < 0) printf("(E%d)", errno);
+            printf("[PY %d S-P %d]\n", _y, asyncp.sched_priority);
+         }
+      }
    }
 
    #endif
@@ -259,7 +289,7 @@ int main(int argc, char *argv[])
                         ? "g[break:point] to run"
                         : "s to enter single step");
    #ifndef __X64
-   if (uflag['Z'-'A'] == 0) start_second(&step_second);
+   if (uflag['Y'-'A'] == 0) start_second(&step_second);
    #endif
 
    for (;;)
@@ -300,7 +330,19 @@ int main(int argc, char *argv[])
             break;
          }
 
-         if (*_p == '.') break;
+         if (*_p == '.')
+         {
+            if (*(_p + 1) == '.') break;
+            printf(".. to stop the emulator\n");
+
+            if (indication & LOCKSTEP) printf("command>");
+            else                       printf("emulator running\n"
+                                              "key s for single step:");
+
+            fflush(stdout);
+
+            continue;
+         }
 
          action(_p);
 
@@ -361,7 +403,7 @@ int main(int argc, char *argv[])
 	and written once per 70 years
       *****************************************************/
 
-      if (uflag['Z'-'A'] == 0)
+      if (uflag['Y'-'A'] == 0)
       {
          if ((xronos.tv_sec & 0x80000000) ^ (step_second.low & 0x80000000))
          {
@@ -646,14 +688,14 @@ void load_fs(int device_id, char *path)
    }
 }
 
-static void assign_array(int device_id, char *text)
+void assign_array(int device_id, char *text)
 {
    int		 banks;
    long		 words;
 
    char		*where;
 
-   sscanf(text + 1, "%d", &banks);
+   sscanf(text, "%d", &banks);
 
    if ((banks < 1) || banks > 65536)
    {
@@ -669,7 +711,7 @@ static void assign_array(int device_id, char *text)
 //      devices[device_id].flags = DEVICE | SYSMEM;
       devices[device_id].pages = (page *) where;
       base[128 + device_id] = SYSMEM_FLAG | ((banks << 6) - 1);
-      printf("device %d additional %ld words memory array added\n", device_id, words);
+      printf("device %d %ld words memory array added\n", device_id, words);
    }
    else
    {
@@ -693,6 +735,30 @@ static void statement()
       putchar('\n');
       index += 8;
    }
+
+   #if 1
+
+   index = sp;
+   printf("[%6.6x]->", index);
+
+   if (index & 127) index = print7_registers(index);
+
+   if (index & 127)
+   {
+      putchar('\n');
+      index = print_register_row(index);
+   }
+
+   if (index & 127)
+   {  
+      putchar('\n');
+      index = print_register_row(index);
+   }
+
+   putchar('\n');
+   register_pointer = index;
+
+   #else
 
    index = sp;
    printf("[%6.6x]->", index);
@@ -725,6 +791,8 @@ static void statement()
       printf(" %6.6x", _register[index++]);
    }
    putchar('\n');
+
+   #endif
 }
 
 static int msw2i(msw w)

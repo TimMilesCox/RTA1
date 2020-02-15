@@ -22,6 +22,7 @@ extern long long	 total_metric,
 
 extern void load_fs(int device_id, char *path);
 extern void assign_interface_relay(int device_id, char *text);
+extern void assign_array(int device_id, char *text);
 
 extern int		 iselect;
 extern int		 indication;
@@ -36,7 +37,9 @@ extern unsigned int	 base[];
 extern device		 devices[];
 extern system_memory	 memory;
 
-void print_register_row(int index)
+int			 register_pointer = 128;
+
+int print_register_row(int index)
 {
    int           xx = 8;
 
@@ -46,7 +49,24 @@ void print_register_row(int index)
    {
       if (index < 256) printf(" %6.6x", _register[index++]);
       else             printf(" %8.8x", _register[index++]);
+
+      if ((index & 127) == 0) break;
    }
+
+   return index;
+}
+
+int print7_registers(int index)
+{
+   int		 xx = 7;
+
+   while ((xx--) && (index < REGISTERS))
+   {
+      printf(" %6.6x", _register[index++]);
+      if ((index & 127) == 0) break;
+   }
+
+   return index;
 }
 
 void action(char request[])
@@ -152,8 +172,8 @@ void action(char request[])
          break;
 
       case '+':
-         index = sp;
-         index += 23;
+         index = register_pointer;
+         register_pointer = sp;
       case '0':
       case 'r':
          if (symbol ^ '+') index = iselect | 24;
@@ -163,8 +183,8 @@ void action(char request[])
 
          while (index < REGISTERS)
          {
-            print_register_row(index);
-            index += 8;
+            index = print_register_row(index);
+            // index += 8;
             fgets(request, 48, stdin);
             if (request[0] == '.') break;
          }
@@ -361,7 +381,7 @@ void action(char request[])
          break;
 
       case 'b':
-         for (xx = 0; xx < 72; xx++)
+         for (xx = 0; xx < 76; xx++)
          {
             if (!(xx & 7)) printf("\n%2.2x:", xx);
             printf(" %6.6x", base[xx]);
@@ -407,12 +427,35 @@ void action(char request[])
          else printf("load fs requires: l device fsimage_path\n");
          break;
 
-      case '#':
-         xx = sscanf(&request[1], "%d %s", &device_index, path);
+      case '/':
+         xx = sscanf(request, "/%d/%s", &device_index, path);
 
-         if (xx == 2)
+         if      (xx < 2)            printf("requires /decimal device number/device info\n");
+         else if (device_index < 3)  printf("devices 0..2 are fixed\n");
+         else if (device_index > 63) printf("devices 3..63 are dynamically assignable\n");
+         else
          {
-            if ((device_index > 2) && (device_index < 64))
+            if      (path[0] == '-')
+            {
+               device_sense = base[128 + device_index];
+               device_sense &= 0x00C00000;
+
+               switch (device_sense)
+               {
+                  case SYSMEM_FLAG:
+                  case FSYS24_FLAG:
+                     free(devices[device_index].pages);
+                     devices[device_index].pages = NULL;
+                     printf("device %d %x unmounted\n", device_index, base[device_index + 128]);
+                     base[device_index + 128] = 0;
+                     break;
+
+                  default:
+                     printf("only memory and filestore devices "
+                            "may be unmounted during operation\n");
+               }
+            }
+            else
             {
                device_sense = base[128 + device_index];
                device_sense &= 0x00C00000;
@@ -421,12 +464,28 @@ void action(char request[])
                                          device_index,
                                          device_sense);
 
-               else assign_interface_relay(device_index, path);
+               else if (path[0] == '+') assign_array(device_index, path);
+               else if (path[0] == '#') assign_interface_relay(device_index, path);
+               else                     load_fs(device_index, path);
             }
-            else printf("only devices 3..63 are dynamically assignable\n");
          }
-         else printf("attach interface array requires: # device key\n");
 
+         break;
+
+      case '\\':
+         xx = sscanf(request + 1, "%s", path);
+
+         if (xx)
+         {
+            text = path;
+
+            while (datum = *text++)
+            {
+               if ((datum > ('a' - 1)) && (datum < ('z' + 1)))  flag[datum - 'a'] ^= 1;
+               if ((datum > ('A' - 1)) && (datum < ('Z' + 1))) uflag[datum - 'A'] ^= 1;
+            }
+         }
+         else printf("option letters required");
          break;
 
       case 'h':
@@ -443,12 +502,15 @@ void action(char request[])
          printf("\tdefault breakpoint frame is current halted instruction frame\n");
          printf("\tto remove breakpoint g0:0\n\n");
 
-         printf("\n\n\t\tcommands l and # enter device address in decimal\n\n");
+         printf("\n\n\t\tcommands l # + enter device address in decimal\n\n");
 
-         printf("l device path\t\tload file system image\n");
-         printf("# device hexkey\t\tassign network interface relay array\n");
+         printf("/device/ device path\t\tload file system image\n");
+         printf("/device/# device hexkey\t\tassign network interface relay array\n");
+         printf("/device/+ device banks\t\tassign memory array\n");
+         printf("/device/- device banks\t\tunmount memory array or filestore\n\n");
 
-         printf(".\texit emulator\n");
+         printf("\\\t\t\tinvert run option\n");
+         printf("..\t\t\texit emulator\n");
          break;
 
       case '.':

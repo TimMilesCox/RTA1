@@ -51,6 +51,7 @@
 #include "alu.h"
 #include "sr.h"
 #include "ii.h"
+#include "stack.h"
 
 #include "../rta.run/settings.h"
 
@@ -277,23 +278,11 @@ void execute(word instruction)
 
                 ****************************************************/
 
-
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < (GUARD_RANGE_SP + 1))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-               sp--;
-
-               _p = &_register[sp];
+               STACK(1)
+               v--;
+               _p = _register + v;
                *_p = apc - b0p->w;
+               *_q = v;
 
                apc = &b0p->w[ea];
                break;
@@ -601,42 +590,25 @@ void execute(word instruction)
 
 		        25th bit of sum -> carry
 
-			unchanged on stepping 28.02.2019
-			if the store target is sp
-			then sp is written without postincrement
+			increment sp after operand read
+                        and before operand write
 
-                        stepping 06.06.2019
-                        alter the same sp same sp you had
-                        before doing operand read with ea
-                        because if operand read excepts
-                        incremented sp becomes interrupt sp
+			*_q -> is the same sp even before and after
+                        even if operand read faults
 
                **************************************************/
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < GUARD_RANGE_UP)
-                  {
-                  }
-                  else
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
+               STACK_READ(1)
+               _p = _register + v;
+               w = *_p;
+               w += operand_read(ea, 7);
 
-               _p = &_register[sp];
-               v = *_p;
-               sp++;
-
-	       v += operand_read(ea, 7);
+               v++;
+               *_q = v;
 
                psr &= (0x00FFFFFE);
-               psr |= ((v >> 24) & 1);
-	       operand_write(v & 0x00FFFFFF, ea, 7);
+               psr |= ((w >> 24) & 1);
+               operand_write(w & 0x00FFFFFF, ea, 7);
 
                break;
 
@@ -733,24 +705,12 @@ void execute(word instruction)
 
 	       /* 4 stack words -> 2 stored words */
 
-
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp > (GUARD_RANGE_UP-4))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-	       _p = &_register[sp];
-               sp += 4;
-//               _q = &sp;
+               STACK_READ(2)
+               _p = _register + v;
                fpp(ea, _p);
-//               *_q += 4;	/* _q -> sp[which1] before storage write attempt */
+               v += 4;
+               *_q = v;
+
                break;
 
             case FPX:
@@ -773,20 +733,12 @@ void execute(word instruction)
 
                *************************************************/
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < (GUARD_RANGE_SP + 4))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
+               STACK(4)
+               v -= 4;
+               _p = _register + v;
+               fpx(ea, _p);
+               *_q = v;
 
-               sp -= 4;
-               fpx(ea, &_register[sp]);
                break;
 
             case FA:
@@ -859,46 +811,17 @@ void execute(word instruction)
 			pop four words from the internal
 			stack top
 
-			stepping 28.02.2018
-			if the store target words include sp
-			then sp is written without postincrement
-
-                        stepping 06.06.2019
-                        alter the same sp same sp you had
-                        before doing operand read with ea
-                        because if operand read excepts
-                        incremented sp becomes interrupt sp
+			decrement sp before burst write
+			in case the popped objects include sp
 
                *************************************************/
 
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp > (GUARD_RANGE_UP - 4))
-                  {
-                     GUARD_INTERRUPT;
-                     break;
-                  }
-               }
+               STACK_READ(4)
+               _p = _register + v;
+               *_q = v + 4;
 
-               #ifdef EDGE
-               if (psr & 32768) stacktop4();
-               #endif
-
-               _p = &_register[sp];
-               sp += 4;
-//               _q = &sp;
                burst_write4(_p, ea);
-
-               #ifdef EDGE
-               if (psr & 32768) stored4(ea);
-               #endif
-
-//               *_q += 4;	/*	_q -> sp[which1] before storage write attempt	*/
-
                break;
 
             case QPUSH:
@@ -910,35 +833,20 @@ void execute(word instruction)
 			push four words onto the internal
 			stack top
 
-			stepping 28.02.2019
-			if the pushed words include sp
-			then sp before decrement is pushed
+			acquire operands before decrementing sp
+			in case the pushed objects include sp
 
-                        stepping 06.06.2019
-                        alter the same sp same sp you had
-                        before doing operand read with ea
-                        because if operand read excepts
-                        incremented sp becomes interrupt sp
+			sp at *_q is the same one before and after
+			even if a fault occurs in burst_read
 
                *************************************************/
 
-
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < (GUARD_RANGE_SP + 4))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-               _p = &_register[sp - 4];
-               _q = &sp;
+               STACK(4)
+               v -= 4;
+               _p = _register + v;
                burst_read4(_p, ea);
-               *_q -= 4;	/* _q -> sp[which1] before storage read attempt */
+               *_q = v;
+
                break;
 
             case EX:
@@ -964,33 +872,20 @@ void execute(word instruction)
 			push two words onto the internal
 			stack top
 
-			stepping 28.02.2019
-			if the pushed words include sp
-			then sp before decrement is pushed
+                        acquire operands before decrementing sp
+                        in case the pushed objects include sp
 
-                        stepping 06.06.2019
-                        alter the same sp you had
-                        before doing operand read with ea
-                        because if operand read excepts
-                        incremented sp becomes interrupt sp
+                        sp at *_q is the same one before and after
+                        even if a fault occurs in burst_read
+
                *************************************************/
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < (GUARD_RANGE_SP + 2))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-               _p = &_register[sp - 2];
-               _q = &sp;
+               STACK(2)
+               v -= 2;
+               _p = _register + v;
                burst_read2(_p, ea);
-               *_q -= 2;	/*	_q -> sp[which1] before operand read attempt */
+               *_q = v;
+
                break;
 
             case LSC:
@@ -1158,25 +1053,12 @@ void execute(word instruction)
 
                **********************************************************/
 
-
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < (GUARD_RANGE_SP + 2))
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-               sp -= 2;
-
-               _p = &_register[sp];
+               STACK(2)
+               v -= 2;
+               _p = _register + v;
                _p[1] = apc - b0p->w;
                _p[0] = b0_name;
-
+               *_q = v;
 
             case GO:
 
@@ -1216,12 +1098,22 @@ void execute(word instruction)
                   b0_scope = v;
                }
 
-               if (b0_scope < PAGES_IN_MEMORY)
-               {
-               }
-               else
+               if (b0_scope > (PAGES_IN_MEMORY - 1))
                {
                   GUARD_INTERRUPT
+                  break;
+               }
+
+               if  (psr & 0x00800000)
+               {
+               }
+               else if (v < base[72])
+               {
+                  /*****************************************
+                     must be an ISR to jump in there
+                  *****************************************/
+
+                  GUARD_AUTHORITY
                   break;
                }
 
@@ -1477,56 +1369,87 @@ void execute(word instruction)
                   {
                      v = a;
 
-                     if (v & 0x00400000)
+                     if ((v & 0x00400000) && (device_index = v & 63))
                      {
                         /*********************************************
+                           yes that is intended to be an assignment
+
                            device array outside system memory
                            only interrupt code may base it
+                           unless it is array memory
+                           with bus behaviour like system memory
                         *********************************************/
 
-                        device_index = v & 63;
+                        /********************************************
+                           allowed for interrupt code but check
+                        ********************************************/
 
-                        if ((device_index == 0) || (psr & 0x00800000))
-                        {
-                           /******************************************
-                              allowed for interrupt code but check
-                           ******************************************/
-
-                           #ifdef CHECK_ON_BASE
-                           device_index = v & 63;
-                           device_descriptor = base[128 + device_index];
+                        #ifdef CHECK_ON_BASE
+                        device_descriptor = base[128 + device_index];
                               
-                           switch (device_descriptor & 0x00C00000)
-                           {
-                              case SYSMEM_FLAG:
-                                 if (((v & 0x003FFFC0) | 63)
-                                 > (device_descriptor & 0x003FFFFF))
-                                    v = 0x00C00001;
-
-                                 break;
-
-                              case DATA16_FLAG:
-                              case FSYS24_FLAG:
-                                 if (((v >> 6) & 65535)
-                                 > (base[128 + device_index] & 65535))
-                                    v = 0x00C00001;
-
-                                 break;
-
-                              default:
-                                 v = 0x00C00001;
-
-                           }
-                           #endif
-                        }
-                        else
+                        switch (device_descriptor & 0x00C00000)
                         {
-                           ii(XBASE_U, LP_ADDRESS);
-                           break;
+                           case SYSMEM_FLAG:
+                              /*************************************
+				applications and ISRs
+				may both base array memory
+                              *************************************/
+
+                              if (((v & 0x003FFFC0) | 63)
+                              >   (device_descriptor & 0x003FFFFF)) v = 0x00C00001;
+
+                              break;
+
+                           case DATA16_FLAG:
+                           case FSYS24_FLAG:
+
+                              if (psr & 0x00800000)
+                              {
+                                 /**********************************
+                                     ISRs may base peripheral arrays
+                                     if the block is in range
+                                 **********************************/
+
+                                 if (((v >> 6) & 65535)
+                                 >   (base[128 + device_index] & 65535)) v = 0x00C00001;
+                              }
+                              else
+                              {
+                                 /**********************************
+                                    whereas applications may not
+                                    too easy to do inadvertantly
+                                 **********************************/
+
+                                 ii(XBASE_U, LP_AUTHORITY);
+                                 return;
+                              }
+
+                              break;
+
+                           default:
+                              /**********************************
+				flag value 00 void device
+                              **********************************/
+
+                              v = 0x00C00001;
                         }
+                        #endif
                      }
 
                      #ifdef CHECK_ON_BASE
+                     else if ((v & 0x003FFFFF) < base[72])
+                     {
+                        /***********************************************
+                           no-one pulls up the restart and ISR pages
+                           into their operand space
+                           not even if register a was accidentally zero
+
+                           don't drop through
+                        ***********************************************/
+
+                        ii(XBASE_U, LP_AUTHORITY);
+                        return;
+                     }
                      else if ((v & 0x003FFFFF) < PAGES_IN_MEMORY)
                      {
                         /***********************************************
@@ -1551,6 +1474,7 @@ void execute(word instruction)
                      _w->t2 = v >> 8;
                      _w->t1 = v >> 16;
 
+                     #if 0
                      if (v & 0x00800000)
                      {
                         /************************************************
@@ -1558,8 +1482,17 @@ void execute(word instruction)
                                 translation have that here
                         ************************************************/
                      }
+                     #endif
 
                      base[ea] = v;
+                  }
+                  else
+                  {
+                     /**************************************************
+				window tag < 2 or > 63
+                     **************************************************/
+
+                     ii(XBASE_U, LP_AUTHORITY);
                   }
 
                   break;
@@ -1573,41 +1506,15 @@ void execute(word instruction)
 			return within current segment
 		  ******************************************************/
 
-                  _p = &_register[sp];
-                  sp++;
+                  STACK_RETURN(1)
+                  _p = _register + v;
+                  w = *_p;
+                  w += ea;
+                  w &= 0x00FFFFFF;
+                  apc = &b0p->w[w];
+                  v++;
+                  *_q = v;
 
-                  if (psr & 0x00800000)
-                  {
-                  }
-                  else
-                  {
-                     if (sp == GUARD_RANGE_UP + 1)
-                     {
-                        EXIT_INTERRUPT;
-                        break;
-                     }
-
-                     if (sp > GUARD_RANGE_UP)
-                     {
-                        GUARD_INTERRUPT
-                        break;
-                     }
-                  }
-
-                  v = *_p;
-                  v += ea;
-//                  v &= 0x00FFFFFF;
-
-                  if ((b0_name + ((unsigned) v >> 12)) < PAGES_IN_MEMORY)
-                  {
-                  }
-                  else
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-
-                  apc = &b0p->w[v];
                   break;
                }
 
@@ -1642,52 +1549,52 @@ void execute(word instruction)
                         sp is then name of the interrupt sp [iselect | SP]
                   *******************************************************/
 
-                  if (psr & 0x00800000)
-                  {
-                  }
-                  else
-                  {
-                     if (sp == GUARD_RANGE_UP)
-                     {
-                        EXIT_INTERRUPT;
-                        break;
-                     }
+                  STACK_RETURN(2)
 
-                     if (sp > (GUARD_RANGE_UP - 1))
-                     {
-                        GUARD_INTERRUPT
-                        break;
-                     }
-                  }
+                  _p = _register + v;
+          
+                  /***************************************************************
+                     sp is updated immediately
+                     authority or memory fault can raise after sp increment
+                                     and before FRET instruction completion
+                     this is in line with versions written in machine code
+                  ***************************************************************/
 
-                  _p = &_register[sp];
-                  sp += 2;
+                  v += 2;
+                  *_q = v;
 
                   b0_name = *_p;
 
-                  v = *(_p + 1);
-                  v += ea;
-                  
+                  w = *(_p + 1);
+                  w += ea;
+
                   base[0] = b0_scope = b0_name & 0x003FFFFF;
                   b0_name = *_p;
                   b0p = &memory.p4k[b0_scope];
-                  apc = &b0p->w[v];
+                  apc = &b0p->w[w];
 
                   if (b0_name & 0x00800000)
                   {
                      b0_scope += b0p->w[64].t1 >> 2;
                   }
 
-                  if (b0_scope < PAGES_IN_MEMORY)
+                  if (b0_scope > (PAGES_IN_MEMORY - 1))
+                  {
+                     GUARD_INTERRUPT
+                     break;
+                  }
+
+                  if  (psr & 0x00800000)
                   {
                   }
-                  else
+                  else if (base[0] < base[72])
                   {
-                     #if 1
-                     GUARD_INTERRUPT;
-                     #else
-                     b0_scope = base[128] & 0x3FFFFF;
-                     #endif
+                     /*****************************************
+                        must be an ISR to jump in there
+                     *****************************************/
+
+                     GUARD_AUTHORITY
+                     break;
                   }
 
                   #ifdef INSTRUCTION_U
@@ -1703,34 +1610,14 @@ void execute(word instruction)
 			POP instruction
 			store word from the internal stack top
 
-			unchanged on stepping 28.02.2019
-			if the store target is sp
-			then sp is written without postincrement
-
-                        stepping 06.06.2019
-                        alter the sp which you had before reading memory
-                        because if the read gets a guard exception
-                        sp is then name of the interrupt sp [iselect | SP]
+			increment sp before operand write
+			in case the popped object is sp
 
                ***********************************************************/
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp < GUARD_RANGE_UP)
-                  {
-                  }
-                  else
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
-
-               _p = &_register[sp];
-               sp++;
+               STACK_READ(1)
+               _p = _register + v;
+               *_q = v + 1;
                operand_write(*_p, ea, designator);
 
                break;
@@ -1852,45 +1739,79 @@ void execute(word instruction)
                   break;
                }
 
-
                if (designator == XI)
                {
                   /******************************************************
                         IR instruction. return from interrupt
                   *******************************************************/
 
-                  _p = &_register[sp];
-                  sp += 4;
-                  _p++;
-                  psr = *_p++;
-                  b0_name = *_p++;
+                  if (psr & 0x00800000)
+                  {
+                  }
+                  else
+                  {
+                     /***************************************************
+                        application issued ir instruction
+                        not allowed
+                     ***************************************************/
 
-                  b0_scope = v = b0_name & 0x003FFFFF;
+                     GUARD_AUTHORITY
+                     break;
+                  }
+
+                  STACK_READ(4)
+                  _p = _register + v;
+
+                  v += 4;               /* update interrupt stack pointer */
+                  *_q = v;		/* immediately in line with	  */
+					/* machine code written emulators */
+
+                  /* latent parameter *sp not used on IR */
+
+                  psr = _p[1];
+                  b0_name = _p[2];
+                  b0_scope = w = b0_name & 0x003FFFFF;
+                  b0p = &memory.p4k[w];
 
                   if (b0_name & 0x00800000)
                   {
                      b0_scope += b0p->w[64].t1 >> 2;
                   }
-                  else
+
+                  if (b0_scope > (PAGES_IN_MEMORY - 1))
                   {
-                     v &= 0x003FFFFF;
+                     GUARD_INTERRUPT
+                     break;
                   }
 
-                  base[0] = v;
+                  if  (psr & 0x00800000)
+                  {
+                  }
+                  else if (w < base[72])
+                  {
+                     /****************************************
+                        returning PSR is an application
+                        must be an ISR to jump in there
+                     *****************************************/
 
-                  b0p = &memory.p4k[v];
+                     GUARD_AUTHORITY
+                     break;
+                  }
 
-                  #ifdef INSTRUCTION_U
+                  base[0] = w;
+
+                  #ifdef INSTRUCTION_U	/* update the program counter limit */
                   base[INSTRUCTION_U] = b0_scope;
                   apcz = &memory.p4k[b0_scope].w[4095];
                   #endif
 
-                  v = *_p;
-                  v += ea;
-                  v &= 0x00FFFFFF;
-                  apc = &b0p->w[v];
+                  w = _p[3];
+                  w += ea;
+                  w &= 0x00FFFFFF;
+                  apc = &b0p->w[w];	/* update the program counter	*/
 
                   iselect = (psr & 0x00800000) >> 16;
+
                   break;
                }
 
@@ -2183,35 +2104,20 @@ void execute(word instruction)
 
 			place a word on the internal stack
 
-			stepping 28.02.2019
-			if the pushed word is sp
-			then sp before decrement is pushed
+                        acquire operand before decrementing sp
+                        in case the pushed object is sp
 
-			stepping 06.06.2019
-			alter the sp which you had before reading memory
-			because if the read gets a guard exception
-			sp is then name of the interrupt sp [iselect | SP]
+                        sp at *_q is the same one before and after
+                        even if a fault occurs in burst_read
+
                **********************************************************/
 
-               if (psr & 0x00800000)
-               {
-               }
-               else
-               {
-                  if (sp > GUARD_RANGE_SP)
-                  {
-                  }
-                  else
-                  {
-                     GUARD_INTERRUPT
-                     break;
-                  }
-               }
+               STACK(1)
+               v--;
+               _p = _register + v;
+              *_p = operand_read(ea, designator);
+              *_q = v;
 
-               _p = &_register[sp - 1];
-               _q = &sp;
-               *_p = operand_read(ea, designator);
-               *_q -= 1;	/* _q -> sp[which1] before operand read attempt */
                break;
          }
    }

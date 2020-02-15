@@ -1,3 +1,4 @@
+	$if		0
 	$list		0
 	$path		../
 	$include	def/rta.def
@@ -7,8 +8,9 @@
 	$include	t77.4/socket.def
 	$list
 	$path
+	$endif
 	
-$(0:*1)
+$(0)
 
 	. vector name fscanform
 
@@ -35,13 +37,17 @@ no_file_type
 	. format in program space
 	. same for all media types
 
+FORMAT_FRAME	$equ	1024
+
 f_editform* $tree
 	$head_far	 params(handle,		int		;
 				formatp,	int	)	;
-								;	
-			 xframe(frame,		1024	)
+								;
+                        scalars(save_rkxy,	float, r)	;
+								;
+			 xframe(o_frame,	FORMAT_FRAME	)
 
-	lx	frame,,i
+	lx	o_frame,,i
 	call	(wstream_starta)
 
 	c	(wstream_composea)	handle-1		;	. stack walkback word = args limit
@@ -49,10 +55,13 @@ f_editform* $tree
 
 	jna	no_write					. if the format call went wrong
 
-	c	(write)	handle	frame,,i	a		. a = columns in frame
+	c	(write)	handle	o_frame,,i	a		. a = columns in frame
 	c	(fsync)	handle
 
 no_write
-	$ret
+	qpop	r						. recover the shielded caller registers
+	push	FORMAT_FRAME, fp, i				. sell the external stack composition frame
+	pop	fp
+	fret	0
 
 	$root

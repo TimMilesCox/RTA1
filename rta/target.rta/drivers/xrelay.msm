@@ -337,3 +337,35 @@ start_ift1
 
 	fret	0
 
+.	called only on system restart
+.	so no settings are saved
+.	requests external interface service to restart
+.	to match automatic resynchronisation at this end
+
+.	it's the only time a CONFIGURATION_PROTOCOL frame is output
+.	so it doesn't need much detail
+
+restart_xrelay_interface
+	on	see$2				. IP vector list
+	la	VECTOR_B1(1)			. IP B1 1st frame
+	outA	1
+	off	see$1				. make sure 1 and not 65
+	lx	01002				. ifxpointer(2)
+
+	dl	this_if:ift1:base_tx, x
+	la	(0400002)			. remove this
+	sabr	32				. this is already interrupt code
+	sb	fp+128				. interrupt code, remember?
+
+	ql	(0, 0, 0, IFCONFIG:q)
+	lk	(008000)
+						. service only needs to see one of these
+	$do	5,	lcal	restart_frame_xmit
+	fret	0				. but 1st one could be lost unsynchronised
+
+restart_frame_xmit
+	qs	xframe:frame_length, fp
+	sk	xframe:flag, fp
+	lcal	txq_ift1_next_frame
+	lret	0
+

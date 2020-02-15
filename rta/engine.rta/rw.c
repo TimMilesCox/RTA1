@@ -281,7 +281,7 @@ static int mread(word *w24p, int designator)
 word memory_read(unsigned ea)
 {
    static word	 outside_executable_space = { 0, II, 0, (1 << 6) | 31 } ;
-   static word	 nop                      = { 0, LK, 0, 128 + 1 } ;
+   static word	 nop			  = { 0, SK, 0, 128 + 1       } ;
 
    device	*devicep;
    int		 device_type;
@@ -347,16 +347,11 @@ word memory_read(unsigned ea)
             and outside_executable_space is a constant
             of the instruction ii GUARD$
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
             {
                GUARD_INTERRUPT
             }
             #endif
 
-            if (psr & 0x00800000) return nop;
             return outside_executable_space;
          }
 
@@ -365,6 +360,7 @@ word memory_read(unsigned ea)
          devicep = devices + device_index;
          device_type = base[128 + device_index] & 0x00C00000;
 
+         printf("[%x:%x]\n", device_index, device_type);
          if (device_type == SYSMEM_FLAG)
          {
             relocation_base &= 0x003FFFC0;
@@ -468,6 +464,9 @@ word *memory_hold(unsigned ea)
    {
       if (psr & 0x00800000)
       {
+         /********************************************
+		ISRs may write all spaces which exist
+         ********************************************/
       }
       else
       {
@@ -477,7 +476,7 @@ word *memory_hold(unsigned ea)
    }
 
    #else
-
+   #error YOU ARE NOT HERE
    if (index & 0x38)
    {
    }
@@ -529,26 +528,18 @@ word *memory_hold(unsigned ea)
                don't read from nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_INTERRUPT
-            }
+            GUARD_INTERRUPT
 
             return NULL;
          }
 
          #endif
          devicep = devices + device_index;
-         device_type == base[128 + device_index] & 0x00C00000;
+         device_type = base[128 + device_index] & 0x00C00000;
 
          if (device_type == SYSMEM_FLAG)
          {
-//            relocation_base >>= 6;
-//            relocation_base &= 65535;
-              relocation_base &= 0x003FFFC0;
+            relocation_base &= 0x003FFFC0;
 
             /************************************************************
 		devices with system memory characteristic
@@ -556,6 +547,7 @@ word *memory_hold(unsigned ea)
             ************************************************************/
 
             #ifndef CHECK_ON_BASE
+            #error YOU ARE NOT HERE EITHER
             if (relocation_base > (base[128 + device_index] >> 6) & 65535)
             {
                if (psr & 0x00800000)
@@ -568,12 +560,8 @@ word *memory_hold(unsigned ea)
             }
             else
             #endif
-            {
-               pagep = devicep->pages + relocation_base;
-               return pagep->w + offset;
-//               absolute |= (unsigned long) relocation_base << 18;
-//               return devicep->s.pages->array + absolute;
-            }
+            pagep = devicep->pages + relocation_base;
+            return pagep->w + offset;
          }
 
          /********************************************
@@ -582,13 +570,7 @@ word *memory_hold(unsigned ea)
             other device arrays can't
          *********************************************/
 
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
+         GUARD_INTERRUPT
 
 	 return NULL;
       }
@@ -603,13 +585,7 @@ word *memory_hold(unsigned ea)
             in 4096-word blocks
          ********************************************/
 
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
+         GUARD_INTERRUPT
 
          return NULL;
       }
@@ -617,6 +593,18 @@ word *memory_hold(unsigned ea)
    #endif
 
    relocation_base &= 0x003FFFFF;
+
+   if (relocation_base < base[124])
+   {
+      /******************************************************
+         no writes inside the fixed system image
+         defined by the RAM boundary port
+      ******************************************************/
+
+      GUARD_AUTHORITY
+      return NULL;
+   }
+
    pagep = memory.p4k + relocation_base;
    return pagep->w + offset;
 //   absolute |= (relocation_base & 0x003FFFFF) << 12;
@@ -704,13 +692,7 @@ unsigned int operand_read(unsigned ea, int designator)
                don't read from nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_INTERRUPT
-            }
+            GUARD_INTERRUPT
 
             return 0x00AAAAAA;
          }
@@ -730,13 +712,7 @@ unsigned int operand_read(unsigned ea, int designator)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
+         GUARD_INTERRUPT
 
          return 0x00FFFFFF;
       }
@@ -855,13 +831,7 @@ void burst_read2(int *list, unsigned ea)
                don't read from nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_INTERRUPT
-            }
+            GUARD_INTERRUPT
 
             return;
          }
@@ -883,13 +853,7 @@ void burst_read2(int *list, unsigned ea)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
+         GUARD_INTERRUPT
 
          return;
       }
@@ -1041,13 +1005,7 @@ void burst_read4(int *list, unsigned ea)
                don't read from nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_INTERRUPT
-            }
+            GUARD_INTERRUPT
 
             return;
          }
@@ -1071,14 +1029,7 @@ void burst_read4(int *list, unsigned ea)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
-
+         GUARD_INTERRUPT
          return;
       }
       #ifdef BANK_EDGE_GUARD
@@ -1270,7 +1221,7 @@ void operand_write(int v, unsigned ea, int designator)
    relocation_base = base[index];
 
    #elif defined(WPROTECT)
-
+   #error YOU ARE NEVER HERE
    if (index & 0x38)
    {
    }
@@ -1316,7 +1267,7 @@ void operand_write(int v, unsigned ea, int designator)
    relocation_base = base[index];
 
    #else
-
+   #error NEVER
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -1339,14 +1290,7 @@ void operand_write(int v, unsigned ea, int designator)
                don't write to nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_IIX(4)
-            }
-
+            GUARD_IIX(4)
             return;
          }
 
@@ -1366,14 +1310,7 @@ void operand_write(int v, unsigned ea, int designator)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_IIX(5)
-         }
-
+         GUARD_IIX(5)
          return;
       }
    }
@@ -1397,6 +1334,18 @@ void operand_write(int v, unsigned ea, int designator)
    #endif
 
    relocation_base &= 0x003FFFFF;
+
+   if (relocation_base < base[124])
+   {
+      /******************************************************
+         no writes inside the fixed system image
+         defined by the RAM boundary port
+      ******************************************************/
+
+      GUARD_AUTHORITY
+      return;
+   }
+
    pagep = memory.p4k + relocation_base;
    mwrite(pagep->w + offset, designator, v);
 }
@@ -1549,7 +1498,7 @@ void burst_write2(int *list, unsigned ea)
    relocation_base = base[index];
 
    #else
-
+   #error NEVER NEVER NEVER
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -1594,14 +1543,7 @@ void burst_write2(int *list, unsigned ea)
                don't write to nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_IIX(11)
-            }
-
+            GUARD_IIX(11)
             return;
          }
 
@@ -1622,14 +1564,7 @@ void burst_write2(int *list, unsigned ea)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_IIX(12)
-         }
-
+         GUARD_IIX(12)
          return;
       }
       
@@ -1664,6 +1599,18 @@ void burst_write2(int *list, unsigned ea)
 //   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
    relocation_base &= 0x003FFFFF;
+
+   if (relocation_base < base[124])
+   {
+      /******************************************************
+         no writes inside the fixed system image
+         defined by the RAM boundary port
+      ******************************************************/
+
+      GUARD_AUTHORITY
+      return;
+   }
+
    pagep = memory.p4k + relocation_base;
    w24p = pagep->i + offset;
    ORDER32(*w24p, v);
@@ -1770,7 +1717,7 @@ void burst_write4(int *list, unsigned ea)
    relocation_base = base[index];
 
    #elif defined(WPROTECT)
-
+   #error NOT EVER
    if (index & 0x38)
    {
    }
@@ -1816,7 +1763,7 @@ void burst_write4(int *list, unsigned ea)
    relocation_base = base[index];
 
    #else
-
+   #error AND AGAIN NO
    relocation_base = base[index];
 
    if ((index) && (index < 8))
@@ -1860,14 +1807,7 @@ void burst_write4(int *list, unsigned ea)
                don't write to nowhere whoever you are
             *********************************************/
 
-            if (psr & 0x00800000)
-            {
-            }
-            else
-            {
-               GUARD_INTERRUPT
-            }
-
+            GUARD_INTERRUPT
             return;
          }
 
@@ -1890,14 +1830,7 @@ void burst_write4(int *list, unsigned ea)
             in 4096-word blocks
          ********************************************/
          
-         if (psr & 0x00800000)
-         {
-         }
-         else
-         {
-            GUARD_INTERRUPT
-         }
-
+         GUARD_INTERRUPT
          return;
       }
 
@@ -1930,6 +1863,18 @@ void burst_write4(int *list, unsigned ea)
 //   absolute = (unsigned long) ((relocation_base & 0x003FFFFF) << 12) | offset;
 
    relocation_base &= 0x003FFFFF;
+
+   if (relocation_base < base[124])
+   {
+      /******************************************************
+         no writes inside the fixed system image
+         defined by the RAM boundary port
+      ******************************************************/
+
+      GUARD_AUTHORITY
+      return;
+   }
+
    pagep = memory.p4k + relocation_base;
    w24p = pagep->i + offset;
    ORDER32(*w24p, v);

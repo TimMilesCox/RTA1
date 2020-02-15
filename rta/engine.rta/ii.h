@@ -46,6 +46,8 @@
 #define	II_XPO	79
 #define	XBASE_U	95
 
+#define	RESTART1 1
+
 #undef	T_SLICE
 
 extern void ii(int ea, int latent_parameter);

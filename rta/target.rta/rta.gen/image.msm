@@ -97,7 +97,12 @@ RAM_LOAD_PAGES		$equ	OS_HIGH+4095/*12
 $(65:MANAGER_TABLE)
 
 $(0:0:0)
-	j		engage
+	j		engage		. normal start
+	j		restart		. ISR in error restart single step
+
+	$do		63-$,	ir	0
+
+	j		anomaly
 
 $(0:64)
 engage	lx, xi		256-4
@@ -113,6 +118,19 @@ engage	lx, xi		256-4
 
 image_in_rom
 	go		(TRANSFER_PAGE/*6)
+
+anomaly	lk		-1,,xi
+	la		7, sp
+	mtane		(tag_ii_user_refp) . bad param to ISR?
+	ir		0		. go back and retire the process
+
+.	call		(xrelay_reset)
+.	la		2,,xi		. fall thru and restart the system
+.	outA		INDICATION$
+.	j		engage
+
+restart	call		(xrelay_reset)
+	j		engage
 
 load_image
 	.	if an image is to be loaded starting at
@@ -201,6 +219,25 @@ FILE$HANDLE*	$vector		file_handle_ii
 		j		i_timer		. TIMER$* incrementer overflow
 
 freetotal_ii				. count up of all free memory banks
+
+STACKED_ITEST	$equ	0		. keep this at zero if you want to run
+					. it tests what happens if an ISR faults
+	$if	STACKED_ITEST		. ....................................
+	$if	STACKED_ITEST=1
+	la	*(31*/18)
+	$else
+	  $if	STACKED_ITEST=2
+	  dl	(1, 100d)
+	  $elseif STACKED_ITEST=3
+	  dl	(00FFFF, 100d)
+	  $else
+	  dl	(03FFFFF, 100d)
+	  $endif
+	ds	2, sp
+	ir	0
+	$endif
+	$endif				. ....................................
+
 	lcal		available_banks
 	dsr		24		. it may be larger than 24 bits
 	dsl		12		. when expressed in words
@@ -285,7 +322,11 @@ spawn_ii
 
 
 
-start	lcal		measure
+start	la		APPLICATION_L,,xi
+	outA		application$l	. lower limit application code calls
+					. to avoid accidental jumps into interrupt code
+					. using application registers
+	lcal		measure
 	lcal		stem_link
 
 			. some manager tasks will
@@ -298,6 +339,15 @@ start	lcal		measure
 	outA		66		. is the kernel vector bank
 					. kernel routines which need
 					. to find kernel data
+
+	on		see$2
+	ql		(0q)
+	lr		256/4-1,,xi
+	ly		usockb(1),,xi
+
+unbind	qs		0, y		. remove old assignments
+	ay		4,,xi		. of port descriptors
+	jdr		unbind
 
 	lr		sp_x
 	lk, xi		128
@@ -726,6 +776,8 @@ tag_ii	la	a			. optional thread name
 
 tag_iiw	jxge	tag_iiz
 	la	0, y
+
+tag_ii_user_refp
 	sa	0, x
 	ax	1,,xi
 	ay	1,,xi

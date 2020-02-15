@@ -7,35 +7,34 @@ fspath_walk	$tree
 
 	$head_far	 params(inputp,		int)			;
 									;
-			scalars(device,		6			;
-				directory,	2			;
+			scalars(directory,	2			;
 				extract,	24			)
 
 	lb	inputp			. initialise the input stream
 	call	(rstream_starta)
+					. LAST_BYTE_READ = ' '
 
-	lc	component	device,,i	'/',,xi
+	lc	component	extract,,i	'/',,xi
 
+					. skips space then reads up  to '/'
+					. r = length of anything before '/'
 
-	dsr	24
-	tnz	r			. anything in front of root?	j	root
-
-	j	root
+	dsr	48			. initial status no hit
 	
 
-root	lcal	test_forward
-	j	no_next
+root	lcal	test_forward		. did a branch get read?
+	j	no_next			. no, a leaf
 
 	lc	component	extract,,i	'/',,xi
 
 	ly	extract,,i
-	dl	directory
+	dl	directory		. blank scalar initially zero
 	call	(fs_find)
 	jza	no_next
 	ds	directory
 
-next	lcal	test_forward
-	j	no_next
+next	lcal	test_forward		. a branch has just been read?
+	j	no_next			. no, a leaf
 
 	lc	component	extract,,i	'/',,xi
 
@@ -48,7 +47,10 @@ next	lcal	test_forward
 
 	j	next
 
-no_next	$ret	0
+no_next	qpop	8			. return four words of leaf name
+	push	24+2-4, sp, i		. if you change scalars()
+	pop	sp			. don't forget to change this
+	fret	0
 
 test_forward
 	dpush	a
@@ -75,9 +77,6 @@ no_file
 	$ret	0
 
 		$root
-
-
-
 
 
 component	$tree

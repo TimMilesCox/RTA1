@@ -1,22 +1,13 @@
 $(3)
 request         $res    180/3
 
-location        $res    60/3
-name            $res    60/3
-directory       $res    2
-file            $res    2
-
-save_sp         0
-window_bias     0
-
+new_process	$res	1
+loadname	0p		. 4 + trailing zero word
+				. in case load file name is 12+ symbols
 transfer_gate   0L
 storage_size    0
                 0
 launch_profile	0q
-
-accessw	filep
-sample	$res	4
-
 
 $(0)
 
@@ -31,6 +22,9 @@ load_request
 	c	(fspath)	request+2,,xi
 	jza	trialu
 
+	qpush	8
+	qpop	loadname
+
 	c	(iframe_load)	a,,long	launch_profile,,xi
 	jna	trialy
 
@@ -41,6 +35,9 @@ load_request
 	la	(0800000++transfer_gate:s)
 	ii	SPAWN$
 	jza	nonstarter
+	sa	new_process
+	lb	loadname,,xi
+	ii	TAG$
 	sabr	32			. look in new process TCB
 	la	*(32*/12++ABT-01000+2)	. read his vector list pointer
 	sabr	32
@@ -50,6 +47,7 @@ load_request
 	la	(0C00001s)
 	ii	XBASE$32
 
+	printf	$3("%x %s":10:0),,xi	new_process	loadname,,xi
 	ii	YIELD$
 	$else
 	call	(0800000++transfer_gate:s)
@@ -64,5 +62,6 @@ trialy	printf	$3("load error %d":10:0),,xi a
 	j	trialz
 
 nonstarter printf $3("process unassigned":10:0),,xi
-trialz	fret	0
+trialz	ii	YIELD$			. let the print proceed before EXIT$
+	fret	0
 

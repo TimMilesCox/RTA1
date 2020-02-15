@@ -1,0 +1,83 @@
+
+write_straddle12b?
+	test	cl, 1
+	jnz	write4wordtest12b
+	cmp	esi, 0FFFH
+	jb	writeout
+	jmp	split_write2w
+	
+write4wordtest12b
+	cmp	esi, 0FFCh
+	ja	split_write4w
+
+writeout:
+	ret
+
+
+split_write2w:
+	add	esp, 4		; delete 1st return address
+	mov	eax, edi	; recover EA
+	call	write1
+				; ---- page boundary----
+	call	write1		; resolve EA again and write
+	ret			; return to caller of burst_write2
+
+write_straddle18b?
+	test	cl, 1
+	jnz	write4word_test18b?
+	cmp	esi, 0003FFFFh
+	jb	writeout
+	jmp	split_write2w
+
+write4word_test18b?:
+	cmp	esi, 0003FFFCh
+	jna	writeout
+
+split_write4w:
+	add	esp, 4		; delete 1st return address
+	mov	eax, edi	; recover EA
+
+	test	esi, 2
+	jz	write3_then1
+	test	esi, 1
+	jz	write2_then2
+
+	call	write1		; this is read1_then3
+				; ---- page boundary----
+	call	write2		; resolve EA again and write
+	call	write1
+	ret
+
+write2_then2:
+	call	write2
+				; ---- page boundary----
+	call	write2
+	ret
+
+write3_then1:
+	call	write1
+	call	write2
+				; ---- page boundary----
+	call	write1
+	ret
+
+write1:	xor	cl, cl		; present 1 word
+	push	ebx		; because it's used for data as well
+	push	eax		; because bus_write chews it
+	mov	ebx, dword ptr [ebp+ebx*4]
+	call	bus_write
+	pop	eax		; recover EA
+	pop	ebx		; recover source register index
+	inc	eax		; increment for next call
+	inc	ebx
+	ret
+
+write2:	mov	cl, 6		; present 2 words
+	push	eax		; save EA
+	push	ebx
+	call	bus_write
+	pop	ebx
+	pop	eax
+	add	ebx, 2
+	add	eax, 2
+	ret

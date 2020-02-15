@@ -58,6 +58,7 @@
 #include "../engine.rta/emulate.h"
 #include "../rta.run/settings.h"
 #include "../include.rta/address.h"
+#include "../include.rta/argue.h"
 #include "sifr_mm.h"
 #include "ifconfig.h"
 
@@ -74,6 +75,7 @@ extern device		 devices[];
 void netbank()
 {
    mm_netbuffer		*dpointer;
+   int			 scope; 
 
    #ifdef SIGALERT
    int		*wrpid;
@@ -85,7 +87,7 @@ void netbank()
 
    if (mhandle == NULL)
    {
-      printf("device array 1 unavailable\n"
+      printf("device array 2 unavailable\n"
              "enter '.' to stop the emulator\n");
       printf("run portal first\n");
       printf("code %d\n", GetLastError());
@@ -128,6 +130,24 @@ void netbank()
       exit(0);
    }
 
+   if (uflag['R'-'A'])
+   {
+      scope = DEVICE_PAGES * ((base[128 + 2] & 0x003FFFFF) + 1);
+
+      printf("device 2 network interface relay added @ %p:%x\n", dpointer, scope); 
+      dpointer += scope;
+      scope >>= 1;
+
+      while (scope--)
+      {
+         dpointer--;
+         dpointer->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+         dpointer->preamble.flag = FRAME;
+      }
+
+      return;
+   }
+
    if ((dpointer->preamble.flag & FRAME)
    &&  (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
    {
@@ -154,20 +174,36 @@ void assign_interface_relay(int device_id, char *text)
    int                   _x,
                          _y,
                          bytes,
+                         blocks,
                          block;
+
+   int			 request_size = 0,
+			 request_flag = 0;
    
-   device16             *_p;
+   bank16               *_p;
    device               *_q = devices + device_id;
    struct shmid_ds       info;
 
    mm_netbuffer		*dpointer;
    
-   sscanf(text, "%x", &rkey);
-   _x = shmget(rkey, 0, 0);
+   sscanf(text + 1, "%x", &rkey);
+
+   if (rkey < 0x61000000)
+   {
+      /**************************************************
+	this is for testing bus operations
+	without doing writies in an active network buffer
+      **************************************************/
+
+      request_size = DEVICE_PAGE * DEVICE_PAGES * (rkey & 65535);
+      request_flag = IPC_CREAT;
+   }
+
+   _x = shmget(rkey, request_size, request_flag);
    
    if (_x < 0)
    {  
-      printf("net device %d space not available E %d\n", device_id, errno);
+      printf("net device %d %x space not available E %d\n", device_id, rkey, errno);
       return;
    }
    
@@ -194,6 +230,7 @@ void assign_interface_relay(int device_id, char *text)
    }
 
    dpointer = (mm_netbuffer *) _p;
+   devices[device_id].dev16 = _p;
    bytes = info.shm_segsz;
 
    /**************************************************************
@@ -203,7 +240,8 @@ void assign_interface_relay(int device_id, char *text)
         and maximum size 65536 can me represented
    **************************************************************/
 
-   block = (bytes >> 19) - 1;
+   blocks = bytes >> 19;
+   block  = blocks - 1;
 
    if ((block < 0) || (block > 65535))
    {
@@ -211,8 +249,16 @@ void assign_interface_relay(int device_id, char *text)
       return;
    }
    
-   if ((dpointer->preamble.flag & FRAME)
-   &&  (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
+   if (rkey < 0x61000000)
+   {
+      base[128 + device_id] = DATA16_FLAG | block ;
+      dpointer += blocks * (DEVICE_PAGES / 2);
+      dpointer->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
+      dpointer->preamble.flag = FRAME;
+      printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);
+   }
+   else if ((dpointer->preamble.flag & FRAME)
+   &&       (dpointer->preamble.protocol == CONFIGURATION_MICROPROTOCOL))
    {
       base[128 + device_id] = DATA16_FLAG | block ; 
       printf("device %d network interface relay key %X added @ %p\n", device_id, rkey, _p);

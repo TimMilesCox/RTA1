@@ -176,8 +176,10 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 					10	for an instruction frame of more than one page
 
 						_________________________________________
-				iframe name	|00|		Start Page Index	|
-						|10|____________________________________|
+				iframe name	| 00 |		Start Page Index	|
+						| 10 |__________________________________|
+						     |21			       0
+
 
 
 	<a	style="color:#0000FF">
@@ -187,11 +189,10 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 				Start Page Index in a vector is 16 bits in size. Six bits are a vector offset
 
 
-						    21				 5    0
-						________________________________________
-				a vector	|00|		Start Page Index|offset|
-						|__|____________________________|______|
-
+						_________________________________________
+				vector		| 00 |	   Start Page Index    | offset	|
+						|____|_________________________|________|
+						     |21		      6|5      0
 
 	<a	style="color:#0000FF">
 	gate</a>			a gate is the 48-bit descriptor of an entry point at any offset
@@ -208,11 +209,10 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 
 
 
-						     42				    24    21				       0
 						_________________________________________________________________________________
-				a gate		|pppppp|			offset|00|		Start Page Index	|
-						|______|______________________________|10|______________________________________|				
-
+				gate		| pppppp |		offset		| 00 |		Start Page Index	|
+						|________|______________________________| 10 |__________________________________|
+						       42|			      24|    |21			       0
 
 </pre>
 
@@ -577,7 +577,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 	Instructions are only obtained from window B0
-	and B0 switches between instruction blocks
+	and B0 switches between instruction frames
 
 	Operands may be obtained from the registers,
 	from part of the actual instruction block in window B0,
@@ -929,11 +929,13 @@ and to restart the incrementer by writing Port 96
 <h4>2.9.4: I/O Port Assignments</h4>
 <pre	style="font-size:12pt">
 
-	0		instruction frame start page
-	1:63		data memory relocation windows
-	64		instruction frame highest page
-	65		thread control block relocation
-	66:71		kernel data relocation windows
+	0		actual instruction frame start page		see <a href="#go">go</a> <a href="#call">call</a> <a href="#fret">fret</a> <a href="#ii">ii</a> <a href="#ir">ir</a> <a href="#sabr">sabr</a>
+	1		application private data page pointer
+	2:63		application data memory window pointers
+	64		actual instruction frame highest page		see <a href="#go">go</a> <a href="#call">call</a> <a href="#fret">fret</a> <a href="#ii">ii</a> <a href="#ir">ir</a> <a href="#sabr">sabr</a>
+	65		thread control block pointer
+	66:71		kernel data window pointers
+	72		<a name="thresho"/>application lower threshold page pointer	see <a href="#go">go</a> <a href="#call">call</a> <a href="#fret">fret</a> <a href="#ii">ii</a> <a href="#ir">ir</a> <a href="#sabr">sabr</a>
 	96		high-frequency timer incrementer restart write
 	97		dayclock update advertisement multicast
 	98		preemptive thread switch unicast
@@ -4349,22 +4351,45 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|	the absolute pointer part of the storage	|
 				|	block identified in register a is written 	|
-				|	to relocation register I/O Port[EA]		|
+				|	to data window pointer I/O Port[EA]		|
 				|							|
 				|	the storage block symbolic identifier is copied	|
-				|	from register a to memory window 65 (thread
+				|	from register a to memory window 65 (thread	|
 				|	control block) offset 64 + EA			|
 				|							|
 				|	value of EA may be 2..63			|
 				|							|
-				|	symbolic identifier and absolute pointer of	|
-				|	storage are identical unless the symbolic	|
-				|	identifier is a translatable value		|
+				|	symbolic identifier and absolute storage pointer|
+				|	are identical. There are no translated pointer	|
+				|	values in the scope of sabr instruction		|
 				|							|
-				|	translating storage block identifiers		|
-				|	are not currently implemented			|
+				|	sabr is an instruction for application use	|
+				|	but only interrupt code may place a block	|
+				|	of a filestore or network relay device array	|
+				|	in a data address space window			|
 				|							|
-				|	sabr an instruction for application use		|
+				|	applications may place executable memory	|
+				|	and device arrays with the same bus behaviour as|
+				|	executable space in data address space windows	|
+				|							|
+				|	neither applications nor interrupt code may base|
+				|	executable pages below the <a href="#thresho">application threshold</a>|
+				|							|
+				|	sabr operations which are not permitted	raise	|
+				|	interrupt GUARD$ 				|
+				|							|
+				|	if the target device array does not have the	|
+				|	requested page then sabr instruction assigns	|
+				|	the pointer value C00001 to the address window	|
+				|							|
+				|	pointer value C00001 raises interrupt GUARD$	|
+				|	on memory read or write	in the assigned window	|
+				|							|
+				|	C00001 is the unique member of a range of	|
+				|	functional storage base pointer values		|
+				|							|
+				|	the unused address windows of threads		|	 
+				|	have the pointer value C00001			|
 				|_______________________________________________________|
 
 
@@ -4436,7 +4461,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|																|
 	|			window B1 is a frame in a private stack. B1 is out side the scope of sabr and reload instructions	|
 	|																|
-	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern windows B2..B63		|
+	|			<a href="#sabr">sabr</a> and <a href="#reload">reload</a> instructions concern windows B2..B63							|
 	|																|
 	|			applications execute sabr instruction to base memory blocks in B2..B63					|
 	|			sabr also copies the relocation values through to the TCB						|
@@ -6175,7 +6200,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				_________________________________________________________
 				|							|
 				|	four arithmetic registers			|
-				|	a b mantissa2 mantissa3	are stored to EA			|
+				|	a b mantissa2 mantissa3	are stored to EA	|
 				|							|
 				|	Register a is stored at register / storage EA	|
 				|	Register b is stored at register / storage EA+1	|
@@ -6244,8 +6269,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 				_________________________________________________________
 				|							|
-				|	four words are storedfrom the internal stack top|
-				|							|
+				|	four words are stored				|
+				|	from the internal stack top			|
 				|	store order is as stack order 	0, sp -> EA	|
 				|					1, sp -> EA+1	|
 				|					2, sp -> EA+2	|
@@ -7535,11 +7560,6 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	_________________________________________________________
 	|							|
 	|	Jump to Iframe					|
-	|							|
-        |       Program Counter minus B0 * 4096                 |
-        |       is pushed to internal stack                     |
-        |                                                       |
-        |       B0 is pushed to Internal Stack                  |
         |                                                       |       indirect operand pointing to gate constant or variable
         |       operand is storage word or register at EA       |
         |                                                       |        23                                                    0

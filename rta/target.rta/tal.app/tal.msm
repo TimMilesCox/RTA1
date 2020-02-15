@@ -1,0 +1,349 @@
+
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	language/iframe.def
+	$include	stream/stream.def
+	$include	table/lookup.def
+	$path
+	$include	../image.app/imports.def
+	$list
+
+__BASE	$equ	TAL_LOADP
+
+	$set_option	"z"
+
+$(3:03000/$3)
+what	$res	4
+how	$res	72//3
+left	$res	72//3
+right	$res	72//3
+capture	$res	36//3
+
+gate	200, 03FFFFF:d
+return	03FFFFF, 200d
+fields	0
+offset	+	right
+
+$(0:0/$0)
+tal	$tree
+	$application	tal_vector:start
+
+
+start	$base_x	$zenith(3)-03000  0400
+	c	(seg$load)	0,,xi	(tal_data:d),,long
+
+input	z	what+1
+	z	how+1
+
+	scanf	$3("%s %s %s %s"),,xi	what,,xi how,,xi left,,xi right,,xi
+	sa	fields
+	jna	leave		. stdin disconnected
+
+	aa	-3,,xi
+	jna	input2
+
+	sscanf	left,,xi	$3("%x":0),,xi	offset,,xi
+
+
+input2
+	la	what
+	sar	$word-$byte
+	lk	255,,xi
+	mtane	k
+	j	leave		. ctrl-D 
+	mtane	('.')
+	j	leave		. leave command
+
+	lookup	what					;
+		inform, format, length, catena,		;
+		hw, tw, time, prang, formax
+
+
+	prompt	inform, format, length, catena, hw, tw, time, prang, formax
+
+	j	input
+
+leave	fret	0
+
+inform	sscanf	left,,xi how,,xi capture,,xi			. input -> [specification] -> capture
+
+	lc	display		capture,,xi	capture+8,,xi
+	j	input
+
+
+format	printf	how,,xi	capture,,float192			. maximum size display object
+	printf	$3("":10:0),,xi
+	j	input
+
+formax	printf	$3("%lf":10),,xi capture,,floating_packed	. promoted by fpx instruction
+        j	input
+
+catena	c	(strcat)	how,,xi	left,,xi
+	lc	display		how,,xi	how+72//3,,xi		. falls thru and reports new length
+
+length	c	(strlen)	how,,xi
+	printf	$3("%d":10:0),,xi	a
+	j	input
+
+swivel*	$proc
+	la	swivel(1, 1),,swivel(1, 3)+?-1
+	sa	0, x, 4-?				. show inserted value
+	sa	?, x					. show register value
+	z	4+?*2-2, x
+	z	4+?*2-2+1, x
+	n	4+?*2-2+1, x
+	sa	4+?*2-2, x, swivel(1, 3)+?-1		. show insert to zero
+	sa	4+?*2-2+1, x, swivel(1, 3)+?-1		. show insert to FFFFFF
+	$end
+
+hw	sscanf	how,,xi		$3("%qx":0),,xi	capture,,xi
+
+	on	half$w
+	lx	offset
+
+?	$do	2,	swivel	capture+3,,h1
+	
+	off	half$w
+
+	lc	display		x	3,x,i
+	lx	offset
+	lc	display		4,x,i	4+2*2,x,i
+	j	input
+
+tw	sscanf	how,,xi		$3("%qx":0),,xi	capture,,xi
+
+	lx	offset
+?	$do	3,	swivel	capture+3,,t1
+
+	lc	display		x	4,x,i
+	lx	offset
+	lc	display		4,x,i	4+2*3,x,i
+	j	input
+
+time	c	(date_timef1)	0,,xi	how,,xi
+	c	(date_timef2)	0,,xi	left,,xi
+	c	(date_timef3)	0,,xi	right,,xi
+	printf	$3("%s":10:"%s":10:"%s":10:0),,xi	how,,xi	left,,xi right,,xi
+	call	(dayclock_ydsm)
+	printf	$3("%d.%d:%d.%d":10:0),,xi	8	9	10	11
+	call	(dayclock_ydsm_gmt)
+	printf	$3("%d.%d:%d.%d":10:0),,xi	8	9	10	11
+	j	input
+
+prang	sscanf	left,,xi	$3("%x:%x":0),,xi	return,,xi return+1,,xi
+	dl	return
+	drr	24
+	ds	gate
+
+	lookup	how					;
+		ref, j, go, call, fret, ir, sir, barg,	;
+		bats, bang, base, load, store, push, pop, lcal, ;
+		lret, lretched, popA					;
+		dothat
+
+	prompt	prang					;
+		ref, j, go, call, fret, ir, sir, barg,	;
+		bats, bang, base, load, store, push, pop, lcal,	;
+		lret, lretched, popA
+
+	j	input
+
+dothat	ex	doso, x
+	j	input
+
+doso	la	*(31*/18)
+	j	*(31*/18)
+	go	(1*/23++gate:s)
+	call	(1*/23++gate:s)
+	lcal	refret
+	lcal	refire
+	z	128+32
+	lcal	barg
+	lcal	bats
+	lcal	bang
+	lcal	base
+	lcal	load
+	lcal	store
+	lcal	upush
+	lcal	upop
+	lcal	ulcal
+	lcal	ulret
+	lcal	ulretch
+	lcal	upopa
+
+refret
+		dpush	return
+		fret	0
+	lret	0
+
+refire
+		dpush	return
+		dpush	(0:d)
+		ir	0
+	lret	0
+
+barg	dl	(0, 31*/18d)
+	ii	TAG$
+	lret	0
+
+bats	la	fields
+	aa	-3,,xi
+	jna	bats_device1
+
+	tnz	offset
+	lret	0
+
+	lx	offset
+	ts	0, x
+	lret	0
+	lret	0
+
+bats_device1
+	la	(0400001)
+	ii	XBASE$36
+	ts	*(36*/18++03FFFF:s)
+	lret	0
+
+bang		dl	gate
+		ab	-32-12,,xi
+		jc	no_bang
+		ab	12,,xi
+		jnc	no_bang
+		ex	please_base, b
+no_bang	lret	0
+
+please_base
+?	$do	12,	ii	XBASE$32+?-1
+
+base		dl	gate
+		sabr	0, b
+	lret	0
+
+load		la	return
+		lx	return+1
+		lk	7,,xi
+
+	mta	(8)
+		j	r4?
+		ql	0, x
+		qs	capture
+		ql	4, x
+		qs	capture+4
+	lret	0
+
+r4?	mta	(4)
+		j	r2?
+		ql	0, x
+		qs	capture
+	lret	0
+
+r2?	mta	(2)
+		j	r1
+		dl	0, x
+		ds	capture
+	lret	0
+
+r1		la	0, x
+		sa	capture
+	lret	0
+		
+
+store		la	return
+		lx	return+1
+		lk	7,,xi
+
+	mta	(8)
+		j	w4?
+
+		ql	capture
+		qs	0, x
+		ql	capture+4
+		qs	4, x
+	lret	0
+
+
+w4?	mta	(4)
+		j	w2?
+
+		ql	capture
+		qs	0, x
+	lret	0
+
+w2?	mta	(2)
+		j	w1
+
+		dl	capture
+		ds	0, x
+	lret	0
+
+w1		la	capture
+		sa	0, x
+	lret	0
+
+upush	lr	return
+	lx	capture,,xi
+	tz	return+1
+	lx	return+1
+
+upushmo	qpush	0, x
+	jdr	upushmo
+
+	lr	return+1
+	j	upopsum
+
+	lret	0
+
+upop	lr	return
+upopsum	lx	left,,xi
+
+upopmor	qpop	0, x
+	ax	4,,xi
+	jdr	upopmor
+	qpush	capture
+	lret	0
+
+ulcal	pop	24
+	lx	24,,xi
+	sx	sp
+	lcal	$+1
+	lret	0
+
+ulret	push	(60*/12)
+	lret	0
+
+ulretch	la	129,,xi
+	sa	sp
+	lret	0
+
+upopa	lx	return
+	push	100,,xi
+	popA	0, x
+	lret	0
+		
+display	$head_near	 params(where,		int	;
+				how_much,	int	)
+
+more	lr	how_much
+	lx	where
+	inc	where
+	jxge	curtail
+
+	printf	$3(" %x":0),,xi	0, x
+	ax	1,,xi
+	j	more
+
+curtail	c	(write)	stdout	$3("":10),,xi	1,,xi
+	c	(fsync)	stdout
+	$ret
+
+	$do	$<256,$(0:256)
+. $(4:$(0))
+	$root
+
+FS_BASE*        $set    $zenith+63**-64
+FS_SAFE_LIMIT*  $set    _NEXTP*/12
+

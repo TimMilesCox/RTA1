@@ -1,0 +1,94 @@
+read_straddle_12b?
+	test	cl, 1
+	jnz	read4word_test12b
+	cmp	esi, 0FFFh
+	jb	readout
+	jmp	split_read2w
+
+read4word_test12b
+	cmp	esi, 0FFCh
+	ja	split_read4w
+
+readout:
+	ret					; burst read in order
+
+split_read2w:
+	mov	dword ptr [esp], edi		; delete 1st return address + save EA
+	mov	eax, edi			; recover EA
+	xor	cl, cl				; request 1 word
+	call	_bus_read			;
+	xchg	eax, dword ptr [esp]		; save 1st word read + load updated EA
+	add	eax, 1				; advance EA onto next page
+	xor	cl, cl				; request 1 word
+	call	_bus_read			; read new page or block
+	mov	ebx, eax
+	pop	eax				; recover 1st read word
+	ret					; return to caller of operand_read
+	
+read_straddle_18b?
+	test	cl, 1
+	jnz	read4word_test18b?
+	cmp	esi, 0003FFFFh
+	jb	readout
+	jmp	split_read2w
+
+read4word_test18b?
+	cmp	esi, 0003FFFCh
+	jna	readout
+
+split_read4w:
+	add	esp, 4		 		; delete 1st return address + save EA
+	mov	eax, edi			; recover EA
+	test	esi, 2
+	jz	read3_then1
+	test	esi, 1
+	jz	read2_then2
+
+	call	read1				; this is read1_then3
+						; ---- page boundary----
+	call	read2				; this resolves updated EA to new page
+	call	read1				; so does this but we do it
+						; because EA resolution decides
+						; emulated bus behaviour of the new page
+	ret					; return to caller of operand_read
+
+
+read2_then2:
+	call	read2
+						; ---- page boundary----
+	call	read2
+	ret					; return to caller of operand_read
+
+read3_then1:
+	call	read1
+	call	read2
+						; ---- page boundary----
+	call	read1
+	ret					; return to caller of operand_read
+
+
+read1:	xor	cl, cl
+	push	eax
+	call	_bus_read			; replaces EA in eax
+	mov	dword ptr [ebp+ebx*4], eax	; with the result word
+	pop	eax				; return updated EA, destination index
+	inc	eax
+	inc	ebx
+	ret
+
+read2:	push	eax				; EA
+	push	ebx				; destination index on stack top
+	mov	cl, 6				; ask bus for 2 words
+	call	_bus_read			; replaces eax and ebx
+	xchg	ebx, dword ptr [esp]		; get destination index up again
+	mov	dword ptr [ebp+ebx*4], eax	; write 1st result word
+	pop	eax				; recover 2nd result word
+	mov	dword ptr [ebp+ebx*4+1*4], eax	; write 2nd result word
+	pop	eax				; EA
+	add	eax, 2
+	add	ebx, 2
+	ret	
+
+write_straddle_12b?
+write_straddle_18b?
+

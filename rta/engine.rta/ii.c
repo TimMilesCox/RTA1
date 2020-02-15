@@ -41,7 +41,6 @@
 **********************************************************************/
 
 
-
 #include "emulate.h"
 #include "ii.h"
 
@@ -54,6 +53,7 @@ extern int		 iselect,
 
 extern page		*b0p;
 extern word		*apc;
+extern word		*apcz;
 extern system_memory	 memory;
 
 extern int		 indication;
@@ -63,27 +63,46 @@ extern char		 uflag[];
 void ii(int ea, int latent_parameter)
 {
    int			*temp_sp;
+   int			 v;
 
+   #if 1
    if (ea == XBASE_U)
    {
       /***************************************************
-         1st: don't do this more than once
-	      in one emulated application instruction
+         [1st: don't do this more than once
+	      in one emulated application instruction]
+
+              1st point should now be OK
+              cascaded ISRs are possible
+              RESTART ISR should not memory fault
 
          2nd: advise the current instruction
               in case it's better not to complete
       ***************************************************/
 
+      #if 0
       if (contingency < 0) return;
       contingency = -1;
+      #endif
 
-      if (uflag['Z'-'A'] == 0) indication |= LOCKSTEP;
+      if (uflag['Z'-'A']) indication |= LOCKSTEP;
    }
+   #endif
 
    iselect = 128;
-   sp -= 4;
+   v = x_sp;
+   v -= 4;
 
-   temp_sp = &_register[sp];
+   if ((v < GUARD_RANGE_IL) || (v > GUARD_RANGE_IU))
+   {
+      x_sp = GUARD_RANGE_IU;
+      ii(RESTART1,v);
+      return;
+   }
+
+   x_sp = v;
+
+   temp_sp = _register + v;
 
    temp_sp[3] = apc - b0p->w;
    temp_sp[2] = b0_name;
@@ -100,14 +119,16 @@ void ii(int ea, int latent_parameter)
 	save the interrupted application packet
       ***************************************************/
 
-      fp = sp;
+      x_fp = x_sp;
    }
 
    psr |= 0x00800000;
 
    b0_name = (ea >> 6) & 0x0000FFFF;
    base[0] = b0_name;
+   base[64] = b0_name;
    b0p     = &memory.p4k[b0_name];
 
    apc = &b0p->w[ea & 63];
+   apcz = &b0p->w[4095];
 }

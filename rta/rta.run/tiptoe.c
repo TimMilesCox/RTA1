@@ -106,11 +106,17 @@ extern word		 memory_read(int ea);
 extern void		 netbank();
 extern void              assign_interface_relay(int device_id, char *text);
 
-static void              assign_array(int device_id, char *text);
+       void              assign_array(int device_id, char *text);
 static void		 statement();
-extern			 void print_register_row(int index);
+static void             *emulate();
+
+extern                   int print7_registers(int index);
+extern			 int print_register_row(int index);
 extern void		 action(char *request);
 void			 load_fs(int device_id, char *path);
+
+extern int               register_pointer;
+
 
 #ifdef METRIC
 unsigned int             delta,
@@ -129,9 +135,10 @@ static unsigned		 clockr[2];
 
 struct timeval		 xronos;
 
+
 #ifdef ASYNC
 
-static void *async()
+static void interact()
 {
    char			 request[372];
    char			*_p;
@@ -158,21 +165,33 @@ static void *async()
       request[0] = 0;
       _p = fgets(request, 360, stdin);
 
-      if      (_p)
+      if (_p)
       {
          if (*_p == '.')
          {
-            runout = -1;
-            indication &= -1 ^ LOCKSTEP;
-         }
-         else action(_p);
-      }
-      else if (request[0]) action(request);
-      else printf("please key console input again\n");
+            if (*(_p + 1) == '.') break;
+            printf(".. to stop the emulator\n");
 
-      if (flag['v'-'a'])
-      printf("[%x %p %x %x]\n", flag['s'-'a'], _p, runout, indication);
+            if (indication & LOCKSTEP) printf("command>");
+            else                       printf("emulator running\n"
+                                              "key s for single step:");
+
+            fflush(stdout);
+
+            continue;
+         }
+
+         action(_p);
+      }
+      else
+      {
+         printf("stdin terminated\n");
+         break;
+      }
    }
+
+   runout = -1;
+   usleep(2000);
 }
 
 #endif
@@ -197,6 +216,30 @@ static void statement()
       putchar('\n');
       index += 8;
    }
+
+   #if 1
+
+   index = sp;
+   printf("[%6.6x]->", index);
+
+   if (index & 127) index = print7_registers(index);
+
+   if (index & 127)
+   {
+      putchar('\n');
+      index = print_register_row(index);
+   }
+
+   if (index & 127)
+   { 
+      putchar('\n');
+      index = print_register_row(index);
+   }
+
+   putchar('\n');
+   register_pointer = index;
+
+   #else
 
    index = sp;
    printf("[%6.6x]->", index);
@@ -229,6 +272,8 @@ static void statement()
       printf(" %6.6x", _register[index++]);
    }
    putchar('\n');
+
+   #endif
 }
 
 int main(int argc, char *argv[])
@@ -242,12 +287,12 @@ int main(int argc, char *argv[])
 //   struct timeval	 time;
    #endif
 
-   int			 instructions = INTERVAL;
-   int			 imask;
    #endif
 
 
-   int			 _x;
+   int			 _x,
+			 _y;
+
    unsigned char	*_p;
 
    int			 fields,
@@ -255,33 +300,28 @@ int main(int argc, char *argv[])
 
    #ifdef LP_TSLICE_HERE
    /* It's not. It's in engine.rta/rta.c:execute() */
-   int			 icount;
    #endif
 
 //   char			 command[84];
    unsigned char		 text[72];
 
    int			 index = 1;
-   int			 offset;
-   int			 symbol;
-   char			*file;
 
    int			 f, count, image_size = 0;
 
    word			*load_address = memory.p4k[0].w;
    word			 data_word = { 0, 0, 0, 0 } ;
 
-   #ifdef METRIC
-   struct timeval        time2;
-   #endif
-
    #ifdef ASYNC
 
    #ifdef X86_MSW
    #else
 
+   #define MID_PRIORITY 50
+
    pthread_attr_t	 asyncb;
    pthread_t		 asyncid;
+   struct sched_param    asyncp = { MID_PRIORITY } ;
 
    #endif
    #endif
@@ -370,9 +410,30 @@ int main(int argc, char *argv[])
    if (_x < 0) printf("threadcbinit %d e %d\n", _x, errno);
    else
    {
-      _x = pthread_create(&asyncid, &asyncb, &async, NULL);
+      _x = pthread_create(&asyncid, &asyncb, &emulate, NULL);
       if (_x < 0) printf("async thread start %d %d\n", _x, errno);
-      else        printf("async thread ID %p\n", asyncid);
+      else
+      {
+         printf("async thread ID %p\n", asyncid);
+
+         if (uflag['O'-'A'])
+         {
+            /******************************************************************
+
+               keeps the MIPs reading steady when doing many slower instructions
+               which give SCHED_RR more chance of intervening
+
+            ******************************************************************/
+
+            _x = pthread_setschedparam(asyncid, SCHED_FIFO, &asyncp);
+            if (_x < 0) printf("switch FIFO E%d\n", errno);
+
+            _x = pthread_getschedparam(asyncid, &_y, &asyncp);
+
+            if (_x < 0) printf("(E%d)", errno);
+            printf("[PY %d S-P %d]\n", _y, asyncp.sched_priority);
+         }
+      }
    }
 
    #endif
@@ -381,13 +442,25 @@ int main(int argc, char *argv[])
    printf("key %s\n\n", (flag['s'-'a'])
                         ? "g[break:point] to run"
                         : "s to enter single step");
+   interact();
+   return 0;
+}
+
+static void *emulate()
+{
+   #ifdef METRIC
+   struct timeval        time2;
+   #endif
+
+   int			 icount,
+                  	 instructions = INTERVAL;
 
    #ifdef METRIC
    gettimeofday(&time2, NULL);
    delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
    #endif
 
-   if (uflag['Z'-'A'] == 0) start_second(&step_second);
+   if (uflag['Y'-'A'] == 0) start_second(&step_second);
 
    for (;;)
    {
@@ -440,7 +513,7 @@ int main(int argc, char *argv[])
             and written once per 70 years
          *****************************************************/
 
-         if (uflag['Z'-'A'] == 0)
+         if (uflag['Y'-'A'] == 0)
          {
             if ((xronos.tv_sec & 0x80000000) ^ (step_second.low & 0x80000000))
             {
@@ -552,7 +625,6 @@ int main(int argc, char *argv[])
          #endif
       }
    }
-   return 0;
 }
 
 /*************************************************
@@ -659,7 +731,7 @@ void load_fs(int device_id, char *path)
    }
 }
 
-static void assign_array(int device_id, char *text)
+void assign_array(int device_id, char *text)
 {
    int           banks;
    long          words;

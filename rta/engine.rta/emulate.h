@@ -317,6 +317,26 @@ typedef union  { page		*pages;
 #define mantissa2a	_register[iselect | 10]
 #define mantissa3a 	_register[iselect | 11]
 
+#define x_r	_register[128 | R]
+#define x_k     _register[128 | K]
+#define x_x     _register[128 | X]
+#define x_y     _register[128 | Y]
+#define x_a     _register[128 | A]
+#define x_b     _register[128 | B]
+
+#define x_mantissa2	_register[128 | 6]
+#define x_mantissa3	_register[128 | 7]
+
+#define x_p     _register[128 | P]
+#define x_q     _register[128 | Q]
+#define x_fp	_register[128 | FP]
+#define x_sp	_register[128 | SP]
+
+#define x_scalea	  _register[128 | 8]
+#define x_mantissa1a      _register[128 | 9]
+#define x_mantissa2a      _register[128 | 10]
+#define x_mantissa3a      _register[128 | 11]
+
 
 /**********************************************************************
 
@@ -457,25 +477,31 @@ ea &= 0x00FFFFFF;
 	ii(II_TYPE,LATENT_PARAMETER);
 ************************************************/
 
-#define	LP_ADDRESS  14	/* latent parameter for GUARD INTERRRUPT
-                           most cases bad memory address
-                           neither permission nor software trace */ 
+#define	LP_ADDRESS	14		/* latent parameter for GUARD INTERRRUPT
+                           		   in most cases off-limits memory address	*/
+
+#define	LP_AUTHORITY	1		/*	latent parameter permission GUARD interrupt
+						application attempt to
+						   call / return / go into interrupt space
+						   write interrupt registers
+						   base peripheral device array		*/
+
+#define	LP_TSLICE	10		/*	latent parameter timeslice YIELD	*/
 
 #define	YIELD_INTERRUPT	ii(II_YIELD,0);
 #define	GUARD_INTERRUPT	ii(XBASE_U,LP_ADDRESS);
+#define	GUARD_AUTHORITY	ii(XBASE_U,LP_AUTHORITY);
 #define	EXIT_INTERRUPT	ii(II_TXIT,0);
 #define	XPO_INTERRUPT	ii(II_XPO,0);
+#define	RESTART		ii(RESTART1,0);
 
 #define GUARD_IIX(X)	ii(XBASE_U, LP_ADDRESS | (X << 4));
 
-
-#define	LP_TSLICE    10 /* latent parameter timeslice YIELD */
-
-#define	LP_PERMISSION 1 /* latent parameter permission GUARD interrupt
-                           application attempt to base device array */
-
 #define	GUARD_RANGE_SP	24
 #define	GUARD_RANGE_UP	128
+
+#define	GUARD_RANGE_IL	0
+#define	GUARD_RANGE_IU	256
 
 #ifdef	X86
 
@@ -604,6 +630,24 @@ ea &= 0x00FFFFFF;
 #define ORDER32(TO, FROM) TO = FROM & 0x00FFFFFF;
 #define	LOAD24(TO, FROM)  TO = FROM & 0x00FFFFFF;
 #define L24SL(TO, FROM)	  TO = FROM << 8;
+
+/*	big endian: 3rd byte of containing word
+		is  2nd byte of psr containing see$all	*/
+
+#define WINDOW_READ_RULE(TAG, WINDOW)   \
+        TAG = window_rule[WINDOW] ;     \
+        if (TAG & *(((unsigned char *) &psr) + 2)) WINDOW |= 64;
+
+
+#define WINDOW_WRITE_RULE(TAG, WINDOW)                  \
+        TAG = window_rule[WINDOW] ;                     \
+        if (TAG & *(((unsigned char *) &psr) + 2))      \
+        {                                               \
+           WINDOW |= 64;                                \
+           TAG = 128;                                   \
+        }
+
+
 #endif
 
 /********************************************************

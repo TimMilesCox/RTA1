@@ -142,7 +142,6 @@ _D_QUOTIENTU	equ	7*4
 _D_QUOTIENTL	equ	8*4
 
 	call	_operand_read
-;	mov	dword ptr [__register+260*4], eax
 	test	eax, 00800000h
 	jnz	_d_nmagnitude1			; must be stored negative
 	xor	eax, 00FFFFFFh
@@ -151,10 +150,7 @@ _d_nmagnitude1:
 	add	eax, -1				; if it's already negative
 	mov	dword ptr [esp+_D_SIGNS2], 0FFFFFFFFh
 _d_nmagnitude2:
-;	mov	dword ptr [__register+261*4], eax
 	call	qscale
-;	mov	dword ptr [__register+262*4], eax
-;	mov	dword ptr [__register+263*4], ebx
 	cmp	bl, 24
 	jz	_d_allsigns
 	add	dword ptr [esp+_D_BEATS], ebx
@@ -169,15 +165,11 @@ _d_allsigns:
 	mov	dword ptr [esp+_D_DIVISORL], ebx
 	mov	dword ptr [esp+_D_DIVISORU], eax
 
-;	mov	dword ptr [__register+257*4], ebx
-;	mov	dword ptr [__register+256*4], eax
 
 	mov	ecx, 1				; precarry
 	mov	ebx, dword ptr [ebp+B]	; dividend
 	mov	eax, dword ptr [ebp+A]
 
-;	mov	dword ptr [__register+266*4], ebx
-;	mov	dword ptr [__register+265*4], eax
 
 	test	eax, 00800000h
 	jz	_d_pmagnitude			; must be stored positive
@@ -200,11 +192,8 @@ _d_pmagnitude:
 	mov	dword ptr [esp+_D_DIVIDENDL], ebx
 	mov	dword ptr [esp+_D_DIVIDENDU], eax
 
-;	mov	dword ptr [__register+259*4], ebx
-;	mov	dword ptr [__register+258*4], eax
 
 	mov	ecx, dword ptr [esp+_D_BEATS]
-;	mov	dword ptr [__register+264*4], ecx
 
 	add	ecx, -1
 _d_beat:			; iterative part as quick as possible
@@ -559,130 +548,51 @@ _dsa:	mov	cl, al
 	mov	dword ptr [ebp+A], eax
 	ret
 
-_n:	test	eax, 00FFFF00h
-	jz	_n_register
-	call	memory_read
-	and	edi, edi
-	jz	_n_
+_n:	call	memoreg
 	xor	eax, 00FFFFFFh
-	bswap	eax
-	xor	al, al
-	mov	dword ptr [edi+esi*4], eax
-_n_:	ret
-_n_register:
-	mov	ebx, [eax*4+__register]
-	xor	ebx, 00FFFFFFh
-	jmp	_operand_write
+	jmp	memoreg_writeback
 
-_inc:	test	eax, 00FFFF00h
-	jz	_inc_register
-	call	memory_read
-	and	edi, edi
-	jz	_inc_
-	add	eax, 1
-	bswap	eax
-	xor	al, al
-	mov	dword ptr [edi+esi*4], eax
-_inc_:	ret
-_inc_register:
-	mov	ebx, [eax*4+__register]
-	add	ebx, 1
-	and	ebx, 00FFFFFFh
-	jmp	_operand_write
+_inc:	call	memoreg
+	inc	eax
+	jmp	memoreg_writeback
 
-_dec:	test	eax, 00FFFF00h
-	jz	_dec_register
-	call	memory_read
-	and	edi, edi
-	jz	_dec_
-	add	eax, -1
-	bswap	eax
-	xor	al, al
-	mov	dword ptr [edi+esi*4], eax
-_dec_:	ret
-_dec_register:
-	mov	ebx, [eax*4+__register]
-	add	ebx, -1
-	and	ebx, 00FFFFFFh
-	jmp	_operand_write
+_dec:	call	memoreg
+	dec	eax
+	jmp	memoreg_writeback
 
-_popA:	call	stack_read		; value returned in ebx, does not touch eax
-	test	eax, 00FFFF00h
-	jz	_popA_register
-	call	memory_read		; does not touch ebx
-	and	edi, edi
-	jz	_popA_
-	add	eax, ebx
-	rol	eax, 8
-        and     byte ptr [_psr], 254
-	and	al, 1
+_src:	call	memoreg
+	shl	eax, 8
+	mov	al, byte ptr [_psr]
+	ror	eax, 1
+	rol	al, 1
+	mov	byte ptr [_psr], al
+	shr	eax, 8
+	jmp	memoreg_writeback
+
+_slc:	call	memoreg
+	shl	eax, 8
+	mov	al, byte ptr [_psr]
+	ror	al, 1
+	rol	eax, 1
+	mov	byte ptr [_psr], al
+	shr	eax, 8
+	jmp	memoreg_writeback
+
+_popA:	push	eax			; EA
+	call	memoreg			; register or system memory, no peripheral bus
+	call	stack_read1
+	add	eax, dword ptr [ebp+ebx*4]
+	mov	ebp, dword ptr [_register_set]
+	shl	eax, 7
+	rol	eax, 1
+	and	byte ptr [_psr], 254
 	or	byte ptr [_psr], al
 	shr	eax, 8
-	bswap	eax
-	mov	dword ptr [edi+esi*4], eax
-_popA_:	ret
-_popA_register:
-	add	ebx, [eax*4+__register]
-	rol	ebx, 8
-	and	bl, 1			; write carry to PSR
-        and     byte ptr [_psr], 254
-	or	byte ptr [_psr], bl
-	shr	ebx, 8
-	jmp	_operand_write
-
-ring25_r:
-	shl	ebx, 8
-	mov	bl, byte ptr [_psr]
-	ror	ebx, 1
-	shr	bl, 7
-	and	byte ptr [_psr], 254
-	or	byte ptr [_psr], bl
-	shr	ebx, 8
-	ret
-
-ring25_l:
-	shl	ebx, 8
-	mov	bl, byte ptr [_psr]
-	shl	bl, 7
-	rol	ebx, 1
-	and	bl, 1
-	and	byte ptr [_psr], 254
-	or	byte ptr [_psr], bl
-	shr	ebx, 8
-	ret
-
-_src:	test	eax, 00FFFF00h
-	jz	_src_register
-	call	memory_read
-	and	edi, edi
-	jz	_src_
-	mov	ebx, eax
-	call	ring25_r
-	bswap	eax
-	mov	dword ptr [edi+esi*4], ebx
-_src_:	ret
-_src_register:
-	mov	ebx, [eax*4+__register]
-	call	ring25_r
-	jmp	_operand_write
-
-_slc:	test	eax, 00FFFF00h
-	jz	_slc_register
-	call	memory_read
-	and	edi, edi
-	jz	_slc_
-	mov	ebx, eax
-	call	ring25_l
-	bswap	eax
-	mov	dword ptr [edi+esi*4], ebx
-_slc_:	ret
-_slc_register:
-	mov	ebx, [eax*4+__register]
-	call	ring25_l
-	jmp	_operand_write
-
-_da:	mov	dword ptr [__register+282*4], eax
-	call	_burst_read2
+;	mov	ebx, eax
+	pop	ebx			; EA
+	jmp	memoreg_writeback
+	
+_da:	call	_burst_read2
 	jmp	_da_
 
 _dan:	call	_burst_read2
@@ -814,91 +724,91 @@ _dlsc24:				; different when high order word is all signs
 	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
 
-_fpx:	call	_burst_read2
-	mov	ecx, dword ptr [ebp+S_P]	; you can have edi now
-	add	ecx, -4				; start pushing
-	mov	dword ptr [ebp+S_P], ecx
-	shl	ecx, 2
-	mov	edi, __register;		; edi -> emulated registers
-	add	edi, ecx			; edi -> emulated stack top
+_fpx:	call	_burst_read2		; data read in eax ebx
+	push	ebx			; ebx is used in RTA1 stack frame
+	call	stack4			; construct RTA1 stack frame
 
-	mov	ecx, eax
-	shl	ecx, 8				; sxxx xxxx xxxx mmmm mmmm mmmm 0000 0000
-	sar	ecx, 16				; ssss ssss ssss ssss sxxx xxxx xxxx mmmm
-	ror	cx, 8-1				; ssss ssss ssss ssss xxxm mmms xxxx xxxx
-	sar	ecx, 8				; ssss ssss ssss ssss ssss ssss xxxm mmms
+	shl	eax, 4			; move 12 mantissa bits out of eax
+	movsx	ecx, ax			; and extend the normalising bit
 
-	test	cl, 16+1			; normalising bit + 1 sign
-	jpe	_fpx_allsigns			; reputedly parity may be tested on LS octet
-	shr	ecx, 8				; do that after whatever the manual says
-						; and do it separately if you took the jump
+	rol	eax, 4+1		; shelter sign in eax bit 0
+	shl	ax, 12			; better still in eax bit 12
+	sar	eax, 12			; propagate the value at midpoint position
+	ror	eax, 1			; have the sign back
+	shr	eax, 8			; clear eax 31..24
+	xor	eax, 003ffc00h		; reverse the 12 copies of midpoint bit
+					; yon's ra complicated bit done
+	mov	dword ptr [ebp+ebx*4], eax
 
-;	mov	ecx, eax			; should be 1st of 2 operand words
-;	shl	ecx, 8				; make 24 sign bits
-;	sar	ecx, 24
-;	shr	ecx, 8
+	xor	eax, ecx		; is the normalising bit opposite to signs ?
+	test	eax, 00800000h
+	jz	_fpx_allsigns		; no so unnormalised = zero
 
+	pop	eax			; the 2nd operand word, ya remember?
+	shl	eax, 4			; get them 2 halves over the centre
 
+	shr	cx, 4			; zero quartets at high order of 16 bits
+	shr	ax, 4
 
+	xchg	ax, cx			; low-order mantissa bits with unsigns in ecx
+					; high-order mantissa bits with middle part in eax
 
-;	test	eax, 00800800h			; normalised? bit 11 must ^ bit 23
-;	jpe	_fpx_allsigns			; you can only do parity in LS octet !
+	shl	eax, 4			; LLLz | HHHz
+	shr	ax, 4			; LLLz | zHHH
+	rol	eax, 12			; zzHH | HLLL
 
-;	shr	ecx, 8				; 0000 0000 ssss ssss ssss ssss ssss ssss
-	mov	dword ptr [ds:edi+3*4], ecx
-	shl	ecx, 8				; ssss ssss ssss ssss ssss ssss 0000 0000
-	mov	cx, bx				; ssss ssss ssss ssss mmmm MMMM MMMM MMMM
-	ror	ecx, 12				; MMMM MMMM MMMM ssss ssss ssss ssss mmmm
-	shr	ecx, 8				; 0000 0000 MMMM MMMM MMMM ssss ssss ssss
-	mov	dword ptr [ds:edi+2*4], ecx
-	shl	ebx, 8				; mmmm mmmm mmmm mmmm mmmm mmmm 0000 0000
-	mov	bx, ax				; mmmm mmmm mmmm mmmm xxxx MMMM MMMM MMMM
-	ror	ebx, 12				; MMMM MMMM MMMM mmmm mmmm mmmm mmmm xxxx
-	shr	ebx, 8				; 0000 0000 MMMM MMMM MMMM mmmm mmmm mmmm
-	mov	dword ptr [ds:edi+1*4], ebx
-	rol	eax, 8+1			; midpoint bit to high
-						; Xxxx xxxx xxxm mmmm mmmm mmm0 0000 000s
-	shl	ax, 12				; Xxxx xxxx xxxm mmmm 000s 0000 0000 0000
-	sar	eax, 12				; XXXX XXXX XXXX Xxxx xxxx xxxm mmmm 000s
-	ror	eax, 1				; sXXX XXXX XXXX XXxx xxxx xxxx mmmm m000
-	shr	eax, 8				; 0000 0000 sXXX XXXX XXXX XXxx xxxx xxxx
-						; the fill bits are opposite polarity 
-						; to the bit at midpoint. There are 12
-	xor	eax, 003FFC00h			; 0000 0000 sXYY YYYY YYYY YYxx xxxx xxxx
-	mov	dword ptr [ds:edi], eax
+	mov	dword ptr [ebp+ebx*4+1*4], eax
+	rol	ecx, 12
+	xor	ecx, 0FFFh		; 12 normalising bits = 12 inverted signs
+	mov	dword ptr [ebp+ebx*4+2*4], ecx
+	not	ecx			; convert high order quartet to signs
+	sar	ecx, 20			; 24 of them
+	shr	ecx, 8
+	mov	dword ptr [ebp+ebx*4+3*4], ecx
+	mov	ebp, dword ptr [_register_set]
+	mov	dword ptr [ebp+S_P], ebx	; update whichever sp that is
 	ret
 
 _fpx_allsigns:
-	shr	ecx, 8
-	mov	dword ptr [ds:edi], ecx		; not normalised so push signed zero
-	mov	dword ptr [ds:edi+1*4], ecx
-	mov	dword ptr [ds:edi+2*4], ecx
-	mov	dword ptr [ds:edi+3*4], ecx
+	add	esp, 4			; take saved operand word back from stack
+	sar	ecx, 8			; 16 unnormalised normalising bits
+	shr	ecx, 8			; = 24 sign bits
+
+	mov	dword ptr [ebp+ebx*4], ecx
+	mov	dword ptr [ebp+ebx*4+1*4], ecx
+	mov	dword ptr [ebp+ebx*4+2*4], ecx
+	mov	dword ptr [ebp+ebx*4+3*4], ecx
+
+	mov	ebp, dword ptr [_register_set]
+	mov	dword ptr [ebp+S_P], ebx	; update whichever sp that is
 	ret
 
-_fpp:	mov	esi, dword ptr [ebp+S_P]
-	add	dword ptr [ebp+S_P], 4
-	mov	ebx, dword ptr [esi*4+__register]
-				; 0000 0000 smxx xxxx xxxx xxXX XXXX XXXX
-	ror	ebx, 10		; XXXX XXXX XX00 0000 00sm xxxx xxxx xxxx
-	shr	bx, 12		; XXXX XXXX XX00 0000 0000 0000 0000 00sm
-	ror	ebx, 2+4	; 0000 smXX XXXX XXXX 0000 0000 0000 0000
-	mov	ecx, dword ptr [esi*4+__register+4]
-	ror	ecx, 8		; c.0.a.b
-	mov	bx, cx
-	shr	ebx, 4		; 0000 0000 smXX XXXX XXXX MMMM MMMM MMMM
-	mov	dword ptr [esi*4+__register], ebx	; at old stack top
-	mov	ebx, dword ptr [esi*4+__register+8]
-	ror	ecx, 8		; b.c.0.a
-	ror	ebx, 8		; f.0.d.e
-	mov	cx, bx		; b.c.d.e
-	shl	ecx, 4
-	shr	ecx, 8
-	mov	dword ptr [esi*4+__register+4], ecx
-	push	ebp
-	mov	ebp, __register
-	mov	ebx, esi
-	call	_burst_write2
-	pop	ebp
-	ret
+_fpp:	call	stack_read4
+	push	eax				; thats EA
+
+	mov	eax, dword ptr [ebp+ebx*4]	; s + 23 exponent bits
+	rol	eax, 8+2			; save sign and midpoint
+	shl	eax, 12				; squeeze out 12 exponent bits
+	shr	ax, 12				; bring sign + midpoint back
+	ror	eax, 2				; and roll them back in
+	shr	eax, 4				; position 12 bits low in 16 bits
+	mov	ecx, dword ptr [ebp+ebx*4+1*4]	; take 1st mantissa word from the stack
+	ror	ecx, 12				; rotate 12 bits down
+	shl	cx, 4				; position 12 bits high in 16 bits
+	mov	ax, cx				; merge
+	shr	eax, 4				; position 24 bits low in 32 bits
+	mov	dword ptr [ebp+ebx*4], eax	; place back in RTA1 stack frame
+						; next 12 mantissa bits in ecx 31..20
+
+	mov	eax, dword ptr [ebp+ebx*4+2*4]	; read 24 more
+	shr	eax, 12-4			; position 12 bits at ax 15..4
+	shr	ecx, 4				;				
+	mov	cx, ax				; juxtapose with mantissa 23..12
+	shr	ecx, 4				; wirraff
+
+	mov	dword ptr [ebp+ebx*4+1*4], ecx	; making 2nd and final output word
+
+	pop	eax				; recover EA
+	mov	ebp, dword ptr [_register_set]	; do this after all stack_readX
+	jmp	_burst_write2
 
