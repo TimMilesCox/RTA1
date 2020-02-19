@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
    int			 i, o;
    int			 symbol;
 
-   unsigned long	 sum, checksum, carry;
+   unsigned int		 sum, checksum, carry;
 
    off_t		 location,
 			 new_location,

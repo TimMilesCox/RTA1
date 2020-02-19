@@ -28,6 +28,7 @@
 #include <sys/fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 #include <sys/mman.h>
 
@@ -426,12 +427,12 @@ int main(int argc, char *argv[])
 
          if (strcmp(sdata, "fp-client") == 0)
          {
-             local.sin_addr.s_addr = *((long *) newnet[0]);
+             local.sin_addr.s_addr = *((int *) newnet[0]);
          }
 
          if (strcmp(sdata, "fp-server") == 0) 
          { 
-             target.sin_addr.s_addr = *((long *) newnet[0]);
+             target.sin_addr.s_addr = *((int *) newnet[0]);
          }
       }
       fclose(config);
@@ -445,8 +446,8 @@ int main(int argc, char *argv[])
                                                      &newnet[x][3]);
    }
 
-   if (arguments)    target.sin_addr.s_addr = *((long *) newnet[0]);
-   if (arguments > 1) local.sin_addr.s_addr = *((long *) newnet[1]);
+   if (arguments)    target.sin_addr.s_addr = *((int *) newnet[0]);
+   if (arguments > 1) local.sin_addr.s_addr = *((int *) newnet[1]);
 
    if (flag['v'-'a']) printf("[%8.8X > %8.8X]\n", local.sin_addr.s_addr,
                                                   target.sin_addr.s_addr);
