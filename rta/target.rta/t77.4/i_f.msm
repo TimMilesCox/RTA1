@@ -325,19 +325,37 @@ frame2proto
 	lb	this_if:id
 	sb	I_F_IDX
 	sx	I_F_P
+
+	aa	-IP,,xi			. the most requiring speed
+	jza	ipv4_rx
+	aa	IP-ARP,,xi
+	jza	arp_rx
+	aa	ARP-IFCONFIG,,xi	. the least requiring speed
+	jza	call_ifconfig
+	aa	IFCONFIG-ROUTE_CONFIG,,xi
+	jza	call_route_config
+
+	$if	0		. anu is a 2-instruction macro so a bit slower
 	anu, xi	IP
 	jzb	ipv4_rx		.  ipv4_rx does lret back into frame2p
 	anu, xi	ARP
 	jzb	arp_rx		.   arp_rx does lret back into frame2p
 
 	anu, xi	IFCONFIG
-        jzb	call_ifconfig	. ifconfig does lret back into frame2p
+        jzb	call_ifconfig	. call_ifconfig does lret back into frame2p
+	anu, xi	ROUTE_CONFIG
+	jzb	call_route_config . call_route_config does lret back into frame2p
+	$endif
 
 	MIB_ICOUNT48	this_if:inoproto
 	lret	0
 
 call_ifconfig
 	call	(__ifconfig)
+	lret	0
+
+call_route_config
+	call	(__route_config)
 	lret	0
 
 if_rq1		. vector name is if_readq1

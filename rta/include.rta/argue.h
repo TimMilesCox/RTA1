@@ -6,4 +6,5 @@ extern char	 flag[];
 extern char	 uflag[];
 
 extern void argue(int argc, char *argv[]);
+extern void reflag(char *flag_string);
 

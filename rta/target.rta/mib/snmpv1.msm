@@ -53,17 +53,37 @@ a2_ber_transient(?)	ber_template
 a2_permission	+	0
 a2_ix		+	0
 ber_command	+	0
+snmp_tferq	$res	A2_WORDS
 
 $(0)
-agent_2	$head_far	scalars(snmp_rseq,	24	;
+
+	$if	SNMP_AGENT_THREADED
+snmp_agent_launch
+	ql	(agent_2, 7, 0, 0q)
+	ii	THREAD$
+	lb	$3("snmp_agent":0),,xi
+	ii	TAG$
+	fret	0
+
+	$endif
+
+agent_2	lcal	agent_2scan
+
+	$if	SNMP_AGENT_THREADED
+	ii	YIELD$
+	j	agent_2
+	$endif
+
+	fret	0
+
+agent_2scan $head_near	scalars(snmp_rseq,	24	;
 				a2_total8,	int	;
 				a2_highest_tuple, int	;
 				a2_octets,	int	;
 				a2_inaxw,	int	;
 				a2_restartp,	int	;
 				a2_restartbits,	long	;
-				a2_axw,		int)	;
-			 xframe(snmp_tferq,	A2_WORDS)
+				a2_axw,		int)
 
 	tz	a2_socket
 	j	a2_sample
@@ -73,11 +93,6 @@ agent_2	$head_far	scalars(snmp_rseq,	24	;
 	sa	a2_socket
 
 	c	(bind) a (SNMP_PORT:d),,long
-
-.	lb, xi	SNMP_PORT
-.	sb	7
-.	z	6
-.	call	(bind)
 
 	sa	a2_bound
 	jna	a2_stop
@@ -91,7 +106,8 @@ a2_sample
 	sabr	BSOCKET
 	lx	b
 a2_next	lb	s:udp:socket_inq:head, x
-	jzb	a2_stop
+	jzb	a2_defer
+
 	sb	a2_inaxw
 	la	descriptor:bytes, b
 	sa	a2_octets
@@ -219,7 +235,6 @@ a2_next	lb	s:udp:socket_inq:head, x
 	anu, xi	SNMP_SETREQ
 	jzb	a2_set
 	anu, xi	SNMP_GETREQ
-.	jzb	a2_get
 	jnzb	a2_drop
 
 a2_get
@@ -289,9 +304,6 @@ a2_construct_response
 	ly, xi	a2_ber_transient(8)
 
 a2_add_tuple
-.	lr	a2_highest_tuple
-.	jyge	a2_transmit_response1
-
 	lcal	ber_release_mo
 	ay, xi	BER_TRANSIENT_SIZE
 	lr	a2_highest_tuple
@@ -317,15 +329,6 @@ a2_error_response			. error response from MIB
 	z	a2_ber_transient(7):bytes	. zero has effect 1
 
 a2_mirror
-.	dl	a2_sva			. rebase the socket structure
-.	sabr	BSOCKET
-.	lb	s:udp:socket_inq:head
-.	la	descriptor:bytes, b
-.	call	(udp_rtxbuffer)
-.	jza	a2_drop
-
-.	sa	a2_axw
-
 	la	a2_restartp		. retrieve the whole input bindingS
 	sa	q
 	dl	a2_restartbits
@@ -365,35 +368,6 @@ a2_qload
 	la	a2_axw
 	lcal	a2_write_headers
 
-.	lx	a2_axw
-.	sa	descriptor:bytes, x
-
-.	ly, xi	a2_ber_transient(8)
-.	la	ber_t:bytes
-
-.	lb	ber_t:storage
-.	sb	q
-.	on	b$stream16r
-.	z	RDATAC
-.	dsr	1
-.	lr	a
-
-.	tz	ber_t:data	. bits offset or not
-.	rsr	8		. throw one octet away
-
-.	j	a2_mirror_write?
-. a2_mirror_write!
-.	rsr	16
-.	sal	8
-.	wsr	16
-. a2_mirror_write?
-.	jdr	a2_mirror_write!
-
-.	jpb	a2_release
-.	rsr	8
-.	sal	16
-.	wsr	8
-
 a2_release
 	lx	a2_axw
 	call	(udp_acw_send)
@@ -402,12 +376,8 @@ a2_drop	lx	a2_sva+1
 	call	(release_udgram)
 	j	a2_next
 
-a2_stop	lx, i	$$frame, sp
-	sx	sp
-	lx, i	$$xframe, fp
-	sx	fp
-	fret	0
-
+a2_defer
+a2_stop	$ret
 
 a2_seq_sta_erx
 	lcal	ber_ri

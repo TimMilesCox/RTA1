@@ -58,6 +58,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdlib.h>
 #endif
 
 #include "../include.rta/argue.h"
@@ -411,8 +412,8 @@ static void inject_physical_address_tuple(int handle, char *data, long long targ
          while (symbol = *data++)
          {
             if (symbol == ' ') break;
-            if (symbol == '\n ') break;
-            if (symbol == '\r ') break;
+            if (symbol == '\n') break;
+            if (symbol == '\r') break;
 
             if (symbol == ':')
             {
@@ -492,7 +493,7 @@ static int a2zu(char *p, char **q)
    return x;
 }
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   int			 i, j;
 

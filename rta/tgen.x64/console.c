@@ -1,5 +1,11 @@
 #include <stdio.h>
 
+#ifdef PPC
+#include <sys/malloc.h>
+#else
+#include <malloc.h>
+#endif
+
 #include "../engine.rta/emulate.h"
 #include "../include.rta/argue.h"
 #include "../rta.run/settings.h"

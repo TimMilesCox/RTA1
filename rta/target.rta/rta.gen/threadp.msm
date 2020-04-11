@@ -22,8 +22,12 @@ thread	la		b		. priority of new thread, application b
 
 	.		the new thread is now a certainty
 
-	z		0, b		. forward pointer
-					. of new TCB
+					. a -> new tcb page
+					. b -> memory management descriptor of that
+					. x -> 6-word switching descriptor in kernel store
+
+	z		0, b		. forward pointer of new TCB page
+					. in memory management chain
 	lr		WALKUP		. TCB of initial thread
 					. unless the initial thread is calling
 	push		b_x		. new TCB descriptor pointer
@@ -67,9 +71,15 @@ thread	la		b		. priority of new thread, application b
 	ts		switch_lock_cell
 	j		$-1
 	
-	lb		b		. priority in 
-	sbl		2		. application register b
+	lb		b		. priority in application register b
+	sb		1, x		. 2nd word switching descriptor 
+
+	$if		1		. all done with just 1 queue now
+	lb		stem(PRIORITIES),,xi
+	$else
+	sbl		2		. 
 	ab, xi		stem(1)		. thread descriptor into switch list
+	$endif
 
 	la		3, b		. trailing uplink
 	sx		0, a		. new is last->next

@@ -14,6 +14,7 @@
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <unistd.h>
 #define	detail_code errno
 #endif
 

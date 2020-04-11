@@ -55,6 +55,8 @@ extern char **environ;
 #define	RAMFS	"/Volumes/rta/"
 #endif
 
+#define	ONLINE	RAMFS "online/"
+
 //	"\033[38;5;94m"
 #ifdef  MSW
 #define BLUE
@@ -108,8 +110,8 @@ static unsigned char	 fixed_names_path[240];
 #else
 static char		*scriptp[] = { "bash", "./mpdu", NULL } ;
 static char		*scriptq[] = { "bash", "./fponline.cfg", NULL } ;
-static char		*scriprt[] = { "masmx", msympath, path_txo, "-wkuX", NULL } ;
-static char		*scriptl[] = { "masmx", save_masmdef, "my_names.txo", "-wk", NULL } ;
+static char		*scriprt[] = { ONLINE "masmx", msympath, path_txo, "-wkuX", NULL } ;
+static char		*scriptl[] = { ONLINE "masmx", save_masmdef, "my_names.txo", "-wk", NULL } ;
 #endif
 
 
@@ -293,7 +295,7 @@ static void recall_store(int bytes, char *text)
    x = 0;
 
    chdir(ramspace_d);
-   y = posix_spawnp(&x, "masmx",NULL, NULL, scriptl, environ);
+   y = posix_spawnp(&x, ONLINE "masmx", NULL, NULL, scriptl, environ);
    chdir(client_d);
 
    if (y < 0)
@@ -754,7 +756,8 @@ int main(int argc, char *argv[])
       {
          chdir(ramspace_d);
          remove("pdu.txo");
-         y = posix_spawnp(&x, "masmx",NULL, NULL, scriprt, environ);
+         y = posix_spawnp(&x, ONLINE "masmx", NULL, NULL, scriprt, environ);
+
          chdir(client_d);
       }
 

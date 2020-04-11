@@ -82,41 +82,56 @@ echo
 exit	0
 fi
 
-if	[ -e $HOME/.rta_net ]
+if      [ -e $HOME/.rta_net ]
 then
-source	$HOME/.rta_net
+        source  $HOME/.rta_net
 else
-	echo initial network configuration
-	echo copy file .rta_net from this directory to your home directory
-	echo read the comment line notes in ./rta_net and edit if necessary
-	exit
+        echo initial network configuration
+        echo copy file .rta_net from this directory to your home directory
+        echo read the comment line notes in ./rta_net and edit if necessary
+        exit
 fi
 
 echo    wired ethernet $ENET:$RTA_ENET
 echo    wireless LAN $WIFI:$RTA_WIFI
-                       
-if	[ "$1" == "ipfw" ]
+
+export  PLATFORM=`uname`
+if      [ $PLATFORM = Linux ]
 then
-	echo using firewall IPFW
-	sudo ipfw add drop ip from any to 172.29.7.7 in
-	sudo ipfw add drop ip from any to $RTA_ENET in
-        sudo ipfw add drop ip from any to $RTA_WIFI in
-        sudo ipfw add drop tcp from 172.29.7.6 to any in dst-port 80
+        RAMFS=/dynamic/rta
+else
+        RAMFS=/Volumes/rta
 fi
 
-if	[ "$1" == "bpf" ]
+if      [ ! -e "$RAMFS/online/masmx" ]
 then
-	echo using firewall BPF
-	sudo pfctl -e -f local.conf
+        if	[ -e "$MASMX64" ]
+	then
+		echo	export PMASMX=$MASMX64 > ../temp/pathfind
+	else
+		echo	export PMASMX=$MASMX > ../temp/pathfind
+	fi
+        pushd	../client
+        sudo    ./ramdev
+	popd
 fi
 
-echo	option -v shows what RTA1 is sending
-echo	option -z corrects loopback checksums from OSX
+cp	$RTA_BIN_64/bpf_slab	$RAMFS/online/
+cp	$RTA_BIN_64/physal	$RAMFS/online/
 
+echo    option -v shows traffic including:
+echo            received frame contents
+echo    -z      received checksums corrected and displayed [OSX LoopBack]
+echo    -x      corrects instead of zeroing received UDP checksums [OSX LoopBack]
+echo    -u      checksums transmitted from RTA1 checked and displayed
+echo    -W      transmit timestamps
+echo    -w      frame contents transmitted from RTA1
+echo    option -V displays BPF metadata anomalies on receive []
 
 echo    binary code is in $RTA_BIN_64
-sudo	$RTA_BIN_64/osserv				\
-	/dev/bpf3:$SLOOP:172.29.7.7+172.29.7.6:80	\
-	/dev/bpf4:$ENET:$RTA_ENET/26			\
-	/dev/bpf5:$WIFI:$RTA_WIFI/26 -vwmzux $2
+
+sudo	$RTA_BIN_64/osserv			\
+	/dev/bpf3:$SLOOP:172.29.7.7		\
+	/dev/bpf4:$ENET:$RTA_ENET		\
+	/dev/bpf5:$WIFI:$RTA_WIFI -zx $1 $2
 

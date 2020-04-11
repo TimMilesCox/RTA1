@@ -113,7 +113,7 @@
 
 	The LS 24 bits of the integers model RTA-target _registers.
 	Bit 24 models carry, which is transferred to PSR bit 0
-	after fixed point adds AA AB ANA ANB ANU DA DAN POPA:
+	after fixed point adds AA AB ANA ANB DA DAN POPA:
 
 	add to accumulator A, add to accumulator B, add negative to A,
 	add negative to B, add negative upper to A writing B,
@@ -123,16 +123,11 @@
 	SRC (shift storage word right through carry), 
 	SLC (shift storage word left through carry), and
 	and the instructions ON and OFF (turn named PSR bits on/off),
-	no instructions other than AA AN ANA ANB ANU DA DAN POPA write PSR
+	no instructions other than AA AN ANA ANB DA DAN POPA write PSR
 	CARRY bit 0, and there are no other condition bits.
 
 	CARRY is tested with the JC and JNC instructions or captured
 	as an integer with the SC, store carry, instruction
-
-	The integer result of ANU, add negative upper to A, is written
-	to the other accumulator B and tested  with the JZB, jump zero B,
-	instruction, the JPB, jump positive B, JNZB, jump nonzero B,
-	and JNB jump negative B instructions.
 
 	The results of AA AB ANA ANB DA and DAN instructions are
 	in the acculumators A and B. The accumulators themselves
@@ -682,8 +677,6 @@ ea &= 0x00FFFFFF;
 #define	ANDB	168
 #define	XOR	176
 #define	XORB	184
-
-#undef	ANU	184
 
 #define AA	192
 #define	AB	200

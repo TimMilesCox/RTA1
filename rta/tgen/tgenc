@@ -42,14 +42,24 @@
 #
 #
 
-gcc -E	isolator.c
-if	[ $? -ne 0 ]
+
+PLATFORM=`uname`
+
+if      [ "$PLATFORM" == "Linux" ]
 then
-	echo	leaving script
-	exit
-else
-	echo	compile system compatible
+        THREADS=-lpthread
+	echo	linix intel
+elif	[ "$PLATFORM" == "Darwin" ]
+then
+	if	[ "$1" == "powerpc" ]
+	then
+		echo darwin powerpc
+	else
+		OSPAN=-mmacosx-version-min=10.6.8
+		echo darwin intel $OSPAN
+	fi
 fi
+
 
 if [ -z "$RTA_BINARY" ]
 then
@@ -64,7 +74,7 @@ then
 mkdir   "$RTA_BINARY"
 fi
 
-if	[ $1 == "powerpc" ]
+if	[ "$1" == "powerpc" ]
 then
 	IFLAG=-UINTEL
 	echo	constructing for network byte order
@@ -75,13 +85,13 @@ fi
 
 
 pushd   ../netifx
-gcc -m32 -c -funsigned-char $IFLAG -o ../emulator.rel/netbank.o netbank.c
+gcc -m32 -c -funsigned-char $IFLAG $OSPAN -o ../emulator.rel/netbank.o netbank.c
 cd	../rta.run
-gcc -m32 -c -funsigned-char -o ../emulator.rel/time32.o ../rta.run/time32.c
-gcc -m32 -c -o ../emulator.rel/tzone.o tzone.c
+gcc -m32 -c -funsigned-char  $OSPAN -o ../emulator.rel/time32.o ../rta.run/time32.c
+gcc -m32 -c $OSPAN -o ../emulator.rel/tzone.o tzone.c
 popd
 
-gcc -m32 -c -funsigned-char -o ../emulator.rel/idisplay.o ../rta.run/idisplay.c
+gcc -m32 -c -funsigned-char $OSPAN -o ../emulator.rel/idisplay.o ../rta.run/idisplay.c
 
 if	[ -z $RTA_MBANKS ]
 then
@@ -105,26 +115,20 @@ else
 fi
 
 pushd	../engine.rta
-./genrel $ARCHFLAG
+./genrel $ARCHFLAG $OSPAN
 popd
 
-gcc -m32 -c -funsigned-char -DARGUMENTS=64	\
-		-o	../emulator.rel/argue.o	\
+gcc -m32 -c -funsigned-char -DARGUMENTS=64		\
+			 $OSPAN				\
+	  		-o ../emulator.rel/argue.o	\
 			../netifx/argue.c
 
 gcc -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS -DGCC		\
-				-DMETRIC			\
+				-DMETRIC  $OSPAN		\
 			 	-o ../emulator.rel/console.o	\
 				../tgen.x64/console.c
 
-PLATFORM=`uname`
-
-if	[ "$PLATFORM" == "Linux" ]
-then
-	THREADS=-lpthread
-fi
-
-gcc -m32 -DGCC -DMBANKS=$RTA_MBANKS -DMETRIC $THREADS -o $RTA_BINARY/tipc$RTA_MBANKS	\
+gcc -m32 -DGCC -DMBANKS=$RTA_MBANKS -DMETRIC $OSPAN $THREADS -o $RTA_BINARY/tipc$RTA_MBANKS	\
 				../emulator.rel/argue.o		\
 				../emulator.rel/netbank.o	\
 				../emulator.rel/time32.o	\

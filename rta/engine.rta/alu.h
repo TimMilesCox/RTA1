@@ -73,7 +73,7 @@ extern void orb(int operand);	/*	OR with register B	*/
 extern void and(int operand);	/*	AND with register A	*/
 extern void andb(int operand);	/*	AND with register B	*/
 extern void xor(int operand);	/*	XOR with register A	*/
-extern void anu(int operand);	/*	test subtract from A	*/
+extern void xorb(int operand);	/*	XOR with register B	*/
 extern void  aa(int operand);	/*	add to A		*/
 extern void  ab(int operand);	/*	add to B		*/
 extern void ana(int operand);	/*	add negative to A	*/

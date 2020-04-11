@@ -473,10 +473,9 @@ bus_write:				; write any memory
 	call	write_straddle_18b?
 
 bus_write_256k_block:
-	and	eax, 003FFFFFh		; 0400000 bit about to get stripped anyway
-	test	eax, 63			; device array?
-	jz	memory_write_page	; no
-	jmp	_device_write
+	test	eax, 63			; a device array?
+	jz	memory_write_page	; no. scaling shift will scrub bit 400000
+	jmp	_device_write		; yes a device array§
 
 memory_write_4k_block:
 	test	esi, 0003F000h		; inside a 4k page?
@@ -704,6 +703,9 @@ read_pointer:
         mov	esi, eax
 	mov	eax, dword ptr [_psr]
 	and	cl, 63
+	test	 eax, 07F00h	; see$all ?
+	jz	direct_pointer
+
 	test	cl, 56
 	jnz	direct_pointer	; shift radix 32-1 might get slipped
 
@@ -739,6 +741,7 @@ write_pointer:
 	mov	esi, eax
 	mov	eax, dword ptr [_psr]
 	and	cl, 63
+
 	test	cl, 56
 	jnz	write_allowed	; shift radix 32-1 might get slipped
 	test	eax, 00800000h	; interrupt space ?
@@ -926,6 +929,7 @@ device_read_array24_4:			; readout 4 words of packed 24-bit array
 
 _device_write:				; store device arrays
 	test	eax, 0800000h		; the vilainous bank index?
+
 	jnz	device_write_escape
 
 	shl	eax, 2			;  al = device ID * 4

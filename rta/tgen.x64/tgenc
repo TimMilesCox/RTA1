@@ -42,13 +42,21 @@
 #
 #
 
-gcc -E	isolator.c
-if	[ $? -ne 0 ]
+PLATFORM=`uname`
+
+if      [ "$PLATFORM" == "Linux" ]
 then
-	echo	leaving script
-	exit
-else
-	echo	compile system compatible
+        THREADS=-lpthread
+        echo    linix intel
+elif    [ "$PLATFORM" == "Darwin" ]
+then
+        if      [ "$1" == "powerpc" ]
+        then
+                echo darwin powerpc
+        else
+                OSPAN=-mmacosx-version-min=10.6.8
+                echo darwin intel $OSPAN
+        fi
 fi
 
 if [ -z "$RTA_BIN_64" ]
@@ -64,7 +72,7 @@ then
 mkdir   "$RTA_BIN_64"
 fi
 
-if	[ $1 == "powerpc" ]
+if	[ "$1" == "powerpc" ]
 then
 	IFLAG=-UINTEL
 	echo	constructing for network byte order
@@ -75,11 +83,11 @@ fi
 
 
 pushd   ../netifx
-gcc -m64 -c -funsigned-char $IFLAG -o ../emulator.x64/netbank.o netbank.c
+gcc -m64 -c -funsigned-char $IFLAG $OSPAN -o ../emulator.x64/netbank.o netbank.c
 popd
 
-gcc -m64 -c -funsigned-char -o ../emulator.x64/idisplay.o ../rta.run/idisplay.c
-gcc -m64 -c -funsigned-char -o ../emulator.x64/tzone.o ../rta.run/tzone.c
+gcc -m64 -c -funsigned-char $OSPAN -o ../emulator.x64/idisplay.o ../rta.run/idisplay.c
+gcc -m64 -c -funsigned-char $OSPAN -o ../emulator.x64/tzone.o ../rta.run/tzone.c
 
 if	[ -z $RTA_MBANKS ]
 then
@@ -103,26 +111,23 @@ echo	emulated RTA executable space $RTA_MBANKS banks image tipc$RTA_MBANKS
 #	fi
 
 pushd	../engine.rta
-./genrel64 -D__X64
+./genrel64 -D__X64 $OSPAN
 popd
 
-PLATFORM=`uname`
 
-if	[ "$PLATFORM" == "Linux" ]
-then
-	THREADS=-lpthread
-fi
-
-gcc -m64 -c -funsigned-char -DARGUMENTS=64	\
-		 -o	../emulator.x64/argue.o	\
+gcc -m64 -c -funsigned-char -DARGUMENTS=64		\
+			 $OSPAN				\
+		 	-o ../emulator.x64/argue.o	\
 			../netifx/argue.c
 
 gcc -m64 -c -funsigned-char -D__X64 -DMBANKS=$RTA_MBANKS -DGCC	\
+				 $OSPAN				\
 				-DMETRIC			\
 			 	-o ../emulator.x64/console.o	\
 				console.c
 
 gcc -m64 -D__X64 -DGCC -DMBANKS=$RTA_MBANKS -DMETRIC $THREADS	\
+				 $OSPAN				\
 				-o $RTA_BIN_64/tipc$RTA_MBANKS	\
 				../emulator.x64/argue.o		\
 				../emulator.x64/netbank.o	\

@@ -21,18 +21,32 @@
 #include <net/bpf.h>
 #endif
 
+#include <string.h>
 #include <unistd.h>
 #include <errno.h>
 #endif
 
+#ifdef	FORK
+#else
+#include <spawn.h>
+extern char		**environ;
+extern char		 flag[];
+pid_t			 masmx_process;
+static char		*spawn_arguments[] = { "bash", NULL, NULL } ;
+#endif
 
-#define	HOSTS	6
+#include "../portal/portal.h"
 
 static int write_program(int iftype, int offset,
                          unsigned char *net_addresses, unsigned char *ofile2)
 {
-   unsigned char        host[HOSTS][72];
-   unsigned char	text[72];
+   #ifdef REVISION1
+   unsigned char	host[ADDRESS_STRING];
+   #else
+   unsigned char        host[HOSTS][ASTRING];
+   #endif
+
+   unsigned char	text[ADDRESS_STRING+80];
 
    int			 x,
 			 y,
@@ -45,9 +59,13 @@ static int write_program(int iftype, int offset,
    #endif
 
    if (f < 0) return 0 - errno;
+
+   #ifdef REVISION1
+   #else
    y = sscanf(net_addresses,
             "%[^+\n\r]+%[^+\n\r]+%[^+\n\r]+%[^+\n\r]+%[^+\n\r]+%[^+\n\r]",
               host[0], host[1], host[2], host[3], host[4], host[5]);
+   #endif
 
    bytes = sprintf(text, "\t$include ../bpfmasmx/bpfmasmx.def\n");
    write(f, text, bytes);
@@ -97,11 +115,42 @@ static int write_program(int iftype, int offset,
 
    write(f, text, bytes);
 
+   #ifdef REVISION1
+
+   while (*net_addresses)
+   {
+      /*******************************************************
+         1st clause is the interface primary network address
+         any more clauses are +net_address
+                           or @route
+      *******************************************************/
+
+      net_addresses = peel(host, net_addresses);
+      bytes = sprintf(text, "\tdest\t%s\tyes\n", host);
+      write(f, text, bytes);
+
+      while (*net_addresses == '@')
+      {
+         /***************************************************
+            router clauses are not part of the filter program
+         ***************************************************/
+
+          net_addresses = peel(host, net_addresses + 1);
+      }
+
+      if (*net_addresses++ == '+') continue;
+      break;
+   }
+
+   #else
+
    for (x = 0; x < y; x++)
    {
       bytes = sprintf(text, "\tdest\t%s\tyes\n", host[x]);
       write(f, text, bytes);
    }
+
+   #endif
 
    bytes = sprintf(text, "no\tret\t0\nyes\tret\t65535");
    write(f, text, bytes);
@@ -153,7 +202,7 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
    x = CreateProcess("cmd.exe", ofile2, NULL, NULL, 0, 0, NULL, NULL, NULL, &pi);
    if (x) printf("process launch fgen_%s failed E ", ifname, GetLastError());
    else WaitForSingleObject(pi.hProcess, INFINITE);
-   #else
+   #elif defined(FORK)
    x = fork();
 
    if (x)
@@ -168,6 +217,31 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
       y = execlp(ofile2, "blanco", (char *) 0);
       if (y < 0) printf("E %d nonstart ./%s\n", errno, ofile2);
    }
+   #else
+   spawn_arguments[1] = ofile2;
+   y = posix_spawnp(&masmx_process, "bash", NULL, NULL, spawn_arguments, environ);
+
+   if (y < 0)
+   {
+      printf("filter assembly launch fail %d\n", errno);
+   }
+   else if (masmx_process == 0)
+   {
+      printf("filter assembly process not identified\n");
+   }
+   else
+   {
+      if (flag['v'-'a']) printf(" %d launched filter assembly %s\n", masmx_process, ofile2);
+      y = waitpid(masmx_process, &j, 0);
+      if (y < 0) printf("waitpid reported problem %s\n", strerror(errno));
+      if (flag['v'-'a']) printf(" %d returned filter assembly %s, %x\n", y, ofile2, j);
+
+      if (j & 0x8000)
+      {
+         printf("%s filter assembly errored\n", ofile2);
+      }
+   }
+
    #endif
 
    return 0;

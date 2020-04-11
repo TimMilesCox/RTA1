@@ -308,7 +308,16 @@ word memory_read(unsigned ea)
 
    #ifdef WINDOW_READ_RULE
 
-   WINDOW_READ_RULE(tag, index);
+   if (psr & 0x7F00)
+   {
+      /******************************************
+        it should be slightly quicker
+        to test and skip if not needed
+      ******************************************/
+
+      WINDOW_READ_RULE(tag, index);
+   }
+
    relocation_base = base[index];
 
    #else
@@ -646,7 +655,16 @@ unsigned int operand_read(unsigned ea, int designator)
 
    #ifdef WINDOW_READ_RULE
 
-   WINDOW_READ_RULE(v, index);
+   if (psr & 0x7F00)
+   {
+      /******************************************
+        it should be slightly quicker
+        to test and skip if not needed
+      ******************************************/
+
+      WINDOW_READ_RULE(v, index);
+   }
+
    relocation_base = base[index];
 
    #elif defined(WPROTECT)
@@ -769,7 +787,16 @@ void burst_read2(int *list, unsigned ea)
 
    #ifdef WINDOW_READ_RULE
 
-   WINDOW_READ_RULE(tag, index);
+   if (psr & 0x7F00)
+   {
+      /******************************************
+        it should be slightly quicker
+        to test and skip if not needed
+      ******************************************/
+
+      WINDOW_READ_RULE(tag, index);
+   }
+
    relocation_base = base[index];
 
    #elif defined(WPROTECT)
@@ -943,7 +970,16 @@ void burst_read4(int *list, unsigned ea)
 
    #ifdef WINDOW_READ_RULE
 
-   WINDOW_READ_RULE(tag, index);
+   if (psr & 0x7F00)
+   {
+      /******************************************
+        it should be slightly quicker
+        to test and skip if not needed
+      ******************************************/
+
+      WINDOW_READ_RULE(tag, index);
+   }
+
    relocation_base = base[index];
 
    #elif defined(WPROTECT)

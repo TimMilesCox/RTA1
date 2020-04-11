@@ -1,0 +1,218 @@
+$(1)
+
+inetcidr_gauge	+	99
+inetcidr_xnet	-	99L
+
+inetcidr_ogauge	mobjet	0	0	SNMP_GAUGE	3	1	;
+			0	0	inetcidr_gauge
+
+inetcidr_oaddress mobjet 0	0	SNMP_STRING	4	1	;
+			0	0	inetcidr_xnet
+
+$(0)
+
+ipagent_cidr_tabler	$head_near	 params(ipacidrseq,	int	;
+						ipacidrlist,	int	;
+						ipcidro,	int	;
+						ipcidrroutine,	int	;
+						ipcidr_tableidx,int	)
+
+	lx	ipacidrlist		. entering table sequentially?
+	la	ipacidrseq		. check length of oid
+	lb	1, a
+	ab	-16,,xi
+	jnc	ipagent_cidr_tabler_readdress
+
+	lb	8, a			. correct table?
+	xorB	ipcidr_tableidx
+	jnzb	ipagent_cidr_tabler_readdress
+
+	lb	ipacidrseq
+	la	ipcidrroutine
+	aa	-SNMP_GETREQ,,xi
+	jnza	ipagent_cidr_address_along
+
+	lcal	ipagent_cidr_search_exact
+	j	ipagent_cidr_tabler_address!
+		
+ipagent_cidr_address_along
+	lcal	ipagent_cidr_search_forward
+	lb	x
+	la	ipacidrseq
+	jnzb	ipagent_cidr_tabler_readdress
+
+	dec	1, a			. tweak oid length to prompt next subtable
+	inc	9, a			. this is the 7 specifier after the 24 specifier
+	z	12, a
+	z	13, a
+	z	14, a
+	z	15, a			. clear the address field of the oid
+	j	ipagent_cidr_tabler_noaddress
+	
+ipagent_cidr_tabler_readdress
+	lcal	ipagent_cidr_write_oid_tokens
+	la	ipcidro
+	sb	mo:seq, a
+
+ipagent_cidr_tabler_address!
+ipagent_cidr_tabler_noaddress
+	lb	x
+	$ret
+
+ipagent_cidr_write_oid_tokens
+	ly	14, a, i
+	dl	ro:net
+	j	ipagent_write2oid
+
+ipagent_cidr_search_exact
+	ly	14, b, i
+	j	ipagent_search_id	
+
+ipagent_cidr_search_forward
+	ly	14, b, i
+	j	ipagent_search_nextid
+
+
+ipagent_cidr_route_dest_type		. seq 1 value 1 for ipv4
+	$head_far		 params(cidrdesttypeseq,	int	;
+					cidrdesttypeflags,	int	;
+					cidrdesttyperoutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrdesttypeseq		;
+					route_lexical		;
+					ipromib_oifidx,,xi	;
+					cidrdesttyperoutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_dest_notype
+	la	1,,xi
+	sa	ipromib_i_f
+	lb	ipromib_oifidx,,xi
+
+ipagent_cidr_route_dest_notype
+	fret	0
+
+
+ipagent_cidr_route_dest			. seq 2
+	$head_far		 params(cidrdestseq,		int	;
+					cidrdestflags,		int	;
+					cidrdestroutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrdestseq		;
+					route_lexical		;
+					inetcidr_oaddress,,xi	;
+					cidrdestroutine		;
+					24,,xi
+
+	jzb	ipagent_cidr_route_nodest
+	dl	ro:net
+	sbl	8			. compress 2 halves network address
+	dsl	8			. giving n.n.n.n : 0000
+	ds	inetcidr_xnet
+	lb	inetcidr_oaddress,,xi
+
+ipagent_cidr_route_nodest
+	fret	0
+
+ipagent_cidr_route_mask_log		. seq 3
+	$head_far		 params(cidrmasklogseq,		int	;
+					cidrmasklogflags,	int	;
+					cidrmasklogroutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrmasklogseq		;
+					route_lexical		;
+					inetcidr_ogauge,,xi	;
+					cidrmasklogroutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_nomask_log
+	la	ro:mask_log
+	sa	inetcidr_gauge
+	lb	inetcidr_ogauge,,xi
+
+ipagent_cidr_route_nomask_log
+	fret	0
+
+ipagent_cidr_route_next_hop_type	. seq 5 value 0 for local, 1 for for ipv4 remote
+	$head_far		 params(cidrnexthoptypeseq,	int	;
+					cidrnexthoptypeflags,	int	;
+					cidrnexthoptyperoutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrnexthoptypeseq	;
+					route_lexical		;
+					ipromib_oifidx,,xi	;
+					cidrnexthoptyperoutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_nonext_hop_type
+	la	ro:i_f
+	sar	23			. gives 0 for not remote
+	sa	ipromib_i_f		. or 1 for ipv4
+	lb	ipromib_oifidx,,xi
+
+ipagent_cidr_route_nonext_hop_type
+	fret	0
+
+ipagent_cidr_route_next_hop		. seq 6 0.0.0.0 for local, gateway for remote
+	$head_far		 params(cidrnexthopseq,		int	;
+					cidrnexthopflags,	int	;
+					cidrnexthoproutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrnexthopseq		;
+					route_lexical		;
+					inetcidr_oaddress,,xi	;
+					cidrnexthoproutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_nonext_hop
+	dl	ro:next_hop
+	sbl	8			. compress two halves network address
+	dsl	8			. giving n.n.n.n : 0000
+	tn	ro:i_f			. remote / indirect route?
+	dsr	48			. zero for local so they say
+	ds	inetcidr_xnet
+	lb	inetcidr_oaddress,,xi
+
+ipagent_cidr_route_nonext_hop
+	fret	0
+
+ipagent_cidr_route_ifidx		. seq 7
+	$head_far		 params(cidrrouteifidxseq,	int	;
+					cidrrouteifidxflags,	int	;
+					cidrrouteifidxroutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrrouteifidxseq	;
+					route_lexical		;
+					ipromib_oifidx,,xi	;
+					cidrrouteifidxroutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_noifidx
+	la	ro:i_f
+	and	07FFF,,xi		. drop the indirection bit
+	sa	ipromib_i_f		. leaving relative-1 i/f number
+	lb	ipromib_oifidx,,xi
+
+ipagent_cidr_route_noifidx
+	fret	0
+
+ipagent_cidr_route_type			. seq 8 value 3 for local 4 for remote
+	$head_far		 params(cidrroutetypeseq,	int	;
+					cidrroutetypeflags,	int	;
+					cidrroutetyperoutine,	int	)
+
+	lc	ipagent_cidr_tabler	cidrroutetypeseq	;
+					route_lexical		;
+					ipromib_oifidx,,xi	;
+					cidrroutetyperoutine	;
+					24,,xi
+
+	jzb	ipagent_cidr_route_notype
+	la	ro:i_f
+	sar	23			. add 3 to the indirection bit
+	la	3, a, i			. giving 3 direct or 4 indirect
+	sa	ipromib_i_f
+	lb	ipromib_oifidx,,xi
+
+ipagent_cidr_route_notype
+	fret	0

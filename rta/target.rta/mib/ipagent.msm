@@ -1,0 +1,236 @@
+
+$(1)
+
+ip_mib_i_f	+	99
+ip_mib_xnet	-	99L
+
+ip_mib_oaddress	mobjet	0	1	SNMP_NETWORKADDRESS	4	1	;
+			0	0	ip_mib_xnet
+
+ip_mib_oifidx	mobjet	0	2	SNMP_INT		2	1	;
+			0	0	ip_mib_i_f
+
+
+$(0)
+ipagent_tabler		$head_near	 params(iptabseq,	int	;
+						lexical_list,	int	;
+						odynamic,	int	;
+						iptabroutine,	int	;
+						table_id,	int)
+
+	lx	lexical_list
+	la	iptabseq			. force first table row
+	lb	1, a				. when entering table sequentially
+	ab	-13,,xi				. oid including address?
+	jnc	iptabler_readdress		. no, apply first table row
+	lb	8, a
+	xorB	table_id			. oid addressing called table?
+	jnzb	iptabler_readdress		. no, apply first table row
+
+	lb	iptabseq
+	la	iptabroutine
+	aa	-SNMP_GETREQ,,xi
+	jnza	iptabler_address_along
+
+	lcal	ipagent_search_exact		. get exact
+	j	iptabler_address!		. = hit or none
+
+iptabler_address_along
+	lcal	ipagent_search_forward		. get higher
+	lb	x
+	la	iptabseq
+	jnzb	iptabler_readdress
+
+	dec	1, a
+	inc	10, a				. next subtable
+	z	11, a	
+	z	12, a
+	z	13, a
+	z	14, a
+	j	iptabler_noaddress
+
+iptabler_readdress
+	lcal	ipagent_write_oid_tokens	. write address field oid
+	la	odynamic			. low order oid knot is in mobjet
+	sb	mo:seq, a			. whichever mobjet
+
+iptabler_address!				. whether a cache line is found
+iptabler_noaddress				. or not
+	lb	x
+	$ret
+
+ipagent_address		$head_far	 params(ipnetseq,	int	;
+						ipnetflags,	int	;
+						ipnetroutine,	int	)
+
+	lc	ipagent_tabler	ipnetseq		;
+				net_alexical		;
+				ip_mib_oaddress,,xi	;
+				ipnetroutine		;
+				20,,xi
+
+	jzb	ipagent_noaddress
+
+	dl	ifaddr:net
+	sbl	8
+	dsl	8
+	ds	ip_mib_xnet
+	lb	ip_mib_oaddress,,xi
+
+ipagent_noaddress
+	fret	0
+
+
+ipagent_address_ifidx	$head_far	 params(ipifidxseq,	int	;
+						ipifidxflags,	int	;
+						ifixidxroutine,	int	)
+
+	lc	ipagent_tabler	ipifidxseq		;
+				net_alexical		;
+				ip_mib_oifidx,,xi	;
+				ifidxroutine		;
+				20,,xi
+
+	jzb	ipagent_noifidx
+
+	la	ifaddr:i_f
+	sa	ip_mib_i_f
+	lb	ip_mib_oifidx,,xi
+
+ipagent_noifidx
+	fret	0
+
+ipagent_address_netmask $head_far	 params(ipmaskseq,	int	;
+						ipmaskflags,	int	;
+						ipmaskroutine,	int	)
+
+
+	lc	ipagent_tabler	ipmaskseq		;
+				net_alexical		;
+				ip_mib_oaddress,,xi	;
+				ipmaskroutine		;
+				20,,xi
+
+	jzb	ipagent_nomask
+
+	dl	ifaddr:mask
+	sbl	8
+	dsl	8
+	ds	ip_mib_xnet
+	lb	ip_mib_oaddress,,xi
+
+ipagent_nomask
+	fret	0
+
+
+	$if	BROADCAST_AND_MAXREASM
+
+ipagent_address_broadcast $head_far	 params(ipbcastseq,	int	;
+						ipbcastflags,	int	;
+						ipbcastroutine,	int	)
+
+	lc	ipagent_tabler	ipbcastseq		net_alexical	;
+				ip_mib_oaddress,,xi	ipbcastroutine	20,,xi
+	jzb	ipagent_nobcast
+
+	dl	ifaddr:broadcast
+	sbl	8
+	dsl	8
+	ds	ip_mib_xnet
+	lb	ip_mib_oaddress,,xi
+
+ipagent_nobcast
+	fret	0
+
+ipagent_address_maxreasm $head_far	 params(iprasmseq,	int	;
+						iprasmflags,	int	;
+						iprasmroutine,	int	)
+
+	lc	ipagent_tabler	iprasmseq		net_alexical	;
+				ip_mib_oifidx,,xi	iprasmroutine	20,,xi
+	jzb	ipagent_norasm
+
+	la	16384,,xi
+	sa	ip_mib_i_f
+	lb	ip_mib_oifidx,,xi
+
+ipagent_norasm
+	fret	0
+
+	$endif			. BROADCAST_AND_MAXREASM
+
+ipagent_write_oid_tokens
+	ly	11, a, i	. input / output oid + 11
+	dl	ifaddr:net
+
+ipagent_write2oid		. input is 00nnnn:00nnnn
+	push	b
+	dsr	8
+	sbr	16
+	ds	0, y
+	pop	a
+	dsr	8
+	sbr	16
+	ds	2, y
+	lret	0
+
+ipagent_search_exact
+	ly	11, b, i
+
+ipagent_search_id
+	lcal	ipagent_seek
+	tz	x
+	jdz	ipagent_exact
+	lx	0,,xi		. already zero or encountered > argument
+	lret	0		. x -> none at all
+
+ipagent_exact
+	lret	0		. x -> correct
+
+ipagent_search_forward
+	ly	11, b, i
+
+ipagent_search_nextid
+	lcal	ipagent_seek
+	tz	x
+	jdz	ipagent_1more	. found equal
+
+	lret	0		. x -> higher or none at all
+
+ipagent_1more
+	lx	ifaddr:lexical	. higher or none at all
+	lret	0
+
+ipagent_readoid2netform
+	dl	0, y		. get 00.00.aa : 00.00.bb from oid
+	sbl	16		
+	dsl	8		. 00.aa.bb
+	lb	2, y
+	sbl	16
+	dsl	8		. aa.bb.cc
+	lb	3, y
+	sbl	16		. aa.bb.cc.dd.00.00
+	dsr	8
+	sbr	8		. 00.aa.bb.00.cc.dd
+	lret	0
+
+ipagent_seek
+	lcal	ipagent_readoid2netform
+.	lx	net_alexical
+	ds	6
+	j	ipagent_seek_nane?
+
+ipagent_seek_next
+	dl	ifaddr:net
+	dan	6
+	jc	ipagent_find_ge
+
+	lx	ifaddr:lexical
+
+ipagent_seek_nane?
+	tz	x
+	j	ipagent_seek_next
+
+ipagent_find_ge
+	lret	0
+
