@@ -191,6 +191,7 @@ static void outputq()
    unsigned char	*p;
 
    struct timeval	 txtime;
+   int			 interface_type;
 
    #ifdef INFILTRATE
    if
@@ -208,8 +209,9 @@ static void outputq()
       }
 
       interface = PORT(q->preamble.i_f);
+      interface_type = iftype[interface];
 
-      switch (iftype[interface])
+      switch (interface_type)
       {
          case DLT_NULL:
             #ifdef LINUX
@@ -235,13 +237,33 @@ static void outputq()
       fdes = s[interface];
 
       p = q->frame;
-      if (iftype[interface] == DLT_NULL)
+
+      #ifdef OSX
+      if (interface_type == DLT_NULL)
       {
+         /*********************************************************
+            DLT_NULL is changed to ethernet for Linux
+            only OSX gets in here
+         *********************************************************/
+         #if 0
+         /*********************************************************
+            temporary trace about transmitting to platform loopback
+            with reference to link header size on various platforms
+            can be left out of distributed binaries
+            there is general trace per run flags about transmission
+         *********************************************************/
+
          printf("[%p:%x--", p, x);
+         #endif
+
          p += 4;
          x -= 4;
+
+         #if 0
          printf("%p:%x]\n", p, x);
+         #endif
       }
+      #endif
 
       y = write(fdes, p, x);
 
@@ -292,41 +314,38 @@ static void outputq()
                   break;
             }
 
-            if (flag['w'-'a'])
+            y = 0;
+            k = 0;
+            bytes = 0;
+            pbuffer[20] = 0;
+
+            putchar('[');
+            while (y < llhl) printf("%2.2x", q->frame[y++]);
+            printf("]\n");
+
+            while  (y < tx_bytes)
             {
-               y = 0;
-               k = 0;
-               bytes = 0;
-               pbuffer[20] = 0;
-
-               putchar('[');
-               while (y < llhl) printf("%2.2x", q->frame[y++]);
-               printf("]\n");
-
-               while  (y < tx_bytes)
+               if (k == 0) printf("%4.4x  ", bytes);
+               symbol = (unsigned char) q->frame[y];
+               printf("%2.2x", symbol);
+               if (symbol < ' ') symbol = '.';
+               if (symbol > 126) symbol = '.';
+               pbuffer[k] = symbol;
+               y++;
+               k++;
+               if (k == 20)
                {
-                  if (k == 0) printf("%4.4x  ", bytes);
-                  symbol = (unsigned char) q->frame[y];
-                  printf("%2.2x", symbol);
-                  if (symbol < ' ') symbol = '.';
-                  if (symbol > 126) symbol = '.';
-                  pbuffer[k] = symbol;
-                  y++;
-                  k++;
-                  if (k == 20)
-                  {
-                     k = 0;
-                     bytes += 20;
-                     printf("    %s\n", pbuffer);
-                  }
-               }
-
-               if (k)
-               {
-                  pbuffer[k] = 0;
-                  while (k++ < 20) printf("  ");
+                  k = 0;
+                  bytes += 20;
                   printf("    %s\n", pbuffer);
                }
+            }
+
+            if (k)
+            {
+               pbuffer[k] = 0;
+               while (k++ < 20) printf("  ");
+               printf("    %s\n", pbuffer);
             }
             putchar('\n');
          }
@@ -526,7 +545,8 @@ static void forward(int x, unsigned char *p, int bytes)
 			 dgraml,
 			 ll_hl,
 			 proto,
-			 symbol;
+			 symbol,
+			 interface_type = iftype[x];
 
    unsigned short	 csum, psum;
 
@@ -534,7 +554,7 @@ static void forward(int x, unsigned char *p, int bytes)
 
    if (rxdata->preamble.flag) return;
 
-         switch (iftype[x])
+         switch (interface_type)
          {
             case DLT_NULL:
                #ifdef LINUX
@@ -611,7 +631,13 @@ static void forward(int x, unsigned char *p, int bytes)
             bytes -= ll_hl;
          }
 
+         #if 0
          if ((flag['z'-'a']) && (rxdata->preamble.protocol == IP & 65535))
+         #else
+
+         if (((flag['z'-'a']) && (rxdata->preamble.protocol == IP & 65535) && (interface_type == DLT_NULL))
+         ||  ((uflag['Z'-'A']) && (rxdata->preamble.protocol == IP & 65535)))
+         #endif
          {
             /************************************************
 
@@ -624,9 +650,12 @@ static void forward(int x, unsigned char *p, int bytes)
 
                 although ICMP checksum is always correct
 
-                so execute with -Z or -z option on loopback
+                so execute with -z option on OSX loopback
 
-                option -X or -x regenerates UDP checksums
+                big -Z option checks and corrects
+		incoming checksums on all interface types
+
+                option -x regenerates UDP checksums
                 instead of just clearing thayum
 
             ***********************************************/
@@ -1101,24 +1130,30 @@ int main(int argc, char *argv[])
    ||  (arguments == 0))
    {
       #ifdef LINUX
-      printf("\n\n\tlinuxnet {lo|ethX|wlanX}:netaddress/MW[+netaddress...]"
-             "[@route/MW[*gateway]@route...] {ethX|wlanX}:...\n\n");
+      printf("\n\n\tlinuxnet command line is generated from addresses in $HOME/.rta_net\n");
       #endif
 
       #ifdef OSX
-      printf("\n\n\tosserv /dev/bpfY:{lo|ethX|wlanX}:netaddress/MW[+netaddress...]"
-             "[@route/MW[*gateway]@route...] /dev/bpfY:{ethX|wlanX}:...\n\n");
+      printf("\n\n\tosserv command line is generated from addresses in $HOME/.rta_net\n");
       #endif
 
-      printf("\toption -v shows traffic including:\n");
-      printf("\t\treceived frame contents\n");
-      printf("\t-z\treceived checksums corrected and displayed [OSX LoopBack]\n");
-      printf("\t-x\tcorrects instead of zeroing received UDP checksums [OSX LoopBack]\n");
-      printf("\t-u\tchecksums transmitted from RTA1 checked and displayed\n");
-      printf("\t-W\ttransmission timestamps\n");
-      printf("\t-w\ttransmit frame contents\n\n");
-      printf("\toption -V displays BPF metadata anomalies on receive [OSX]\n");
-      printf("\toption -h displays these options and exits\n\n");
+      printf("\tdetails in http://172.29.7.7/connect.html#route\n\n");
+
+      printf("\tscript ./runL [-options]\n\n");
+      printf("\t-v\t display received frame contents plus:\n\n");
+
+      printf("\t-u\ttransmitted frame contents\n");
+      printf("\t-W\ttransmitted frame timestamps\n\n");
+
+      #ifdef OSX
+      printf("\t-V\tdisplay BPF metadata anomalies on receive\n\n");
+      #endif
+
+      printf("\t-z\tverify and correct checksums received over platform loopback\n");
+      printf("\t-Z\tverify and correct checksums received on all interfaces\n");
+      printf("\t-x\tcorrect instead of zeroing wrong UDP checksums received\n\n");
+
+      printf("\t-h\tdisplay this information and exit\n\n");
       return 0;
    }
 
@@ -1405,7 +1440,7 @@ int main(int argc, char *argv[])
          #ifdef OSX
          bpfp[x].bf_len = j;
          y = ioctl(fdes, BIOCSETF, &bpfp[x]);
-         printf("[SF %d]\n", y, (y < 0) ? errno : j);
+         printf("[SF %d %d]\n", y, (y < 0) ? errno : j);
 
          memcpy(refresh_phya + x, rxtx->sdl_data + rxtx->sdl_nlen, physa_octets);
          #endif	/*	OSX			*/
