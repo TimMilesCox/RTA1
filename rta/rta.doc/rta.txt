@@ -85,7 +85,9 @@ SNMP, HTTP, ICMP and floating point server interact with other computers
 			</ol>
 			<li><a href="#protection">Protection and Safety</a></li>
 			<ol>
-				<li><a href=<"#safety">System Data Protection</a></li>
+				<li><a href="#xlimit">Execution Protection</a></li>
+				<li><a href="#safety">Operand Protection</a></li>
+				<li><a href="#optimal_safe">Optimal Safe Storage Practice</a></li>
 				<li><a href="#device">Device Array Protection</a></li>
 			</ol>
 			<li><a href="#thread">Thread Switch and Address Space</a></li>
@@ -797,27 +799,61 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	Instruction execution advance or jump outside the current instruction frame raises interrupt GUARD$
 
-	There es no restriction on far <a href="#call">call</a> or <a href="#go">go</a> within executable space
+	Instruction frame starts at the page indexed in Port B0 and ends with the page indexed in Port 64
 
-	Targets of the <a href="#ex">execute</a> instruction may be anywhere in actual operand space unless the memory accessed is restricted as unsuitable
+	Some pages at memory start are reserved for interrupt code
+
+	Applications cannot enter ISR space via far <a href="#call">call</a> or <a href="#go">go</a> instruction
+	although ISRs can <a href="#call">call</a>, <a href="#go">go</a> and <a href="#fret">far return</a> in this space,
+	and may call outside ISR space to ISR extensions in application space
+
+	System call interrupts (<a href="#ii">ii instruction</a>) and spontaneous interrupts enter ISR space
+
+	ISR space is defined by start of memory and Application Threshold Page pointer in Port 72
+
+		_________________________
+		|	ISR space	|
+		|_______________________|________application threshold
+		|			|
+
+
+	Applications may not place ISR space in their operand address space with <a href="#sabr">sabr</a> instruction
+
+	Targets of the <a href="#ex">execute</a> instruction may be anywhere in actual address space
+	unless the memory window accessed is unlike executable space, like network frames trunk and filestore
+
+	ISR space is the first part of NVRAM space
+
+	The end of NVRAM space is defined by ROM / RAM threshold page pointer in Port 124
+
+                _________________________
+                |       ISR space       |
+                |_______________________|________application threshold
+                |                       |
+		|	NVRAM continued	|
+		|			|
+		|			|
+		|_______________________|________ROM / RAM threshold		
+		|			|
+		|	RAM		|
 
 
 	<a	name="safety"/>
-	System Data Protection
-	______________________
+	Operand Protection
+	__________________
 
 
-	Storage appears so far as possible only in the address space of routines designated to access it
+	An attempted write in NVRAM space raises the guard interrupt
+
+	Storage appears so far as possible only in the address windows of routines designated to access that storage
 
 	Some storage is read-only for applications
 
 	prevented are
 
-	all reads and writes in unassigned address space windows
+	reads and writes in unassigned address space windows
 
-	all reads and writes above the highest assigned address in a window
-	i.e accesses at window+4096+
-	where the assigned memory block is 4096 words and not 262144 words
+	reads and writes above WINDOW+4095 in an address window where a 4K memory block is based
 
 	writes from applications to
 
@@ -838,6 +874,27 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	address space windows communicating between kernel and applications
 	are only in application address space during kernel routines
+
+
+	<a	name="optimal_safe"/>
+	Optimal Safe Storage Practice
+	_____________________________
+
+	Applications may place any block of executable memory in an address space window
+
+	Kernel and applications have the option of safe managed memory practice using the application vector list
+	which the kernel may write and the application may read
+
+	On storage dynamic acquisition the kernel links the descriptor of acquired storage into the 
+	application memory estate and returns the Start Page Index of acquired storage to the application
+
+	A kernel may also place the Start Page Index in the application vector list where the value is
+	protected from accidental change
+
+	Pointers to far <a href="#call">call</a> and <a href="#go">go</a> subjects identified at build time are already protected by inclusion
+	in the instruction frame literal table which is finalised at system image generation or at <a href="kernel.html#iframe_load">load</a>
+
+	Every process has its own vector list common to all its threads
 
 
 
