@@ -90,6 +90,11 @@ int			 indication;
 
 extern int		 iselect;
 extern word		*apc;
+
+#ifdef	INSTRUCTION_U
+extern word		*apcz;
+#endif
+
 extern page		*b0p;
 extern unsigned int	 psr;
 extern unsigned int	_register[];
@@ -465,6 +470,14 @@ static void *emulate()
    for (;;)
    {
       if (runout < 0) break;
+      if (indication & (EXTERNAL_INDICATIONS)) xi();
+
+      #ifdef INSTRUCTION_U
+      if (apc > apcz)
+      {
+         GUARD_INTERRUPT;
+      }
+      #endif
 
       execute(*apc++);
 

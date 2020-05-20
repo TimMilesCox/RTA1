@@ -168,6 +168,12 @@
 #define BREAKPOINT      4
 #define CHILLDOWN       8
 
+#define	EXTERNAL_INTERRUPT 0xFF00
+#define	ATTENTION	128
+#define	INCREMENTER_CARRY 64
+
+#define EXTERNAL_INDICATIONS EXTERNAL_INTERRUPT|ATTENTION|INCREMENTER_CARRY
+
 #define	time_zone	base[101]
 #define chilldown       base[103]
 

@@ -4,6 +4,8 @@
 	$include	def/rta.def
 	$include	def/ii.def
 	$include	def/vector.def
+	$include	def.sys/events.def
+	$include	def.sys/tcb.def
 	$include	language/stack.def
 	$include	language/iframe.def
 	$include	stream/stream.def
@@ -28,9 +30,11 @@ return	03FFFFF, 200d
 fields	0
 offset	+	right
 
+ra_thread_id	0
+
 $(0:0/$0)
 tal	$tree
-	$application	tal_vector:start
+	$application,,2	tal_vector:start
 
 
 start	$base_x	$zenith(3)-03000  0400
@@ -141,14 +145,16 @@ prang	sscanf	left,,xi	$3("%x:%x":0),,xi	return,,xi return+1,,xi
 
 	lookup	how					;
 		ref, j, go, call, fret, ir, sir, barg,	;
-		bats, bang, base, load, store, push, pop, lcal, ;
-		lret, lretched, popA					;
+		bats, bang, base, load, store, push, pop, lcal,		;
+		lret, lretched, popA, ii, gii, xint, sim, ireqa, launch,	;
+		outA, outB, activate						;
 		dothat
 
 	prompt	prang					;
 		ref, j, go, call, fret, ir, sir, barg,	;
-		bats, bang, base, load, store, push, pop, lcal,	;
-		lret, lretched, popA
+		bats, bang, base, load, store, push, pop, lcal,		;
+		lret, lretched, popA, ii, gii, xint, sim, ireqs, launch,	;
+		outA, outB, activate
 
 	j	input
 
@@ -174,6 +180,15 @@ doso	la	*(31*/18)
 	lcal	ulret
 	lcal	ulretch
 	lcal	upopa
+	lcal	uii
+	lcal	ugii
+	lcal	uxint
+	sim	return
+	lcal	uireqs
+	lcal	ulaunch
+	lcal	uoutA
+	lcal	uoutB
+	lcal	uactivate
 
 refret
 		dpush	return
@@ -323,6 +338,89 @@ upopa	lx	return
 	push	100,,xi
 	popA	0, x
 	lret	0
+
+uii	ii	5		. illegal ii from application to restarts page
+	lret	0		. so it shouldn't come to here
+
+ugii	ii	64		. to a legal but spare slot
+	lret	0		. should just ir
+
+uxint
+take_on* $proc
+	la	?,,xi
+	ii	XINT$BIND
+	$end
+
+	
+	ii	I$TABLE		. start thread interrupts table
+				. for postprocess
+
+?	$do	8,	take_on
+
+	la	XINT,,xi
+	ii	EVENT_WAIT$
+	lret	0
+
+uireqs	on	see$1
+	lx	XINTT+1		. read cursor
+	lr	XINTT+3		. limitof
+uirnext	dl	0, x
+	jza	uireqx
+
+	printf	$3("%lx":10:0),,xi	a,,long
+
+	ax	2,,xi
+	jxge	ufirst
+	
+ulast?	la	x
+	xor	XINTT+2		. next write
+	jza	uireqx
+	j	uirnext
+
+ufirst	lx	XINTT+4,,xi
+	j	ulast?
+
+uireqx	off	see$1
+	lret	0
+
+ulaunch	ql	(ra_thread, 1, 0, 0q)
+	ii	THREAD$
+	sa	ra_thread_id
+	lb	$3("application space interrupt handler"),,xi
+	ii	TAG$
+	printf	$3("ra thread %x":10:0),,xi	ra_thread_id
+	lret	0
+
+uoutA	la	return
+	lb	return+1
+	outA	0, b
+	lret	0
+
+uoutB	lb	return
+	la	return+1
+	outB	0, a
+	lret	0
+
+uactivate
+	dl	return
+	or	(0400000)
+	ii	ALERT$
+	lret	0
+
+ra_thread
+	la	1,,xi
+	ii	AFFINITY$
+	ii	I$TABLE
+
+?	$do	8,	take_on
+
+
+ra_thread_onward
+	la	XINT,,xi
+	ii	EVENT_WAIT$
+	j	ra_thread_onward
+	
+	
 		
 display	$head_near	 params(where,		int	;
 				how_much,	int	)

@@ -132,3 +132,25 @@ void ii(int ea, int latent_parameter)
    apc = &b0p->w[ea & 63];
    apcz = &b0p->w[4095];
 }
+
+void xi()
+{
+   if (indication & EXTERNAL_INTERRUPT)
+   {
+      base[74] = (indication >> 8) & 255;
+      indication &= 255;
+      ii(II_XINT, 0);
+   }
+
+   if (indication & ATTENTION)
+   {
+      indication ^= ATTENTION;
+      ii(II_ATTENTION, 0);
+   }
+
+   if (indication & INCREMENTER_CARRY)
+   {
+      indication ^= INCREMENTER_CARRY;
+      ii(II_MSECOND, 0);
+   }
+}

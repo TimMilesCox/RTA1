@@ -25,7 +25,7 @@ loup:	cmp	edx, dword ptr [_apcz]
 
 	%if	TSLICE
 	test	dword ptr [_psr], 00870000h	; not while ISR or interrupt mask
-	jz	louping
+	jnz	louping
 	test	dword ptr [__register+RT_CLOCK], 00FFFFFFh
 	jz	louping
 
@@ -44,9 +44,24 @@ off_limits:
 	call	_ii
 
 louping:
-	test	dword ptr [_indication], INDICATIONS
+	mov	ax, word ptr [_indication]
+	mov	cl, byte ptr [_psr+2]
+	and	cl, 7				; highest interrupt mask?
+	xor	cl, 7
+	jz	internal_indications?		; maskable interrupts are masked
+
+        test	ax, INDICATIONS|EXTERNAL_INDICATIONS
+	jz	loup
+	test	ax, EXTERNAL_INDICATIONS
+	jz	indicated
+	call	_xi
+	jmp	louping				; keep going intil pending flags are off
+
+internal_indications?
+	test	word ptr [_indication], INDICATIONS
 	jz	loup
 
+indicated
 	mov	dword ptr [_register_set], ebp
 	mov	dword ptr [_apc], edx
 

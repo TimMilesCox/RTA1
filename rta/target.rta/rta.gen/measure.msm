@@ -54,6 +54,7 @@ B4			$equ	x$save1
 
 $(65)
 
+
 banks_lock_cell			$res	1
 
 next				$res	1	.	=next_page_descriptor
@@ -62,6 +63,7 @@ large_bank_descriptor_sp	$res	1
 ?	$do	64,free_chain(?) $res	1
 
 switch_lock_cell		$res	1
+
 free_tdescriptor		$res	1
 next_tdescriptor_sp		$res	1
 tdescriptor_high_index		$res	1
@@ -302,6 +304,7 @@ memory_configured
 
 	z	banks_lock_cell
 	z	free_tdescriptor
+
 ?	$do	63,	z	free_chain(?)
 	z	free_chain(64)
 
@@ -477,6 +480,8 @@ memory_configured
 
 
 bank_free
+	jza	out_of_range	. when the dreaded NULL pointer strikes
+
 	on	see$all**(see$7*/MANAGER_BANKS)-1
 	ts	banks_lock_cell
 	j	$-1
@@ -571,6 +576,7 @@ spiral	ly	x_x			. copy "this" to "previous"
 					. descriptor pointer
 out_of_spiral
 	z	banks_lock_cell
+out_of_range				. descriptor == NULL
 	lret	0
 
 					. the freed bank isn't at
@@ -1005,73 +1011,107 @@ retrieve_thread
 remove_threadx
 	pop	a_x		. retrieve the exiting TCB
 	outA	65		. base it again
-	lret	0		. continue the thread delete
+	lret	1		. continue the thread delete
 
-exit	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
-	la	TDESCRIPTOR
-	z	TDESCRIPTOR	. stop the TCB from looking like itself
-	lb	2, a		. mark the descriptor until it's reassigned
-	orB	(EXIT)
-	sb	2, a
+threads_down			. mark them down
+	la	NEXT_THREAD
+	jza	threadx_down
+
+threads_next_down
+	sabr	BVOLATILE_I
+
+	or	($MCAST_THREAD_HALT:s)	. broadcast halt request
+	push	a_x
+	inA	CORE_SOCKET$
+	aa	core2core_alert,,xi
+	pop	0, a
+
+	lb	-1,,xi		. to all cores in case thread is running
+	outB	MCAST_TO$	. thread cannot run
+				. with thread and process resources deleted
+
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+	la	(TIME_WAIT++EXIT:s)
+	sa	2, x
+
+	la	*(BVOLATILE_I*/12++NEXT_THREAD-01000)
+	jnza	threads_next_down
+
+threadx_down
+	lret	0
+
+tdescriptor_free
+	push	x_x
+	push	MAX_INT_MASK,,xi
+	sim	0, sp		. don't get interrupted in here
+
 	ts	banks_lock_cell
 	j	$-1
-	tanu	next_tdescriptor_sp
-	jnzb	intofreelist
-	aa, xi	TDESCRIPTOR_WORDS
-	sa	next_tdescriptor_sp
-	j	freebanklock
-
-intofreelist
+	lb	next_tdescriptor_sp
+	xorB	x_x
+	jzb	tdescriptor_sp_plus
 	lb	free_tdescriptor
-	sb	0, a
-	sa	free_tdescriptor	
-freebanklock
+	sb	0, x
+	sx	free_tdescriptor
+	j	tdescriptor_freex
+
+tdescriptor_sp_plus
+	ax	TDESCRIPTOR_WORDS,,xi
+	sx	next_tdescriptor_sp
+
+tdescriptor_freex
 	z	banks_lock_cell
+	sim	0, sp
+	inc	sp_x
+	pop	x_x
+	lret	0
+
+
+exit	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+	lx	TDESCRIPTOR
+	z	TDESCRIPTOR	. stop the TCB from looking like itself
+
+	la	(EXIT)
+	sa	2, x
+	lcal	tdescriptor_free
 
 	tz	WALKUP		. if this is not the initial thread
-	lcal	remove_thread	. take it out of the thread chain
+	lcal	remove_thread	. take it out of the thread chain and return + 1
+	lcal	threads_down	. stop threads scheduling
 
-delete
-	la	BANK_CHAIN
-	jza	deleted
-	lr	0, a
-	sr	BANK_CHAIN
+delete	la	BANK_CHAIN
+delete_another			. TCB is certainly there
+	push	0, a
 	lcal	bank_free
-	j	delete
+	pop	a_x
+	jnza	delete_another
+	lret	0
 
-deleted	lr	sp_x
+exit_ii	lr	sp_x
 	la, xi	128
 	sa	sp_x
+	lcal	exit
 
 	ts	switch_lock_cell
 	j	$-1
-
 	j	choose
 
+guard	on	see$all--see$2
+	lx	TDESCRIPTOR
+	la	(TRAP)
+	sa	2, x		. fall thru to immediate yield
 
-guard	tp	1, sp		. test saved PSR for ISR / Application
-	ii	63		. contingency inside ISR, restart in single step
-	la, xi	-1
-	$if	T$SLICE
-	j	yield2last	. yield with priority field forced out of range
-	$else
-	sa	PRIORITY$
-	$endif
-
-yield
-	$if	T$SLICE
-	la	PRIORITIES-1,,xi
-yield2last
-	sa	PRIORITY$	. normal yield = chain after all chains
-	$endif			. all switch chains are scanned as one
-				. allows lesser priority threads time[SLICE][PRIORITY]
-
-	ql	0, fp		. retrieve the interrrupted application frame
+yield	ql	0, fp		. retrieve the interrrupted application frame
 				. switch visibility to TCB and kernel banks
 
 	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
 
 	qs	UPACKET		. interrupt stack frame of application -> TCB
+
+	lx	TDESCRIPTOR
+	la	2, x
+	and	(EXIT)
+	jnza	exit_ii
 
 	inA	1		. relocation pointer, application private stack page
 	sa	ABT+1		. other relocation pointers do not need saving
@@ -1089,17 +1129,30 @@ yield2last
 	ts	switch_lock_cell
 	j	$-1
 
-	la	PRIORITY$	. copy of thread priority in interrupt register 149
-	lx	TDESCRIPTOR	. retrieve pointer in TCB to descriptor in kernel space
+	$if	T$SLICE
+	la	2, x		. what's in the flags?
+	jao	qpriority	. external interrupt wait: schedule prioritised when it happens
 
-	jna	out_of_order	. PRIORITY$ unlikely to become wrong, but that should be handled
+	la	stem(PRIORITIES),,xi
+	j	requeue		. schedule after timeslice or at iowait of other threads
+
+qpriority
+	$endif			. TSLICE
+
+	la	PRIORITY$	. copy of thread priority in interrupt register 149
 	tanu,xi	PRIORITIES
-	jc	out_of_order
+
+	jnc	in_order
+
+				. surprising this this ever happens
+	la	PRIORITIES-1,,xi
+	sa	1, x		. but if it does update the thread descriptor
+in_order
 
 	sal	2		. address the 4-word priority list tail pointer
 	aa, xi	stem(1)
 
-	lb	3, a	. uplink to last in priority chain
+requeue	lb	3, a	. uplink to last in priority chain
 	sx	3, a	. new last <-
 	sx	0, b	. old_last->next
 	sa	0, x	. ->next = stem_post
@@ -1107,6 +1160,34 @@ yield2last
 choose			. now load another task
 			. run forward from the lowest priority chain tail
 			. to the first task descriptor in the highest priority chain
+
+	$if	TDESCRIPTOR_WORDS>6
+
+	inA	CORE_SOCKET$
+	lb	1,,xi
+	sbl	0, a
+	lk	b_x		. k contains the log of the core-id all through choose
+				. for candidate threads which have an affinity mask
+
+p	$proc	*		. 2-pass proc for forward references
+masked_test_jump* $name
+	tnz	p(1)
+	j	not_masked	. least costly path when there is no mask
+	sa	6+128		. leave neither a nor b changed after
+	la	k_x
+	mta	p(1)		. 2nd storage read of mask
+	j	mask_touched	. fall_thru option
+	la	6+128		. flat hierarchy pop
+	j	p(2)		. hit jump condition
+
+mask_touched
+	la	6+128
+
+not_masked 
+	$end
+
+	$endif			. TDESCRIPTOR_WORDS>6	= thread affinity supported
+
 
 	la,xi	stem(PRIORITIES)
 forward	lb	a_x
@@ -1117,6 +1198,10 @@ forward	lb	a_x
 	lcal	timer_check
 	tz	2, a	. clear to run?
 	j	forward
+
+	$if	TDESCRIPTOR_WORDS>6		.	= thread affinity supported
+	masked_test_jump	6, a	forward
+	$endif
 
 	lx	0, a	. ->next becomes previous->next
 	sx	0, b
@@ -1176,23 +1261,6 @@ forward	lb	a_x
 	ir	0	. if we got here from another interrupt
 			. we shall return to there first
 
-out_of_order		. priority in descriptor
-			. does not figure
-	z	0, x
-	la	(TRAP)
-	sa	2, x	. show how we got here in thread descriptor->eventflags
-
-	la	uq_tail
-	sx	uq_tail	. queue for investigation
-	tz	uq_head	. do not schedule again
-	j	extend_uq
-	sx	uq_head
-	j	choose
-extend_uq
-	sx	0, a
-	j	choose
-
-
 spawn	dpush	a_x
 	jnb	priority_out_of_range
 	anb,xi	PRIORITIES
@@ -1237,8 +1305,8 @@ b1_stack_given
 	sb	ABT+1
 
 	la, i	2, b		. vector page
-	outA	2
-	sa	ABT+2
+	sabr	2
+.	sa	ABT+2
 
 	push	TEMP_BASE_ABSO
 	pop	BASE_VECTOR
@@ -1264,12 +1332,13 @@ set_b1	sb	0, a
 ?	$do	60/2,	;
 	ds	ABT+4+?*2-2	. application will open what windows it has
 
+	z	XINTT+3		. start without an interrupts table because
+				. most threads don't get external interrupts
 	la	0, sp
 	jna	gate		. bit 23 = indirectly over a stored gate
-	sal	1
-	jna	application_bank . bit 22 = 32k instruction frame
-				. everything else = 4k instruction frame
-	dsr	6+1		. 16-bit page pointer
+
+	dsr	6
+
 	sbr	18
 	j	store_upacket
 
@@ -1281,13 +1350,7 @@ gate	and	(07FFFFF)	. leave bit 23 behind
 	dsl	6		. frame page high index
 				. is not in interrupt return frame
 	drl	18		. but 1 must be in bit 47
-	j	store_upacket	. to get tabled frame high page index
-				. from the 1st code page
-	
-application_bank
-	dsr	3+1
-	sbr	21
-	sal	3
+
 
 store_upacket
 	ds	UPACKET+2	. set thread transfer
@@ -1318,19 +1381,6 @@ v64*	$name
 	j	no_new_task_descriptor
 
 
-	$if	0
-no_new_task_descriptor
-	la	BANK_CHAIN
-	lcal	bank_free
-no_new_task
-priority_out_of_range
-	pop	a_x
-	pop	b_x
-	dsr	0
-	lret	0
-	$endif
-
-
 	lb	1, sp
 	sb	1, x
 
@@ -1342,6 +1392,8 @@ priority_out_of_range
 
 	z	2, x		. clear tdescriptor flags
 
+	$do	TDESCRIPTOR_WORDS>6,	z	6, x
+				. clear affinity mask
 	sbl	2
 
 	ts	switch_lock_cell
@@ -1355,8 +1407,6 @@ priority_out_of_range
 
 	z	switch_lock_cell
 
-	$if	1
-
 	lx	$VECTOR_HIGH,,xi
 	lr	vpointer(33),,xi
 	ql	(0C00001C00001C00001C00001q)
@@ -1365,28 +1415,6 @@ seal32vectors
 ?	$do	32/4,	qs	32-?*4, x
 
 	jxge	seal32vectors
-
-	$else
-
-?	$do	4-xvector(1)**3,	z	xvector(1)+?-1
-
-				. this is a lot of processing
-				. for interrupt code
-
-				. but the internal interrupt
-				. does not mask any other
-				. interrupts
-
-	lx, xi	xvector(1)+3**-4
-	lr, xi	+(02FFC-xvector(1))/*2
-	dsr	48
-	ds	6+128
-
-zero4vectors
-	qs	0, x
-	ax, xi	4
-	jdr	zero4vectors
-	$endif
 
 	la, xi	handle(4)	. good, reserve handle(1..3)
 	sa	handles

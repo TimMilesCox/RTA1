@@ -5,6 +5,48 @@ _off:	xor	ax, 0000FFFFh
 	and	word ptr [_psr], ax	; only touch low-order 16 bits
 	ret
 
+_xi:	and	ah, ah			; 8 external interrupts
+	jz	_xix
+
+	xor	cl, cl
+
+_xi_next:					; external interrupt pending signals[8]
+	mov	byte ptr [_base+74*4], ah	; position for inA|B from port XI_PENDING$
+	mov	byte ptr [_indication+1], 0	; clear from platform indications fabric
+	xor	esi, esi			; clear latent param
+	mov	eax, II_XINT			; select external interrupt
+
+	jmp	_ii_
+	
+_xix:	test	al, ATTENTION			; core2core interrupt
+	jz	_xiy
+
+	xor	byte ptr [_indication], ATTENTION
+	mov	eax, II_ATTENTION
+	xor	esi, esi
+
+	jmp	_ii_
+
+_xiy:	test	al, INCREMENTER_CARRY		; nanosecond or other counter 
+	jz	_xiz				; from minus to carrry on zero
+						; to feed millisecond dayclock
+	xor	byte ptr [_indication], INCREMENTER_CARRY
+	mov	eax, II_MSECOND
+	xor	esi, esi
+	jmp	_ii_
+
+_xiz:	ret
+
+_ii_instruction
+	test	eax, -64
+	jnz	_ii			; not in restart page OK
+	test	byte ptr [_psr+2], 128	; psr + 1 in BE-speak LE:L_M_H_Z
+	jnz	_ii			; ISR may interrupt to restart page
+
+		; service call application to restart page not allowed
+		; most likely to be an accident
+		; drop thru and be quelled
+
 guard_ii_authority
 	mov	esi, LP_AUTHORITY
 guard_ii_escape
@@ -16,12 +58,12 @@ _ii:	cmp	eax, II_GUARD
 	jnz	_ii_
 	test	byte ptr [_uflag+'Z'-'A'], 1	; break to debug console?
 	jz	_ii_				; not if not opted
-	or	byte ptr [_indication], 2
+	or	byte ptr [_indication], LOCKSTEP
 	
 _ii_:	mov	ebp, __register+128*4
 	mov	dword ptr [_register_set], ebp
 	mov	dword ptr [_iselect], 128
-;	mov	dword ptr [__register+280*4], 128
+
 	add	dword ptr [ebp+S_P], -4
 	mov	ebx, dword ptr [ebp+S_P]
 	sub	edx, dword ptr [_b0p]
@@ -36,8 +78,10 @@ _ii_:	mov	ebp, __register+128*4
 	jnz	_ii_ii
 	mov	dword ptr [ebp+FP], ebx	; if not, mark interrupted
 					; application stack frame
-_ii_ii:	or	edx, 00800000h		; ISR active
+_ii_ii:
+	or	edx, 00800000h		; ISR active
 	mov	dword ptr [_psr], edx
+
 	mov	edx, eax		; get to the operand
 	and	edx, 63			; address from interrupt vector
 	shr	eax, 6
@@ -56,13 +100,10 @@ _ir:	test	byte ptr [_psr+2], 128	; eax = EA = variation on return offset
 	call	stack_read4		; [ebp+ebx*4] -> interrupt stack frame
 					; interrupt stack pointer is already updated ebx+4
 
-;	mov	esi, dword ptr [ebp+S_P]
-;	add	dword ptr [ebp+S_P], 4
-;	mov	eax, dword ptr [esi*4+__register+2*4]	; return b0_name
-
 	mov	eax, dword ptr [ebp+ebx*4+2*4]		; interrupted b0_name
 
 	mov	ecx, dword ptr [ebp+ebx*4+1*4]		; interrupted psr
+
 	add	edx, dword ptr [ebp+ebx*4+3*4]		; add interrupted iframe offset to EA
 
 	xor	ebx, ebx				; 
@@ -78,6 +119,9 @@ ir_4k_iframe:
 	mov	dword ptr [_psr], ecx
 	test	ecx, 00800000h				; returning ISR -> ISR ?
 	jz	ir_application				; no
+	 mov	ebp, __register+128*4			; for nested interrupts
+	 mov	dword ptr [_register_set], ebp		; positively maintain
+	 mov	dword ptr [_iselect], 128		; interrupt register set
 	jmp	_go2_frame				; yes
 
 ir_application:

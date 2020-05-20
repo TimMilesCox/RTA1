@@ -18,7 +18,32 @@ $(0)
 load_request
 	fgets	request,,i	180	stdin
 	printf	$3("loader: %s":10:0),,xi	request,,xi
+	
+next_request
+	lx	request+2,,xi
+	lk	(255*/16s)
 
+next_words
+	dl	0, x
+	ax	2,,xi
+
+next_symbol
+	mtane	('/'*/16)		. 1: found the path start?
+	j	load_by_path
+	mtane	('@'*/16)		. 2: found a command?
+	j	command
+	mtane	(0)			. 3: trailing zero before anything found?
+	j	trial_new_prompt
+	mtane	(10*/16)		. 4: or LF
+	j	trial_new_prompt
+	mtane	(13*/16)		. 5: or CR
+	j	trial_new_prompt
+	mta	(' '*/16)		. 6: or some leading space ?
+	j	find_loaded		. no it's a name to find among preloads
+	dsl	8
+	jdz	next_words		. six leading spaces, keep going
+	
+load_by_path
 	c	(fspath)	request+2,,xi
 	jza	trialu
 
@@ -29,6 +54,8 @@ load_request
 	jna	trialy
 
 	qs	transfer_gate
+
+	printf	$3("[%qx]":10:0),,xi	a
 
 	$if	1
 	ql	launch_profile
@@ -53,7 +80,32 @@ load_request
 	call	(0800000++transfer_gate:s)
 	$endif
 
-trialx	fret	0
+trialx
+	$if	0
+	la	2,,xi
+	ii	EVENT_WAIT$
+	fret	0
+	$else
+	la	new_process
+	ii	THREAD$STATE
+	jnza	trial_end_detect	. concluded or stopped
+
+	ii	YIELD$
+	j	trialx
+
+find_loaded
+	printf	$3("we hope to do that soon":10:0),,xi
+trial_end_detect
+trial_new_prompt
+
+	printf	$3("load>":0),,xi
+	fflush	stdout
+	fgets	request+2,,i	174	stdin
+	j	next_request	
+
+
+
+	$endif
 
 trialu	printf	$3("%s not located":10:0),,xi	request+2,,xi
 	j	trialz
@@ -62,6 +114,7 @@ trialy	printf	$3("load error %d":10:0),,xi a
 	j	trialz
 
 nonstarter printf $3("process unassigned":10:0),,xi
+command
 trialz	ii	YIELD$			. let the print proceed before EXIT$
 	fret	0
 

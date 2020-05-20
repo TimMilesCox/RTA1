@@ -32,7 +32,6 @@ See also the licensing notice at the foot of this document
 		<dd><a	href="#array_ii">ARRAY$</a></dd>
 		<dd><a	href="#bfree_ii">BANK$FREE</a></dd>
                 <dd><a  href="#fpguard_ii">FP_GUARD$</a></dd>
-                <dd><a  href="#evw_ii">EVENT_WAIT$ </a></dd>
 		<dd><a	href="#xpof_ii">FP_XPO$FLAG</a></dd>
 		<dd><a	href="#yield_ii">YIELD$</a></dd>
 		<dd><a	href="#twait_ii">TWAIT$</a></dd>
@@ -123,11 +122,24 @@ See also the licensing notice at the foot of this document
 
 <div    style="background-color:E0E0E0">
 
-<dl><a href="#tcp_steps">Appendix A: Low-Level TCP Interface</li>
+<dl><a href="#tcp_steps">Appendix A: Low-Level TCP Interface
 </dl>
-<dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface</li>
+<dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface
 </dl>
-<dl><a href="#ii_steps">Appendix C: Kernel Service Building Block Internal Interrupts</li>
+<dl><a href="#appx_c">Appendix C: System Information Interrupt Calls
+		<dd><a	href="#total_mfree_ii">TOTAL$FREE</a></dd>
+		<dd><a  href="#thread_state_ii">THREAD$STATE</a></dd>
+</dl>
+<dl><a href="#appx_d">Appendix D: Interrupt Calls normally issued by Kernel Routines
+                <dd><a  href="#event_wait_ii">EVENT_WAIT$</a></dd>
+                <dd><a  href="#event_free_ii">EVENT_FREE$</a></dd>
+		<dd><a	href="#dayclock_w_ii">DAYCLOCK$W</a></dd>
+		<dd><a	href="#xbase32_43_ii">XBASE$32..XBASE$43</a></dd>
+		<dd><a  href="#storage_block_idxa_ii">A$IDX</a></dd> 
+		<dd><a  href="#storage_block_idxb_ii">B$IDX</a></dd> 
+		<dd><a  href="#net2sym_ii">NET2SYM$</a></dd> 
+</dl>
+<dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls
 </dl>
 </div>
 </div>
@@ -348,15 +360,6 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				set floating point rounding guard pattern in interrupt register 147
 				to the value in application register a
 				returns old value in application register a
-
-	<a	name="evw_ii"/>
-	EVENT_WAIT$	92	= Page Index 1  offset 28
-				<a      style="color:#0000FF">
-				la	(<i>EVENT_SELECTORS</i>)
-				ii	EVENT_WAIT$
-				</a>
-
-				wait for the event flagged in application register a
 
 	<a	name="xpof_ii"/>
 	FP_XPO$FLAG	78	= Page Index 1  offset 14
@@ -1292,5 +1295,187 @@ octets. So are the target-position and result-position of lseek()
 
 </pre>
 
+<a	name="appx_c"/>
+<h3>Appendix C: System Information Interrupt Calls</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="total_mfree_ii"/>
+	TOTAL$FREE	88 (058)	= Page Index 1	offset	8
+				<a	style="color:#0000FF">
+				ii	TOTAL$FREE
+				</a>
+
+				return free data words system memory in registers a:b
+
+
+        <a      name="thread_state_ii"/>
+        THREAD$STATE    114 (072)       = Page Index 1  offset 50
+                                <a      style="color:#0000FF">
+                                la      <i>THREAD_CONTROL_BLOCK_INDEX</i>
+                                ii      THREAD$STATE
+                                j       no_longer_running
+                                j       running
+                                </a>
+
+                                check if thread is running
+                                skip one instruction if so
+
+</pre>	
+
+<a	name="appx_d"/>
+<h3>Appendix D: Interrupt Calls normally issued by Kernel Routines</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="event_wait_ii"/>
+	EVENT_WAIT$	92 (05C)	= Page Index 1  offset 28
+				<a      style="color:#0000FF">
+				la	(<i>EVENT_SELECTORS</i>)
+				ii	EVENT_WAIT$
+				</a>
+
+				wait for the event flagged in application register a
+
+				events	100000 (thread faulted)
+					200000 (thread ended) cannot be flagged for wait
+
+	<a	name="event_free_ii"/>
+	EVENT_FREE$	93 (05D)	= Page Index 1	offset 29
+				<a	style="color:#0000FF">
+				la	(<i>EVENT_SELECTORS</i>)
+				ii	EVENT_FREE$
+				</a>
+
+				cancel wait for selected events
+				flags	100000 (thread faulted)
+					200000 (thread ended) are not cleared
+
+	<a	name="dayclock_w_ii"/>
+	DAYCLOCK$W	90 (05A)	= Page Index 1  offset 26
+				<a	style="color:#0000FF">
+				dl	<i>MILLISECOND</i>
+				ii	DAYCLOCK$W
+				</a>
+
+				start millisecond on aeon with write to
+				interrupt registers DAYCLOCK$U DAYCLOCK$
+
+	<a	name="xbase32_43_ii"/>
+	XBASE$32	96 (060)	= Page Index 1	offset 32
+	...XBASE$33 XBASE$34 XBASE$35 XBASE$36 XBASE$37
+	   XBASE$38 XBASE$39 XBASE$40 XBASE$41 XBASE$42...
+	XBASE$43	107 (06B)	= Page Index 1	offset 43
+				<a	style="color:#0000FF">
+				la	(<i>DEVICE_BLOCK_BASE_REQUEST</i>)
+				ii	XBASE${ 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 }
+				</a>
+
+				place a peripheral device array block in one address space window of [32..43]
+
+
+	<a	name="storage_block_idxa_ii"/>
+	A$IDX		115 (073)	= Page Index 1  offset 51
+				<a	style="color:#0000FF">
+				la	[2..63],,xi
+				ii	A$IDX
+				</a>
+
+				retrieve the Start Page Index of the storage block in Window [register a]
+				into register a
+
+	<a	name="storage_block_idxb_ii"/>
+	B$IDX		116 (074)	= Page Index 1  offset 52
+				<a	style="color:#0000FF">
+				lb	[2..63],,xi
+				ii	B$IDX
+				</a>
+
+				retrieve the Start Page Index of the storage block in Window [register b]
+				into register b
+
+	<a	name="net2sym_ii"/>
+	NET2SYM$	113 (071)	= Page Index 1  offset 49
+				<a	style="color:#0000FF">
+				lx	<i>TRANSMISSION_CONTROL_BLOCK</i>
+				la	<i>THREAD_CONTROL_BLOCK_INDEX</i>
+				ii	NET2SYM$
+				</a>
+
+				encode a handle from transmission control block address [register x]
+				in handles [0 1 2] stdin stdout stderr
+				of the containing process of thread [register a]
+
+</pre>
+
+<a	name="ii_steps">
+<h3>Appendix E: Kernel Building Block Interrupt Calls</h3>
+
+These system calls are made within kernel routines which applications have called
+
+<pre	style="font-size:12pt">
+
+	<a  name="#handle_ii"/>
+	HANDLE$			obtain a new handle
+
+	<a  name="#free_handle_ii"/>
+	FREE_HANDLE$		pool a freed handle
+
+	<a  name="#read_handle_ii"/>
+	READ_HANDLE$		read 1st word of handle encoding
+
+	<a  name="#read_xvector_ii"/>
+	READ_XVECTOR$		obtain a pointer from kernel vector list
+
+	<a  name="#write_xvector_ii"/>
+	WRITE_XVECTOR$		update a pointer in kernel vector list
+
+	<a  name="#read_socket_ii"/>
+	READ_SOCKET$		read both words of handle encoding
+
+	<a  name="#usocket_ii"/>
+	USOCKET$
+
+	<a  name="#usocket_c_ii"/>
+	USOCKET$C
+
+	<a  name="#kernel_b1_ii"/>
+	KERNEL$B1		switch to an named kernel B1 frame
+
+	<a  name="#b1_ii"/>
+	B1$			switch to application b1 frame
+
+	<a  name="#kernel_b1_ii_1"/>
+	KERNEL$B1_1		switch to 1st kernel b1 frame
+
+	<a  name="#base_standard_netbuf_ii"/>
+	ON_NETB$		place default network buffers
+				in application address windows B48 to B63
+
+	<a  name="#unbase_deviceb_ii"/>
+	FREE_DEVB$		close address space window B32
+
+	<a  name="#unbase_socketb_ii"/>
+	FREE_SOCKB$		close address space window B47
+
+	<a  name="#unbase_standard_netbuf_ii"/>
+	FREE_NETB$		close application address space windows B48 to B63
+
+	<a  name="#file_open_frame_ii"/>
+	FO$FRAME		obtain a data file open descriptor
+				at root of application external stack
+
+	<a  name="#files_open_heap_ii"/>
+	FO$HEAP			start data file open descriptor stack
+				at root of application external stack
+
+	<a  name="#file_handle_ii"/>
+	FILE$HANDLE		add data file open descriptor pointer x
+				to handle number a
+
+	<a  name="#assign_xvector_ii"/>
+	ASSIGN_XVECTOR$		obtain kernel storage
+				for new kernel structures
+				
+
+</pre>
 </div>
 

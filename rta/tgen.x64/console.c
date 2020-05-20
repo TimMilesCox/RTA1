@@ -3,7 +3,7 @@
 #ifdef PPC
 #include <sys/malloc.h>
 #else
-#include <malloc.h>
+#include <sys/malloc.h>
 #endif
 
 #include "../engine.rta/emulate.h"
@@ -122,6 +122,31 @@ void action(char request[])
       fflush(stdout);
       return;
    }
+   #endif
+
+   #ifdef _XINT
+   if (symbol == 'j')
+   {
+      /************************************************************
+	"index" is an 8-bit mask to generate 8 interrupts at once
+      ************************************************************/
+
+      sscanf(request + 1, "%x:%x", &index, &datum);
+
+      xx = 8;
+
+      while (xx--)
+      {
+         if ((index >> xx) & 1) base[80 + xx] = datum;
+      }
+
+      indication |= (index << 8) & EXTERNAL_INTERRUPT;
+      printf("[%x:%x:%x]\n", index, datum, indication);
+      return;
+   }
+
+   if (symbol == 'k') indication |= INCREMENTER_CARRY;
+
    #endif
 
    if (flag['s'-'a'] == 0)

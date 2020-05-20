@@ -486,6 +486,8 @@ void *emulate()	/* thread start */
       #ifdef GCC
       for (;;)
       {
+         if (indication & (EXTERNAL_INDICATIONS)) xi();
+         
          #ifdef INSTRUCTION_U
          if (apc > apcz)
          {

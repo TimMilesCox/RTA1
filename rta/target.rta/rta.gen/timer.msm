@@ -40,25 +40,8 @@
 
 .	this is
 
-.		 rta.gen/timer.msm
-
-.	and it does nothing except a yield instead
-.	of a TWAIT$. if anyone starts using
-
-.		ii TWAIT$
-
-.	and the platform has no timer services
-.	this should be included instead of
-
-.		timer/timer.msm
-
-
-i_timer
-	ir	0
-
-
-i_time
-	ir	0
+.		rta.gen/timer.msm
+.		contains service call TWAIT$
 
 twait_ii
 	dl	DAYCLOCK$U
@@ -66,7 +49,7 @@ twait_ii
 	on	see$1++see$3++see$4++see$5++see$6++see$7
 	lx	TDESCRIPTOR
 	ds	4, x
-	la	(0800000s)
+	la	(0800000s)	. TIME_WAIT -> schedule flags
 	or	2, x
 	sa	2, x
 	j	yield
@@ -74,11 +57,33 @@ twait_ii
 timer_check
 	qpush	x_x
 	lx	a_x
-	dl	DAYCLOCK$U
+
+	la	2, a		. an asynchronously cancelled thread?
+	and	(EXIT)
+	jza	timer_cheq	. no, check for time wait expired
+				. yes, manoeuvre the descriptor
+				. out of the switch list
+	la	0, x		. next to pop back from stack
+	sa	2, sp		. as resulting actual
+	sa	0, b		. and is new next of prior
+	tp	1, a		. prior may become new last in its priority
+	sb	3, a		. if so it's the new uplink of the stem
+
+	la	3, x
+
+	outA	65		. base the thread control block
+	lcal	exit		. the exit routine expects it
+
+	j	timer_chex
+
+timer_cheq
+
+	dl	DAYCLOCK$U	. a time wait expired?
 	dan	4, x
 	jna	timer_chex
 	z	2, x		. the clock > my deadline
+
 timer_chex
 	qpop	x_x
 	lret	0
-	
+

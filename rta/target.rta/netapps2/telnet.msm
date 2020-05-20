@@ -187,7 +187,7 @@ telnet_command
 	dl	10
 
 	anu	('t'*/16:s)
-	jzb	telnet_tasks
+	jzb	telnet_threads
 	anu	('h'*/16:s)
 	jzb	telnet_help
 
@@ -207,7 +207,13 @@ telnet_command
 	jzb	telnet_quicktimeout	. a test
 
 	anu	('r'*/16s)
-	jzb	telnet_run
+	jzb	telnet_run)
+
+	anu	('z'*/16s)
+	jzb	telnet_thread_term
+
+	anu	('iq'*/8s)
+	jzb	telnet_ilist
 
 	dl	10
 	dan	("stay")
@@ -223,12 +229,12 @@ telnet_command
 
 	j	telnet_prompt
 
-telnet_tasks
+telnet_threads
 	lb, xi	$3("console threads display":10)
 	la	$bits/$byte,,xi
 	push	x
 	lcal	telnet_respond
-	lcal	telnet_tasklist
+	lcal	telnet_threadlist
 	pop	x
 	lret	0
 
@@ -394,6 +400,79 @@ telnet_run_report
 	pop	a
 	lret	0
 
+telnet_thread_term
+	call	(scanhex)
+	ii	$ZETA
+
+	la	1,,xi
+	lb	$3("":10),,xi
+	j	telnet_respond
+
+telnet_ilist
+	call	(scanhex)
+	jza	telnet_thread_not_active
+	ii	THREAD$STATE
+	j	telnet_thread_not_active
+
+	sabr	31
+	lb	(31*/12++XINTT-01000)
+
+telnet_uireqs
+	lx	xitable:rcursor		. read cursor
+	push	b
+	push	x
+
+telnet_uirnext
+	ax	b			. x += working address window
+	dl	0, x			. read table entry
+
+	jza	telnet_uireqx		. entry used or not yet written
+
+	push	b
+	call	(display_quartets)
+	ds	tn_editline
+	pop	a
+	call	(display_quartets)
+	ds	tn_editline+2
+
+	lx	telnet_tpaside
+	la	12,,xi
+	lb	tn_editline,,xi
+	lcal	telnet_insert
+
+	la	1,,xi
+	lb	$3("":10:0),,xi
+	lcal	telnet_respond
+
+	lx	0, sp			. retrieve table relative read cursor
+	lb	1, sp			. retrieve table
+
+	lr	xitable:limit		. read table size
+	ax	2,,xi			. advance read cursor
+	sx	0, sp
+	jxge	telnet_ufirst		. jump to wrap
+	
+telnet_ulast?
+	la	x
+	xor	xitable:wcursor		. lapped the write pointer?
+	jza	telnet_uireqx		. yes
+	j	telnet_uirnext		. no
+
+telnet_ufirst
+	lx	4,,xi			. table relative 1st entry
+	j	telnet_ulast?
+
+telnet_uireqx
+	pop	0, sp
+	pop	0, sp
+	lx	telnet_tpaside
+	lret	0
+
+telnet_thread_not_active
+	lb	$3("thread not active":10),,xi
+	la	$bits/$byte,,xi
+	j	telnet_respond
+
 telnet_configure
 		. something received clearly not keyed text
 		. it should include line mode
@@ -436,19 +515,19 @@ telnet_configuration
 
 
 
-telnet_tasklist
+telnet_threadlist
 .	la	(' '*/$word-$byte)
 .	sa	tn_editline+2
 	on	+(see$7*/MANAGER_BANKS)-see$7
 	lr	tdescriptor_high_index
 	ly	next_tdescriptor_sp
 	
-telnet_task1
-	jyge	telnet_taskx
-	lcal	telnet_task_display
+telnet_thread1
+	jyge	telnet_threadx
+	lcal	telnet_thread_display
 	ay	TDESCRIPTOR_WORDS,,xi
-	j	telnet_task1
-telnet_taskx	
+	j	telnet_thread1
+telnet_threadx	
 	off	+(see$7*/MANAGER_BANKS)-see$7
 	lret	0
 
@@ -467,6 +546,8 @@ telnet_display_quartets
 
 telnet_thread_name
 	push	x			. connection
+	tp	a
+	n	a
 	sabr	32			. place thread control block
 	lx	(32*/12++TAG-4096)	. in file access space a moment
 	lr	36, x, i
@@ -504,20 +585,23 @@ telnet_counted_name
 	lcal	telnet_insert
 	lret	0
 
-telnet_task_display
+telnet_thread_display
 
 	push	y
 	push	r
 	lx	4, sp
 	on	+(see$7*/MANAGER_BANKS)-see$7		. see kernel storage
-	dpush	4, y
-	qpush	0, y
+
+	$do	TDESCRIPTOR_WORDS**1,		push	TDESCRIPTOR_WORDS**-2, y
+	$do	TDESCRIPTOR_WORDS**2^=0,	dpush	TDESCRIPTOR_WORDS**-4, y
+?	$do	TDESCRIPTOR_WORDS/4,		qpush	+(TDESCRIPTOR_WORDS**-4)-?*4, y
+
 	off	+(see$7*/MANAGER_BANKS)-see$7		. see application storage
 
 	la	(' '*/$word-$byte)
 	sa	tn_editline+2
 
-	$do	6,	telnet_pop2hex
+	$do	TDESCRIPTOR_WORDS,	telnet_pop2hex
 	
 	on	+(see$7*/MANAGER_BANKS)-see$7
 	ly	1, sp					. snoop in the

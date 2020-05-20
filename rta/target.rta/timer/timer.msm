@@ -1,4 +1,4 @@
-
+.       
 .    Copyright Tim Cox, 2012
 .    TimMilesCox@gmx.ch
 .
@@ -20,7 +20,7 @@
 .    on other computers and interacting with the RTA1 are free software
 .
 .    Scripts and utility programs for constructing RTA1 target
-.    executable software are free software
+.    executable software are free software      
 .
 .    You can redistribute it and/or modify RTA1
 .    under the terms of the GNU General Public License as published by
@@ -38,155 +38,42 @@
 .
 
 
+.	this is
 
-twait_ii
-	on	see$1++(see$7*/MANAGER_BANKS)-see$7
-	la, xi	0
-	lb	a
-	da	DAYCLOCK$U
-	lx	TDESCRIPTOR
-	ds	4, x
-	lb	2, x
-	orB	(1*/23s)
-	sb	2, x
-	j	1	. vector to yield_ii
+.		timer/timer.msm
+.		in restarts page because none of it is service calls
 
+PER_SECOND	$equ	1000000000	. just for now the incrementer
+					. is in nanoseconds indeed
 
-.	external interrupt i_timer may only happen on one
-.	instruction processor. It broadcasts interrupt
-.	i_time to the other processors in the SMP
+i_timer				. incrementer overflow
+				. when an incrementer is added to hardware
+				. update the dayclock in interrupt registers
+				. DAYCLOCK$U DAYCLOCK
+				. and multicast the new millisecond time
+				. with an out to the I/O port that does that
 
-.	it must transfer updated DAYCLOCK$U:DAYCLOCK
-.	to the other instruction processors
-
-
-.	at simplest OVERFLOWER$ should overflow at
-.	1 millisecond and DAYCLOCK$U:DAYCLOCK is in ms
-
-.	at impossible
-.	(because just over 1 million timer interrupts / second)
-.	the overflower should overflow at intervals of
-.	1 microsecond / 1.024
-.	and DAYCLOCK$U:DAYCLOCK is in 1/1024 steps of a millisec
-
-.	this would allow millisecond time to be obtained
-.	by shifting the dayclock right ten bit positions
-
-.	to wait an exact number of microseconds
-.	requested quanta would = microsends * 1.024
-
-.	however the dayclock can be scaled finer than 1ms
-.	but not so drastically as 1/1024 of 1ms
-
-.	for example a half, an eighth, a sixteenth of an ms
-
-
-. usleep
-.	$do	MILLISECOND_LOG^=0,	;
-.	dsl	MILLISECOND_LOG		. multiply by ?
-.	d, xi	1000			. divide by 1000
-.	ii	TWAIT$
-.	lret	0			. locally included library
-	
-
-.	if DAYCLOCK$U:DAYCLOCK is scaled finer than 1 ms
-.	then a TWAIT$ of zero quanta can regain control
-.	in less than 1 MS, making a very short deferred yield
-.	in a high-priority thread (it becomes a load-go
-.	candidate again at the next timer interrupt)
-
-.	if DAYCLOCK$U:DAYCLOCK is NOT scaled finer than 1 ms
-.	then protocol timers need not scale references to it
-
-.	protocol timers use the LS 24 bits of millisecond time
-
-.	TCP SEQ and ACK have always been conventionally
-.	initialised to the LS 32 bits of millisecond time	
-
-.	therefore if there is ever going to be a nonzero
-.	MILLISECOND_LOG, references to it in IP must also
-.	reference MILLISECOND_LOG (optimally by biasing the
-.	values they compare with DAYCLOCK$U:DAYCLOCK, much less
-.	optimally by shifting the readout of DAYCLOCK$U:DAYCLOCK)
-
-
-.	the incrementer port overflow interrupt
-.	is wired to just one instruction processor
-.	optimally via a switch block. It shares
-.	the updated DAYCLOCK$U:DAYCLOCK$ with other
-.	instruction processors by writing kernel B1_1
-
-.		ds	dayclock$
-
-.	and then advertises the update by writing I/O port
-
-.		DAYCLOCK_UPDATE$
-
-.	This multicasts the interprocessor interrupt
-
-.		TIME$BROADCAST
-
-.	ISR i_time reads kernel storage dayclock%
-.	and writes registers DAYCLOCK$U and DAYCLOCK$
-
-.		dl	dayclock$
-.		ds	DAYCLOCK$U
-
-
-i_timer	ts	switch_lock_cell . this ISR doesn't update pointers
-	j	$-1		. but another one might
-
-	on	see$all
-
-	$if	INCREMENTER_INTERVAL>32768
-	la	(-INCREMENTER_INTERVAL)
-	$else
-	la, xi	-INCREMENTER_INTERVAL
-	$endif
-
-	outA	OVERFLOWER$
+	dpush	a_x		. may be a nested interrupt
 	dl	DAYCLOCK$U
 	da	(1d)
-
 	ds	DAYCLOCK$U
-	ds	dayclock$	. write B1_1 kernel storage
-				. or mybe vector bank instead
+	on	see$3		. kernel memory
+	ds	new_dayclock
+	dl	(-PER_SECOND/1000, -1d)
+	outA	INC$START
 
-	la, xi	THIS_CORE--(1*/CORES)-1
-	outA	DAYCLOCK_UPDATE$
-
-				. walk the switch list for
-				. expired time waits
-	lx, xi	stem(PRIORITIES)
-i_timer_r
-	la	0, x
-	lx	a
-	ana, xi	stem(PRIORITIES)
-	jza	i_timer_x
-
-	tp	1, x		. a descriptor or just an stem(?)
-	j	i_timer_r
-
-	la	2, x
-	jpa	i_timer_r	. not time-waited
-
-	dl	DAYCLOCK$U
-
-	dan	4, x		. new time - target time >= zero
-	jna	i_timer_r	. next if not
-	z	2, x		. into action if so
-	j	i_timer_r	. then next
-
-i_timer_x
-	z	switch_lock_cell
+	inA	CORE_SOCKET$
+	aa	core2core_alert,,xi
+	push	$MCAST_DAYCLOCK,,xi
+	pop	0, a
+	
+	outB	MCAST_TO$	. in addition to doing a real broadcast
+	pop	a_x
+	pop	b_x
 	ir	0
 
-
-.	ISR of the multicast interrupt which advertises
-.	the updated dayclock value in kernel storage
-
-
-i_time	dl	dayclock$
+dayclock_update			. do this when an incrementer is there
+	dl	new_dayclock	. receive the new time from multicast
 	ds	DAYCLOCK$U
-	ir	0
 
+	lret	0

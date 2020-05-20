@@ -39,20 +39,37 @@
 
 
 event_free_ii
-	la	a
-	and	(01FFFFF)
-	on	see$all**(see$7*/MANAGER_BANKS)-1
-	z	2, a
+	dl	a			. you can't be running while event-wait-flagged
+					. but if you are, get your own TCB first: inA 65
+	sabr	BVOLATILE_I		. your're doing this to another thread usually
+
+	xorB	(00FFFFFs)		. make an AND mask
+	orB	(0700000s)		. don't turn off delete or halted flags
+					. but turn off timewait if requested
+
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+
+	andB	2, x			. keep event flags not specified for clear
+	sb	2, x
+
+	la	(0C00001s)		. close the window
+	sabr	BVOLATILE_I
+
 	ir	0
 
 event_wait_ii
+	dl	a			. load flags, optional timeout up to 4.66 hours
 	on	see$1++(see$7*/MANAGER_BANKS)-see$7
-	la	TDESCRIPTOR
-	lb	2, a
-	orB, xi	1
-	sb	2, a
-	ir	0
+	lx	TDESCRIPTOR
+	or	2, x			. add new flags
+	sa	2, x			. and save
+	tp	a			. was TIME_WAIT added? (application a)
+	lcal	event_time_limit	. set new wait time target
+	j	yield
 
-i_alert	la	PRIORITY$
-	jnza	yield
-	ir	0
+event_time_limit
+	la	0,,xi			. zero extend the wait time
+	da	DAYCLOCK$U		. add to make a target time
+	ds	4, x			. last 2 words thread descriptor
+	lret	0
+

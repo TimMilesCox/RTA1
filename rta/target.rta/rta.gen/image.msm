@@ -1,4 +1,4 @@
-.       
+
 .    Copyright Tim Cox, 2012
 .    TimMilesCox@gmx.ch
 .
@@ -57,6 +57,7 @@
 	$include	io.def
 	$include	base.def
 	$include	banks.def
+	$include	events.def
 	$path
 	$include	../timer/timer.def
 	$include	../fs/fs24.def
@@ -96,9 +97,19 @@ RAM_LOAD_PAGES		$equ	OS_HIGH+4095/*12
 	$list		2
 $(65:MANAGER_TABLE)
 
-$(0:0:0)
+new_dayclock	$res	2
+core2core_alert	$res	24		. parameter buffers for core2core interrupts
+
+	.	the rest of $(65) starts with memory management and scheduler data
+
+$(0:0:0/$p0)
 	j		engage		. normal start
 	j		restart		. ISR in error restart single step
+	j		external_interrupts
+	j		fpxpo_ii
+
+		j		i_timer		. TIMER$* incrementer overflow
+		j		alert_ii	. ATTENTION$*
 
 	$do		63-$,	ir	0
 
@@ -116,8 +127,16 @@ engage	lx, xi		256-4
 
 	lcal		load_image
 
+			. this is an indirection literal pointing to a gate literal
+			. pointing past the interrupt vectors in TRANSFER_PAGE
 image_in_rom
-	go		(TRANSFER_PAGE/*6)
+	go		(0800000++$p0(start, TRANSFER_PAGE/*12d)s)
+
+			. was [ go (TRANSFER_PAGE/*6) ] but an application could interrupt
+			. to there by mistake and accidentally reinitialise the system
+
+			. an application can only get to page TRANSFER_PAGE with ii instruction
+			. but this is also interrupt code and can go or call into ISR space
 
 anomaly	lk		-1,,xi
 	la		7, sp
@@ -131,6 +150,284 @@ anomaly	lk		-1,,xi
 
 restart	call		(xrelay_reset)
 	j		engage
+
+external_interrupts
+	qpush		a_x			. all external interrupts are allowed
+	qpush		r_x			. in overlapped time
+	on		see$1
+	dpush		ABT+WORKTANK_I
+
+	inA		XI_PENDING$
+	and		255,,xi			. only expecting 8 pins
+	jza		external_ixx
+	inB		CORE_SOCKET$
+	sbl		3			. core index positioned to OR device index
+
+	push		1,,xi			. pending pin position biased
+	push		-1,,xi
+	dpush		a_x
+
+	inA		CORE_SOCKET$ 		. this core index
+	sal		3			. clear bits for external device index
+	off		carry$			. don't roll a random 1 into 3,sp
+						. the first time around
+external_next					. 3,sp contains 1 pin position bit
+	inc		2, sp			. interrupt source index 0..7
+	slc		3, sp			. ACK pin position biased by 1
+						. zero is now rolled into carry
+	src		0, sp			. PENDING pin shift to carry
+	jnc		external_next		. this won't roll 1 into 3,sp
+	
+	la		2, sp			. device index
+	inB		I$DATA, a
+
+	or		1, sp			. core index * 8
+	aa		1,,xi			. make the source index relative 1
+	ds		6+128			. zero is reserved
+
+	lb		3, sp			. 
+	sbr		1			. push out bias 
+	outB		XI_ACK$			. push the pending pins down
+
+	lx		a_x	
+	la		0,,xi
+	ana		x_x
+				
+	off		see$1			. thread control block IDs
+	on		see$all--see$1		. in last words of kernel vector list
+	lx		03000,,xi
+	ax		a_x
+
+	la		0, x			. any thread awaiting this interrupt?
+	jza		external_ix
+	lb		a_x
+	xorB		(0C00001s)
+	jzb		external_ix
+
+	sabr		WORKTANK_I		. obtain thread descriptor from thread control block
+	ly		*(WORKTANK_I*/12++TDESCRIPTOR-01000)
+
+	xor		3, y			. the same TCB ?
+	jnza		external_zx		. does not seem to be the same thread as before
+
+	la		2, y			. flags not on the way out ?
+	and		(EXIT++TRAP)
+	jnza		external_zx		. deconfigure thread from interrupt
+
+
+	lb		(WORKTANK_I*/12++XINTT-01000s)
+	tz		3, b			. external interrupt table?
+	lcal		write_xint_table	. yes, table the interrupt indication
+
+	z		2, y			. action, free the target thread to schedule
+	push		1,,xi			. force running thread to timeslice
+	pop		REALTIME$_CLOCK		. if it has nonzero imask it won't
+	j		external_ix		. and could be the target wake_up thread
+
+external_zx
+	z		0, x			. remove the thread from the kernel vector list
+						. it is not actual
+external_ix	off	carry$			. roll zero into low order position ACK flag
+		tz	0, sp
+		j	external_next
+
+external_ixx	qpop	0, sp
+
+		pop	a_x			. put windows 42, 43 back where you found them
+		sabr	WORKTANK_I
+		pop	a_x
+		sabr	WORKTANK_J
+
+		qpop	r_x
+		qpop	a_x
+
+	ir		0
+
+	
+$(69::,b)
+xitable	xint_table
+
+$(0)
+write_xint_table				. minimal preprocess ISR stub
+	push		MAX_INT_MASK,,xi	. data port read has already happened
+	sim		0, sp			. don't get interrupted with lock on
+
+	ts		xitable:lock_cell	. switch to driver affinity thread is immediate
+	j		$-1			. if interrupt source needs more I/O in realtime
+						. then more ISR preprocess is necessary
+	push		b_x
+	lx		xitable:wcursor		. read the write pointer
+	dl		6+128			. relative 1 interrupt source : received data
+	push		x_x			. save the structure-relative write pointer
+	ax		1, sp			. rezone it to the working window + table offset
+	ds		0, x			. write the data
+	pop		x_x			. save the structure-relative write pointer
+	pop		b_x
+
+	lr		xitable:limit		. read the table limit
+	ax		2,,xi			. advance the write pointer
+	jxge		write_xint_wrap		. wrap if necessary
+	j		write_xint_wcursor
+
+write_xint_wrap
+	lx		xitable:xint,, i
+
+write_xint_wcursor
+	sx		xitable:wcursor		. store updated write pointer
+
+	z		xitable:lock_cell	. free the structure lock
+	sim		0, sp			. change interrupt mask back
+	inc		sp_x
+	lret		0
+
+fpxpo_ii
+	la		1, sp		. saved PSR
+	and		fp$r,,xi	. isolate residue indication
+	lk		a_x
+	ql		(-0.0)		. default decision
+	qs		a		. write major result
+	tz		k_x		. 192-bit operation?
+	qs		$residue	. write minor result
+	on		see$1		. look into the thread control block
+	la		(0800000s)	. flag this happened
+	sa		FP_XPO		. in case the application likes to know
+	ir		0
+
+	$include	../timer/timer
+
+run_device_thread
+	lx		a
+	aa		-1,,xi		. [ 1..192 ] change to relative 0
+	dsr		3		. 
+	sbr		21
+	ds		6+128		. core index : device 0..7
+	inA		CORE_SOCKET$	. who am I ?
+	xor		6+128
+	jnza		run_device_wrongcore
+
+	la		0,,xi
+	ana		x
+	lx		03000-1,,xi
+	ax		a
+	la		0, x
+
+        and             (03FFFFF)
+        jza             run_device_nothread
+        lb              a_x
+        xorB            (0C00001)
+        jzb             run_device_nothread
+
+	lcal		activate_thread
+	lret		0
+
+run_device_wrongcore
+run_device_nothread
+	z		0, x		. bad thread
+	lret		0		. good thread
+
+activate_thread				. any kind of thread
+	on		see$all
+
+	push		ABT+WORKTANK_I	. save whatever active thread has for window 42
+	sabr		WORKTANK_I
+
+	ly		*(WORKTANK_I*/12++TDESCRIPTOR-01000)
+	xor		3, y		. does descriptor still match TCB?
+	jnza		inactive_thread
+	la		2, y
+	and		(EXIT++TRAP)
+	jnza		activate_exit
+
+	z		2, y		. thread to run
+					. reasons and information stored already
+activate_exit
+inactive_thread
+	pop		a_x
+	sabr		WORKTANK_I
+
+	lret		0
+
+alert_ii				. service request[s] from other core[s]
+	qpush		x_x		. may be a nested interrupt
+
+	inA		MCAST_PENDING$	. that should ACK asserted pending signals
+					. any after should back-up a new IRQ
+					. the sending thread sees ACK via data update
+
+	jza		alert_iix	. or revolve for ever perhaps
+	push		-1,,xi
+	push		a_x
+
+alert_index
+	inc		1, sp		. track which core is sampled
+	off		carry$
+	src		0, sp
+	jnc		alert_index
+
+alert_outstanding
+	lx		1, sp		. read requesting core index
+	ax		core2core_alert,,xi
+	la		0, x		. read the message
+	z		0, x		. ACK the message
+
+					. $MCAST_THREAD_HALT ?
+	jna		thread_halt	. bits 22..0 are the thread
+					. not more flags
+
+	lk		($ACTIVATE)
+	mtane		k
+	j		device_activate?
+	
+	and		(03FFFFF)
+	lcal		activate_thread	. that used all the bits
+	j		alert_next
+
+device_activate?					. in the request word
+	lk		$MCAST_DEVICE,,xi . other requests use fewer
+	mtane		k
+	j		any_more_alerts?
+
+	push		a_x
+	lcal		run_device_thread
+	pop		a_x
+
+any_more_alerts?
+	. any more possible alert services
+	. should go in here 
+
+dayclock_update?
+	
+	and		$MCAST_DAYCLOCK,,xi
+	jza		alert_next
+	on		see$3
+	lcal		dayclock_update
+
+alert_next
+	tz		0, sp
+	j		alert_index
+
+alert_zero
+	pop		0, sp
+	pop		0, sp
+
+alert_iix				. 
+	qpop		x_x
+	ir		0
+
+thread_halt
+	and		(03FFFFF)	. strip $MCAST_THREAD_HALT
+	inB		65		. I am running this thread?
+	xorB		a_x
+	jnzb		alert_next	. request from another core?
+
+	la		1, fp		. zero application interrupt mask
+	and		(0807FFFs)	. or he jerst won't timeslice
+	sa		1, fp
+
+	la		1,,xi		. force thread to timeslice
+	sa		REALTIME$_CLOCK	. it's already marked stop
+	j		alert_next	. request from another core?
+
 
 load_image
 	.	if an image is to be loaded starting at
@@ -149,22 +446,26 @@ load_image
 	$do		$<256,$(0:256)
 
 $(0:0:TRANSFER_PAGE)
-		j		start
+		ir	0	.	a spare, was the entry point from restart
+				.	but is addressable as an interrupt vector / system call
+
 		j		yield		. YIELD$*
 		j		spawn_ii	. SPAWN$*	
 		j		bank_ii		. BANK$*
 		j		array_ii	. ARRAY$*
 		j		bank_free_ii	. BANK$FREE*
-		j		exit		. EXIT$*
+		j		exit_ii		. EXIT$*
 		j		thread		. THREAD$*
 		j		freetotal_ii	. TOTAL$FREE*
 		j		tag_ii		. TAG$
 		j		assign_xvector_ii . ASSIGN_XVECTOR$
+		j		itable_ii	. I$TABLE
+		j		affinity_ii	. AFFINITY$
 
 	$do		14-$,	ir	0
 
 		j		fpxpo_read_clear_ii	. FP_XPO$FLAG*
-		j		fpxpo_ii		. FP_XPO$*
+		j		xint_bind_ii		. XINT$BIND
 		j		handle_ii		. HANDLE$*
 		j		free_handle_ii		. FREE_HANDLE$*
 		j		read_handle_ii		. READ_HANDLE$*
@@ -209,14 +510,11 @@ USOCKET$*	$vector		usocket_ii
 FO$FRAME*	$vector		file_open_frame_ii
 FO$HEAP*	$vector		files_open_heap_ii
 FILE$HANDLE*	$vector		file_handle_ii
+"$ZETA"*	$vector		zeta_ii
+"ALERT$"*	$vector		send_alert_ii
 
-	$do		60-$,	ir	0
-
-		ir	0			. ATTENTION$*
-						. these must stay at adresses 1:61..1:63
-		j		i_alert		. ALERT$* broadcasted preemptive event notify
-		j		i_time		. TIME$POINT* broadcasted new dayclock value
-		j		i_timer		. TIMER$* incrementer overflow
+	$do		$>64,	$flag	compress page 1 vectors
+	$do		64-$,	ir	0
 
 freetotal_ii				. count up of all free memory banks
 
@@ -365,14 +663,7 @@ xbase_u	j		guard
 
 	$include	events
 
-	$include	timer	. this has dummy routines
-				. include ../timer/timer instead
-				. when the hardware has an incrementor
-				. and real interrupts
-
-				. or if some interrupts are emulated
-
-.	$include	../timer/timer
+	$include	timer	. rta.gen/timer contains ISR TWAIT$
 
 
 .	each handle integer corresponds to a 48-bit encoding
@@ -637,18 +928,76 @@ fpxpo_read_clear_ii
 	z		FP_XPO		. clear underflow / overflow flag
 	ir		0		. indicate not clear until here
 
-fpxpo_ii
-	la		1, sp		. saved PSR
-	and		fp$r,,xi	. isolate residue indication
-	lk		a_x
-	ql		(-0.0)		. default decision
-	qs		a		. write major result
-	tz		k_x		. 192-bit operation?
-	qs		$residue	. write minor result
-	on		see$1		. look into the thread control block
-	la		(0800000s)	. flag this happened
-	sa		FP_XPO		. in case the application likes to know
+xint_bind_ii
+	on		see$1++see$2	. kernel vector list
+	lx		a		. read external interrupt number
+	tp		x_x		. minus means free it
+	j		xint_free	
+	lr		X$INTERRUPTS+1,,xi
+	jxge		xint_out	. interrupt source number too high
+	la		0,,xi		. negative displacement from vector list end
+	ana		a		. must be [  1 .. X$INTERRUPTS  ]
+	jpa		xint_out	. must be [ -1 .. -X$INTERRUPTS ]
+	lx		03000,,xi
+	ax		a_x
+	inA		65		. thread control block
+	sa		0, x		. claim this interrupt source
+xint_out	ir	0
+
+
+itable_ii	on	see$1
+	z		XINTT+4		. turn 1st entry off
+	ql		(0, 4, 4, 4+XINT_TABLE*2q)
+	qs		XINTT		. unlocked, r/w pointers initial, wrap limit
+	dsr		48
+	ds		6+128
+	lr		XINT_TABLE/2-1,,xi
+	lx		XINTT+4,,xi
+
+itable_write
+	qs		0, x
+	ax		4,,xi
+	jdr		itable_write
 	ir		0
+
+affinity_ii
+
+	$if		TDESCRIPTOR_WORDS>6	. = affinity supported
+	on		see$all--see$2
+	la		a
+	lb		TDESCRIPTOR
+	sa		6, b
+	$endif
+
+	ir		0
+
+zeta_ii	la	a
+	sabr	BVOLATILE_I
+	on	see$all--see$1--see$2
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+	la	(TIME_WAIT++EXIT:s)
+	sa	2, x
+	ir	0
+
+send_alert_ii
+	inA	CORE_SOCKET$
+	lx	core2core_alert,,xi
+	ax	a_x
+	on	see$3
+	dl	a
+	sa	0, x
+	outB	MCAST_TO$
+	ir	0
+
+xint_free
+	ax		03000,,xi	. negative displacement from here
+	lr		03000,,xi	. must not be as high as this
+	jxge		xint_free_out
+	lr		X_INTERRUPT(X$INTERRUPTS),,xi	. or any lower than this
+	jxge		xint_free_in
+xint_free_out	ir	0
+xint_free_in	z	0, x		. free this external interrupt
+	ir		0		. whoever had claimed it 
 
 net2sym_ii				. first address the destination
 	la		a		. primary threadcb is in application a

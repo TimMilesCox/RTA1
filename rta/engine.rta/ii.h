@@ -43,11 +43,16 @@
 
 #define	II_YIELD 65
 #define	II_TXIT	70
-#define	II_XPO	79
+#define	II_XPO	3
 #define	XBASE_U	95
+
+#define II_XINT	2
+#define II_MSECOND 4
+#define II_ATTENTION 5
 
 #define	RESTART1 1
 
-#undef	T_SLICE
+#define	T_SLICE
 
 extern void ii(int ea, int latent_parameter);
+extern void xi();
