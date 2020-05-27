@@ -102,7 +102,7 @@ static void oport(int ea, int value)
             {
                base[ea] = value;
                if (ea == 102) indication |= value;
-               if (ea == 75) base[74] &= ((value & 255) ^ -1);
+               if (ea == 75) base[74] &= (value & 255) ^ 255;
                if ((ea == 79) && (value & 1)) indication |= ATTENTION;
                return;
             }
@@ -1395,20 +1395,17 @@ void execute(word instruction)
                      }
 
                      #ifdef CHECK_ON_BASE
-                     else if ((v & 0x003FFFFF) < base[72])
+                     else if ((v & 0x00BFFFFF) < base[72])
                      {
                         /***********************************************
                            no-one pulls up the restart and ISR pages
                            into their operand space
-                           not even if register a was accidentally zero
-
-                           don't drop through
+                           covers register a accidentally zero
                         ***********************************************/
 
-                        ii(XBASE_U, LP_AUTHORITY);
-                        return;
+                        v = 0x00C00001;
                      }
-                     else if ((v & 0x003FFFFF) < PAGES_IN_MEMORY)
+                     else if ((v & 0x00BFFFFF) < PAGES_IN_MEMORY)
                      {
                         /***********************************************
                            you're fine

@@ -142,11 +142,8 @@ anomaly	lk		-1,,xi
 	la		7, sp
 	mtane		(tag_ii_user_refp) . bad param to ISR?
 	ir		0		. go back and retire the process
-
-.	call		(xrelay_reset)
-.	la		2,,xi		. fall thru and restart the system
-.	outA		INDICATION$
-.	j		engage
+	mtane		(zeta_ii_user_refp)
+	ir		0		. should have done ii THREAD$STATW
 
 restart	call		(xrelay_reset)
 	j		engage
@@ -296,7 +293,7 @@ fpxpo_ii
 	$include	../timer/timer
 
 run_device_thread
-	lx		a
+	lx		a_x
 	aa		-1,,xi		. [ 1..192 ] change to relative 0
 	dsr		3		. 
 	sbr		21
@@ -306,15 +303,15 @@ run_device_thread
 	jnza		run_device_wrongcore
 
 	la		0,,xi
-	ana		x
+	ana		x_x
 	lx		03000-1,,xi
-	ax		a
+	ax		a_x
 	la		0, x
 
         and             (03FFFFF)
         jza             run_device_nothread
         lb              a_x
-        xorB            (0C00001)
+        xorB            (0C00001s)
         jzb             run_device_nothread
 
 	lcal		activate_thread
@@ -384,7 +381,7 @@ alert_outstanding
 
 device_activate?					. in the request word
 	lk		$MCAST_DEVICE,,xi . other requests use fewer
-	mtane		k
+	mta		k
 	j		any_more_alerts?
 
 	push		a_x
@@ -972,11 +969,22 @@ affinity_ii
 	ir		0
 
 zeta_ii	la	a
-	sabr	BVOLATILE_I
-	on	see$all--see$1--see$2
-	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
-	la	(TIME_WAIT++EXIT:s)
+	lcal	thread_actual?
+	j	zeta_ii_no_op		. no thread
+					. thread_actual? opens TCB in window
+
+	la	*(BVOLATILE_I*/12++TAG-01000)	. 1st word of thread name
+	sar	$word-$byte		. protected?
+	aa	-'*',,xi
+	jza	zeta_ii_no_op		. protected, don't force exit
+
+	la	(TIME_WAIT++EXIT:s)	. force exit
 	sa	2, x
+
+zeta_ii_user_refp			. get-out point for fault on [ sa 2,x ]
+zeta_ii_no_op				. get-out point for no thread / protected
+	la	(0C00001s)		. thread_actual? opens window BVOLATILE_I
+	sabr	BVOLATILE_I		. on target TCB, but does not close window
 	ir	0
 
 send_alert_ii
@@ -1024,41 +1032,67 @@ net2sym_ii				. first address the destination
 	sabr		BVOLATILE_I
 	ir		0
 
-thread_current?			. subroutine called from ISR
+thread_actual?			. subroutine called from ISR
 	sabr	BVOLATILE_I	. thread control block index must be in interrupt a
-	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+				. ISRs calling here either directly or over thread_current?
+				. must themselves close address space window BVOLATILE_I
+				. before return
 
 	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
 
+	lb	ABT+BVOLATILE_I		. did the requested block get into window
+	xorB	(0C00001s)		. BVOLATILE_I ?
+	jzb	thread_not_actual	. no storage in window, don't try reading
+
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+
 	lr	next_tdescriptor_sp	. this changes
 	jxge	threads_threshold
-	j	thread_not_up
+	j	thread_not_actual
 
 threads_threshold
 	lr	tdescriptor_high_index	. this is fixed
 				. descriptor stack is dynamic but check possible ranges
 				. or following tests could crash within ISR = inconvenient
 
-	jxge	thread_not_up	. thread control block does not correspond
+	jxge	thread_not_actual . thread control block does not correspond
 				. to a thread descriptor
 	
 	xor	3, x		. does descriptor point to this thread CB?
-	jnza	thread_not_up
+	jnza	thread_not_actual
+
+	lret	1		. thread seems real
+
+thread_not_actual
+	lret	0
+
+
+thread_current?
+	lcal	thread_actual?
+	lret	0		. no thread
 
 	la	2, x
 	and	(TRAP++EXIT)	. and is the thread running?
-	jnza	thread_not_up
+	jnza	thread_stopped
 
 	lret	1		. thread seems OK
 
-thread_not_up
+thread_stopped
 	lret	0		. thread seems gone
 
 thread_state_ii			. general purpose ISR is thread [application a] running?
 	la	a
 	lcal	thread_current?
-	ir	0		. no
-	ir	1		. yes
+	j	thread_state_stopped	. no
+
+	la	(0C00001s)	. thread_current? opens window BVOLATILE_I
+	sabr	BVOLATILE_I	. on TCB but does not close the window
+	ir	1
+
+thread_state_stopped
+	la	(0C00001s)	. thread_current? opens window BVOLATILE_I
+	sabr	BVOLATILE_I	. on TCB but does not close the window
+	ir	0
 
 storage_block_idxa_ii		. return the storage block index at window [a]
 	lb	a

@@ -145,8 +145,11 @@ void action(char request[])
       return;
    }
 
-   if (symbol == 'k') indication |= INCREMENTER_CARRY;
-
+   if (symbol == 'k')
+   {
+      indication |= INCREMENTER_CARRY;
+      return;
+   }
    #endif
 
    if (flag['s'-'a'] == 0)

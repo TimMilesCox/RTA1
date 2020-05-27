@@ -132,7 +132,7 @@ void ii(int ea, int latent_parameter)
    apc = &b0p->w[ea & 63];
    apcz = &b0p->w[4095];
 }
-
+extern void *breakpoint;
 void xi()
 {
    if (indication & EXTERNAL_INTERRUPT)

@@ -1088,7 +1088,14 @@ static void restart()
 
    for (x = 0; x < arguments; x++)
    {
+      #ifdef LINUX
+      j = DLT_EN10MB;
+      #elif defined(OSX)
       j = iftype[x];
+      #else
+      #error	we only do LINUX or OSX so far
+      #endif
+
       configure(x, j);
    }
 }
@@ -1301,7 +1308,10 @@ int main(int argc, char *argv[])
 	 switch (j)
 	 {
 	    case ARPHRD_LOOPBACK:
-	       j = ARPHRD_ETHER;
+               printf("loopback detected\n");
+               
+	       j = DLT_NULL;
+               rxtx->sll_protocol = DLT_NULL;
 
 	       /*****************************************************
 
@@ -1332,6 +1342,7 @@ int main(int argc, char *argv[])
 	       break;
 
 	    case ARPHRD_ETHER:
+               printf("enet detected\n");
                physa_octets = 6;
 	       break;
 
@@ -1362,12 +1373,14 @@ int main(int argc, char *argv[])
          {
      	    case DLT_NULL:
             case DLT_LOOP:
+               printf("loopback detected\n");
                physa_octets = 0;
 
                break;
 
             case DLT_EN10MB:
             case DLT_IEEE802:
+               printf("enet detected\n");
                physa_octets = 6;
 
                y = ioctl(fdes, BIOCSSEESENT, &zero);
@@ -1520,6 +1533,14 @@ int main(int argc, char *argv[])
          #ifdef LINUX
 
          if (flag['v'-'a']) printf("[%d:%d]\n", x, bytes);
+         if (flag['w'-'a'])
+         {
+            printf("[%d:%d[", x, bytes);
+	    q = p;
+            y = bytes;
+            while (y--) printf("%2.2x", *q++);
+            printf("]\n");
+         }
          forward(x, p, bytes);
          #endif
 
