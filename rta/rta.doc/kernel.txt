@@ -30,14 +30,19 @@ See also the licensing notice at the foot of this document
 		<dd><a	href="#tag_ii">TAG$</a></dd>
 		<dd><a	href="#bank_ii">BANK$</a></dd>
 		<dd><a	href="#array_ii">ARRAY$</a></dd>
-		<dd><a	href="#bfree_ii">BANK$FREE</a></dd>
-                <dd><a  href="#fpguard_ii">FP_GUARD$</a></dd>
-		<dd><a	href="#xpof_ii">FP_XPO$FLAG</a></dd>
+		<dd><a	href="#bank_free_ii">BANK$FREE</a></dd>
+                <dd><a  href="#switch_fp_guard_ii">FP_GUARD$</a></dd>
+		<dd><a	href="#fp_xposflag_ii">FP_XPO$FLAG</a></dd>
 		<dd><a	href="#yield_ii">YIELD$</a></dd>
 		<dd><a	href="#twait_ii">TWAIT$</a></dd>
 		<dd><a	href="#exit_ii">EXIT$</a></dd>
                 <dd><a  href="#event_wait_ii">EVENT_WAIT$</a></dd>
                 <dd><a  href="#event_free_ii">EVENT_FREE$</a></dd>
+		<dd><a	href="#itable_ii">I$TABLE</a></dd>
+		<dd><a	href="#xint_bind_ii">XINT$BIND</a></dd>
+		<dd><a	href="#affinity_ii">AFFINITY$</a></dd>
+		<dd><a	href="#send_alert_ii">ALERT$</a></dd>
+		<dd><a	href="#zeta_ii">$ZETA</a></dd>
 	</dl><br>
 	<li><a	href="#handles"/>Handles</a></li>
 	<li><dl><a	href="#so_calls">Network Call Interface</a></li>
@@ -136,7 +141,7 @@ See also the licensing notice at the foot of this document
 </dl>
 <dl><a href="#appx_d">Appendix D: Interrupt Calls normally issued by Kernel Routines</a>
 		<dd><a	href="#dayclock_w_ii">DAYCLOCK$W</a></dd>
-		<dd><a	href="#xbase32_43_ii">XBASE$32..XBASE$43</a></dd>
+		<dd><a	href="#xbase_ii">XBASE$32..XBASE$43</a></dd>
 		<dd><a  href="#net2sym_ii">NET2SYM$</a></dd> 
 </dl>
 <dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls</a>
@@ -205,6 +210,12 @@ The sign extended immediate operand of ii instruction only has 10 page bits
 
 </pre>
 
+The page number in the interrupt vector must be in ISR space below application threshold in Port I/O 72
+
+<p>
+Applications may not enter restart page 0 with ii instruction
+
+<p>
 The instruction code <a href="rta.html#ii">ii</a> is 750000 hex and the vector name THREAD$ is 000047 hex = Page Index 1 offset 7
 
 <pre	style="font-size:12pt">
@@ -341,7 +352,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
                 		start page index returned in a / zero if no grant
 		                descriptor is linked to thread memory estate
 
-	<a	name="bfree_ii"/>
+	<a	name="bank_free_ii"/>
 	BANK$FREE	69	= Page Index 1  offset 5
 
 				<a      style="color:#0000FF">
@@ -353,7 +364,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
                 		start page index in application register a
 		                descriptor is unlinked from thread memory estate
 
-	<a	name="fpguard_ii"/>
+	<a	name="switch_fp_guard_ii"/>
 	FP_GUARD$	94	= Page Index 1  offset 30
 
 				<a      style="color:#0000FF">
@@ -365,7 +376,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				to the value in application register a
 				returns old value in application register a
 
-	<a	name="xpof_ii"/>
+	<a	name="fp_xposflag_ii"/>
 	FP_XPO$FLAG	78	= Page Index 1  offset 14
 
 				<a	style="color:#0000FF">
@@ -440,6 +451,122 @@ Instruction frames can be any size in adjacent pages of 4096 words
                                 cancel wait for selected events
                                 flags   100000 (thread faulted)
                                         200000 (thread ended) are not cleared
+
+
+	<a	name="itable_ii"/>
+	I$TABLE		75 (04B)	= initialise thread interrupts table
+				<a      style="color:#0000FF">
+				ii	I$TABLE
+				</a>
+
+				adds an external interrupt table to the thread control block
+
+				external interrupts preprocessor queues an input word
+				from an interrupt source bound to the thread on each interrupt
+
+				the index value of the interrupt source is coupled
+				with the input data word in a 2-word tuple
+
+					_________________________________________________
+					| interrupt source index|  data or status input	|
+					|_______________________|_______________________|
+
+				the interrupt source index is relative 1
+				value zero tags a void entry
+
+				there may be eight interrupt sources per core
+				the interrupt source index is <i>core</i> * 8 + interrupt source + 1
+				where <i>core</i> is the core where the interrupt source is attached
+
+
+	<a	name="xint_bind_ii"/>
+	XINT$BIND	79 (04F)	= thread bind interrupt source
+				<a      style="color:#0000FF">
+				la	<i>interrupt_source</i>
+				ii	XINT$BIND
+				</a>
+
+				the thread receives external interrupt tuples in the I$TABLE queue
+				interrupt source is as I$TABLE
+
+				the interrupt source may be bound to any core but only
+				a core attached to the interrupt source can postprocess
+				the interrupt if that needs more I/O operations than
+				the preprocess acquisition queued in the I$TABLE queue
+
+				see <a href="#external_i">Appendix F: External Interrupts</a>
+
+	<a	name="affinity_ii"/>
+	AFFINITY$	76 (04C)	= thread attach to specific core[s]
+				<a      style="color:#0000FF">
+				la	<i>cores_mask</i>
+				ii	AFFINITY$
+				</a>
+
+				typically AFFINITY$ attaches the calling thread
+				to one core to which a peripheral is attached
+				but <i>cores_mask</i> is a bit mask selecting
+				among 24 possible core[s] at corresponding schema
+				socket positions
+
+					_________________________
+					|23		       0|
+					|_______________________| low order bit -> core socket 0
+					 |		       |________________________________
+					 |
+					 |			high order bit -> core socket 23
+					 |______________________________________________________
+
+
+
+	<a	name="send_alert_ii"/>
+	ALERT$		125 (07D)	= request core to core[s] multicast transmission
+				<a      style="color:#0000FF">
+				la	<i>message</i>
+				lb	<i>cores_mask</i>
+				ii	ALERT$
+				</a>
+
+				multicast a message to other cores
+				<i>cores_mask</i> is as AFFINITY$ with low order bit selecting core 0
+				through high-order bit selecting core 23
+
+				assigned <i>message</i> values are
+
+				bit 23: force yield to the thread with identity bits [ 21..0 ]
+					this is a request from an exiting process
+					and prevents threads from continuing to execute
+					after deallocation of process resources
+
+				bit 22	$ACTIVATE clears the event wait flags of the
+					thread with identity <i>message</i> bits [ 21..0 ]
+
+					the thread is not activated if it has faulted
+					or already exited
+
+				bit 9	$MCAST_DEVICE activates the thread attached to
+					device <i>message</i> bits [ 7..0 ] = core * 8 + device + 1
+
+				bit 8	$MCAST_DAYCLOCK advises an updated millisecond
+					dayclock value may be transferred from kernel
+					storage to interrupt registers [ DAYCLOCK$U DAYCLOCK$ ]
+
+
+	<a	name="zeta_ii"/>
+	$ZETA		124 (07C)	= terminate named process or thread
+				<a      style="color:#0000FF">
+				la	<i>thread_id</i>
+				ii	$ZETA
+				</a>
+
+				terminate the thread <i>thread_id</i>
+				if <i>thread_id</i> is the process initial thread
+				it terminates all its threads
+
+				the thread is not terminated if its TAG$ name
+				starts with character * asterisk
+
+
 </pre>
 
 <a	name="handles"/>
@@ -1080,7 +1207,7 @@ octets. So are the target-position and result-position of lseek()
 	The OR-sum is retrieved and restarted with system call interrupt <a href="#xpof_ii">ii FP_XPO$FLAG</a>
 
 
-	<a  name="#guard_ii"/>GUARD$</a>
+	<a  name="guard_ii"/>GUARD$</a>
 
 	Interrupt GUARD$ is generated by out-of-range and unallowed references
 
@@ -1328,7 +1455,7 @@ octets. So are the target-position and result-position of lseek()
 <h3>Appendix C: System Information Interrupt Calls</h3>
 <pre	style="font-size:12pt">
 
-	<a	name="total_mfree_ii"/>
+	<a	name="total_free_ii"/>
 	TOTAL$FREE	88 (058)	= Page Index 1	offset	8
 				<a	style="color:#0000FF">
 				ii	TOTAL$FREE
@@ -1385,7 +1512,7 @@ octets. So are the target-position and result-position of lseek()
 				start millisecond on aeon with write to
 				interrupt registers DAYCLOCK$U DAYCLOCK$
 
-	<a	name="xbase32_43_ii"/>
+	<a	name="xbase_ii"/>
 	XBASE$32	96 (060)	= Page Index 1	offset 32
 	...XBASE$33 XBASE$34 XBASE$35 XBASE$36 XBASE$37
 	   XBASE$38 XBASE$39 XBASE$40 XBASE$41 XBASE$42...
@@ -1419,65 +1546,68 @@ These system calls are made within kernel routines which applications have calle
 
 <pre	style="font-size:12pt">
 
-	<a  name="#handle_ii"/>
+	<a  name="handle_ii"/>
 	HANDLE$			obtain a new handle
 
-	<a  name="#free_handle_ii"/>
+	<a  name="free_handle_ii"/>
 	FREE_HANDLE$		pool a freed handle
 
-	<a  name="#read_handle_ii"/>
+	<a  name="read_handle_ii"/>
 	READ_HANDLE$		read 1st word of handle encoding
 
-	<a  name="#read_xvector_ii"/>
+	<a  name="read_xvector_ii"/>
 	READ_XVECTOR$		obtain a pointer from kernel vector list
 
-	<a  name="#write_xvector_ii"/>
+	<a  name="write_xvector_ii"/>
 	WRITE_XVECTOR$		update a pointer in kernel vector list
 
-	<a  name="#read_socket_ii"/>
+	<a  name="read_socket_ii"/>
 	READ_SOCKET$		read both words of handle encoding
 
-	<a  name="#usocket_ii"/>
-	USOCKET$
+	<a  name="usocket_ii"/>
+	USOCKET$		bind: attach port socket structure to handle
 
-	<a  name="#usocket_c_ii"/>
-	USOCKET$C
+	<a  name="usocketc_ii"/>
+	USOCKET$C		connect/accept: attach transmission control block to handle
 
-	<a  name="#kernel_b1_ii"/>
+	<a  name="kernel_b1_ii"/>
 	KERNEL$B1		switch to an named kernel B1 frame
 
-	<a  name="#b1_ii"/>
+	<a  name="b1_ii"/>
 	B1$			switch to application b1 frame
 
-	<a  name="#kernel_b1_ii_1"/>
+	<a  name="kernel_b1_ii_1"/>
 	KERNEL$B1_1		switch to 1st kernel b1 frame
 
-	<a  name="#base_standard_netbuf_ii"/>
+	<a  name="cache_standard_netbuf_ii"/>
+	CACHE_NETB$		IP initialisation call
+
+	<a  name="base_standard_netbuf_ii"/>
 	ON_NETB$		place default network buffers
 				in application address windows B48 to B63
 
-	<a  name="#unbase_deviceb_ii"/>
+	<a  name="unbase_deviceb_ii"/>
 	FREE_DEVB$		close address space window B32
 
-	<a  name="#unbase_socketb_ii"/>
+	<a  name="unbase_socketb_ii"/>
 	FREE_SOCKB$		close address space window B47
 
-	<a  name="#unbase_standard_netbuf_ii"/>
+	<a  name="unbase_standard_netbuf_ii"/>
 	FREE_NETB$		close application address space windows B48 to B63
 
-	<a  name="#file_open_frame_ii"/>
+	<a  name="file_open_frame_ii"/>
 	FO$FRAME		obtain a data file open descriptor
 				at root of application external stack
 
-	<a  name="#files_open_heap_ii"/>
+	<a  name="files_open_heap_ii"/>
 	FO$HEAP			start data file open descriptor stack
 				at root of application external stack
 
-	<a  name="#file_handle_ii"/>
+	<a  name="file_handle_ii"/>
 	FILE$HANDLE		add data file open descriptor pointer x
 				to handle number a
 
-	<a  name="#assign_xvector_ii"/>
+	<a  name="assign_xvector_ii"/>
 	ASSIGN_XVECTOR$		obtain kernel storage
 				for new kernel structures
 				
