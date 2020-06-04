@@ -48,9 +48,10 @@
 	$path		../def
 	$include	rta.def
 	$include	ii.def
-.	$include	b1_stack.def
+
 	$include	vector.def
 	$include	rt.def
+	$include	ringfest.def
 
 	$path		../def.sys
 	$include	tcb.def
@@ -497,11 +498,9 @@ THREAD$STATE*	$vector	thread_state_ii		. is thread [application a] running?
 A$IDX*		$vector	storage_block_idxa_ii	. return in a 4K word block indentifier at base_table ABT+[a]
 B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at base_table ABT+[b]
 						
-	$if		$K_WPROTECT
-"$TCBLOCKS"*	$vector		a_tcbloc_ii
-"$X_RXB"*	$vector		x_rxb_ii 
-"$B_TXB"*	$vector		b_txb_ii
-	$endif
+		ir		0
+		ir		0
+		ir		0
 
 USOCKET$*	$vector		usocket_ii
 FO$FRAME*	$vector		file_open_frame_ii
@@ -852,13 +851,16 @@ read_xvector_ii
 	ir		0
 
 write_xvector_ii
+	$ii_ringfest1	2
 	lcal		xvector_in_range
+
 	ir		0
 	la		a
 	sa		0, x
 	ir		0
 
 assign_xvector_ii
+	$ii_ringfest1	2
 	lcal		xvector_in_range
 	ir		0
 	la		a
@@ -870,12 +872,16 @@ assign_xvector_ii
 	ir		0			. but not in application memory estate list
 
 kernel_b1_ii_1
+	$ii_ringfest1	2 7
+
 	on		see$2
 	la		VECTOR_B1(1)
 	outA		1
 	ir		0
 
 kernel_b1_ii
+	$ii_ringfest1	2 7
+
 	on		see$2
 	la		*a	. read the bank sought via user A register
 	outA		1
@@ -886,27 +892,9 @@ b1_ii	on		see$1	. ++see$2
 	outA		1
 	ir		0
 
-	$if		$K_WPROTECT
-
-x_rxb_ii
-	la		x		. application x
-	sa		rx_buffers	. kernel and IP B2 are the same
-	ir		0
-
-b_txb_ii
-	la		b		. application b
-	sa		tx_buffers	. kernel and IP B2 are the same
-	ir		0
-
-a_tcbloc_ii
-	la		a
-	sa		tcx_v4(1)
-	z		tcx_v4(2)
-	ir	0
-
-	$endif
-
 dayclock_w_ii
+	$ii_ringfest1	2
+
 	dl		a
 	ds		DAYCLOCK$U
 	ir		0
@@ -1118,6 +1106,8 @@ cache_netb* $proc
 	$end
 
 cache_standard_netbuf_ii
+	$ii_ringfest1	2	. none but page 2 may make this service call
+
 	on	see$1++see$2
 ?	$do	4,	cache_netb
 	ir	0
@@ -1128,6 +1118,8 @@ retrieve_netb* $proc
 	$end
 
 base_standard_netbuf_ii
+	$ii_ringfest1	2 7
+
 	on	see$2
 ?	$do	16,	retrieve_netb
 	ir	0
@@ -1173,6 +1165,8 @@ tag_iiz	la	(0C00001s)		. prevent accidental access
 
 
 file_open_frame_ii			. only ISRs may write vectors:FOPEN_HEAP,FOPEN_HEAPU
+	$ii_ringfest1	7
+
 	lx	a
 	tz	FILE_OPEN_HEAPU
 	sx	FILE_OPEN_HEAPU

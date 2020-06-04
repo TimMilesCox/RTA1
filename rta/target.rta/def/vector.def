@@ -115,12 +115,11 @@ HANDLES_MAX
 				. for threads not of ip
 	$res	03000-$
 "$VECTOR_HIGH"	$equ	03000
-X$INTERRUPTS	$equ	64	. only used in kernel vectors
+X$INTERRUPTS	$equ	24*8	. only used in kernel vectors
 ?	$do	X$INTERRUPTS,X_INTERRUPT(?)	$equ	$VECTOR_HIGH-?
 
 p	$proc
-"$base_d"* $name	1
-"$base_x"* $name	2
+"$base_d"* $name
 
 base*	$proc
 	la, i	1, a
@@ -129,6 +128,10 @@ base*	$proc
 
 
 D0_WORDS $set	p(1, 1)+p(2, 1)		. argument 2 = external stack
+
+FREE_WORDS $set	D0_WORDS**4095
+	$do	FREE_WORDS^=0,;
+FREE_WORDS $set	4096-FREE_WORDS
 
 	$if	$o('c')
 STATIC_START $equ 0x003000
@@ -146,15 +149,18 @@ STATIC_START $equ 03000
 
 THREAD_FP(1)* $set STATIC_START+D0_WORDS//4096*4096
 
-	$if	p(0, 0)=$base_x
-ITHREAD_FP**	$set	$(3)-$(3)+THREAD_FP(1)
-. STATIC_ZENITH** $set	$(3)-$(3)+$zenith(3)
+	$if	p(2, 1)		. external stack?
+
+ITHREAD_FP**  $set $(3)-$(3)+THREAD_FP(1)
 
 	la	(SUMMIT$3)
+	$do	p(1, 2)+FREE_WORDS<1024,	;
+	$note	external stack too small for printf
 
 	$else
-	la	0,,xi
 
+	la	0,,xi
+	$note	automatic file-open frames not assignable in external stack
 	$endif
 
 	ii	FO$HEAP

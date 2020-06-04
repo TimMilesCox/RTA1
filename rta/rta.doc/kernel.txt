@@ -36,6 +36,8 @@ See also the licensing notice at the foot of this document
 		<dd><a	href="#yield_ii">YIELD$</a></dd>
 		<dd><a	href="#twait_ii">TWAIT$</a></dd>
 		<dd><a	href="#exit_ii">EXIT$</a></dd>
+                <dd><a  href="#event_wait_ii">EVENT_WAIT$</a></dd>
+                <dd><a  href="#event_free_ii">EVENT_FREE$</a></dd>
 	</dl><br>
 	<li><a	href="#handles"/>Handles</a></li>
 	<li><dl><a	href="#so_calls">Network Call Interface</a></li>
@@ -122,26 +124,28 @@ See also the licensing notice at the foot of this document
 
 <div    style="background-color:E0E0E0">
 
-<dl><a href="#tcp_steps">Appendix A: Low-Level TCP Interface
+<dl><a href="#tcp_steps">Appendix A: Low-Level TCP Interface</a>
 </dl>
-<dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface
+<dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface</a>
 </dl>
-<dl><a href="#appx_c">Appendix C: System Information Interrupt Calls
+<dl><a href="#appx_c">Appendix C: System Information Interrupt Calls</a>
 		<dd><a	href="#total_mfree_ii">TOTAL$FREE</a></dd>
 		<dd><a  href="#thread_state_ii">THREAD$STATE</a></dd>
+                <dd><a  href="#storage_block_idxa_ii">A$IDX</a></dd>
+                <dd><a  href="#storage_block_idxb_ii">B$IDX</a></dd>
 </dl>
-<dl><a href="#appx_d">Appendix D: Interrupt Calls normally issued by Kernel Routines
-                <dd><a  href="#event_wait_ii">EVENT_WAIT$</a></dd>
-                <dd><a  href="#event_free_ii">EVENT_FREE$</a></dd>
+<dl><a href="#appx_d">Appendix D: Interrupt Calls normally issued by Kernel Routines</a>
 		<dd><a	href="#dayclock_w_ii">DAYCLOCK$W</a></dd>
 		<dd><a	href="#xbase32_43_ii">XBASE$32..XBASE$43</a></dd>
-		<dd><a  href="#storage_block_idxa_ii">A$IDX</a></dd> 
-		<dd><a  href="#storage_block_idxb_ii">B$IDX</a></dd> 
 		<dd><a  href="#net2sym_ii">NET2SYM$</a></dd> 
 </dl>
-<dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls
+<dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls</a>
 </dl>
 </div>
+
+<dl><a href="#external_i">Appendix F: External Interrupts</a>
+</dl>
+
 </div>
 
 <a	name="preamble"/>
@@ -411,6 +415,31 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 				instructions fret and lret also raise interrupt EXIT$ if internal stack pointer sp = 128
 
+        <a      name="event_wait_ii"/>
+        EVENT_WAIT$     92 (05C)        = Page Index 1  offset 28
+                                <a      style="color:#0000FF">
+                                la      (<i>EVENT_SELECTORS</i>)
+                                ii      EVENT_WAIT$
+                                </a>
+
+                                wait for the event flagged in application register a
+
+				wait for event 1 XINT queues for preemptive realtime scheduling
+
+                                events  100000 (thread faulted)
+                                        200000 (thread ended) cannot be flagged for wait
+
+        <a      name="event_free_ii"/>
+        EVENT_FREE$     93 (05D)        = Page Index 1  offset 29
+                                <a      style="color:#0000FF">
+				la	<i>thread_id</i>
+                                lb      (<i>EVENT_SELECTORS</i>)
+                                ii      EVENT_FREE$
+                                </a>
+
+                                cancel wait for selected events
+                                flags   100000 (thread faulted)
+                                        200000 (thread ended) are not cleared
 </pre>
 
 <a	name="handles"/>
@@ -1320,34 +1349,31 @@ octets. So are the target-position and result-position of lseek()
                                 check if thread is running
                                 skip one instruction if so
 
+
+        <a      name="storage_block_idxa_ii"/>
+        A$IDX           115 (073)       = Page Index 1  offset 51
+                                <a      style="color:#0000FF">
+                                la      [2..63],,xi
+                                ii      A$IDX
+                                </a>
+
+                                retrieve the Start Page Index of the storage block in Window [register a]
+                                into register a
+
+        <a      name="storage_block_idxb_ii"/>
+        B$IDX           116 (074)       = Page Index 1  offset 52
+                                <a      style="color:#0000FF">
+                                lb      [2..63],,xi
+                                ii      B$IDX
+                                </a>
+
+                                retrieve the Start Page Index of the storage block in Window [register b]
+                                into register b
 </pre>	
 
 <a	name="appx_d"/>
 <h3>Appendix D: Interrupt Calls normally issued by Kernel Routines</h3>
 <pre	style="font-size:12pt">
-
-	<a	name="event_wait_ii"/>
-	EVENT_WAIT$	92 (05C)	= Page Index 1  offset 28
-				<a      style="color:#0000FF">
-				la	(<i>EVENT_SELECTORS</i>)
-				ii	EVENT_WAIT$
-				</a>
-
-				wait for the event flagged in application register a
-
-				events	100000 (thread faulted)
-					200000 (thread ended) cannot be flagged for wait
-
-	<a	name="event_free_ii"/>
-	EVENT_FREE$	93 (05D)	= Page Index 1	offset 29
-				<a	style="color:#0000FF">
-				la	(<i>EVENT_SELECTORS</i>)
-				ii	EVENT_FREE$
-				</a>
-
-				cancel wait for selected events
-				flags	100000 (thread faulted)
-					200000 (thread ended) are not cleared
 
 	<a	name="dayclock_w_ii"/>
 	DAYCLOCK$W	90 (05A)	= Page Index 1  offset 26
@@ -1371,26 +1397,6 @@ octets. So are the target-position and result-position of lseek()
 
 				place a peripheral device array block in one address space window of [32..43]
 
-
-	<a	name="storage_block_idxa_ii"/>
-	A$IDX		115 (073)	= Page Index 1  offset 51
-				<a	style="color:#0000FF">
-				la	[2..63],,xi
-				ii	A$IDX
-				</a>
-
-				retrieve the Start Page Index of the storage block in Window [register a]
-				into register a
-
-	<a	name="storage_block_idxb_ii"/>
-	B$IDX		116 (074)	= Page Index 1  offset 52
-				<a	style="color:#0000FF">
-				lb	[2..63],,xi
-				ii	B$IDX
-				</a>
-
-				retrieve the Start Page Index of the storage block in Window [register b]
-				into register b
 
 	<a	name="net2sym_ii"/>
 	NET2SYM$	113 (071)	= Page Index 1  offset 49
