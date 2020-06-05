@@ -92,7 +92,8 @@ See also the licensing notice at the foot of this document
                 <dd><a  href="#xpo_ii">FP_XPO$</a>      79      .       bank 1  vector  15      . exponent overflow | underflow</dd>
 		<dd><a	href="#guard_ii">GUARD$</a>	95	.	bank 1	vector	31</dd>
 	</dl>
-	<li><a	href="#timeslice">TimeSlice</a>
+	<li><a	href="#timeslice">TimeSlice</a></li>
+	<li><a	href="#estac">Automatic Exit on Empty Stack Return</a></li>
 	</ol>
 	<br>
 <li><a	href="#library">Embedded Library</li>
@@ -133,6 +134,7 @@ See also the licensing notice at the foot of this document
 </dl>
 <dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface</a>
 </dl>
+</div>
 <dl><a href="#appx_c">Appendix C: System Information Interrupt Calls</a>
 		<dd><a	href="#total_mfree_ii">TOTAL$FREE</a></dd>
 		<dd><a  href="#thread_state_ii">THREAD$STATE</a></dd>
@@ -146,9 +148,19 @@ See also the licensing notice at the foot of this document
 </dl>
 <dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls</a>
 </dl>
+
+<dl><a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
+</dl>
+
+<div	style="background-color:E0E0E0">
+<dl><a href="#scheduling">Appendix G: Scheduling</a>
+</dl>
 </div>
 
-<dl><a href="#external_i">Appendix F: External Interrupts</a>
+<dl><a href="#remote_files">Appendix H: Remote Files</a>
+</dl>
+
+<dl><a href="#diagnostic">Appendix I: File and Socket Error Codes</a>
 </dl>
 
 </div>
@@ -494,7 +506,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				the interrupt if that needs more I/O operations than
 				the preprocess acquisition queued in the I$TABLE queue
 
-				see <a href="#external_i">Appendix F: External Interrupts</a>
+				see <a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
 
 	<a	name="affinity_ii"/>
 	AFFINITY$	76 (04C)	= thread attach to specific core[s]
@@ -506,8 +518,8 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				typically AFFINITY$ attaches the calling thread
 				to one core to which a peripheral is attached
 				but <i>cores_mask</i> is a bit mask selecting
-				among 24 possible core[s] at corresponding schema
-				socket positions
+				among 24 possible core[s] at corresponding
+				schematic socket positions
 
 					_________________________
 					|23		       0|
@@ -943,29 +955,12 @@ Instruction frames can be any size in adjacent pages of 4096 words
 	$include	language/stack.def
 
 </pre>
-Initially only remote files are in the POSIX framework and other file system types are accessed with
+Initially only <a href="#remote_files">remote files</a> are in the POSIX framework and other file system types are accessed with
 routines in the <a href="#fs_calls">File I/O Libraries</a>
 
 <p>
-Remote files addresses are encoded in the open path with with macros
-<pre	style="font-size:12pt">
 
-	$include	rta/target.rta/t77.4/ip.def			. for function macro $neta
-	$include	rta/target.rta/fs/mntaddrs.def:	mount_path	. for procedural maccro	mount_path
-
-SUSE_NFSD       $equ    $neta(192.168.0.14:2049)        . server enet
-SUSE_MOUNTD     $equ    $neta(192.168.0.14:1023)
-
-path_suse       mount_path      SUSE_NFSD::mount_suse:"EXAMPLE_FILENAME"
-mount_suse      mount_path      SUSE_MOUNTD:::"/home/laclimpide/online_files/"
-
-		# protocol NFSv3
-		# server must have mountd bound to TCP port 1023
-
-
-</pre>
-
-open() returns a handle identifier unique within the process
+open() returns a handle number or a negative value indicating a problem which prevented the open
 
 <p>
 The open file is a stream of RTA1 24-bit words. Argument 3 and return value
@@ -1235,9 +1230,15 @@ octets. So are the target-position and result-position of lseek()
 	Threads are rarely timesliced in practice because of the unusual code efficiency of RTA1.
 	An I/O wait happens first and scheduling restarts the instruction ration
 
+</pre>
+<a  name="estac"/>
+<h3>3.3: Automatic EXIT$ on Empty Stack Return</h3>
+<pre>
+
+	An process or thread executing instruction <a href="rta.html#lret">lret</a> or <a href="rta.html#fret">fret</a>
+	with internal stack pointer = 128 enters <a href="#exit_ii">EXIT$</a> ISR
 
 </pre>
-
 <a	name="library"/>
 <h2>4: Embedded Library</h2>
 <a	name="arith_lib"/>
@@ -1544,74 +1545,309 @@ octets. So are the target-position and result-position of lseek()
 
 These system calls are made within kernel routines which applications have called
 
+<p>
+Some of these ISRs may for safety only be called from a closed ring of iframes and are screened from other callers
+
 <pre	style="font-size:12pt">
 
 	<a  name="handle_ii"/>
-	HANDLE$			obtain a new handle
+	HANDLE$		1:16	obtain a handle
+				handle number in range 3..1655 is returned
+				0 1 2 are already stdin stdout stderr
+				high order 8 bits application register a = { AF_INET | IPPROTO_UDP | IPPROTO_TCP }
+				AF_INET = handle of NFS file
+				return -1 = no handle free for use
+				<a style="color:#0000FF">
+				la	(<i>handle_type</i>*/16)
+				ii	HANDLE$
+				</a>
 
 	<a  name="free_handle_ii"/>
-	FREE_HANDLE$		pool a freed handle
+	FREE_HANDLE$	1:17	relinquish a  handle for reuse
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	FREE_HANDLE$
+				</a>
 
 	<a  name="read_handle_ii"/>
-	READ_HANDLE$		read 1st word of handle encoding
+	READ_HANDLE$	1:18	read 1st word of handle encoding
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	READ_HANDLE$
+				</a>
 
 	<a  name="read_xvector_ii"/>
-	READ_XVECTOR$		obtain a pointer from kernel vector list
+	READ_XVECTOR$	1:19	obtain a pointer from kernel vector list
+				value is returned in application register a
+				<a style="color:#0000FF">
+				lx	<i>kernel_vector_address</i>
+				ii	READ_XVECTOR$
+				</a>
 
 	<a  name="write_xvector_ii"/>
-	WRITE_XVECTOR$		update a pointer in kernel vector list
+	WRITE_XVECTOR$	1:20	update a pointer in kernel vector list
+				<a style="color:#0000FF">
+				la	<i>value</i>
+				lx	<i>kernel_vector_address</i>
+				ii	WRITE_XVECTOR$
+				</a>
 
 	<a  name="read_socket_ii"/>
-	READ_SOCKET$		read both words of handle encoding
+	READ_SOCKET$	1:21	read both words of handle encoding
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	READ_SOCKET$
+				</a>
 
 	<a  name="usocket_ii"/>
-	USOCKET$		bind: attach port socket structure to handle
+	USOCKET$	1:56	bind: attach port socket structure to handle
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lb	<i>port_number</i>
+				ii	USOCKET$
+				</a>
 
 	<a  name="usocketc_ii"/>
-	USOCKET$C		connect/accept: attach transmission control block to handle
+	USOCKET$C	1:22	connect/accept: attach transmission control block to handle
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lx	<i>transmission_control_block</i>
+				ii	USOCKET$C
+				</a>
 
 	<a  name="kernel_b1_ii"/>
-	KERNEL$B1		switch to an named kernel B1 frame
+	KERNEL$B1	1:23	switch to an named kernel B1 frame
+				<a style="color:#0000FF">
+				la	VECTOR_B1(<i>number</i>),,xi
+				ii	KERNEL$B1
 
 	<a  name="b1_ii"/>
-	B1$			switch to application b1 frame
+	B1$		1:24	switch to application current b1 frame
+				<a style="color:#0000FF">
+				ii	B1$
+				</a>
 
 	<a  name="kernel_b1_ii_1"/>
-	KERNEL$B1_1		switch to 1st kernel b1 frame
+	KERNEL$B1_1	1:25	switch to 1st kernel b1 frame
+				<a style="color:#0000FF">
+				ii	KERNEL$B1_1
+				</a>
 
 	<a  name="cache_standard_netbuf_ii"/>
-	CACHE_NETB$		IP initialisation call
+	CACHE_NETB$	1:44	IP initialisation call
+				<a style="color:#0000FF">
+				ii	CACHE_NETB$
+				</a>
 
 	<a  name="base_standard_netbuf_ii"/>
-	ON_NETB$		place default network buffers
+	ON_NETB$	1:45	place default network buffers
 				in application address windows B48 to B63
+				<a style="color:#0000FF">
+				ii	ON_NETB$
+				</a>
 
 	<a  name="unbase_deviceb_ii"/>
-	FREE_DEVB$		close address space window B32
+	FREE_DEVB$	1:46	close address space window B32
+				<a style="color:#0000FF">
+				ii	FREE_DEVB$
+				</a>
 
 	<a  name="unbase_socketb_ii"/>
-	FREE_SOCKB$		close address space window B47
+	FREE_SOCKB$	1:47	close address space window B47
+				<a style="color:#0000FF">
+				ii	FREE_SOCKB$
+				</a>
 
 	<a  name="unbase_standard_netbuf_ii"/>
-	FREE_NETB$		close application address space windows B48 to B63
+	FREE_NETB$	1:48	close address space windows B48 to B63
+				<a style="color:#0000FF">
+				ii	FREE_NETB$
+				</a>
 
 	<a  name="file_open_frame_ii"/>
-	FO$FRAME		obtain a data file open descriptor
-				at root of application external stack
+	FO$FRAME	1:57	obtain a data file open descriptor
+				<a style="color:#0000FF">
+				la	(<i>FILE_TYPE,,WORDS_FOLLOWING</i>)
+				ii	FO$FRAME
+				</a>
 
 	<a  name="files_open_heap_ii"/>
-	FO$HEAP			start data file open descriptor stack
-				at root of application external stack
+	FO$HEAP		1:58	start data file open descriptor heap
+				between static data and external stack
+				<a style="color:#0000FF">
+				la	SUMMIT$3,,xi	. or la (SUMMIT$3)
+				ii	FO$HEAP
+				</a>
 
 	<a  name="file_handle_ii"/>
-	FILE$HANDLE		add data file open descriptor pointer x
-				to handle number a
+	FILE$HANDLE	1:59	add to handle pointer -> data file open frame
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lx	<i>file_open_frame_pointer</i>
+				ii	FILE$HANDLE
+				</a>
 
 	<a  name="assign_xvector_ii"/>
-	ASSIGN_XVECTOR$		obtain kernel storage
+	ASSIGN_XVECTOR$ 1:10	obtain kernel storage
 				for new kernel structures
+				<a style="color:#0000FF">
+				la	<i>storage_words_required</i>
+				lb	<i>kernel_vector_address</i>
+				ii	ASSIGN_XVECTOR$
+				</a>
 				
+</pre>
+<a	name="external_i"/>
+<h3>Appendix F: External Interrupts and Peripherals</h3>
+
+RTA1 emulated machine does not receive external interrupts but the intended migration to semiconducter may bring directly connected peripherals and interrupts
+
+<p>
+Currently network traffic is connected with Berkeley Packet Filter passing frames on a shared memory trunk
+
+<p>
+File systems are RAM under power backed up over NFS / UDP / TCP  on other platforms and high-capacity filestore boxes
+
+<p>
+There exists no intention of changing filesystems to flash. RAM has highest performance and is without maintenance problems, and other firms and projects have best experience and knowledge at creating offline and PC filestore
+
+<p>
+An exception is RTA1's Device 1 file system which is treated as read-only and could move to NVRAM as a stable source of software load and web host pages, which it already is
+
+<p>
+The likeliest peripheral needs in a semiconductor RTA1 are network adaptors. These could as now run outside RTA1 executable space with a separate machine (currently the emulator platform) exchanging network frames on a shared memory trunk
+<pre>
+
+	_________________________			_________________________
+	|			|<----------------------|			|
+	|  RTA1 protocol stack	|			| BSP Activity currently|
+	|			|  network frames trunk	|			|
+	|_______________________|---------------------->|_______________________|
+
 
 </pre>
+Alternatively RTA1 could become its own helper and maintain both ends of its network frames trunk: could drive network adapters and read and write the shared memory trunk to and from RTA1 protocols
+
+<p>
+There is no intention to change the way in which RTA1 protocol stack exchanges frames with a trunk essentially of interface buffers (currently more exactly BSP process buffers)
+
+<p>
+There are electronic fabrics available which are capable of interfacing many peripherals to many cores, but RTA1 is designed for the minimum of support electronics
+
+<p>
+Each SMP core is expected to occupy and be identified by a socket or position on the schematic, and each socket is expected to have maximum eight direct peripheral connections
+<pre>
+
+<div	style="height:200pt;width:700pt;border-radius:10pt;color:#FFFFFF;background-color:#0000FF">
+
+als [25..32]	peripherals [17..24]	peripherals [9..16]	peripherals [1..8]
+		||||||||		||||||||		||||||||
+		|core 2|		|core 1|		|core 0|
+		|______|		|______|		|______|
+________________|_______________________|_______________________|				
+				    core to core interrupt lines
+
+
+		     all cores interface to all of system memory
+		
 </div>
+
+</pre>
+
+The following interrupt preprocessing is already in RTA1 supplied system images
+
+<p>
+Up to eight interrupt sources identified by eight pending signals shall be able to interrupt a core to vector address 0:2
+
+<p>
+The pending signals are to be represented in eight low-order bit positions on input port <a href="rta.html#iolist">XI_PENDING$</a>
+
+<p>
+Preprocess ISR is programmed to read status or data from eight input ports <a href="rta.html#iolist">I$DATA</a> and output acknowledgement on eight low-order bit positions of output port <a href="rta.html#iolist">XI_ACK</a>
+
+<p>
+Preprocess ISR queues the data or status input to an application thread bound to the peripheral. This driver thread is scheduled with absolute preemptive priority. See <a href="#event_wait_ii">EVENT_WAIT$</a>
+
+<p>
+If the interrupt source requires more I/O more immediately than the latency of switching its driver thread, then the existing preprocess ISR must of course call extensions hosted in application code. It is considered prefereable to avoid this
+
+<p>
+There ought only be one preemptive driver thread per core for each <i>type</i> of attached peripheral, so that the driver thread is the only candidate for pre-emptive switching and can keep executing until all available inputs are handled
+
+<p>
+There are seven priority levels of preemptive switching. A driver thread may resist becoming itself preempted or time-sliced by setting a nonzero interrupt mask, prefereably 1 in the range [ 0..7 ]
+
+<p>
+Output is co-ordinated with core to core interrupt signals carrying only a source indication input at port <a href="rta.html#iolist">MCAST_PENDING$</a>. Parameters and acknowledgement are in system memory
+</div>
+
+<a	name="scheduling"/>
+<h3>Appendix G: Scheduling</h3>
+<a	name="remote_files"/>
+<h3>Appendix H: NFSv3 Remote Files</h3>
+
+Remote files are accessed with NFS version 3 over TCP
+
+<p>
+Server nfsd is TCP port 2049 and server mountd is required to be TCP port 1023
+
+<p>
+Paths to remote files contain encoded information used in open() function to detect NFS and connect to the server
+
+<p>
+open() consists largely in mounting the remote directory and obtaining an NFS handle to the file
+
+<p>
+the path handed to open is the path of the file. It links to the mount path which is the path of the directory
+
+<pre    style="font-size:12pt">
+
+        $include        rta/target.rta/t77.4/ip.def                     . for function macro $neta
+        $include        rta/target.rta/fs/mntaddrs.def: mount_path      . for procedural maccro mount_path
+
+SUSE_NFSD       $equ    $neta(192.168.0.14:2049)        . server enet
+SUSE_MOUNTD     $equ    $neta(192.168.0.14:1023)
+
+path_suse       mount_path      SUSE_NFSD::mount_suse:"EXAMPLE_FILENAME"
+mount_suse      mount_path      SUSE_MOUNTD:::"/home/laclimpide/online_files/"
+
+                # protocol NFSv3
+                # server must have mountd bound to TCP port 1023
+
+
+</pre>
+
+<a	name="diagnostic"/>
+<h3>Appendix I: File and Socket Error Codes</h3>
+
+RTA1 does not have errno. Error returns from kernel routines are approximately the negative mirror of POSIX errno
+
+<p>
+Some error return codes are still to add to this list
+<pre>
+
+DISALLOWED      $equ    1	. therefore the RTA1 error return is 	-1
+INT_SYSCALL     $equ    4	.					-4
+NO_FILE_TYPE    $equ    9	.					-9
+NO_STORAGE      $equ    12	.					-12
+NOT_YOU         $equ    13	.					-13
+BAD_ADDRESS     $equ    14	.					-14
+BAD_ARGUMENT    $equ    22	.					-22
+NO_HANDLE       $equ    22	.					-22
+FILE_NOT_OPEN   $equ    32	.					-32
+NO_PIPE         $equ    32	.					-32
+COULD_NOT       $equ    35	.					-35
+UDP_NOSOURCENET $equ    39	.					-39
+OVERSIZE        $equ    40	.					-40
+NO_PROTOCOL     $equ    42	.					-42
+ALREADY_CONNECTED $equ  56	.					-56
+PORT_ALREADY_BOUND $equ 58	.					-58
+PORT_NOT_BOUND  $equ    57	.					-57
+REMOTE_REFUSED  $equ    61	.					-61
+NO_PATH         $equ    65	.					-65
+NO_CONNECTION   $equ    FILE_NOT_OPEN	.				-32
+NO_DATA         $equ    96	.					-96
+
+
+</pre>
 
