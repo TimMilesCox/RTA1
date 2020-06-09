@@ -1658,7 +1658,15 @@ void execute(word instruction)
                         II instruction (initiate internal interrupt)
                   *******************************************************/
 
-                  if (((ea & -64) == 0) && ((psr & 0x00800000) == 0))
+                  /******************************************************
+			derive page # ea
+			ea is sign-extended but then &= 0x00FFFFFF
+                  ******************************************************/
+
+                  v = ea >> 6;
+
+                  if (((v == 0) && ((psr & 0x00800000) == 0))
+                  ||  (v >= base[72]))	/*	application threshold	*/
                   {
                      /*********************************************
                         system call ii for applications

@@ -1,9 +1,9 @@
 #include <stdio.h>
 
-#ifdef PPC
+#ifdef	PPC
 #include <sys/malloc.h>
 #else
-#include <sys/malloc.h>
+#include <malloc.h>
 #endif
 
 #include "../engine.rta/emulate.h"
@@ -92,7 +92,7 @@ void action(char request[])
                          limitb,
                          guide;
 
-   unsigned long	 offset;
+   unsigned 		 offset;
 
    page			*pagep;
 
@@ -195,8 +195,14 @@ void action(char request[])
 
          if (breakpoint)
          {
-            if (flag['v'-'a']) printf("[>%x,%lx]",
-                                       indication, breakpoint - memory.p4k[0].w);
+            #ifdef __X64
+            #define FORMAT1 "[>%x,%lx]"
+            #else
+            #define FORMAT1 "[>%x,%x]"
+            #endif
+
+            if (flag['v'-'a']) printf(FORMAT1,
+                                      indication, breakpoint - memory.p4k[0].w);
             if (flag['e'-'a']) printf("[@%p:%p]", memory.p4k[0].w, breakpoint);
          }
 
@@ -357,7 +363,7 @@ void action(char request[])
          {
             sscanf(text, "%x", &base_index);
             while ((datum = *text++) && (datum ^ ':')) ;
-            if (datum == ':') sscanf(text, "%lx", &offset);
+            if (datum == ':') sscanf(text, "%x", &offset);
          }
 
          if (device_index < 0) break;

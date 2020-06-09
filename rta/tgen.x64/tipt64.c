@@ -478,10 +478,16 @@ void *emulate()	/* thread start */
 
    for (;;)
    {
+      #ifdef __X64
+      #define FORMAT1 "[%x %p %x %p %lx]\n"
+      #else
+      #define FORMAT1 "[%x %p %x %p %x]\n"
+      #endif
+
       if (flag['s'-'a']) indication |= LOCKSTEP;
-      if (flag['e'-'a']) printf("[%x %p %x %p %lx]\n",
-                                 indication, register_set, psr, apc,
-                                 apc - memory.p4k[0].w);
+      if (flag['e'-'a']) printf(FORMAT1,
+                                indication, register_set, psr, apc,
+                                apc - memory.p4k[0].w);
 
       #ifdef GCC
       for (;;)
@@ -726,9 +732,15 @@ static void statement()
    int                   index = iselect;
    int                   index2;
 
+   #ifdef __X64
+   #define FORMAT2 "%6.6x %12.12lx\n"
+   #else
+   #define FORMAT2 "%6.6x %12.12x\n"
+   #endif
+
    instruction_display(apc - 1, 1, flag['l'-'a']);
    if (flag['e'-'a']) printf("[RP %p]", register_set);
-   printf("%6.6x %12.12lx\n", psr, (word *) apc - memory.p4k[0].w);
+   printf(FORMAT2, psr, (word *) apc - memory.p4k[0].w);
    instruction_display(apc, 6, flag['l'-'a']);
 
    while (index < (iselect | 24))
