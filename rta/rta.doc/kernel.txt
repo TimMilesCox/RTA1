@@ -130,9 +130,9 @@ See also the licensing notice at the foot of this document
 
 <div    style="background-color:E0E0E0">
 
-<dl><a href="#tcp_steps">Appendix A: Low-Level TCP Interface</a>
+<dl><a href="#udp_steps">Appendix A: UDP Low-Level Interface</a>
 </dl>
-<dl><a href="#udp_steps">Appendix B: Low-Level UDP Interface</a>
+<dl><a href="#tcp_steps">Appendix B: TCP Low-Level Interface</a>
 </dl>
 </div>
 <dl><a href="#appx_c">Appendix C: System Information Interrupt Calls</a>
@@ -152,10 +152,8 @@ See also the licensing notice at the foot of this document
 <dl><a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
 </dl>
 
-<div	style="background-color:E0E0E0">
 <dl><a href="#scheduling">Appendix G: Scheduling</a>
 </dl>
-</div>
 
 <dl><a href="#remote_files">Appendix H: Remote Files</a>
 </dl>
@@ -222,7 +220,7 @@ The sign extended immediate operand of ii instruction only has 10 page bits
 
 </pre>
 
-The page number in the interrupt vector must be in ISR space below application threshold in Port I/O 72
+The page number in the interrupt vector must be in ISR space below Application Threshold in Port I/O 72
 
 <p>
 Applications may not enter restart page 0 with ii instruction
@@ -263,7 +261,7 @@ A far call routine executes in application mode and reads parameters
 from the internal stack. It returns by executing a far return instruction <a href="rta.html#fret">fret</a>
 
 <p>
-ISRs are in 4096-word page at absolute address 4096, i.e. the second page of storage at Page Index 1.
+System call ISRs are in 4096-word page at absolute address 4096, i.e. the second page of storage at Page Index 1.
 
 <p>
 Instruction frames can be any size in adjacent pages of 4096 words
@@ -668,27 +666,8 @@ Instruction frames can be any size in adjacent pages of 4096 words
         unique local port, and to the default network address
         of the outgoing interface
 
-        A small number of application protocols have a
-        well-known and constant client port number
-
-        Some port numbers therefore support being bound to
-        multiple sockets for outgoing connect. The sockets
-        may be of one process or many
-
-        However an outgoing connection with all addresses and
-        ports identical to an existing connection is declined
-        internally, so that the remote host does not reset
-        the existing connection
-
-        The kernel call
-
-                c       (share_port)    {IPPROTO_TCP,,xi|IPPROTO_UDP,,xi}               ;
-                                        {PORT_NUMBER,,xi|port_number_variable}
-
-        allows multiple sockets to bind to the local port number
-
-        The individual socket moves from the port to
-        the connection on connect() and is lost on close()
+        The socket moves from the port to the connection on connect()
+	and is lost on close()
 
         To use that local port for another connect() a new
         socket must first be bound to it
@@ -1452,6 +1431,45 @@ octets. So are the target-position and result-position of lseek()
 
 </pre>
 
+<div	style="background-color:#E0E0E0">
+<a	name="udp_steps"/>
+<h3>Appendix A: UDP Low-Level Interface</h3>
+
+Low-level network interfaces are largely used for maximum efficiency in server rôles
+
+<p>
+UDP Low-Level Interface uses a handle in order to bind to a port, then keeps the port input queue in application address space and and has zero-copy access to input messages instead of calling any receive function
+
+<p>
+Applications using this interface call a reply buffer function and a queue function instead of a write function. The reply buffer is primed with addresses from the input message. The application writes the data part of the reply buffer directly
+
+<p>
+Input messages are dropped from the socket input queue after consumption
+
+<p>
+This technique will be rolled out anew for large applications when private buffers per large-volume socket are implemented. No-copy access to the default buffer pool supporting the system is not for new applications preferred
+
+
+<a	name="tcp_steps"/>
+<h3>Appendix B: TCP Low-Level Interface</h3>
+
+TCP Low-Level Interface is largely used for very large numbers of connections and maximum efficiency in server rôles
+
+<p>
+TCP Low-Level Interface uses a handle in order to bind to a port, then keeps an array of transmission control blocks in application address space and and has zero-copy access to input segments instead of calling any receive function. Function calls insert reply data into the output stream and optionally push out finalised segments
+
+<p>
+Input segments are dropped from the connection input queue after consumption
+
+<p>
+TCP Low-Level Interface accepts incoming and connects outgoing connections by constructing transmission control blocks without corresponding handles. The application accesses transmission control clocks directly in large numbers which could not be represented with handles 
+
+<p>
+This technique will be rolled out anew for large applications when private buffers per port-based-connection-array are implemented. No-copy access to the default buffer pool supporting the system is not for new applications preferred
+</div>
+
+
+
 <a	name="appx_c"/>
 <h3>Appendix C: System Information Interrupt Calls</h3>
 <pre	style="font-size:12pt">
@@ -1535,7 +1553,7 @@ octets. So are the target-position and result-position of lseek()
 				</a>
 
 				encode a handle from transmission control block address [register x]
-				in handles [0 1 2] stdin stdout stderr
+				in handles [ 0 1 2 ] stdin stdout stderr
 				of the containing process of thread [register a]
 
 </pre>
@@ -1778,10 +1796,72 @@ There ought only be one preemptive driver thread per core for each <i>type</i> o
 There are seven priority levels of preemptive switching. A driver thread may resist becoming itself preempted or time-sliced by setting a nonzero interrupt mask, prefereably 1 in the range [ 0..7 ]
 
 <p>
-Output is co-ordinated with core to core interrupt signals carrying only a source indication input at port <a href="rta.html#iolist">MCAST_PENDING$</a>. Parameters and acknowledgement are in system memory
+Output is co-ordinated with core to core interrupt signals to port <a href="rta.html#iolist">MCAST_TO$</a>. Each bit-selected destination receives a single-bit source indication at port <a href="rta.html#iolist">MCAST_PENDING$</a>. Parameters and acknowledgement are in system memory
+
+<p>
+An application sends interrupt signals between cores with service call <a href="#send_alert_ii">ALERT$</a>
+
 
 <a	name="scheduling"/>
 <h3>Appendix G: Scheduling</h3>
+
+The aim of kernel scheduler is twofold
+
+<p>
+Threads from highest to lowest priority all get some instruction execution time
+
+<p>
+Threads which must react instantly to an event may switch preemptively, unless actual thread is equally preemptive
+
+<p>
+Priority is from zero = highest to seven = lowest
+
+<p>
+All threads which are not preemptive are queued at the last priority list [ 7 ] and prioritised by graded timeslice
+
+<p>
+Timeslice is an instruction ration which is unlimited at priority zero and diminishing per priorities [ 1..7 ]
+
+<p>
+It is rare for any thread to exhaust its instruction ration because of the brevity of RTA1 instruction paths. The instruction ration is restarted after every I/O wait or other yield
+
+<p>
+Preemptive threads are queued at their priority list [ 0..7 ]
+
+<p>
+All priority lists form one queue for attention in the order [ 0..7 ], so all preemptive threads are considered before any which are graded by timeslice
+
+<p>
+A thread becomes preemptive by waiting for <a href="#event_wait_ii">event XINT</a>
+
+<p>
+A preemptive thread may defend itself from another preemption or from timeslice by executing with nonzero interrupt mask, recommended value 1 in the range [ 0..7 ]. This both signals ISRs which might otherwise decide to preempt, and blocks automatic timeslice where the thread priority is [ 1..7 ]
+
+<p>
+Interrupt mask is not priority but a level of resistance to interrupts of graded urgency. Any thread of any priority is interrupted by any interrupt if the thread's interrupt mask is at zero
+
+<p>
+Interrupt mask is programmed with the Switch Interrupt Mask instruction <a href="rta.html#sim">sim</a> which exchanges current interrupt mask with a storage or register operand, for example
+<pre>
+
+	push	REQUIRED_IMASK,,xi
+	sim	0, sp
+	
+	.
+	.
+	sim	0, sp			. if there is any need to change it back
+	inc	sp
+
+</pre>
+Interrrupt mask is part of the thread state, so a thread that maintains one mask value at all times does not need to save the replaced mask:
+<pre>
+
+	lr	REQUIRED_IMASK,,xi	. at thread initialisation for example
+	sim	r			. and that's how it stays
+
+</pre>
+
+
 <a	name="remote_files"/>
 <h3>Appendix H: NFSv3 Remote Files</h3>
 
@@ -1822,7 +1902,7 @@ mount_suse      mount_path      SUSE_MOUNTD:::"/home/laclimpide/online_files/"
 RTA1 does not have errno. Error returns from kernel routines are approximately the negative mirror of POSIX errno
 
 <p>
-Some error return codes are still to add to this list
+Negative return codes include
 <pre>
 
 DISALLOWED      $equ    1	. therefore the RTA1 error return is 	-1
