@@ -58,6 +58,11 @@ See also the licensing notice at the foot of this document
 		<ol>
 		<li><a href="#operands">Register / Memory Operand Continuum</a></li>
 		<li><a href="#registers">Programmable Register Model</a></li>
+			<ol>
+			<li><a href="#nar">Two Non-Addressable Registers</a></li>
+			<li><a href="#ioar">Architectural Space Mapped via I/O</a></li>
+			<li><a href="#register_stack">The Register Stack</a></li>
+			</ol>
 		<li><a href="#instruction_form">Instruction Layout</a></li>
 		<li><a href="#integer_instructions">Single Integer Instructions</a></li>
 		<li><a href="#sisi">Single Integer Store Instructions</a></li>
@@ -103,6 +108,9 @@ See also the licensing notice at the foot of this document
 	<blockquote>
 	<a href="#linking">Appendix A: Linking</a><br>
 	<a href="#file_formats">Appendix B: File Formats</a><br>
+		<a href="#txo">Text Encoded Binary (.txo) Format</a><br>
+		<a href="#load_string">Load String Format</a><br>
+		<a href="#txo">rom Format</a><br>
 	<a href="#command_line">Appendix X: masmx Command Line</a><br>
 	<a href="#binary_utilities">Appendix Y: Binary Utilities</a><br>
 		<blockquote>
@@ -356,6 +364,9 @@ $ cat visible.txo
 $
 
 </pre>
+
+The name "manifest" has been exported here in the <a href="#txo">output file</a>
+
 <p>
 An asterisk at the main assembly level externalises the label
 
@@ -915,7 +926,7 @@ A two-word floating constant is target of <a href="rta.html#fpx">fpx</a> instruc
 
 <p>
 See also <a href = "#fp192i">192-Bit Floating Point</a>
-and <a href="#fp48i">Floating Storage Compression</a>
+and <a href="#fp48data">Floating Storage Compression</a>
 <pre	style="font-size:12pt;color:#0000FF">
 
 
@@ -1424,7 +1435,7 @@ Instructions are explained more in
 
 <p>
 Most instructions imply an arithmetic operand in scalar registers or the internal stack.
-All instructons derive an input or output from an effective address
+All instructions derive an input or output from an effective address
 
 <a	name="operands"/>
 <h3>6.1: Register / Memory Operand Continuum</h3>
@@ -1432,14 +1443,95 @@ All instructons derive an input or output from an effective address
 The address-side operand may be in storage or a register and may be an immediate value 
 
 <p>
-Registers are in memory address space
+Data registers are in memory address space
 
 <a	name="registers"/>
 <h3>6.2: Programmable Register Model</h3>
-Application and interrupt space each have scalar registers and a register array called the internal stack
+
+<a	name="nar"/>
+<h4>6.2.1: Two Non-Addressable Registers</h4>
+
+There are two <a href="rta.html#nonar">non-addressable registers</a>, the 48-bit absolute program counter and the 24-bit processor state register
 
 <p>
-The size of application and interrupt internal stacks is 104 word each
+Absolute program counter is never stored
+
+<p>
+PC - B0 * 4096 is pushed on calls and interrupts. Iframe Name is then pushed on far calls and interrupts
+
+<p>
+On interrupt returns and far returns popped Iframe Name:Start Page Index -> B0 * 4096 is added to popped offset
+and transferred to absolute program counter
+
+
+<p>
+PSR is stored and loaded at interrupt and interrupt return. Its flag assignments are
+<pre	style="font-size:12pt;color:#0000FF">
+
+		23             18   16     14           8   7   6   5   4   3         0
+		_________________________________________________________________________
+		| I | 0 0 0 0 | i i i | 0 | see$          | H | R | R | W | F | 0 0 | C |
+		|   |         |       |   | 1 2 3 4 5 6 7 |   | Z |16 |16 | P |     |   |
+		|___|_________|_______|___|_______________|___|___|___|___|_R_|_____|___|
+
+
+		I = 0 = current state is application: registers are 0..127
+		    1 =                    interrupt: registers are 128..255
+
+		iii	interrupt mask
+
+		see$1 = 0 = data window 01000..01FFF  = private stack window B1
+		 	1 =				Thread Control Block
+
+		see$2 = 0 = data window 02000..02FFF  = application vector list
+			1 =				kernel vector list
+
+		see$3
+		see$4
+		see$5
+		see$6
+		see$7	select kernel data windows instead of application windows B3..B7
+
+		half$w = 0 = read / write thirdwords
+			 1 = read / write halfwords
+
+		b$streamZR = 0 = do not clear a at start of rsr instruction
+			     1 = clear a at start of rsr instruction
+
+		b$stream16r = 0 = use 24 bits of data words in Bitstream Read Channel
+			      1 = use 16 bits
+
+		b$stream16w = 0 = use 24 bits of data words in Bitstream Write Channel
+			      1 = use 16 bits
+
+		Flag 3 fp$r is used for teaming pairs of floating numbers to calculate 192-bit values
+		When fp$r is asserted floating instructions store a minor result in registers 8..11
+
+		carry$ = carry from high-order position of integer adds and integer negative adds
+
+
+</pre>
+
+<a	name="crii"/>
+
+<a	name="ioar"/>
+<h4>6.2.2: Architectural Space Mapped via I/O</h4>
+<p>
+Storage relocation pointers and limits are addressable by being mapped as I/O ports
+
+<a	name="register_stack"/>
+<h4>6.2.3: The Register Stack</h4>
+
+The register stack is in program memory space
+
+<p>
+Applications and interrupts each have 128 registers in the 256-word internal stack
+
+<p>
+Application and interrupt spaces each have scalar arithmetic, pointer and special registers in their region of the internal stack
+
+<p>
+The part available for stack operations is in each case 104 registers
 
 <p>
 Macro libraries are supplied to reuse internal stack space for demanding behaviour like recursion
@@ -2336,7 +2428,7 @@ at the internal stack top
 <a	name="fp192i"/>
 <h4>6.16.2: 192-Bit Floating Arithmetic</h4>
 
-192-bit floating arithmetic uses the four-function 96-bit floating instructions <a href="rta.html#fa">fa</a>
+192-bit <a href="rta.html=rta1#fp">floating arithmetic</a> uses the four-function 96-bit floating instructions <a href="rta.html#fa">fa</a>
 <a href="rta.html#fan">fan</a> <a href="rta.html#fm">fm</a> <a href="rta.html#fd">fd</a>
 described at <a href="#fp96i">6.16.1: The 96-Bit Floating Point Model</a> 
 
@@ -2704,72 +2796,8 @@ again?	jdr	again!
 
 </pre>
 
-<a	name="nar"/>
-<h3>6.21: Non-Addressable Registers</h3>
-
-There are two <a href="rta.html#nonar">non-addressable registers</a>, the 48-bit absolute program counter and the 24-bit processor state register
-
-<p>
-Absolute program counter is never stored
-
-<p>
-PC - B0 * 4096 is pushed on calls and interrupts. Iframe Name is then pushed on far calls and interrupts
-
-<p>
-On interrupt returns and far returns popped Iframe Name:Start Page Index -> B0 * 4096 is added to popped offset
-and transferred to absolute program counter
-
-
-<p>
-PSR is stored and loaded at interrupt and interrupt return. Its flag assignments are
-<pre	style="font-size:12pt;color:#0000FF">
-
-		23             18   16     14           8   7   6   5   4   3         0
-		_________________________________________________________________________
-		| I | 0 0 0 0 | i i i | 0 | see$          | H | R | R | W | F | 0 0 | C |
-		|   |         |       |   | 1 2 3 4 5 6 7 |   | Z |16 |16 | P |     |   |
-		|___|_________|_______|___|_______________|___|___|___|___|_R_|_____|___|
-
-
-		I = 0 = current state is application: registers are 0..127
-		    1 =                    interrupt: registers are 128..255
-
-		iii	interrupt mask
-
-		see$1 = 0 = data window 01000..01FFF  = private stack window B1
-		 	1 =				Thread Control Block
-
-		see$2 = 0 = data window 02000..02FFF  = application vector list
-			1 =				kernel vector list
-
-		see$3
-		see$4
-		see$5
-		see$6
-		see$7	select kernel data windows instead of application windows B3..B7
-
-		half$w = 0 = read / write thirdwords
-			 1 = read / write halfwords
-
-		b$streamZR = 0 = do not clear a at start of rsr instruction
-			     1 = clear a at start of rsr instruction
-
-		b$stream16r = 0 = use 24 bits of data words in Bitstream Read Channel
-			      1 = use 16 bits
-
-		b$stream16w = 0 = use 24 bits of data words in Bitstream Write Channel
-			      1 = use 16 bits
-
-		Flag 3 fp$r is used for teaming pairs of floating numbers to calculate 192-bit values
-		When fp$r is asserted floating instructions store a minor result in registers 8..11
-
-		carry$ = carry from high-order position of integer adds and integer negative adds
-
-
-</pre>
-
 <a	name="crii"/>
-<h3>6.22: Call / Return, Iframe Jump, Internal Interrupt / Return</h3>
+<h3>6.21: Call / Return, Iframe Jump, Internal Interrupt / Return</h3>
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -3269,7 +3297,7 @@ freeware/RTA1/rta/fs/fs.txo:$(0) 477 words decimal from hexadecimal 000000 to 00
 
 
 <a	name="crio"/>
-<h3>6.23: Control and I/O Instructions</h3>
+<h3>6.22: Control and I/O Instructions</h3>
 
 
 <pre	style="font-size:12pt;color:#0000FF">
@@ -4270,7 +4298,8 @@ app2*	$vector	app2_startup
 <a      name="file_formats"/>
 <h2>Appendix B: File Formats</h2>
 
-<h3>txo Format</h3>
+<a	name="txo"/>
+<h3>Text Encoded Binary (.txo) Format</h3>
 
 masmx outputs text encoded binary files. They have the default suffix
 <b>.txo</b> and they can be viewed in a text editor or a shell
@@ -4330,15 +4359,19 @@ the floating point literal 1.75 is at address 256 or $00:000100 because operand 
 <p>
 2nd-to-last line is the exported call name. The loader updates this to the location where this iframe is loaded
 
-
-<h3>lstring Format</h3>
+<a	name="load_string"/>
+<h3>Load String Format</h3>
 <p>
 
 <a href="#lstring">lstring</a> utility constructs dynamically loadable files from txo files
 
+<p>
+A load string file may contain its absolute load address and is then not dynamically loadable but convertible to ROM format for catenation into a load image
+
+<a	name="rom"/>
 <h3>slab Format</h3>
 
-<a href="#slab">slab</a> utility constructs ROM image from lstring output
+<a href="#slab">slab</a> utility constructs ROM image from an lstring output which contains no outstanding relocation requests
 
 <p>
 Supplied builds apply the suffix <a href="#rom">.rom</a> to ROM image
@@ -4538,8 +4571,7 @@ lstring is the final build step of loadable applications. They are not converted
 <a	name="slab"/>
 <h3>slab</h3
 
-
-<h3>A.4 slab ROM Image Utility</h3>
+<h3>slab ROM Image Utility</h3>
 
 slab is the final build step of fixed load images. Input is the output from lstring. Output is ROM format
 
