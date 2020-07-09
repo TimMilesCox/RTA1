@@ -3,7 +3,7 @@
 #ifdef	PPC
 #include <sys/malloc.h>
 #else
-#include <malloc.h>
+#include <sys/malloc.h>
 #endif
 
 #include "../engine.rta/emulate.h"

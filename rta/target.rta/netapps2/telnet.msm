@@ -56,16 +56,32 @@ tn_help		"commands are":HT:"h":HT:"help":LF:;
 
 tn_help_bytes	$equ	$bits/$byte
 
-applookupp	filep	APPLICATION_BBOUNDARY/*12
+$(1)
+applookupp*	filep	APPLICATION_BASE/*12
+?	$do	APPLICATION(),app_lookup(?)	filep	APPLICATION(?)/*12
 
+apps_fsorder*	+	applookupp
+?	$do	APPLICATION(),	+	app_lookup(?)
+	-1
+
+. apps_fsp +	apps_fsorder
+
+$(66::,x)
+lookfor_app	filep
+
+$(3)
 tn_editline	$res	24
 telnet_istring
 telnet_run_name	$res	160//3
 telnet_repeats	$res	1
 telnet_start_time $res	2
+telnet_name_words $res	1
 
 $(0)
 telnet_i
+
+	lcal	span_mounts
+
 	$if	TELNET_THREADED
 	ql	(telnet_start,,,:q)
 	ii	THREAD$
@@ -110,12 +126,40 @@ telnet_tstate?
 	la	s:tcp:tbase, b
 	sabr	BSOCKET
 
+        $if	0
 	c	(fsrom_find)	applookupp,,xi			;
-			 	APPLICATION_BBOUNDARY/*12,,xi	;
+			 	APPLICATION_BASE/*12,,xi	;
 				(0:d),,long			;
 				(TREE$*/16)			;
 				2,,xi				;
 				$3("lookup"),,xi
+	$endif
+
+	$if	0
+
+telnet_span_mounts
+	lx	*apps_fsp
+	inc	apps_fsp
+
+	tp	x
+	j	telnet_mounts_spanned
+	tnz	x
+	j	telnet_span_mounts
+
+	la	lookfor_app:bank
+	sabr	32
+	ql	*(32*/12++68)
+	xor	(MOUNT$,,3)
+	jnza	telnet_span_mounts
+	c	(fsrom_da)	x	lookfor_app:bank	6,,long
+
+	j	telnet_span_mounts
+
+telnet_mounts_spanned
+
+	$endif
+
+.	lcal	$autorun:autorun
 
 telnet_walk_on
 	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23))
@@ -371,11 +415,10 @@ telnet_run
 	lb	telnet_run_name,,xi
 	call	(token_net)
 
-	c	(qstart)	applookupp:bank				;
-				applookupp:absolute_pointer,,long	;
-				a					;
-				telnet_run_name,,xi
 
+	sa	telnet_name_words
+
+	c	(online_xqt)	a	telnet_run_name,,xi
 	lx	telnet_tpaside
 	jza	telnet_norun
 
@@ -390,6 +433,7 @@ telnet_norun
 	lret	0
 
 telnet_run_report
+	lx	telnet_tpaside
 	push	a
 	lcal	telnet_display_quartets
 

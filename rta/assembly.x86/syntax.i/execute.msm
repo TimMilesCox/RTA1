@@ -5,49 +5,53 @@ _execute:
         mov     dword ptr [__register+287*4], esp
 	mov	ecx, eax
 	shl	ecx, 8
-	shr	ecx, 24-5	; instruction index in ch
-	shr	cl, 5		; operand designator in cl
+	shr	ecx, 24-5		; instruction index in ch
+	shr	cl, 5			; operand designator in cl
 
 	shl	eax, 16
-	cmp	cl, XI		; sign extended immediate?
+	cmp	cl, XI			; sign extended immediate?
 	jnz	derive_ea
 
-	sar	eax, 8		; different from other EAs
+	sar	eax, 8			; different from other EAs
 	shr	eax, 8
 	jmp	ea_derived
 
 derive_ea:
-	shr	eax, 16		; no sign of it
-	test	ax, 32768	; indexing / indirection ?
-	jz	ea_derived	; no
+	shr	eax, 16			; no sign of it
+	and	ax, ax			; indexing / indirection ?
+	jns	ea_derived		; no
 
 	mov	ebx, eax
-	and	ax, 32767
-	shr	bx, 12		; position index tag
-	test	bl, 6		; indirect or indexed ?
+	and	ah, 127			; ie: and ax 32767
+	shr	bx, 12			; position index tag
+	test	bl, 6			; indirect or indexed ?
 	jz	indirect
-				; pe = PF set
-				; can only be tested on b7..0
-	jpe	indexed_4bit	; indexed fp / sp
-				; indexed x / y / a / b
-	and	bl, 7		; zero bit 3
+					; pe = PF set
+					; can only be tested on b7..0
+	jpe	indexed_4bit		; indexed fp / sp
+					; indexed x / y / a / b
+	and	bl, 7			; zero bit 3
 
 indexed_4bit:
-	and	ax, 4095	; isolate address offset
+	and	ax, 4095		; isolate address offset
 	add	eax, dword ptr [ebp+ebx*4]
+
+	shl	eax, 8			; truncate any overflow
+	shr	eax, 8
+
 	jmp	ea_derived
 
-indirect:			; indirect via page B0 / B1
+indirect:				; indirect via page B0 / B1
 	mov	bx, cx
-	mov	cx, 0		; cl must be zero to read 1-word indirection pointer
+	xor	cx, cx			; cl <- zero to read 1-word indirection pointer
 	call	_operand_read
-	mov	cx, bx		; retrieve instruction:class into cx
+	mov	cx, bx			; retrieve instruction:class into cx
 
 ea_derived:
-	movzx	ebx, ch		; instruction index
+	movzx	ebx, ch			; instruction index
 	cmp	cl, 6
 	jz	joshi
-	cmp	cl, 7		; 2 quick questions about instruction class
+	cmp	cl, 7			; 2 quick questions about instruction class
 	jnz	integer_operations
 	jmp	large_operations
 

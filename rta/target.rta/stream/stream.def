@@ -52,12 +52,36 @@ _LDES2	$set	0
 
 p	$proc
 fgets*	$name
-_LDES	$set	0
-	$do	$t(p(2, 1))=0,	$do	p(2)<3,_LDES	$set	xi
-	c	(read)	p(3)	p(1)	p(2),,_LDES
-	jna	$+3
-	dsr	24
-	wsr	24
+gets*	$name
+
+
+	$if	p()<2
+_LEN	$equf	99,,xi
+	$note	maximum arbitrarily 99 columns, add 2nd argument BYTES,,xi for <> 33 words
+	$else
+	$if	p(2)<2
+_LEN	$equf	p(2, 1),,xi
+	$do	p(2, *1), $note defaulted length to *address,,xi for indirect variable type *address,,w0
+	$elseif	p(2)<3
+_LEN	$equf	p(2),,i
+	$note	defaulted length to value,index,i for variable type value,index,w0 
+	$else
+_LEN	$equf	p(2)
+	$endif
+	$endif
+
+. _LDES	$set	0
+. 	$do	$t(p(2, 1))=0,	$do	p(2)<3,_LDES	$set	xi
+	c	(__fgets)	p(3)	p(1)	_LEN
+
+.	jna	$+3		. the read routines do that before loading status in a
+.	dsr	24
+.	wsr	24
+
+	jpa	$+2		. bad status treated as nothing received
+	la	0,,xi
+	jza	$+2		. nothing received translates to no pointer handed back
+	la	p(1)		. good result is the pointer the caller already knows
 	$end
 
 p	$proc

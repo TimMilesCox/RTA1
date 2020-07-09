@@ -146,6 +146,8 @@
 #define	EXTENT2_WORDS	6
 #define	CONTROL_WORDS	4
 #define	VOLUME1_WORDS	3
+#define	DIRECTORY_WORDS	4
+#define	FILE_WORDS	8
 
 #define	VOLUME_LABEL_OFFSET 15
 
@@ -390,6 +392,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    int			 slot = 64 - (gpointer & 63);
    int			 voffset;
    int			 status;
+   int			 bremainder;
 
    long                  slab;
 
@@ -453,6 +456,20 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       /************************************************
                         directory
       ************************************************/
+
+      bremainder = DIRECTORY_BLOCK - *displacement - DIRECTORY_WORDS - (strlen(argument) + 2) / 3;
+      if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+
+      if (bremainder < 0)
+      {
+         printf("%d - %s does not go\n"
+                "use 2gformat\n", DIRECTORY_BLOCK - *displacement, argument);
+
+         exit(0);
+      }
+
+      if (flag['y'-'a']) output_label(f, argument, dstart_granule * 64
+                                                      + *displacement);
 
       next->ex.rfw.t1 = 'D';
       next->ex.rfw.t3 = EXTENT1_WORDS
@@ -551,6 +568,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       if (status < 2) printf("file name [input_path]\n");
       else
       {
+         bremainder = DIRECTORY_BLOCK - *displacement - FILE_WORDS - (strlen(argument) + 2) / 3;
+         if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);           
+
+         if (bremainder < 0)
+         {
+            printf("%d - %s does not go\n"
+                   "use 2gformat\n", DIRECTORY_BLOCK - *displacement, argument);
+            exit(0);
+         }
+
          if (status < 3) strcpy(path, argument);
          #ifdef DOS
          f2 = open(path, O_RDONLY | O_BINARY, 0444);
@@ -627,6 +654,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if ((p32) || (slab))
                   {
+                     bremainder = DIRECTORY_BLOCK - *displacement - 7;
+                     if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+                        
+                     if (bremainder < 0)
+                     {  
+                        printf("%d - %s - extents does not go\n"
+                               "use 2gformat\n", DIRECTORY_BLOCK - *displacement, argument);
+                        exit(0);
+                     }
+                        
                      vpointer = *displacement;
                      *displacement = vpointer + 7;
 
@@ -672,16 +709,20 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                      if ((p32) || (slab))
                      {
+                        bremainder = DIRECTORY_BLOCK - *displacement - 7;
+                        if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+
+                        if (bremainder < 0)
+                        {
+                           printf("%d - %s - extents does not go\n"
+                                 "use 2gformat\n", DIRECTORY_BLOCK - *displacement, argument);
+                           exit(0);
+                        }
+
                         vpointer = *displacement;
                         *displacement = vpointer + 7;
 
                         voffset = vpointer & 1023;
-
-                        if (voffset > DIRECTORY_BLOCK - 7)
-                        {
-                           printf("directory extension not yet feasible\n");
-                           return 0;
-                        }
 
                         extra->next_offset.t3 = voffset;
                         extra->next_offset.t2 = voffset >> 8;

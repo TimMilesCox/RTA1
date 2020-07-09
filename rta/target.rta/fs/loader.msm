@@ -12,17 +12,9 @@ load	$head_far	 params(extent1,	long	;
 
 	c	(fs24_open)	accessw,,i	extent1,,long
 
+	lx	profilep
 	lcal	geometry
 	qs	transfer_gate
-
-	la	profilep
-	jza	launch_profile_not_requested
-
-	z	0, a
-	sx	1, a			. default priority
-	sy	2, a			. default data size
-	sk	3, a			. default B1 -frames
-launch_profile_not_requested
 
 	la	6			. read group storage size
 	sa	storage_size
@@ -31,7 +23,6 @@ launch_profile_not_requested
 	sa	storep
 	aa	transfer_gate+1
 	sa	transfer_gate+1
-
 					. now rewind the file
 	c	(fs24_open)	accessw,,i	extent1,,long
 
@@ -43,9 +34,12 @@ trialz	la	-NO_STORAGE,,xi
 	sa	transfer_gate
 
 trialx	ql	transfer_gate
+	lx	profilep
+	qs	0, x
 	$ret	0
 
 geometry				. a special case of load_string
+	push	x			. delivery pointer
 	lr	sp
 	sr	save_sp
 
@@ -54,39 +48,20 @@ lean_in	fpx	(0.0d)
 	tp	0, sp			. a fixup tuple?
 	j	lean_in
 
-	$if	1
 	c	(fs24_advance)	fs_pac	(64d),,long
-	lx	-8,,xi
+	lx	-12,,xi
 	ax	sp
 	sx	sp
-	c	(fs24_read)	fs_pac	0,sp,i	8,,xi
-	ql	0, sp
-	lx	5, sp
-	ly	6, sp
-	lk	7, sp)
+	c	(fs24_read)	fs_pac	0,sp,i	12,,xi
 
-	$else
-
-	lr	72+1,,xi
-	lx	0, sp
-	jxge	too_much
-
-	lx	-36,,xi
-	ax	sp
-	sx	sp
-
-	c	(fs24_read)	fs_pac	0,sp,i	36,,xi
-	c	(fs24_read)	fs_pac  0,sp,i  36,,xi
-	ql	28, sp
-
-	lx	33, sp			. default priority
-	ly	34, sp			. default data memory
-	lk	35, sp			. default B1 -frames
-
-	$endif
+	qpop	a
+	lx	*save_sp		. delivery pointer
+	qpop	4, x
+	qpop	8, x
 
 	lr	save_sp
 	sr	sp
+	pop	x			. delivery pointer
 	lret	0
 
 storage_size $equ 11

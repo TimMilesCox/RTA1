@@ -1,16 +1,9 @@
 read_straddle_12b?
-	test	cl, 1
-	jnz	read4word_test12b
-	cmp	esi, 0FFFh
-	jb	readout
-	jmp	split_read2w
-
-read4word_test12b
-	cmp	esi, 0FFCh
-	ja	split_read4w
-
-readout:
-	ret					; burst read in order
+	test	cl, 1				; 4 words? You are here because
+	jnz	split_read4w			; offset is within last 3 of page
+						; 2 words then
+	cmp	esi, 0FFFh			; starting @ last word of page?
+	jb	readout				; not so, go ahead with burst read
 
 split_read2w:
 	mov	dword ptr [esp], edi		; delete 1st return address + save EA
@@ -18,64 +11,31 @@ split_read2w:
 	xor	cl, cl				; request 1 word
 	call	_bus_read			;
 	xchg	eax, dword ptr [esp]		; save 1st word read + load updated EA
-	add	eax, 1				; advance EA onto next page
+	inc	eax				; advance EA onto next page
 	xor	cl, cl				; request 1 word
 	call	_bus_read			; read new page or block
 	mov	ebx, eax
 	pop	eax				; recover 1st read word
 	ret					; return to caller of operand_read
-	
+
 read_straddle_18b?
-	test	cl, 1
-	jnz	read4word_test18b?
-	cmp	esi, 0003FFFFh
-	jb	readout
-	jmp	split_read2w
+	test	cl, 1				; 4 words? You are here because 
+	jnz	split_read4w			; offset is within last 3 of of bank
+						; 2 words then
+	cmp	esi, 0003FFFFh			; starting @ last word of bank?
+	jnb	split_read2w			; otherwise fall thru to burst read
 
-read4word_test18b?
-	cmp	esi, 0003FFFCh
-	jna	readout
+readout:
+	ret					; burst read in order
 
-split_read4w:
-	add	esp, 4		 		; delete 1st return address + save EA
-	mov	eax, edi			; recover EA
-	test	esi, 2
-	jz	read3_then1
-	test	esi, 1
-	jz	read2_then2
-
-	call	read1				; this is read1_then3
-						; ---- page boundary----
-	call	read2				; this resolves updated EA to new page
-	call	read1				; so does this but we do it
-						; because EA resolution decides
-						; emulated bus behaviour of the new page
-	ret					; return to caller of operand_read
-
-
-read2_then2:
-	call	read2
-						; ---- page boundary----
-	call	read2
-	ret					; return to caller of operand_read
-
-read3_then1:
-	call	read1
-	call	read2
-						; ---- page boundary----
-	call	read1
-	ret					; return to caller of operand_read
-
-
-read1:	xor	cl, cl
-	push	eax
-	call	_bus_read			; replaces EA in eax
-	mov	dword ptr [ebp+ebx*4], eax	; with the result word
-	pop	eax				; return updated EA, destination index
-	inc	eax
-	inc	ebx
-	ret
-
+split_read4w:					; write EA over stack top return address
+	mov	dword ptr [esp], edi		; one or other of these 2-word reads
+	mov	eax, edi			; splits down to 1-word reads
+	call	read2				; when offset is [3F]FFD
+	call	read2				;             or [3F]FFF
+	pop	eax				;   but not when [3F]FFE
+	ret					; return to caller of caller
+	
 read2:	push	eax				; EA
 	push	ebx				; destination index on stack top
 	mov	cl, 6				; ask bus for 2 words

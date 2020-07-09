@@ -1,0 +1,155 @@
+$(1)
+
+startup_osocket_encoding	0L
+
+$(0)
+
+startups	$tree
+
+USTDOUT	$equ	18		. historic assignement message send
+
+	.	vector name initial_startups
+
+initial	$head_far	scalars(socko,	int)
+
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socko
+	c	(bind)	a	(0L),,long
+	la	socko
+	ii	READ_SOCKET$
+	ds	startup_osocket_encoding
+	dl	10
+	sabr	BSOCKET
+	ly	b
+	dl	($net_socket	255.255.255.255:USTDOUT)
+	ds	sbind:remote_address, y
+
+	c	(fspath)	$3("/initial/script":0),,xi
+	jdz	startupz
+	ql	(read_startups, 7, 0, 0q)
+	lx	fp				. new thread needs external stack
+	sx	7				. but not for long
+	ii	THREAD$
+	jza	startupz
+	lb	$3("initial startups":0),,xi
+	ii	TAG$
+	j	startupz
+
+startupz
+	$ret
+
+read_startups
+	c	(run_start)	$3("/initial/script":0),,xi
+	fret	0
+
+.	read consective script file names from the text file at script path
+.	access each script and launch the application named at the front of it
+.	making each script stdin of the application which it names
+.	the first line each application reads is the command line calling itself
+
+.	no hanging about. spawn each application and read the next line
+.	where spawn is successful stdout stderr are UDP broadcast startup_osocket_encoding
+
+run	$head_far	 params(script_path,	int)	;
+							;
+			scalars(fspp,		8)	;
+							;
+			 xframe(path,		40	)
+
+	c	(fspath)	script_path
+	jdz	no_file
+
+	c	(fs24_open)	fspp,,i		a,,long
+
+next_line
+	c	(fgets_datafile)	fspp,,i		path,,i		117,,xi
+	jza	no_more_lines
+	la	path
+	jza	no_more_lines
+
+	la	0,,xi			. because we're not in fgets macro
+	wsr	24			. write the zterm here
+
+	lc	action_line	path,,i
+	j	next_line
+
+no_more_lines
+no_file	$ret
+
+action_line
+	$head_near		 params(script_line,	int)	;
+								;
+				scalars(fspq,		8	;
+					command,	8	;
+					file_position,	long	)
+
+	la	script_line
+	la	0, a
+	lk	(-1*/$word-$byte)
+	mta	('/'*/$word-$byte)
+	j	direct_command				. command without stdin
+							. or arguments
+	c	(fspath)	script_line
+	jdz	actionx
+	ds	file_position
+							. on 1st line of its own stdin
+	c	(fileshare_assign)	(FS$DEVICE$ARRAY,,7s)
+
+	tnz	x
+	j	actionx
+	sx	fspq
+
+	c	(fs24_open)	fspq		file_position,,long
+	c	(fs24_snoop)	fspq		command,,i		8,,xi
+	jna	actionx
+	jza	actionx
+
+	lc	start_command	command,,i	command,,i
+	jza	actionx
+	
+	sabr	32
+	la	*(32*/12++ABT+2-01000)
+	sabr	32					. base vector list
+
+	la	(3*/16)					. point stdin to copy-from location
+	lb	fspq
+	ds	*(32*/12++handle(1)-02000)		. in vectors
+	la	FILESHARE_TABLE
+	sa	*(32*/12++FILESHARE_TABLE-02000)
+	j	attach_stdout
+
+direct_command
+	lc	start_command	script_line	command,,i
+	jza	actionx
+
+	sabr	32
+	la	*(32*/12++ABT+2-01000)
+	sabr	32
+	dsr	48					. stdin is the device null
+	ds	*(32*/12++handle(1)-02000)
+
+attach_stdout
+	ii	KERNEL$B1_1				. in case you are another application
+	dl	startup_osocket_encoding
+	ii	B1$					. switch back to caller B1
+
+	ds	*(32*/12++handle(2)-02000)		. handle 1 stdout
+	ds	*(32*/12++handle(3)-02000)		. handle 2 stderr
+
+actionx	$ret
+
+start_command
+	$head_near	 params(file_datap,	int	;
+				out_tokenp,	int	)
+
+	lb	file_datap
+	call	(rstream_starta)
+	la	24,,xi
+	lb	out_tokenp
+	call	(tokena)				. returns token length in words
+	c	(online_xqt)	a	out_tokenp
+
+	$ret
+
+	$root

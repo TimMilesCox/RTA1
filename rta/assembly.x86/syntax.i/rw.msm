@@ -276,6 +276,10 @@ _bus_read:			; readout any memory
 
 	cmp	cl, 6			; multiword operation?
 	jb	_bus_read_256k_block
+
+	cmp	esi, 03FFFCh		; near the edge?
+	jna	_bus_read_256k_block	; no
+
 	call	read_straddle_18b?
 
 _bus_read_256k_block:
@@ -285,7 +289,7 @@ _bus_read_256k_block:
 	jmp	device_read
 
 memory_read_4k_block:
-	test	esi, 0003F000h	; inside 4k block?
+	test	esi, 0003F000h		; inside 4k block?
 	jz	memory_read_thru
 
 	mov	esi, LP_ADDRESS
@@ -294,6 +298,10 @@ memory_read_4k_block:
 memory_read_thru:
 	cmp	cl, 6
 	jb	memory_read_page
+
+	cmp	esi, 0FFCh		; near the edge?
+	jna	memory_read_page	; no
+
 	call	read_straddle_12b?
 
 memory_read_page:
@@ -471,12 +479,16 @@ bus_write:				; write any memory
 	jz	memory_write_4k_block	; no
 	cmp	cl, 6			; multiword operation?
 	jb	bus_write_256k_block	; no
+
+	cmp	esi, 03FFFCh		; near the edge?
+	jna	bus_write_256k_block	; no
+
 	call	write_straddle_18b?
 
 bus_write_256k_block:
 	test	eax, 63			; a device array?
 	jz	memory_write_page	; no. scaling shift will scrub bit 400000
-	jmp	_device_write		; yes a device array§
+	jmp	_device_write		; yes a device array
 
 memory_write_4k_block:
 	test	esi, 0003F000h		; inside a 4k page?
@@ -487,6 +499,10 @@ memory_write_4k_block:
 memory_write_thru:
 	cmp	cl, 6			; multiword operation?
 	jb	memory_write_page	; no
+
+	cmp	esi, 0FFCh		; near the edge?
+	jna	memory_write_page	; no
+
 	call	write_straddle_12b?
 
 memory_write_page:
@@ -702,15 +718,15 @@ page_read_pointer:
 
 read_pointer:
         mov	esi, eax
-	mov	eax, dword ptr [_psr]
 	and	cl, 63
-	test	 eax, 07F00h	; see$all ?
-	jz	direct_pointer
-
+	jz	direct_pointer	; there is no alternate to B0
+				; ROM constant reads clear from here
 	test	cl, 56
-	jnz	direct_pointer	; shift radix 32-1 might get slipped
+	jnz	direct_pointer	; shift radix 8-1 might get slipped
+				; high memory writes clear from here
+	mov	eax, dword ptr [_psr]		; now read out _psr
 
-alternate_pointer?:
+alternate_pointer?:		; only base_write_pointer may jump to here
 	shl	ah, cl		; so long as radix 31 applies to 8-bit shifts
 	shr	ah, 1		; any base-tag > 7 delivers zero
 	and	ah, 64
@@ -740,21 +756,26 @@ page_write_pointer:
 
 write_pointer:
 	mov	esi, eax
-	mov	eax, dword ptr [_psr]
-	and	cl, 63
 
+	and	cl, 63		; even if an ISR has reason to write its iframe
+	%if	1		; it can base it in a data window
+	jz	NEAR guard_ii_authority	; so on attempted write in B0
+	%endif			; application: thread gets withdrawn
+				; ISR: forced to auto-restart the system
 	test	cl, 56
 	jnz	write_allowed	; shift radix 32-1 might get slipped
-	test	eax, 00800000h	; interrupt space ?
+				; high memory operand writes clear from here
+				; 386 shift radix on a byte is 7 anyway
+	mov	eax, dword ptr [_psr]	; last of all red out the psr
+	test	eax, 00800000h		; interrupt code?
+	jnz	alternate_pointer?	; ISRs write anything
+					; unless it isn't there
 
-	jnz	alternate_pointer?
-				; ISRs may write anything which exists
 	mov	al, ah		; gate windows [ 0 2 TCB kernel ]
 	or	al, 128+32	; applications may not write them
 	shl	al, cl
 
-	and	al, 128
-	jz	write_allowed
+	jns	write_allowed
 
 	mov	esi, LP_AUTHORITY
 	jmp	guard_ii_escape	; not allowed
