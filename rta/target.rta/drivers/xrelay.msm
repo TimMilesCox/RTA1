@@ -48,7 +48,7 @@ IFT1_TPAGES	$equ	128
 
 
 $(67::, y)
-xframe	delivery
+networkframe	delivery
 
 
 $(0)
@@ -58,7 +58,7 @@ ift1_rxtx
 	ii	XBASE$32
 	ly	this_if:ift1:rx_cursor
 	
-frames?	dl	xframe:flag	. 2nd word in B is total frame length
+frames?	dl	networkframe:flag	. 2nd word in B is total frame length
 				. this may include the length of
 				. a 2-byte protocol family tag
 				. appended to the front of a dgram
@@ -68,13 +68,13 @@ frames?	dl	xframe:flag	. 2nd word in B is total frame length
 
 	jza	next_interface	. capture not complete
 
-	la	xframe:ll_hl	. link layer header length
+	la	networkframe:ll_hl	. link layer header length
 
 	MIB_ACOUNT48	this_if:inoctets	b
 	MIB_ICOUNT48	this_if:inpackets
 
 	sy	fp
-	ly	xframe:frame,,i	. offset descriptor->frame
+	ly	networkframe:frame,,i	. offset descriptor->frame
 
 	anb	a		. net datagram length
 	jnc	frame_complete	. less than llh length!
@@ -97,13 +97,13 @@ frames?	dl	xframe:flag	. 2nd word in B is total frame length
 
 	ay	a
 
-	la	xframe:protocol, fp		. load the protocol TAG
+	la	networkframe:protocol, fp		. load the protocol TAG
 
 
 	push	fp
 	push	x
 
-	lx	xframe:interface, fp	. whatever sort of frame this is
+	lx	networkframe:interface, fp	. whatever sort of frame this is
 	ax	$if2p,,xi
 	lx	0, x			. it goes to this logical interface
 
@@ -113,7 +113,7 @@ frames?	dl	xframe:flag	. 2nd word in B is total frame length
 
 
 frame_complete
-	z	xframe:flag
+	z	networkframe:flag
 	ay, xi	RPAGEW
 	la	y
 
@@ -163,31 +163,31 @@ txq_ift1_otraffic1?
 	jzb	txq_ift1_otraffic2?
 	sabr	A$TXBUFFB			. base containing bank qhead buffer + descriptor
 
-	tz	xframe:flag, fp		. test interface buffer available
+	tz	networkframe:flag, fp		. test interface buffer available
 	j	txq_next_interface	. or not
 
 	push	x			. save the interface pointer
 
-	lx, i	xframe:frame, fp	. interface buffer txframe header
+	lx, i	networkframe:frame, fp	. interface buffer txframe header
 	la	descriptor:i_f, b	. translate RTA  interface number to osserv interface number
 	aa	-2,,xi
-	sa	xframe:interface, fp
+	sa	networkframe:interface, fp
 
         la      descriptor:frame, b	. transmission frame from socket
         push    nframe:llh:generic:protocol, a
 
-	pop	xframe:protocol, fp
+	pop	networkframe:protocol, fp
 
 	call	(if_dualport_txwrite)	. socket buffer to interface buffer
         pop     x               	. retrieve interface pointer
 
         push	this_if:llhl
-        pop      xframe:ll_hl, fp
+        pop      networkframe:ll_hl, fp
 
         push    TX_DATAGRAML
-        pop     xframe:frame_length, fp
+        pop     networkframe:frame_length, fp
         push    (008000)
-        pop     xframe:flag, fp		. release for transmission
+        pop     networkframe:flag, fp		. release for transmission
 
         lcal    txq_ift1_next_frame	. point to next interface frame buffer
 
@@ -219,28 +219,28 @@ txq_ift1_otraffic2?			. this is a thread of IP, therefore
 	jza	txq_next_interface	. unless it isn't
 
 
-	tz	xframe:flag, fp		. interface buffer available
+	tz	networkframe:flag, fp		. interface buffer available
 	j	txq_next_interface	. not yet, next device array
 
 	push	x			. save interface pointer a moment
 
 
-	lx, i	xframe:frame, fp	. point x to frame buffer after control header
+	lx, i	networkframe:frame, fp	. point x to frame buffer after control header
 
 	lb	descriptor:i_f, a	. translate RTA  interface number to osserv interface number
 	ab	-2,,xi
-	sb	xframe:interface, fp
+	sb	networkframe:interface, fp
 
 	$if	0
 	ab	$if2p,,xi
 	lb	0,b
 	push	this_if:llhl, b
-	pop	xframe:ll_hl, sp
+	pop	networkframe:ll_hl, sp
 	$endif
 	
 	la	descriptor:frame, a	. transfer protocol tag to interface buffer header
 	push	nframe:llh:generic:protocol, a
-	pop	xframe:protocol, fp	. leaving frame pointer in a
+	pop	networkframe:protocol, fp	. leaving frame pointer in a
 
 
 	call	(if_dualport_txwrite)
@@ -253,13 +253,13 @@ txq_ift1_otraffic2?			. this is a thread of IP, therefore
 					. dualport_txwrite constructs the whole frame
 	$else
 	push	this_if:llhl
-	pop	xframe:ll_hl, fp
+	pop	networkframe:ll_hl, fp
 	$endif
 
 	push	TX_DATAGRAML		. release interface buffer for transmission
-	pop	xframe:frame_length, fp
+	pop	networkframe:frame_length, fp
 	push	(008000)
-	pop	xframe:flag, fp
+	pop	networkframe:flag, fp
 
 	lcal	txq_ift1_next_frame	. point next interface buffer
 
