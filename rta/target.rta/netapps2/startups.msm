@@ -10,12 +10,27 @@ USTDOUT	$equ	18		. historic assignement message send
 
 	.	vector name initial_startups
 
-initial	$head_far	scalars(socko,	int)
+initial	c	(fspath)	$3("/initial/script":0),,xi
+	jza	startupz
+	ql	(read_startups, 7, 0, THREAD_FP(1)q)
+	ii	THREAD$
+	jza	startupz
+	lb	$3("initial startups":0),,xi
+	ii	TAG$
+
+startupz
+	fret	0
+
+read_startups
+	$head_near	scalars(socko,		int		;
+				config_retry,	int,	40	)
 
 	la	(IPPROTO_UDP*/16)
 	call	(__socket)
+	jna	no_stdout
 	sa	socko
 	c	(bind)	a	(0L),,long
+	jna	no_stdout
 	la	socko
 	ii	READ_SOCKET$
 	ds	startup_osocket_encoding
@@ -24,38 +39,48 @@ initial	$head_far	scalars(socko,	int)
 	ly	b
 	dl	($net_socket	255.255.255.255:USTDOUT)
 	ds	sbind:remote_address, y
+					. leave an extra gap for ifconfig
+config?	ii	YIELD$			. there should have been one already
+	ql	(00FFFF00FFFFq)
+	call	(__route)
+	tnz	x
+	j	no_stdout		. hopeless and theoretically impossible
+	dl	ro:next_hop
+	tn	ro:i_f			. that's the gateway
+	j	local_address
 
-	c	(fspath)	$3("/initial/script":0),,xi
-	jdz	startupz
-	ql	(read_startups, 7, 0, 0q)
-	lx	fp				. new thread needs external stack
-	sx	7				. but not for long
-	ii	THREAD$
-	jza	startupz
-	lb	$3("initial startups":0),,xi
-	ii	TAG$
-	j	startupz
+	dec	config_retry
+	tz	config_retry
+	j	config?
 
-startupz
+	dl	(00AC1D000707)		. configuration hasn't run
+					. or doesn't have a broadcast route
+local_address
+	ly	11
+	sbl	8
+	dsl	8
+	lk	(00FFFF)
+	mlb	sbind:socket_address+1, y
+	ds	sbind:socket_address, y
+
+	c	(run_start)	$3("/initial/script":0),,xi
+
+no_stdout
 	$ret
 
-read_startups
-	c	(run_start)	$3("/initial/script":0),,xi
-	fret	0
+.       read consective script file names from the text file at script path
+.       access each script and launch the application named at the front of it
+.       making each script stdin of the application which it names
+.       the first line each application reads is the command line calling itself
 
-.	read consective script file names from the text file at script path
-.	access each script and launch the application named at the front of it
-.	making each script stdin of the application which it names
-.	the first line each application reads is the command line calling itself
+.       no hanging about. spawn each application and read the next line
+.       where spawn is successful stdout stderr are UDP broadcast startup_osocket_encoding
 
-.	no hanging about. spawn each application and read the next line
-.	where spawn is successful stdout stderr are UDP broadcast startup_osocket_encoding
-
-run	$head_far	 params(script_path,	int)	;
-							;
-			scalars(fspp,		8)	;
-							;
-			 xframe(path,		40	)
+run	$head_far	 params(script_path,	int	)	;
+								;
+			scalars(fspp,		8	)	;
+								;
+			 xframe(path,		40		)
 
 	c	(fspath)	script_path
 	jdz	no_file
@@ -80,7 +105,7 @@ no_file	$ret
 action_line
 	$head_near		 params(script_line,	int)	;
 								;
-				scalars(fspq,		8	;
+				scalars(fspq,		int	;
 					command,	8	;
 					file_position,	long	)
 
@@ -99,6 +124,8 @@ action_line
 	tnz	x
 	j	actionx
 	sx	fspq
+	la	SUB,,xi
+	sa	7, x			. that's fspq:o:flags -> LAST_BYTE_READ
 
 	c	(fs24_open)	fspq		file_position,,long
 	c	(fs24_snoop)	fspq		command,,i		8,,xi

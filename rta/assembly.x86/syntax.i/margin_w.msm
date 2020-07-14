@@ -1,127 +1,50 @@
-write_straddle_12b?
-write_straddle12b?
-	test	cl, 1
-	jnz	split_write4w			; write4wordtest12b
-	cmp	esi, 0FFFH
-	jb	writeout
-
-	%if	0
-	jmp	split_write2w
-	
-write4wordtest12b
-	cmp	esi, 0FFCh
-	ja	split_write4w
-
-writeout:
-	ret
-	%endif
-
-	%if	1
+write_straddle_12b?				; multiword write request
+write_straddle12b?				; in last 3 words of block
+	test	cl, 1				; 4-word write request?
+	jnz	split_write4w			;
+	cmp	esi, 0FFFH			; 2 words then. In last word?
+	jb	writeout			; no
+						; yes
 split_write2w:
 	mov	dword ptr [esp], ebx		; not returning to there
-	push	edi				; esp -> saved eax, saved ebx
-	mov	eax, edi
-	xor	cl, cl				; we want to write 1 word
-	mov	ebx, dword ptr [ebp+ebx*4]
+	push	edi				; esp -> saved eax [ea], saved ebx
+	mov	eax, edi			; place ea in eax
+	xor	cl, cl				; request 1-word write
+	mov	ebx, dword ptr [ebp+ebx*4]	; data from register array
 	call	bus_write
-	pop	eax
-	pop	ebx
-	inc	eax				; next store address
-	mov	ebx, dword ptr [ebp+ebx*4+4]	; next register
-	xor	cl, cl				; write 1 word
+	pop	eax				; retrieve ea from stack
+	pop	ebx				; retrieve register index
+	inc	eax				; advance ea to next block
+	mov	ebx, dword ptr [ebp+ebx*4+4]	; data from register array
+	xor	cl, cl				; request 1-word write
 	call	bus_write
-	ret					; return caller minus 1
+	ret					; return caller of caller
 
-	%else
-
-split_write2w:
-	add	esp, 4		; delete 1st return address
-	mov	eax, edi	; recover EA
-	call	write1
-				; ---- page boundary----
-	call	write1		; resolve EA again and write
-	ret			; return to caller of burst_write2
-	%endif
-
-
-write_straddle_18b?
-write_straddle18b?
-	test	cl, 1
-	jnz	split_write4w	; write4word_test18b?
-	cmp	esi, 0003FFFFh
-	jnb	split_write2w
-
-	%if	1
+write_straddle_18b?				; multiword write request
+write_straddle18b?				; in last 3 words of block
+	test	cl, 1				; 4 words?
+	jnz	split_write4w
+	cmp	esi, 0003FFFFh			; 2 words then. In last word?
+	jnb	split_write2w			; yes
+						; no
 writeout:
-	ret
-	%else
-	jb	writeout
-	jmp	split_write2w
-
-write4word_test18b?:
-	cmp	esi, 0003FFFCh
-	jna	writeout
-	%endif
-
-	%if	1
+	ret					; return to burst write
 
 split_write4w:
-	mov	dword ptr [esp], edi	; return address at stack top not used
-	mov	eax, edi	; copy ea
-	call	write2
-	call	write2
-	pop	eax		; this is ea
-	ret			; return to caller of caller
+	mov	dword ptr [esp], edi		; return address at stack top not used
+	mov	eax, edi			; copy ea
+	call	write2				; request 2 writes word pairs
+	call	write2				; if 1 of them straddles it splits again
+	pop	eax				; this is ea
+	ret					; return to caller of caller
 
-	%else
 
-split_write4w:
-	add	esp, 4		; delete 1st return address
-	mov	eax, edi	; recover EA
-
-	test	esi, 2
-	jz	write3_then1
-	test	esi, 1
-	jz	write2_then2
-
-	call	write1		; this is read1_then3
-				; ---- page boundary----
-	call	write2		; resolve EA again and write
-	call	write1
-	ret
-
-write2_then2:
-	call	write2
-				; ---- page boundary----
-	call	write2
-	ret
-
-write3_then1:
-	call	write1
-	call	write2
-				; ---- page boundary----
-	call	write1
-	ret
-
-write1:	xor	cl, cl		; present 1 word
-	push	ebx		; because it's used for data as well
-	push	eax		; because bus_write chews it
-	mov	ebx, dword ptr [ebp+ebx*4]
-	call	bus_write
-	pop	eax		; recover EA
-	pop	ebx		; recover source register index
-	inc	eax		; increment for next call
-	inc	ebx
-	ret
-
-	%endif
-
-write2:	mov	cl, 6		; present 2 words
-	push	eax		; save EA
-	push	ebx
-	call	bus_write
-	pop	ebx
-	pop	eax
-	add	ebx, 2
-	add	eax, 2
+write2:	mov	cl, 6				; request 2-word bus write
+	push	eax				; save ea
+	push	ebx				; save register array index
+	call	bus_write			; send write pair request
+	pop	ebx				; retrieve register index
+	pop	eax				; and ea
+	add	ebx, 2				; update register index
+	add	eax, 2				; and ea
 	ret
