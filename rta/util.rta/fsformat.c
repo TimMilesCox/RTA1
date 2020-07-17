@@ -50,6 +50,7 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 #define off_t	__int64
 #define lseek	_lseeki64
@@ -57,6 +58,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 #endif
 
@@ -133,6 +135,8 @@
 #define	EXTENT2_WORDS	6
 #define	CONTROL_WORDS	4
 #define VOLUME1_WORDS	3
+#define DIRECTORY_WORDS 4
+#define FILE_WORDS      8
 
 #define	VOLUME_LABEL_OFFSET 15
 
@@ -264,9 +268,9 @@ static unsigned long long gpointer = 16;
 
 
 #ifdef MYGETS
-static unsigned char *mygets(unsigned char *to, int limit)
+static char *mygets(char *to, int limit)
 {
-   unsigned char	*data = to;
+   char	*data = to;
    int			 bytes = limit;
    int			 symbol = 0;
 
@@ -289,11 +293,11 @@ static unsigned char *mygets(unsigned char *to, int limit)
 }
 #endif
 
-static int copy(char *to, char *from)
+static int copy(unsigned char *to, char *from)
 {
    int			 distance = 0;
 
-   while (*to++ = *from++) distance++;
+   while ((*to++ = *from++)) distance++;
    return (distance + 2) / 3;
 }
 
@@ -305,12 +309,15 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    static msw		 extrahead            = { 'X', 0, EXTENT2_WORDS  } ;
 
+   #if DIRECTORY_BLOCK > GRANULE
+   static msw		 free_extent[DIRECTORY_BLOCK - GRANULE] = { { 'f', 'r', 'e' },  { 'e' } } ;
+   #endif
 
    char			 data[DATA + 4];
    char			*rp;
 
    char			 command[12];
-   char			 argument[48];
+   char			 argument[52];
    char			 path[360];
 
    unsigned long	 vpointer = 5 + 5 + 5;
@@ -326,6 +333,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    int			 slot = 4096 - (gpointer & 4095);
    int			 voffset;
    int			 status;
+   int			 bremainder;
 
    long                  slab;
 
@@ -352,7 +360,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    if (rp == NULL) return 0;
    if (*rp == '.') return 0;
 
-   sscanf(rp, "%s %s", command, argument);
+   sscanf(rp, "%11s %48s", command, argument);
 
    if      (strcmp(command, "volume") == 0)
    {
@@ -389,6 +397,17 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 			directory
       ************************************************/
 
+      bremainder = DIRECTORY_BLOCK - *displacement - DIRECTORY_WORDS - (strlen(argument) + 2) / 3;
+      if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
+
+      if (bremainder < 0)
+      {
+         printf("%d - %s does not go\n",
+                DIRECTORY_BLOCK - *displacement, argument);
+
+         exit(0);
+      }
+
       next->ex.rfw.t1 = 'D';
       next->ex.rfw.t3 = EXTENT1_WORDS 
                      + copy(&next->name[0].t1, argument);
@@ -398,6 +417,15 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
       slab = *displacement;
       *displacement = slab + new->ex.rfw.t3 + 1;
+
+      #if DIRECTORY_BLOCK > GRANULE
+      if (slot < (DIRECTORY_BLOCK / GRANULE))
+      {
+         printf("directory %s position aligned %d granules\n", argument, slot);
+         write(f, (char *) &free_extent, slot * GRANULE * 3);
+         gpointer += slot;
+      }
+      #endif
 
       dstart_position = lseek(f, (off_t) 0, SEEK_CUR);
 
@@ -489,6 +517,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       if (status < 2) printf("file name [input_path]\n");
       else
       {
+         bremainder = DIRECTORY_BLOCK - *displacement - FILE_WORDS - (strlen(argument) + 2) / 3;
+         if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
+
+         if (bremainder < 0)
+         {
+            printf("%d - %s does not go\n",
+                   DIRECTORY_BLOCK - *displacement, argument);
+            exit(0);
+         }
+
          if (status < 3) strcpy(path, argument);
          #ifdef DOS
          f2 = open(path, O_RDONLY | O_BINARY, 0444);
@@ -562,6 +600,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if ((p32) || (slab))
                   {
+                     bremainder = DIRECTORY_BLOCK - *displacement - 7;
+                     if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
+
+                     if (bremainder < 0)
+                     { 
+                        printf("%d - %s - extents does not go\n",
+                               DIRECTORY_BLOCK - *displacement, argument);
+                        exit(0);
+                     }
+
                      printf("%s extent %d granules %llx\n", argument, slot, gpointer - slot);
                      vpointer = *displacement;
                      *displacement = vpointer + 7;
@@ -590,7 +638,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                  
                      extra->granules.t1 = (PAGE/GRANULE) >> 16;
                      extra->granules.t2 = (PAGE/GRANULE) >>  8;
-                     extra->granules.t3 =  PAGE/GRANULE;
+                     extra->granules.t3 = (PAGE/GRANULE) & 255;
 
                      extra->granule.octet[5] = gpointer;
                      extra->granule.octet[4] = gpointer >>  8;
@@ -604,6 +652,16 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                      if ((p32) || (slab))
                      {
+                        bremainder = DIRECTORY_BLOCK - *displacement - 7;
+                        if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
+
+                        if (bremainder < 0)
+                        {
+                           printf("%d - %s - extents does not go\n",
+                                 DIRECTORY_BLOCK - *displacement, argument);
+                           exit(0);
+                        }
+
                         vpointer = *displacement;
                         *displacement = vpointer + 7;
 
@@ -700,7 +758,7 @@ int main(int argc, char *argv[])
 
    long long             net_granules = GRANULES;
    int			 net_banks = BANKS_IN_DEVICE;
-   unsigned char	*uptr;
+   char			*uptr;
 
    int			 byword;
    msw			 bypass = { 128, 0, 0 } ;

@@ -56,6 +56,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <string.h>
+#include <stdlib.h>
 #include <errno.h>
 #endif
 
@@ -275,11 +276,12 @@ static unsigned          remainder1 = DIRECTORY_BLOCK - CONTROL_WORDS - 1 - 2 * 
 static unsigned long long gpointer = DIRECTORY_BLOCK / GRANULE;
 static unsigned long long fs_offset;
 
+static int interpret(tree *actual, unsigned *displacement, long long dstart_granule, forward *up1);
 
 #ifdef MYGETS
-static unsigned char *mygets(unsigned char *to, int limit)
+static char *mygets(char *to, int limit)
 {
-   unsigned char	*data = to;
+   char			*data = to;
    int			 bytes = limit;
    int			 symbol = 0;
 
@@ -302,17 +304,17 @@ static unsigned char *mygets(unsigned char *to, int limit)
 }
 #endif
 
-static int copy(char *to, char *from)
+static int copy(unsigned char *to, char *from)
 {
    int			 distance = 0;
 
-   while (*to++ = *from++) distance++;
+   while ((*to++ = *from++)) distance++;
    return (distance + 2) / 3;
 }
 
 static int outputw(int f, unsigned char *data, int words)
 {
-   unsigned char image[8];
+   char		 image[8];
 
    int		 bytes = 0,
 		 written;
@@ -354,9 +356,9 @@ static int outputw(int f, unsigned char *data, int words)
    return write(f, data, words * 3);
 }
 
-static void output_label(int f, unsigned char *name, long long position)
+static void output_label(int f, char *name, long long position)
 {
-   unsigned char	 image[272];
+   char			 image[272];
    int			 bytes = sprintf(image, "\n+%s:$20:%12.12llX\n",name,position);
    int			 written = write(f, image, bytes);
 
@@ -376,7 +378,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    char			*rp;
 
    char			 command[12];
-   char			 argument[48];
+   char			 argument[52];
    char			 path[360];
 
    unsigned long	 vpointer = 5 + 5 + 5;
@@ -400,7 +402,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    int			 f2;
 
-   char			 fbuffer[GRANULE * sizeof(msw)];
+   unsigned char	 fbuffer[GRANULE * sizeof(msw)];
 
    long long		 apointer;
 
@@ -420,7 +422,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    if (rp == NULL) return 0;
    if (*rp == '.') return 0;
 
-   sscanf(rp, "%s %s", command, argument);
+   sscanf(rp, "%11s %48s", command, argument);
 
    if      (strcmp(command, "volume") == 0)
    {
@@ -458,7 +460,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       ************************************************/
 
       bremainder = DIRECTORY_BLOCK - *displacement - DIRECTORY_WORDS - (strlen(argument) + 2) / 3;
-      if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+      if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
 
       if (bremainder < 0)
       {
@@ -468,8 +470,8 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
          exit(0);
       }
 
-      if (flag['y'-'a']) output_label(f, argument, dstart_granule * 64
-                                                      + *displacement);
+      if (flag['x'-'a'] & flag['y'-'a'])
+      output_label(f, argument, dstart_granule * 64 + *displacement);
 
       next->ex.rfw.t1 = 'D';
       next->ex.rfw.t3 = EXTENT1_WORDS
@@ -569,7 +571,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       else
       {
          bremainder = DIRECTORY_BLOCK - *displacement - FILE_WORDS - (strlen(argument) + 2) / 3;
-         if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);           
+         if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);           
 
          if (bremainder < 0)
          {
@@ -655,7 +657,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                   if ((p32) || (slab))
                   {
                      bremainder = DIRECTORY_BLOCK - *displacement - 7;
-                     if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+                     if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
                         
                      if (bremainder < 0)
                      {  
@@ -710,7 +712,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                      if ((p32) || (slab))
                      {
                         bremainder = DIRECTORY_BLOCK - *displacement - 7;
-                        if (flag['v'-'a']) printf("[%d:%ld]\n", bremainder, *displacement);
+                        if (flag['v'-'a']) printf("[%d:%u]\n", bremainder, *displacement);
 
                         if (bremainder < 0)
                         {
@@ -851,7 +853,7 @@ int main(int argc, char *argv[])
 
    off_t		 position;
    int			 net_pages = PAGES_IN_DEVICE;
-   unsigned char	*uptr;
+   char			*uptr;
 
    int                   byword;
    msw                   bypass = { 128, 0, 0 } ;
