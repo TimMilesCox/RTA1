@@ -104,6 +104,9 @@ static unsigned char	*heap = instruction[0];
 
 **********************************************/
 
+static int			 console_handle;
+static struct sockaddr_in	 console_sockf = { 16, AF_INET, 0,	 { 0	 } } ;
+static struct sockaddr_in	 console_socka = { 16, AF_INET, USTDOUT, { LOCAL } } ;
 
 static unsigned short udp_checksum(int bytes, char *user_datagram, char *net_addresses);
 static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses);
@@ -267,6 +270,21 @@ static void outputq()
 
       y = write(fdes, p, x);
 
+      if (flag['o'-'a'])
+      {
+         iphl = (*dgram << 2) & 60;
+         ipayload = dgram + iphl;
+         wpayload = (unsigned short *) ipayload;
+
+         if (wpayload[1] == USTDOUT)
+         {
+            bytes = sendto(console_handle, dgram, dgraml, 0,
+                      (struct sockaddr *) &console_socka, 16);
+            if (bytes < 0) printf("[<-E%d]\n", errno);
+         }
+
+      }
+
       if (flag['v'-'a'])
       {
          #if 0
@@ -300,6 +318,7 @@ static void outputq()
                   #endif
 
                   printf("[%x:%x]\n", psum, csum);
+
                   break;
                case IPPROTO_TCP:
                   psum = wpayload[8];
@@ -1173,6 +1192,21 @@ int main(int argc, char *argv[])
    netdata = shmat(x, NULL, 0);
    printf("shared core based @ %p code %d\n", netdata, errno);
 
+   /*******************************************************************
+	bind unconditionally to relay to console broadcast receiver
+	so option -o may be switched on during running
+	if console broadcast receiver is not receiving
+   *******************************************************************/
+
+   console_handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   if (console_handle < 0) printf("console supplementary relay not assigned %d\n", errno);
+   else
+   {
+      x = bind(console_handle, (struct sockaddr *) &console_sockf, 16);
+      if (x < 0) printf("console supplementary relay not bound %d\n", errno);
+      else printf("console supplementary relay\n");
+   }
+
    for (x = 0; x < arguments; x++)
    {
       p = argument[x];
@@ -1383,14 +1417,24 @@ int main(int argc, char *argv[])
                printf("enet detected\n");
                physa_octets = 6;
 
-               y = ioctl(fdes, BIOCSSEESENT, &zero);
-               printf("[> %d %d %d]\n", y, (y < 0) ? errno : 0, maximum);
+               #if 0
+               if (flag['q'-'a']) y = ioctl(fdes, BIOCSSEESENT, &one);
+               else               y = ioctl(fdes, BIOCSSEESENT, &zero);
+
+               printf("[SEESENT %d > %d %d %d]\n", flag['q'-'a'], y, (y < 0) ? errno : 0, maximum);
 
                /********************************************************
 			external device, switch no- see transmitted frames
 			but for loopback you must see transmitted frames
 			because you don't otherwise see received frames
                ********************************************************/
+
+               if (flag['p'-'a'])
+               {
+                  y = ioctl(fdes, BIOCPROMISC, &one);
+                  printf("PROMISC %d\n", (y < 0) ? errno : 1);
+               }
+               #endif
 
                break;
 
