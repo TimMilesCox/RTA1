@@ -1,25 +1,41 @@
-rm *.rom
-rm *.abs
-rm *.txo
-rm *.rel
-rm *.fs
-rm outrigger
-rm storage
-rm $1
-./make_rel
-bcombine $1
+rm	$1
+rm	*.abs
+rm	*.txo
 
-if	[ ! -e	$1.txo ]
+if	[ -e make_rel ]
 then
-	echo	build steps incomplete
-	exit
+	rm	*.rel
+	./make_rel
+	masmx -kwX $1 $1.abs
+
+else
+
+	masmx -kw $1 $1.abs
+	lstring -bL $1.abs lsegment '(1,3)'
 fi
 
-./amass
-cmp $1_rom.zak $1.rom
-cmp $1.zak $1
-diff -q $1_txo.zak $1.txo
-diff -q $1_abs.zak $1.abs
-diff -q storage.zak storage
-diff -q outrigger.zak outrigger
+masmx -kwX ../image.app/trigger trigger $1.abs
+symbol < trigger.txo export > outrigger
 
+./make_pro
+
+#	if	[ ! -e $1_profile.txo ]
+#	then
+#	echo	run profile make not completed
+#	exit
+#	fi
+
+source ./outrigger
+echo FS offset $OUTRIGGER
+1gformat -xy $1.fs $OUTRIGGER < loadfs
+masmx ../image.app/load $1 $OUTRIGGER -lnkeX
+symbol < $1.txo export > storage
+lstring -bL $1.txo $1
+slab $1 $1.rom -p
+diff --brief $1_txo.zak $1.txo
+cmp $1.zak $1
+diff --brief outrigger.zak outrigger
+diff --brief storage.zak storage
+diff --brief trigger_txo.zak trigger.txo
+cmp $1_rom.zak $1.rom
+./amass
