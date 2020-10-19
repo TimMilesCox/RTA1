@@ -37,7 +37,12 @@
 .
 .
 
-EMULATOR_SPACE	$equ	2500	. allow the emulator host to cool
+ACTIVITY_SPACE		$equ	120	. 1200		. milliseconds
+REST_GRANULE		$equ	1000000/20	. microseconds
+
+$(3)
+
+activity_revision +	0L
 
 	$if		DRIVERS_BANK1
 $(67::, y)
@@ -47,7 +52,6 @@ networkframe	delivery
 $(0)
 icapsule
 
-	$if		IPV4_OVERHAUL
 	tz	ETHERNET_ARP_ARPQ_HEAD	. ethernet_arp:arpq:head
 	j	icarryon
 	tz	udpq:head
@@ -56,23 +60,39 @@ icapsule
 	j	icarryon
 	tz	icmpq:head
 	j	icarryon
-	$else
-	tz		interface(2):oq:head
-	j		icarryon
 
-	la		interface(2):ift1:base_rx
-	ii		XBASE$(32)
-	la		interface(2):ift1:rx_cursor
-	tz		networkframe:flag, a
-	j		icarryon
+	tz	interface(2):oq:head
+	j	icarryon
+
+        $if	0
+	la	interface(2):ift1:base_rx
+	ii	XBASE$32
+	la	interface(2):ift1:rx_cursor
+	tz	networkframe:flag, a
+	j	icarryon
 	$endif
 
 	ii		YIELD$
-	$if		EMULATOR_SPACE
-	  dl		(CHILLDOWN, EMULATOR_SPACE:d)
-	  outB		chill$down
-	  outA		INDICATION$
-	$endif
 
+	dl	activity_revision
+	dan	DAYCLOCK$U
+	jpa	icarryalong		. jump but don't move the target
+					. switch to chilldown
+stay_in_chilldown
+	dl	(CHILLDOWN, REST_GRANULE:d)
+	outB	chill$down
+	outA	INDICATION$
+					. glimpse activity
+	la	interface(2):ift1:base_rx
+	ii	XBASE$32
+	la	interface(2):ift1:rx_cursor
+	tnz	 networkframe:flag, a	. RX traffic?
+	j	stay_in_chilldown
+	
 icarryon
-	lret
+	dl	DAYCLOCK$U
+	da	(ACTIVITY_SPACE:d)
+	ds	activity_revision
+
+icarryalong
+	lret	0

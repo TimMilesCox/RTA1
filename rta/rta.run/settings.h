@@ -57,3 +57,9 @@
 #define	INTERVAL	3000
 #define	REGISTERS	288
 
+#define	PLATFORM_INTERVAL 12000		/* default usleep emulator interactive thread		*/
+#define	DAYCLOCK_REVISION 750		/* default usleep emulator dayclock revision 		*/
+
+#define	ACTIVITY_SPACE	1200000		/* microseconds idle before osserv / linuxnet usleeps	*/
+#define	REST_GRANULE	50000		/* osserv / linuxnet usleep step repeated on inactivity	*/
+#define	NET_GRANULE	47

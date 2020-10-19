@@ -147,7 +147,9 @@ static unsigned 	 clockr[2];
 #endif
 
 static int		 interval_seconds_mask;
-
+int			 platform_interval = PLATFORM_INTERVAL;
+int			 dayclock_revision = DAYCLOCK_REVISION;
+int			 dayclock_increment = DAYCLOCK_REVISION;
 
 int main(int argc, char *argv[])
 {
@@ -297,7 +299,12 @@ int main(int argc, char *argv[])
       #ifdef X86_MSW
       _x = _kbhit(1);
       #else
-      _x = poll(&attention, 1, 3);
+      _x = poll(&attention, 1, 0);
+
+      /**************************************************
+	poll is immediate return
+	usleep(dayclock_revision) is microsecond tunable
+      **************************************************/
 
       if (_x < 0)
       {
@@ -356,7 +363,15 @@ int main(int argc, char *argv[])
       u = GetTickCount64();
       #else
 
-      usleep(1000);
+      usleep(dayclock_revision);
+      dayclock_revision = dayclock_increment;
+
+      /*****************************************************
+	instruction emulator may have lengthened last usleep
+        by out to powersave port 103
+	change to millisecond tact or similar when awaking
+      *****************************************************/
+
       if (psr & 0x00800000) continue;
 
       gettimeofday(&xronos, NULL);
@@ -548,6 +563,7 @@ void *emulate()	/* thread start */
          #endif
 
          indication &= -1 ^ CHILLDOWN;
+         dayclock_revision = base[103] * 7 / 8;
          usleep(base[103]);
 
          #ifdef METRIC
@@ -589,7 +605,7 @@ void *emulate()	/* thread start */
       fflush(stdout);
       #endif
 
-      while (indication & LOCKSTEP) usleep(10000);
+      while (indication & LOCKSTEP) usleep(platform_interval);
 
       #ifdef METRIC
       gettimeofday(&time2, NULL);

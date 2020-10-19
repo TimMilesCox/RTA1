@@ -149,18 +149,28 @@
 #define	VOLUME1_WORDS	3
 #define	DIRECTORY_WORDS	4
 #define	FILE_WORDS	8
+#define	LINK_WORDS	3
 
 #define	VOLUME_LABEL_OFFSET 15
+#define LINK_TYPE_LAUNCH_GATE 'G'
+#undef	DIRECT_LINK
 
 typedef struct { msw                rfw,
                             write_point,
                               remainder;
 		 dmsw granule_next_page;  } page_control;
 
+#ifdef	DIRECT_LINK
+typedef struct { msw		    rfw;
+		 msw   latent_parameter;
+		 dmsw		pointer;
+                 msw		name[1];  } forward;
+#else
 typedef struct { msw		    rfw;
 		 msw		 offset;
 		 dmsw		granule;
-                 msw		name[1];  } forward;
+		 msw		name[1];  } forward;
+#endif
 
 typedef struct { msw                rfw,
                                granules;
@@ -237,8 +247,13 @@ typedef struct { extent2	     ex;
 static tree label1  =  { { { 'P', 0, CONTROL_WORDS } } ,
 
                          { { 'L', 0, 4 } ,
+                           #ifdef DIRECT_LINK
+                           { 0, 0, 0 } ,
+                           { 0, 0, 0, 0, 0, VOLUME_LABEL_OFFSET } ,
+                           #else
                            { 0, 0, VOLUME_LABEL_OFFSET } ,
                            { 0, 0, 0, 0, 0, 0 } ,
+                           #endif
                          { { '.' } } } ,
 
                          { { 'L', 0, 4 } ,
@@ -268,6 +283,9 @@ static tree label2  =  { { { 'P', 0, CONTROL_WORDS } } ,
 
 static msw eopage = { 'E', 0, 0 } ;
 
+#if DIRECTORY_BLOCK > GRANULE
+static msw            free_extent[DIRECTORY_BLOCK - GRANULE] = { { 'P', 0, 4 },  { 0, 0, 0 },  { 0, 0, 0 },  { 0, 0, 0 },  { 0, 0, 0 } } ;
+#endif
 
 static int		 f;
 
@@ -275,8 +293,7 @@ static unsigned          pointer1 = CONTROL_WORDS + 1 + 2 * 5 + VOLUME1_WORDS + 
 static unsigned          remainder1 = DIRECTORY_BLOCK - CONTROL_WORDS - 1 - 2 * 5 - VOLUME1_WORDS - 1 - 2;
 static unsigned long long gpointer = DIRECTORY_BLOCK / GRANULE;
 static unsigned long long fs_offset;
-
-static int interpret(tree *actual, unsigned *displacement, long long dstart_granule, forward *up1);
+static off_t		 restart1_position;
 
 #ifdef MYGETS
 static char *mygets(char *to, int limit)
@@ -312,7 +329,7 @@ static int copy(unsigned char *to, char *from)
    return (distance + 2) / 3;
 }
 
-static int outputw(int f, unsigned char *data, int words)
+static int outputw(int f, char *data, int words)
 {
    char		 image[8];
 
@@ -359,11 +376,50 @@ static int outputw(int f, unsigned char *data, int words)
 static void output_label(int f, char *name, long long position)
 {
    char			 image[272];
-   int			 bytes = sprintf(image, "\n+%s:$20:%12.12llX\n",name,position);
+   int			 bytes = sprintf(image, "\n+%s:$20:%12.12llX\n$32:%6.6llX\n", name, position, gpointer * 64);
    int			 written = write(f, image, bytes);
 
    if (written < 0) printf("label write error %d\n", errno);
 }
+
+static void output_link(int f, char *target, int location)
+{
+   static int		 index = 1024;
+
+   char			 image[272];
+
+   int			 bytes,
+			 written;
+
+   index--;
+
+   #ifdef DIRECT_LINK
+
+   bytes = sprintf(image, "\n-%s:[%4.4X]\n"
+                          "$21:%6.6X\n"
+                          "[%4.4X]30:000000000000\n", target, index, location + 2, index);
+   #else
+
+   bytes = sprintf(image, "\n-%s:[%4.4X]\n"
+                          "$21:%6.6X\n"
+                          "[%4.4X]06-:000000 "
+                          "[%4.4X:000000000000/*06]30:000000000000\n", target, index, location + 1, index, index);
+
+   #endif
+
+   written = write(f, image, bytes);
+
+   if (written < 0) printf("label write error %d\n", errno);
+}
+
+static void lstore(long long value, unsigned char *to)
+{
+   int           index = 5;
+
+   to[index] = value;
+   while (index--) to[index] = (value = value >> 8);
+}
+
 
 static int interpret(tree *actual, unsigned *displacement, long long dstart_granule, forward *up1)
 {
@@ -391,10 +447,11 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    tree			 labelv;
 
-   int			 slot = 64 - (gpointer & 63);
+   int			 slot = PAGE / GRANULE - (gpointer & 63);
    int			 voffset;
    int			 status;
    int			 bremainder;
+   int			 advance;
 
    long                  slab;
 
@@ -402,7 +459,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    int			 f2;
 
-   unsigned char	 fbuffer[GRANULE * sizeof(msw)];
+   char			 fbuffer[GRANULE * sizeof(msw)];
 
    long long		 apointer;
 
@@ -412,6 +469,9 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
    int                   byword;
    msw                   bypass = { 128, 0, 0 } ;
    msw                  *indexp = (msw *) &labelv;
+   char			 link_type[1];
+   char			 temp[24];
+   int			 bytes;
 
    #ifdef MYGETS
    rp = mygets(data, DATA);
@@ -426,31 +486,71 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
    if      (strcmp(command, "volume") == 0)
    {
+      apointer = dstart_granule * 64 + VOLUME_LABEL_OFFSET;
+
+      #ifdef DIRECT_LINK
+
+      lstore(apointer, label1.label1.pointer.octet);
+
+      #else
+
+      lstore(dstart_granule, label1.label1.granule.octet);
+
+      #endif
+
+      if (flag['x'-'a'] & flag['y'-'a']) output_label(f, argument, apointer);
+
       label1.label3.v.ex.rfw.t3 = pointer1
                                 = VOLUME1_WORDS
 			        + copy(&label1.label3.v.name[0].t1, argument);
 
-      gpointer = DIRECTORY_BLOCK / GRANULE + fs_offset;
       label1.label3.v.ex.granule = restart_offset;
 
       pointer1 += CONTROL_WORDS + 1 + 2 * 5 + 1;
+
+      indexp = ((msw *) &label1) + DIRECTORY_BLOCK - 1;
+      *indexp = eopage;
    }
 
-   else if (strcmp(command, "tree/")   == 0)
+   else if (strcmp(command, "link")   == 0)
    {
-      /************************************************
-        placeholder directory entry with no files
-        and no space to write file entries
-      ************************************************/
+      if (flag['x'-'a'] & flag ['y'-'a'])
+      {
+         link_type[0] = 0;
+         status = sscanf(data, "%s %s %s %c", command, argument, path, link_type);
 
-      next->ex.rfw.t1 = 'D';
-      next->ex.rfw.t3 = EXTENT1_WORDS
-                     + copy(&next->name[0].t1, argument);
+         if (status < 3)
+         {
+            printf("link link_name target_path\n");
+            exit(0);
+         }
+     
+         advance = LINK_WORDS + (strlen(argument) + 2) / 3 + 1;
+         bremainder = DIRECTORY_BLOCK - *displacement - advance;
 
-      next->ex.granules = start_zero;
-      next->ex.granule = restart_link;
+         if (bremainder < 0)
+         {
+            printf("%d - %s does not go\n"
+                   "use 2gformat\n", DIRECTORY_BLOCK - *displacement, argument);
 
-      *displacement += new->ex.rfw.t3 + 1;
+            exit(0);
+         }
+
+         next->ex.rfw.t1 = 'L';
+         next->ex.rfw.t2 = link_type[0];
+         next->ex.rfw.t3 = LINK_WORDS
+                        + copy(&next->name[0].t1, argument);
+
+         output_link(f, path, dstart_granule * 64 + *displacement);
+          
+         *displacement += advance;
+         vpointer += advance;
+      }
+      else
+      {
+         printf("links are only possible with options -xy\n");
+         exit(0);
+      }
    }
 
    else if (strcmp(command, "tree")   == 0)
@@ -470,6 +570,26 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
          exit(0);
       }
 
+      #if DIRECTORY_BLOCK > GRANULE
+      if (slot < (DIRECTORY_BLOCK / GRANULE))
+      {
+         printf("directory %s position aligned %d granules\n", argument, slot);
+
+         if (flag['x'-'a'])
+         {
+            bytes = sprintf(temp, "\n$32:%6.6llX\n", gpointer << 6);
+            write(f, temp, bytes);
+         }
+
+         byword = slot * 64 - 6;
+         bypass.t3 = byword;
+         bypass.t2 = byword >> 8;
+         free_extent[5] = bypass;
+         outputw(f, (char *) &free_extent, slot * GRANULE);
+         gpointer += slot;
+      }
+      #endif
+
       if (flag['x'-'a'] & flag['y'-'a'])
       output_label(f, argument, dstart_granule * 64 + *displacement);
 
@@ -483,30 +603,37 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       *displacement = slab + new->ex.rfw.t3 + 1;
 
       dstart_position = lseek(f, (off_t) 0, SEEK_CUR);
-      status = outputw(f, (unsigned char *) &label2, DIRECTORY_BLOCK);
+      status = outputw(f, (char *) &label2, DIRECTORY_BLOCK);
 
       labelv = label2;
+
+      #ifdef DIRECT_LINK
+
+      /*************************************************************
+	changed links from granule:offset tuples to word pointers
+        because they are now used as 48-bit assembly / link pointers
+      *************************************************************/
+
+      apointer = (dstart_granule << 6) + slab;
+      lstore(apointer, labelv.label1.pointer.octet);
+
+      labelv.label2.latent_parameter = up1->latent_parameter;
+      labelv.label2.pointer = up1->pointer;
+
+      #else
 
       labelv.label1.offset.t3 = slab;
       labelv.label1.offset.t2 = slab >> 8;
       labelv.label1.offset.t1 = slab >> 16;
-
-      labelv.label1.granule.octet[5] = dstart_granule;
-      labelv.label1.granule.octet[4] = dstart_granule >>  8;
-      labelv.label1.granule.octet[3] = dstart_granule >> 16;
-      labelv.label1.granule.octet[2] = dstart_granule >> 24;
-      labelv.label1.granule.octet[1] = dstart_granule >> 32;
-      labelv.label1.granule.octet[0] = dstart_granule >> 40;
+      lstore(dstart_granule, labelv.label1.granule.octet);
 
       labelv.label2.offset = up1->offset;
       labelv.label2.granule = up1->granule;
 
-      next->ex.granule.octet[5] = gpointer;
-      next->ex.granule.octet[4] = gpointer >>  8;
-      next->ex.granule.octet[3] = gpointer >> 16;
-      next->ex.granule.octet[2] = gpointer >> 24;
-      next->ex.granule.octet[1] = gpointer >> 32;
-      next->ex.granule.octet[0] = gpointer >> 40;
+      #endif
+
+      lstore(gpointer, next->ex.granule.octet);
+
       apointer = gpointer;
       gpointer += DIRECTORY_BLOCK / GRANULE;
 
@@ -525,6 +652,13 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
       vremainder = DIRECTORY_BLOCK - 1 - vpointer;
 
+      /***********************************************
+        last word of directory block reserved
+                for eopage record 450000
+        which may be eclipsed by bypass record
+        with no following words   800000
+      ***********************************************/
+
       labelv.space.write_point.t3 = vpointer;
       labelv.space.write_point.t2 = vpointer >>  8;
       labelv.space.write_point.t1 = vpointer >> 16;
@@ -533,27 +667,34 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       labelv.space.remainder.t2 = vremainder >>  8;
       labelv.space.remainder.t1 = vremainder >> 16;
 
-      byword = vremainder - 1;
+      byword = vremainder;
+
+      /************************************************
+        eopage 450000 is written on last word
+        which is also last possible position of
+        bypass record header 800000 OR free words - 1
+      ************************************************/
+
+      indexp = ((msw *) &labelv) + DIRECTORY_BLOCK - 1;
+      *indexp = eopage;
 
       if (byword < 0)
       {
+         /*********************************************
+                this should be impossible
+         *********************************************/
       }
       else
       {
          /*********************************************
-                bypass record is an indication of free
-                space at the end of a directory page
-
-                Mostly for viewing because file system
-                managers use write_point algebraically.
-                write_point also points at this spot
-
+                write_point is
+                bypass header word 800000 OR free - 1
          *********************************************/
 
          bypass.t3 = byword;
          bypass.t2 = byword >> 8;
 
-         indexp += vpointer;
+         indexp = ((msw *) &labelv) + vpointer;
          *indexp = bypass;
       }
 
@@ -561,7 +702,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
       *indexp = eopage;
 
       lseek(f, (off_t) dstart_position, SEEK_SET);
-      outputw(f, (unsigned char *) &labelv, DIRECTORY_BLOCK);
+      outputw(f, (char *) &labelv, DIRECTORY_BLOCK);
       lseek(f, (off_t) 0, SEEK_END);
    }
    else if (strcmp(command, "file")   == 0)
@@ -610,12 +751,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   *displacement += new->ex.rfw.t3 + 1;
 
-                  new->quanta.octet[5] = p64;
-                  new->quanta.octet[4] = p64 >>  8;
-                  new->quanta.octet[3] = p64 >> 16;
-                  new->quanta.octet[2] = p64 >> 24;
-                  new->quanta.octet[1] = p64 >> 32;
-                  new->quanta.octet[0] = p64 >> 40;
+                  lstore(p64, new->quanta.octet);
 
                   p64 += GRANULE * sizeof(msw) - 1;
                   p64 /= GRANULE * sizeof(msw);
@@ -624,12 +760,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
 
                   if (slot > p64) slot = p64;
 
-                  new->ex.granule.octet[5] = gpointer;
-                  new->ex.granule.octet[4] = gpointer >>  8;
-                  new->ex.granule.octet[3] = gpointer >> 16;
-                  new->ex.granule.octet[2] = gpointer >> 24;
-                  new->ex.granule.octet[1] = gpointer >> 32;
-                  new->ex.granule.octet[0] = gpointer >> 40;
+                  lstore(gpointer, new->ex.granule.octet);
 
                   new->ex.granules.t3 = slot;
                   new->ex.granules.t2 = slot >>  8;
@@ -682,12 +813,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                      vpointer >>= 10;
                      apointer = dstart_granule + vpointer;
 
-                     new->ex.next.octet[5] = apointer;
-                     new->ex.next.octet[4] = apointer >>  8;
-                     new->ex.next.octet[3] = apointer >> 16;
-                     new->ex.next.octet[2] = apointer >> 24;
-                     new->ex.next.octet[1] = apointer >> 32;
-                     new->ex.next.octet[0] = apointer >> 40;
+                     lstore(apointer, new->ex.next.octet);
                   }
 
                   while (p32--)
@@ -699,12 +825,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                      extra->granules.t2 = (PAGE/GRANULE) >>  8;
                      extra->granules.t3 =  PAGE/GRANULE;
 
-                     extra->granule.octet[5] = gpointer;
-                     extra->granule.octet[4] = gpointer >>  8;
-                     extra->granule.octet[3] = gpointer >> 16;
-                     extra->granule.octet[2] = gpointer >> 24;
-                     extra->granule.octet[1] = gpointer >> 32;
-                     extra->granule.octet[0] = gpointer >> 40;
+                     lstore(gpointer, extra->granule.octet);
 
                      extra->next = restart_link;
 		     extra->next_offset = start_zero;
@@ -731,12 +852,7 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                         vpointer >>= 10;
                         apointer = dstart_granule + vpointer;
 
-                        extra->next.octet[5] = apointer;
-                        extra->next.octet[4] = apointer >>  8;
-                        extra->next.octet[3] = apointer >> 16;
-                        extra->next.octet[2] = apointer >> 24;
-                        extra->next.octet[1] = apointer >> 32;
-                        extra->next.octet[0] = apointer >> 40;
+                        lstore(apointer, extra->next.octet);
                      }
 
                      gpointer += PAGE/GRANULE;
@@ -752,18 +868,12 @@ static int interpret(tree *actual, unsigned *displacement, long long dstart_gran
                      extra->granules.t2 = slab >>  8;
                      extra->granules.t3 = slab;
 
-                     extra->granule.octet[5] = gpointer;
-                     extra->granule.octet[4] = gpointer >>  8;
-                     extra->granule.octet[3] = gpointer >> 16;
-                     extra->granule.octet[2] = gpointer >> 24;
-                     extra->granule.octet[1] = gpointer >> 32;
-                     extra->granule.octet[0] = gpointer >> 40;
+                     lstore(gpointer, extra->granule.octet);
 
                      extra->next = restart_link;
                      gpointer += slab;
                      extra++;
                   }
-
 
                   next = (file_tree *) extra;
                   new  = (file *) extra;
@@ -855,10 +965,16 @@ int main(int argc, char *argv[])
    int			 net_pages = PAGES_IN_DEVICE;
    char			*uptr;
 
+   #if DIRECTORY_BLOCK > GRANULE
+   int			 slot;
+   #endif
+
    int                   byword;
    msw                   bypass = { 128, 0, 0 } ;
    msw                  *indexp = (msw *) &label1;
 
+   char			 temp[24];
+   int			 bytes;
 
    argue(argc, argv);
 
@@ -926,8 +1042,34 @@ int main(int argc, char *argv[])
       if (f < 0) printf("file at argument 1 cannot be written %d\n", errno);
       else
       {
-         status = outputw(f, (unsigned char *) &label1, DIRECTORY_BLOCK);
-         if (status < 0) printf("write error %d\n", errno);
+         #if DIRECTORY_BLOCK > GRANULE
+
+         slot = (PAGE / GRANULE) - (offset & 63);
+
+         if (slot < (DIRECTORY_BLOCK / GRANULE))
+         {
+            printf("root directory position aligned %d granules\n", slot);
+            byword = slot * 64 - 6;
+            bypass.t3 = byword;
+            bypass.t2 = byword >> 8;
+            free_extent[5] = bypass;
+            status = outputw(f, (char *) &free_extent, slot * GRANULE);
+            if (status < 0) printf("write error1 %d\n", errno);
+            fs_offset += slot;
+            gpointer += slot;
+
+            if (flag['x'-'a'])
+            {
+               bytes = sprintf(temp, "\n$32:%6.6llX\n", fs_offset << 6);
+               write(f, temp, bytes);
+            }
+
+            restart1_position = (off_t) lseek(f, (off_t) 0, SEEK_CUR);
+         }
+         #endif
+
+         status = outputw(f, (char *) &label1, DIRECTORY_BLOCK);
+         if (status < 0) printf("write error2 %d\n", errno);
 
          for (;;)
          {
@@ -945,21 +1087,32 @@ int main(int argc, char *argv[])
 
       remainder1 = DIRECTORY_BLOCK - pointer1 - 1;
 
-      byword = remainder1 - 1;
+      /***********************************************
+        last word of root directory block is reserved
+        for eopage record 450000
+        or bypass record header with zero words after
+                          800000
+        which may eclipse eopage record
+      ***********************************************/
+
+      byword = remainder1;
+
+      /************************************************
+        length in bypass record header
+        is the same as space.remainder
+      ************************************************/
 
       if (byword < 0)
       {
+         /*********************************************
+                this should be impossible
+         *********************************************/
       }
       else
       {
          /*********************************************
-                bypass record is an indication of free
-                space at the end of a directory page
-
-                Mostly for viewing because file system
-                managers use write_point algebraically.
-                write_point also points at this spot
-
+            write_point is
+            bypass record header word 800000 + free - 1
          *********************************************/
 
          bypass.t3 = byword;
@@ -967,9 +1120,6 @@ int main(int argc, char *argv[])
          indexp += pointer1;
          *indexp = bypass;
       }
-
-      indexp = ((msw *) &label1) + DIRECTORY_BLOCK - 1;
-      *indexp = eopage; 
 
       label1.space.write_point.t1 = pointer1 >> 16;
       label1.space.write_point.t2 = pointer1 >>  8;
@@ -979,15 +1129,10 @@ int main(int argc, char *argv[])
       label1.space.remainder.t2 = remainder1 >>  8;
       label1.space.remainder.t3 = remainder1;
 
-      label1.label3.v.ex.granule.octet[5] = gpointer;
-      label1.label3.v.ex.granule.octet[4] = gpointer >>  8;
-      label1.label3.v.ex.granule.octet[3] = gpointer >> 16;
-      label1.label3.v.ex.granule.octet[2] = gpointer >> 24;
-      label1.label3.v.ex.granule.octet[1] = gpointer >> 32;
-      label1.label3.v.ex.granule.octet[0] = gpointer >> 40;
+      lstore(gpointer, label1.label3.v.ex.granule.octet);
 
-      lseek(f, (off_t) 0, SEEK_SET);
-      status = outputw(f, (unsigned char *) &label1, DIRECTORY_BLOCK);
+      lseek(f, (off_t) restart1_position, SEEK_SET);
+      status = outputw(f, (char *) &label1, DIRECTORY_BLOCK);
       if (status < 0) printf("write error %d\n", errno);      
 
       if (flag['z'-'a'])

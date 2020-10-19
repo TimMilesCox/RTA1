@@ -22,26 +22,32 @@ close	push	a				. save function result in a
 	fret	0
 
 .	vector	fileshare_assign
+.	first call initialises the fileshare heap
+.	shared in this table are file open states
 
 assign	$head_far	params(file_type,	int)
 
-	on	see$2				. in kernel vectors
 	la	FILESHARE_TABLE
-	off	see$2
-	jza	obtain
-	sabr	B_FS2
-	j	ahead
+	jnza	ahead1				. application has FILESHARE_TABLE
+						. application has not
+	lx	FILESHARE_TABLE,,xi
+	ii	READ_XVECTOR$
+	jza	obtain				. neither has kernel
+	ii	WRITE_AVECTOR$			. plant that in application vectors
+ahead1	sabr	B_FS2				. place it in window
+	j	ahead2
 	
 obtain	la	4096,,xi
 	lx	FILESHARE_TABLE,,xi
-	ii	ASSIGN_XVECTOR$
+	ii	ASSIGN_XVECTOR$			. obtain for brand new
 	jza	no_slot
+	ii	WRITE_AVECTOR$			. plant that in application vectors
 	sabr	B_FS2
 	
-	dl	(B_FS2*/12++2, B_FS2*/12++2d)
+	dl	(B_FS2*/12++2, B_FS2*/12++2d)	. initialise shared files-open heap
 	ds	*(B_FS2*/12)
 
-ahead	lx	*(B_FS2*/12++1)			. 1st descriptor in array
+ahead2	lx	*(B_FS2*/12++1)			. 1st descriptor in array
 	lr	*(B_FS2*/12)			. heap top
 	la	file_type
 	and	255,,xi				. only keep its length

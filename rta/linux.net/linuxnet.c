@@ -1,4 +1,4 @@
-#define	INFILTRATE
+
 #include <stdio.h>
 #include <string.h>
 
@@ -108,6 +108,18 @@ static int			 console_handle;
 static struct sockaddr_in	 console_sockf = { 16, AF_INET, 0,	 { 0	 } } ;
 static struct sockaddr_in	 console_socka = { 16, AF_INET, USTDOUT, { LOCAL } } ;
 
+static struct timeval		 xronos;
+
+#if 0
+static int			 quiet;
+static unsigned int		 activity_space = ACTIVITY_SPACE;
+#endif
+static int			 rest_granule = REST_GRANULE;
+
+
+static int			 net_granule = NET_GRANULE;
+static int			 net_revision;
+
 static unsigned short udp_checksum(int bytes, char *user_datagram, char *net_addresses);
 static unsigned short tcp_checksum(int bytes, char *tcp_segment, char *net_addresses);
 
@@ -162,10 +174,52 @@ static void *async()
                close(y);
                printf("%d blocks\n", x);
             }
+
+            break;
+
+         case '<':
+            sscanf(request + 1, "%d %d", &net_granule, &rest_granule);
             break;
       }
    }
 }
+
+#if 0
+static void advance_activity_space()
+{
+   int		 status = gettimeofday(&xronos, NULL);
+   int		 usec;
+
+   if (status < 0)
+   {
+      printf("time acquisition problem1 %d abandon\n", errno);
+      exit(0);
+   }
+
+   usec = xronos.tv_usec + activity_space;
+   xronos.tv_sec += usec / 1000000;
+   xronos.tv_usec = usec % 1000000;
+
+   quiet = 0;
+}
+
+static void activity_pace()
+{
+   struct timeval	 neoxronos;
+   int		 status = gettimeofday(&neoxronos, NULL);
+
+   if (status < 0) 
+   {
+      printf("time acquisition problem2 %d abandon\n", errno);
+      exit(0);
+   }
+
+   if (neoxronos.tv_sec < xronos.tv_sec) return;
+   if (neoxronos.tv_usec < xronos.tv_usec) return;
+
+   quiet = 1;
+}
+#endif
 
 static void outputq()
 {
@@ -196,14 +250,18 @@ static void outputq()
    struct timeval	 txtime;
    int			 interface_type;
 
-   #ifdef INFILTRATE
-   if
-   #else
-   while
-   #endif
-
-   (q->preamble.flag & FRAME)
+   if (q->preamble.flag & FRAME)
    {
+      /*********************************************************
+		reset the usleep on idle interval
+      *********************************************************/
+
+      #if 1
+      net_revision = 0;
+      #else
+      advance_activity_space();
+      #endif
+
       if (q->preamble.protocol == CONFIGURATION_MICROPROTOCOL)
       {
          printf("\n\nRESET REQUEST FROM RTA1\n\n");
@@ -376,9 +434,16 @@ static void outputq()
       if (q > &netdata->o[DEVICE_PAGES / 2 - 1]) q = netdata->o;
    }
 
-   #ifdef INFILTRATE
-   else usleep(2000);
-   #endif
+   else
+   {
+      #if 1
+      if (net_revision < 50000) net_revision += net_granule;
+      usleep(net_revision);
+      #else
+      if (quiet) usleep(rest_granule);
+      else activity_pace();
+      #endif
+   }
 
    txdata = q;
 }
@@ -828,6 +893,12 @@ static void forward(int x, unsigned char *p, int bytes)
          rxdata->preamble.flag = FRAME;
          rxdata++;
          if (rxdata > &netdata->i[DEVICE_PAGES/2-1]) rxdata = netdata->i;
+
+         #if 1
+         net_revision = 0;
+         #else
+         advance_activity_space();
+         #endif
 }
 
 unsigned char *peel(unsigned char *p, unsigned char *q)
@@ -1117,6 +1188,12 @@ static void restart()
 
       configure(x, j);
    }
+
+   #if 1
+   net_revision = 0;
+   #else
+   advance_activity_space();
+   #endif
 }
 
 int main(int argc, char *argv[])
@@ -1577,6 +1654,7 @@ int main(int argc, char *argv[])
          #ifdef LINUX
 
          if (flag['v'-'a']) printf("[%d:%d]\n", x, bytes);
+
          if (flag['w'-'a'])
          {
             printf("[%d:%d[", x, bytes);
@@ -1585,7 +1663,14 @@ int main(int argc, char *argv[])
             while (y--) printf("%2.2x", *q++);
             printf("]\n");
          }
+
          forward(x, p, bytes);
+
+         /*************************************************************
+		RX datagrams on the input trunk
+		usleep interval restarted
+         *************************************************************/
+
          #endif
 
          #ifdef OSX
@@ -1660,10 +1745,10 @@ int main(int argc, char *argv[])
 
             /****************************************************
 		send the datagram to RTA1 via shared buffer
+                and restart the usleep interval
             ****************************************************/
 
             forward(x, q, y);
-
 
             /****************************************************
 		construct in y
@@ -1687,10 +1772,6 @@ int main(int argc, char *argv[])
       }
 
       outputq();
-
-      #ifndef INFILTRATE
-      usleep(2000);
-      #endif
 
       /**********************************************************
 		drive output here
