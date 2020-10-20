@@ -105,8 +105,16 @@ static unsigned char	*heap = instruction[0];
 **********************************************/
 
 static int			 console_handle;
+
+#ifdef	OSX
 static struct sockaddr_in	 console_sockf = { 16, AF_INET, 0,	 { 0	 } } ;
 static struct sockaddr_in	 console_socka = { 16, AF_INET, USTDOUT, { LOCAL } } ;
+#endif
+
+#ifdef	LINUX
+static struct sockaddr_in	 console_sockf = { AF_INET, 0,		 { 0     } } ;
+static struct sockaddr_in	 console_socka = { AF_INET, USTDOUT,	 { LOCAL } } ;
+#endif
 
 static struct timeval		 xronos;
 

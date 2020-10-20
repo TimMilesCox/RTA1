@@ -86,11 +86,11 @@ int main()
             q = (unsigned char *) &from.sin_addr;
             y = 3;
             while (y--) printf("%u.", *q++);
-            printf("%u:%d ", *q, (in_port_t) PORT(from.sin_port & 0xFFFF));
+            printf("%u:%d ", *q, (in_port_t) (PORT(from.sin_port)) & 0xFFFF);
             q = data;
          }
 
-         printf("%s.%3.3lu ", time_string, timep.tv_usec / 1000);
+         printf("%s.%3.3u ", time_string, timep.tv_usec / 1000);
          q[x] = 0;
          printf("%s", q);
          if (q[x - 1] ^ LF) printf("\n");
