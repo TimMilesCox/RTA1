@@ -3,7 +3,7 @@ $(0)
 
 	. vector name scanfi
 
-SENTINEL $equ	7
+SENTINEL $equ	r
 
 scan_fi $tree
 
@@ -236,6 +236,7 @@ string?	mta	('s')
 	ly	argop			. string by default rules
 	ly	0, y
 	z	SENTINEL
+	la	0,,xi			. zero sentinel
 	lcal	scan_istring
 	j	read_format	
 
@@ -252,17 +253,6 @@ string_sentinel?
 	ly	0, y
 	lcal	scan_istring
 
-	$if	1
-	push	' ',,xi
-	pop	LAST_BYTE_READ
-	$else
-	la	LAST_BYTE_READ		. SENTINEL value must get cancelled here
-	xor	SENTINEL		. if that's what ended the scan
-	jnza	read_format		. otherwise it ends the next scan
-	la	' ',,xi			. before it starts
-	sa	LAST_BYTE_READ
-	$endif
-
 	j	read_format		. independent callers to istring
 					. cancel SENTINEL as required
 
@@ -276,71 +266,6 @@ read_format_end
 	pop	x			. relinquish words tag
 	qpop	x			. reload 4 caller registers
 	fret	0			. including result = items read
-
-scan_istring
-
-	$if	0
-	la	LAST_BYTE_READ
-	$else
-	call	(symbol_scan)		. skips spaces
-	$endif
-	lk	255,,xi
-	jza	scan_stop_void		. hit an end before accepting data
-	mta	SENTINEL		. a is certainly nonzero
-	j	scan_start		. if a ^= SENTINEL start
-					. or else stop already
-scan_stop_void
-.	z	0, y
-	lret	0
-
-
-scan_start
-	lb	a			. 1st byte delivered
-	
-	lk	255,,xi
-	lx	16,,xi			. 2 more bytes max 1st word
-scan_next_byte
-	lcal	scan_ibyte
-	j	istring_thru
-	ax	-8,,xi
-	tz	x
-	j	scan_next_byte
-	sb	0, y
-	ay	1,,xi
-	lx	24,,xi
-	j	scan_next_byte
-
-istring_thru
-	sbl	0, x
-	sb	0, y
-	lret	0
-
-scan_ibyte
-	rsr	$byte
-	jza	scan_ibytez
-	sa	LAST_BYTE_READ
-	mtane	(' ')
-	j	scan_ibytez
-	mtane	(HT)
-	j	scan_ibytex
-
-	mtane	SENTINEL
-	j	scan_ibytez
-
-	mtane	(LF)
-	j	scan_ibytez
-	mtane	(CR)
-	j	scan_ibytez
-	sal	$word-$byte
-	drl	$byte
-
-	lret	1
-
-scan_ibytex
-	la	' ',,xi
-	sa	LAST_BYTE_READ
-scan_ibytez
-	lret	0
 
 scanover_cr_lf
 scanover?

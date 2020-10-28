@@ -78,10 +78,10 @@ If the application directory has no file make_rel, amake command constructs a si
 <h3>3: How is an Application?</h3>
 
 An application or group of applications is realised in a subdirectory of
-<a style="color:#0000FF">{ $HOME | YOU | SOMEWHERE }/<a><a style="color:#FF0000">/rta/target.rta/</a>
+<a style="color:#0000FF">{ $HOME | $YOU | $SOMEWHERE }/<a><a style="color:#FF0000">/rta/target.rta/</a>
 
 <p>
-<a style="color:#0000FF">YOU</a><a style="color:#FF0000">/rta/target.rta/</a><a style="color:#0000FF">your.app.for_example/</a> contains two or more of these files
+<a style="color:#0000FF">$YOU</a><a style="color:#FF0000">/rta/target.rta/</a><a style="color:#0000FF">your.app.for_example/</a> contains two or more of these files
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -142,7 +142,7 @@ remember_who?	"Remember us?":0
 <a	name="__base"/>
 __BASE		$equ		HELLO_START_PAGE_INDEX	. start page index if you know it (fixed in system image)
 							. or if you don't for that matter (dynamic iframe load)
-							. this case HELLO_PAGE_INDEX is undefined. hello is dynamic load
+							. HELLO_START_PAGE_INDEX is undefined, so hello is dynamic load
 $(0:0/$0)
 . hello*	$vector		jump2it	. (commented)	. the simplest way of having a vector (entry point) in a 4k-word iframe
 							. there are 64 $vector slots at the front of an iframe
@@ -208,7 +208,7 @@ loadfs describes a file system embedded and linked in the application image
 All applications are re-entrant shared code and application initial data is unpacked from the embedded file system
 
 <p>
-The file system is included in the link of the application group, exports the names of data sections which it contains, and imports execution parameter descriptors as links of class 'G'
+The file system is included in the link of the application group, exports the names of data sections which it contains, and imports execution parameter descriptors as file-system link targets of with class tag 'G'
 
 <p>
 volume, file and link names are developer-chosen. A single application has one data sections file and one launch link
@@ -294,7 +294,7 @@ Applications in NVRAM
 	$ cd rta/target.rta/def.app
 
 	$ cat iframes.def
-	APPLICATION(1)	$equ	00B000		. unless the kernel gets larger or some fixed libraries are placed first
+	APPLICATION(1)	$equ	00B000		. unless kernel and libraries get larger
 	APPLICATION(2)	$equ			. depends how many pages APPLICATION(1) takes
 						. and if any fixed library pages intervene
 	.
@@ -314,7 +314,7 @@ Applications in NVRAM
 
         <li>ROM application iframes are invidually searchable for launching applications by name</li><br>
 
-        <li>directory <a style="color:#FF0000">application_templates/</a> in each iframe embedded filesystem links a searchable name to each application launch plan:
+        <li>directory <a style="color:#FF0000">application_templates/</a> in each iframe embedded filesystem links a searchable name to each application:
 	<pre	style="color:#0000FF;font-size:14pt">
 
 	$cat loadfs
@@ -443,7 +443,7 @@ Macro <a style="color:#FF0000">$application</a> is used instead of macro catalog
 
 <p>
 <a style="color:#FF0000">$application</a> exports multiple application load-go templates
-
+<a	name="_group_link"/>
 <pre	style="font-size:12pt;color:#0000FF">
 
 	$list		0
@@ -487,9 +487,9 @@ $(0:0)
 Three alternative macros construct iframes. Simple iframes may be constructed <a href="#_without">without macro framing</a> 
 <ul     type="square">
 
-        <li><a href="#_catalog">catalog constructs a single application</a></li>
-        <li><a href="#_application">$application constructs a densely packed group of applications</a></li>
-        <li><a href="#_iframe">$iframe constructs a library or block of subroutines</a></li>
+        <li><a href="#_catalog">catalog</a> constructs a single application</li>
+        <li><a href="#_application">$application</a> constructs a densely packed group of applications</li>
+        <li><a href="#_iframe">$iframe</a> constructs a library or block of subroutines</li>
 
 </ul>
 iframes can be constructed singly or in a related load group
@@ -507,10 +507,20 @@ Direct address space is eight 4K-word pages or 32768 words containing up to 3270
 RTA1 application code is compact to the extent that one 4K-word page of memory may contain the instruction part of 30 applications
 
 <p>
-Integrated ROM / RAM file systems inside the iframe have no practical size limit. Application code does not address embedded file systems. However they are not large. The function of application-embedded file systems is application search and priming static data for each process instance of each application
+Simplest iframes have 64 vector locations which can be exported as an encoded value of <a style="color:#0000FF">page:offset</a>
+
+<p>
+Macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> <a href="#_iframe">$iframe</a> construct gates which point to any offset in the iframe group which may be any size and either fixed or loadable
+
+<p>
+Entry to an iframe larger than one 4k-word page must be via a gate and not directly to a known <a style="color:#0000FF">page:vector</a> in order to execute instruction code in all the pages of the iframe
+
 
 <a      name="_catalog"/>
 <h4>8.2: catalog</h4>
+
+<a style="color:#0000FF">catalog</a> constructs one loadable or fixed application iframe one or more pages in size
+
 <pre	style="font-size:12pt;color:#0000FF">
 
 	[vector_name* $vector offset]
@@ -519,8 +529,19 @@ Integrated ROM / RAM file systems inside the iframe have no practical size limit
 
 </pre>
 
+<a style="color:#0000FF">page_high_index</a> is the number less one of 4k-word pages in the iframe
+
+<p>
+<a style="color:#0000FF">page_high_index</a> defaults to zero indicating an iframe of one page
+
+<p>
+developer tools indicate if iframe storage is insufficient and needs correction by raising <a style="color:#0000FF">page_high_index</a>
+
 <a      name="_application"/>
 <h4>8.3: $application</h4>
+
+<a style="color:#0000FF">$application</a> constructs a group of multiple applications in one loadable or fixed iframe one or more pages in size
+
 <pre	style="font-size:12pt;color:#0000FF">
 
 	[vector_name* $vector offset]
@@ -530,8 +551,21 @@ Integrated ROM / RAM file systems inside the iframe have no practical size limit
 
 </pre>
 
+<a style="color:#0000FF">page_high_index</a> is the number less one of 4k-word pages in the iframe
+ 
+<p>
+<a style="color:#0000FF">page_high_index</a> defaults to zero indicating an iframe of one page 
+
+<p>
+developer tools indicate if iframe storage is insufficient and needs correction by raising <a style="color:#0000FF">page_high_index</a>
+
+
+
 <a      name="_iframe"/>
 <h4>8.4: $iframe</h4>
+
+<a style="color:#0000FF">iframe</a> constructs one loadable or fixed subroutine or library iframe one or more pages in size
+
 <pre	style="font-size:12pt;color:#0000FF">
 
 	[vector_name* $vector offset]
@@ -541,10 +575,8 @@ Integrated ROM / RAM file systems inside the iframe have no practical size limit
 
 </pre>
 
-$iframe is used for libraries or subroutine collections which are not applications and contain no threads
-
 <p>
-$iframe frames may be integrated in loadable application groups and are not callable from outside the loadable iframe group
+$iframe frames integrated in dynamically loadable application groups and are not callable from outside the loadable iframe group
 
 <p>
 independent library iframes are required to be at fixed and known addresses and are suitable for construction <a href="#_without">without any framing by macro</a>
@@ -592,7 +624,7 @@ Devising a lookup to match a text name to an application call vector is not comp
 Integrators may or may not require the long application names allowed by iframe macros and ROM/RAM file based lookups
 
 <p>
-Iframe macros automatically measure data section size and necessary heaps and stacks, but these measurements can also be reckoned
+Application iframe  macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> automatically measure data section size and necessary heaps and stacks, but these measurements can also be reckoned
 
 <p>
 There is no restriction on using the system call
@@ -614,11 +646,237 @@ and optionally the system call to attach a displayable name to the process
 <a      name="literal_tables"/>
 <h3>9: Literal Tables</h3>
 
+Literals are data constants generated by reference
+
+<p>
+In RTA1 literals may be big numbers, callable vector names, strings or structures
+<pre	style="font-size:12pt;color:#0000FF">
+
+	c	(__sscanf)	$3("%s %d":0),,xi	string,,xi	number,,xi
+
+</pre>
+Literals are recognised
+
+<ul	type="square">
+
+	<li>by being in parentheses without operators attached front or back</li>
+
+	<li>by being in parentheses with a label of type <a href="">literal pool tag</a> on the front</li>
+
+</ul>
+Literal pool tags are declared on program section headers
+<pre	style="font-size:12pt;color:#0000FF">
+
+__STATIC	$equ	3
+$(__STATIC:03000/$3)		. literal pool tag in static data section is $3
+
+</pre>
+There is a default program section for literals and it is $(0), the iframe. An assembly directive <a href="http://timmilescox.github.io/masmx/masmx.html#lit">$lit</a> may change the default and may also tag the default literal pool
+<pre	style="font-size:12pt;color:#0000FF">
+
+"$4"	$lit	4
+
+</pre>
+Literals may be indirection constants for very large addresses which don't fit inside an instruction
+<pre	style="font-size:12pt;color:#0000FF">
+
+	tz	<a style="color:#000000">*</a>(_IO_WINDOW*/18++131072<a style="color:#000000">s</a>)	. force the literal to single word with suffix <a style="color:#000000">s</a>
+
+</pre>
+The indirection operator <a style="color:#0000FF">*</a> is allowed on the front of a literal
+
+<p>
+Variables and constants in the first 8192 locations of address space may be indirection pointers. These locations are
+<ul	type="square">
+
+	<li>256 registers: addresses [000000..0000FF]</li>
+	<li>words 256..4095 of the actual iframe: addresses [000100..000FFF]</li>
+	<li>all 4096 words if the actual B1 frame: addresses [001000..001FFF]</li>
+
+</ul>
+Integer constants add a word of signs if the highest bit is not a sign. So an address literal pointing to the high half of address space needs to be suffixed <a style="color:#0000FF">s</a> to prevent a prefix of 24 zero bits
+
+<p>
+Literals can be any data which can't be an immediate operand because of its size
+<pre	style="font-size:12pt;color:#0000FF">
+
+	qpush	(1.5)		. that generates 4 words
+	d	(3000000)	. that's within 1 word but larger than &plusmn;32767
+
+</pre>
+Literals can go in any program section where data can be generated but most of them go in iframe $(0, 4) or static $(3)
+
+<p>
+Literals are placed in static if another iframe references them. That other iframe cannot address anything in this iframe
+<pre	style="font-size:12pt;color:#0000FF">
+
+	c	(__sscanf)	<a style="color:#FF0000">$3("%s %d":0),,xi</a>	string,,xi	number,,xi
+
+</pre>
+By default literals are in the current iframe. Many iframe literals are call vectors to other iframes and must be constants or variables because the operand of instructions go and call is a constant or variable
+<pre	style="font-size:12pt;color:#0000FF">
+
+
+	c	<a style="color:#FF0000">(__sscanf)</a>	$3("%s %d":0),,xi	string,,xi	number,,xi
+	.
+	$do	$<256),$(0:256)
+
+</pre>
+Literals in the iframe must be in words 256..4095 of the iframe. Lower operand adresses than 256 are registers. Operand adresses 4096+ are not in the iframe. Only instructions can be obtained from addresses 4096+ of the iframe
+
+<p>
+The construction <a style="color:#0000FF">$do  $<256),$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
+
+<p>
+If instructions + literals > 4096, literals need to be placed in front of instructions, not after
+
+<p>
+Macro <a style="color:#0000FF">$lits4</a> places the default literal table in a new section $(4) starting at address 256 
+
+<p>
+Macro <a style="color:#0000FF">$check4</a> at the end of the instruction section checks if the default literal table is inside the number of words allowed on the <a style="color:#0000FF">$lits4</a> line. The default is 20 words. Fewer or more words are reserved with an argument to <a style="color:#0000FF">$lits4</a>
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$(0::0/$0)
+
+        $application,1  startup
+
+        $lits4	[words]
+startup
+	.
+	.
+        $check4
+	
+
+</pre>
+
+If multiple applications are linked in one iframe all their default literal pools must be collected within iframe locations 256..4096, either before instruction code or after it if instructions + literals < 4097
+
+<p>
+All <a href="#group">relocatable applications</a> included must be assembled with automatic literals in a different section, here $(4), from instruction code in $(0)
+
+<pre    style="font-size:12pt;color:#0000FF">
+
+$(1:01000)              . B1 frame still absolute
+$(3:03000)              . static variable section absolute as ever
+        $lit    4
+$(4:*1)
+$(0:*1/$0)              . relocatable instruction code section
+first*                  . exported start address
+        $base_d         $zenith(3)-003000       1024
+        c               (seg$load)      0,,xi   (data_1st:d),,long
+        .
+        .
+        fret    0       . or ii EXIT$
+
+
+</pre>
+
+<p>
+In this <a href=="#_group_link">linking assembly</a> three small applications have instructions in program section $(0) and literals in $(4)
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+
+$(0:0)
+        <a style="color:#FF0000">$application,1</a>             0:first 0:second 0:third
+
+        $include,$binary        first.rel       $(0)
+        $include,$binary        second.rel      $(0)
+        $include,$binary        third.rel       $(0)
+
+        $do     $<256,$(0:256)
+        $include,$binary        first.rel       $(4)
+        $include,$binary        second.rel      $(4)
+        $include,$binary        third.rel       $(4)
+
+</pre>
+For an applications group iframe > 4096 words it is necessary to place iframe literal pools before the instructions
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$(0:0)
+        <a style="color:#FF0000">$application,1</a>             0:first 0:second 0:third
+
+	$do	$<256,$(0:256)
+        $include,$binary        first.rel       $(4)
+        $include,$binary        second.rel      $(4)
+        $include,$binary        third.rel       $(4)
+	$do	$>4096,		$flag	default literal tables larger than possible
+
+        $include,$binary        first.rel       $(0)
+        $include,$binary        second.rel      $(0)
+        $include,$binary        third.rel       $(0)
+
+</pre>
+
 <a	name="iframe_examples"/>
 <h3>Appendix A: iframe Examples</h3>
+
+<ul	type="square">
+	<li>rta/target.rta/hello.app/hello.msm is a simple loadable application</li>
+	<li>rta/target.rta/multi.app/[first second third].msm and multiple.msm are a loadable group of applications</li> 
+	<li>rta/target.rta/edgecase.app/gate.msm is a large loadable application consisting multiple iframes</li>
+	<li>rta/target.rta/simple.app/simple.msm is a simple ROM application</li>
+	<li>rta/target.rta/rom1.app/[fixed1 fixed2].msm and apps.msm are a group of ROM applications</li>
+</ul>
+
 <a	name="auto"/>
 <h3>Appendix B: Scripts and Automatic Start</h3>
 
+Kernel routine <a style="color:#FF0000">run_start</a> runs applications serially from a script at absolute path in file system Device 1
+<pre	style="font-size:12pt;color:#0000FF">
+
+	c	(run_start)	$3("/directory[/directory...]/script":0),,xi
+
+</pre>
+
+Scripts may be nested to a depth of three
+
+<p>
+A nested script path in the text has the syntax <a style="color:#0000FF">/directory[/directory...]/script</a>
+
+<p>
+Text lines are otherwise application command lines followed optionally by lines of stdin
+
+<p>
+The first stdin line available to an application is its own command line which may have argument fields
+
+<p>
+stdin text may be commands to applications like shells
+
+<p>
+script execution is sequential. Each application ends before more script text is read. This allows applications to read script lines as stdin
+<pre	style="font-size:12pt;color:#0000FF">
+
+load /production/multiple*applications1	# run load application: command to load + run /production/multiple*applications1
+inputs to applications1
+.					# end command of application1
+multiple*applications2			# run another part of the application group now loaded
+multiple*applications3			# and another part
+@eof					# end command of load application, loaded apps get unloaded
+read_the_post				# another application
+/another/script				# a nested script
+
+</pre>
+Although <a style="color:#FF0000">run_start</a> processes strictly sequentially, a caller may process multiple scripts simultaneously from separate threads
+
+<p>
+A script <a style="color:#0000FF">/initial/script</a> is run automatically at system start if it is present in file system Device 1
+
+<p>
+Scripts are not always started interactively and therefore terminal output for input is not assumed
+
+<p>
+stdout from script-activated applications is a UDP broadcast displayed in a shell running platform utility <a style="color:#FF0000">oconsole</a>
+<pre	style="font-size:12pt;color:#0000FF">
+
+	sudo oconsole
+
+</pre>
+
+Multiple platforms anywhere in the local net may run <a style="color:#FF0000">oconsole</a>
 
 <pre	style="font-size:10pt;background-color:#FFFFFF00">
 <div	style="border-radius:5px;background-color:#FF0000;color:#FFFFFF;width:75pt;height:100pt;top:25pt;right:375pt;position:absolute">    NVRAM

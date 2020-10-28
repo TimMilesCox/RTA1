@@ -4,13 +4,15 @@
 	$set_option	"z"
 
 $(3)
-command1	$res	180/3
-request1	$res	180/3
-request         $res	180/3
+command1	$res	180/3	. application name like argv[0]
+				. only read once ahead of commands
+request1	$res	180/3	. entire fgets line
+request         $res	180/3	. 1st term on input line
 request2	$res	180/3
 request3	$res	180/3
-request4	$res	180/3
-
+request4	$res	180/3	. potential last term last in
+suffix		$res	180/3	. to extract *suffix
+				. without overwriting request[2 3 4]
 arguments	0
 new_process	$res	1
 loadname	0p		. 4 + trailing zero word
@@ -28,47 +30,38 @@ this_app	file_image
 
 $(0)
 
-	$base_d	$zenith(3)-03000 4096
+	$base_d	$zenith(3)-03000 2048 2048
 	c	(seg$load)	0,,xi	(loader_data:d),,long
 
 
 load_request
 	fgets	request1,,xi	180	stdin
-	sscanf	request1,,xi	$3("%s %s":0),,xi	command1,,xi	request,,xi
-	aa	-2,,xi
-	jna	trial_new_prompt
+	z	suffix
+	z	request+1	. command search is 2 words and they aren't all
+	sscanf	request1,,xi	$3("%s %s %s %s %s":0:0),,xi	command1,,xi	;
+				request,,xi	request2,,xi	request3,,xi	request4,,xi
 
-	printf	$3("loader: %s %s":10:0),,xi	command1,,xi	request,,xi
+	aa	-1,,xi		. command1 doesn't count. It's the application name
+	jna	trial_new_prompt
+	jza	trial_new_prompt
+	sa	arguments
+
+	printf	$3("loader: %s":10:0),,xi	request1,,xi
 	
 next_request
-	lx	request,,xi
-	lk	(255*/16s)
 
-next_words
-	dl	0, x
-	ax	2,,xi
-
-next_symbol
-	mtane	('/'*/16)		. 1: found the path start?
-	j	load_by_path
-.	mtane	('@'*/16)		. 2: found a command?
-.	j	command
-	mtane	(255*/16s)		. an eof inserted?
-	j	eof_signalled
-	mtane	(0)			. 3: trailing zero before anything found?
-	j	trial_new_prompt
-	mtane	(10*/16)		. 4: or LF
-	j	trial_new_prompt
-	mtane	(13*/16)		. 5: or CR
-	j	trial_new_prompt
-	mta	(' '*/16)		. 6: or some leading space ?
-	j	command			. no it's a name to find among preloads or builtins
-	dsl	8
-	jdz	next_words		. six leading spaces, keep going
+	la	request			. it's impossible for %s to cause leading space
+	sar	$word-$byte		. look at leading column of request field
 	
+	aa	-255,,xi		. ^D ?
+	jza	eof_signalled
+	aa	255-'/',,xi		. a load path?
+	jza	load_by_path
+	j	command
+
 load_by_path
-	z	request3
-	sscanf	request,,xi	$3("%:*%s"),,xi	request2,,xi	request3,,xi
+	z	suffix
+	sscanf	request,,xi	$3("%:*%s"),,xi	request2,,xi	suffix,,xi
 	c	(fspath)	request2,,xi
 	jza	trialu
 
@@ -92,13 +85,13 @@ load_by_path
 	c	(iframe_load)	a,,long	this_app:transfer_gate,,i
 	jna	trialy
 
-	tz	request3	. is there a ? token after *
-	j	load_and?	. 
+.	tz	suffix		. is there a ? token after *
+.	j	load_and?	. 
 
 	printf	$3("[%lx:%lx]":10:0),,xi	a,,float
 
 find_and?
-	tz	request3	. is there a ? token after *
+	tz	suffix		. is there a ? token after *
 	j	load_and?	. yes, it's not just load-execute
 				. no, it's load-execute
 	ly	app_of_reference
@@ -119,10 +112,6 @@ update_go
 	la	*(32*/12++ABT-01000+2)	. read his vector list pointer
 	sabr	32
 
-.	la	FILESHARE_TABLE				. copied to all new processes
-.	sa	 *(32*/12++FILESHARE_TABLE-02000)	. if it already exists
-					. in any case this wasn't kernel thread or see$2
-
 	dl	handle(1)		. please use my stdin stdout stderr
 	ds	*(32*/12++handle(1)-02000)
 
@@ -139,28 +128,17 @@ trialx	la	new_process
 trialx1	ii	THREAD$STATE
 	j	trial_end_detect	. concluded or stopped
 
-	ii	YIELD$
-	j	trialx
+	ii	YIELD$			. if this were encapsulated
+	j	trialx			. its name would be waitpid()
 
 load_and?
-	la	request3
+	la	suffix
 	lk	(-1*/$word-$byte)
-	mtane	('+'*/$word-$byte)
+	mtane	('+'*/$word-$byte)	. load and don't execute?
 	j	trial_new_prompt	. it's done, ask me again
 					. it's an application in the loaded file
 
-	lc	qapps	app_of_reference request3,,xi	. application group, app name
-
-	$if	0
-	c	(strlenx)	request3,,xi	. name containing words in b
-	ly	app_of_reference
-	la	this_app:transfer_gate+1	. start page index = file system
-	and	(07FFFFF)
-	c	(qstart) a				;
-			 this_app:lookup_mount+2,,long	;
-			 b				;
-			 command1,,xi
-	$endif
+	lc	qapps	app_of_reference suffix,,xi	. group*application
 
 	jza	nonstarter
 	jna	start_error
@@ -170,16 +148,20 @@ load_and?
 no_slot	printf	$3("maximum dynamic apps loaded\n":10:0),,xi
 	j	trial_new_prompt
 
-. find_loaded
-.	printf	$3("we hope to do that soon":10:0),,xi
 trial_end_detect
 trial_new_prompt
 
 	printf	$3("load>":0),,xi
 	fflush	stdout
-	fgets	request,,i	174	stdin
-	la	request
+	fgets	request1,,i	174	stdin
+	la	request1
 	jza	data_void
+	z	request+1	. command search is 2 words and they aren't all
+	z	request+2
+	z	request+3
+	z	suffix
+	sscanf	request1,,xi	$3("%s %s %s %s":0),,xi	request,,xi	request2,,xi	request3,,xi	request4,,xi
+	sa	arguments
 	j	next_request	
 
 trialu	printf	$3("%s not located":10:0),,xi	request,,xi
@@ -202,20 +184,13 @@ start_error
 nonstarter printf $3("process unassigned":10:0),,xi
 	j	trial_new_prompt
 
-command	z	request2+1
-	sscanf	request,,xi	$3("%s %s %s":0),,xi	;
-				request2,,xi		;
-				request3,,xi		;
-				request4,,xi
-	sa	arguments
+command	la	arguments
 	jna	trial_new_prompt
 	jza	trial_new_prompt
 
 .	next the search for builtin commands
 
-	lookup	request2	@?, @eof
-
-
+	lookup	request	@?, @eof, @run
 
 .	next the search for dynamic loaded programs
 
@@ -224,7 +199,7 @@ command	z	request2+1
 
 	sy	app_of_reference
 
-	la	request3
+	la	suffix
 	lk	(-1*/$word-$byte)
 	mta	('-'*/$word-$byte)
 	j	find_and?		. execute app or contained app
@@ -241,14 +216,22 @@ command	z	request2+1
 
 	j	trial_new_prompt
 
-notso	printf	$3("%s not loaded":10:0),,xi	request2,,xi
+notso	printf	$3("%s not loaded":10:0),,xi	request,,xi
 	j	trial_new_prompt
 
 @?	lcal	list
 	j	trial_new_prompt
+@run	ql	(runstart, 7, request2, THREAD_FP(2)q)
+	ii	THREAD$
+	j	trial_new_prompt
 @eof
 trialz	ii	YIELD$			. let the print proceed before EXIT$
 	fret	0
+
+.	asynchronous thread to run a script in background
+
+runstart	c	(run_start)	a
+	lret	0			. thread exit
 
 .	execute an app within a file of multiple apps
 
@@ -310,9 +293,9 @@ find_in_loaded_list
 	z	9
 	z	10
 	z	11		. 4-word loaded file search argument
-	z	request3	. by default no *suffix
+	z	suffix		. by default no *suffix
 
-	sscanf	request,,xi    $3("%:*%s"),,xi    8,,xi    request3,,xi
+	sscanf	request,,xi    $3("%:*%s"),,xi    8,,xi    suffix,,xi
 
 	ly	apps_loaded,,xi
 

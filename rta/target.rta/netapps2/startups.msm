@@ -1,3 +1,6 @@
+$(66::,x)
+fspaxq	fileq
+
 $(1)
 
 startup_osocket_encoding	0L
@@ -10,9 +13,7 @@ USTDOUT	$equ	18		. historic assignement message send
 
 	.	vector name initial_startups
 
-initial	c	(fspath)	$3("/initial/script":0),,xi
-	jza	startupz
-	ql	(read_startups, 7, 0, THREAD_FP(1)q)
+initial	ql	(read_startups, 1, 0, THREAD_FP(1)q)
 	ii	THREAD$
 	jza	startupz
 	lb	$3("initial startups":0),,xi
@@ -68,119 +69,154 @@ local_address
 no_stdout
 	$ret
 
-.       read consective script file names from the text file at script path
-.       access each script and launch the application named at the front of it
-.       making each script stdin of the application which it names
-.       the first line each application reads is the command line calling itself
+.       read consective text lines from the text file at script path
+.	scripts may be nested. A new script name in the text starts /path
+.	other text lines are application names + optional following lines of stdin
 
-.       no hanging about. spawn each application and read the next line
-.       where spawn is successful stdout stderr are UDP broadcast startup_osocket_encoding
+.	first stdin line to an application is its own command line
+.	no command except application names and nested /script_path is expected
+.	but stdin text may be commands to applications like shells
+
+.	script execution is sequential to make proper sense
+.	waiting for each started process to finish before reading more text
+.	but you can call run_start from multiple simultaneous threads
 
 run	$head_far	 params(script_path,	int	)	;
 								;
-			scalars(fspp,		8	)	;
-								;
-			 xframe(path,		40		)
+			scalars(file_position,	long		;
+				siobloc,	int		;
+				zdepth,		int		)
 
 	c	(fspath)	script_path
-	jdz	no_file
-
-	c	(fs24_open)	fspp,,i		a,,long
-
-next_line
-	c	(fgets_datafile)	fspp,,i		path,,i		117,,xi
-	jza	no_more_lines
-	la	path
-	jza	no_more_lines
-
-	la	0,,xi			. because we're not in fgets macro
-	wsr	24			. write the zterm here
-
-	lc	action_line	path,,i
-	j	next_line
-
-no_more_lines
-no_file	$ret
-
-action_line
-	$head_near		 params(script_line,	int)	;
-								;
-				scalars(fspq,		int	;
-					command,	8	;
-					file_position,	long	)
-
-	la	script_line
-	la	0, a
-	lk	(-1*/$word-$byte)
-	mta	('/'*/$word-$byte)
-	j	direct_command				. command without stdin
-							. or arguments
-	c	(fspath)	script_line
-	jdz	actionx
+	jdz	no_run
 	ds	file_position
-							. on 1st line of its own stdin
-	c	(fileshare_assign)	(FS$DEVICE$ARRAY,,7s)
 
+	c	(fileshare_assign)	(FS$DEVICE$ARRAY,,7s))
 	tnz	x
-	j	actionx
-	sx	fspq
-	la	SUB,,xi
-	sa	7, x			. that's fspq:o:flags -> LAST_BYTE_READ
+	j	no_run
 
-	c	(fs24_open)	fspq		file_position,,long
-	c	(fs24_snoop)	fspq		command,,i		8,,xi
-	jna	actionx
-	jza	actionx
+	z	fspaxq:o:column
+	sx	siobloc
+	lc	runfile_scan	zdepth   x   file_position,,long
 
-	lc	start_command	command,,i	command,,i
-	jna	actionx			. hit the end of nvram iframes
-	jza	actionx			. couldn't start process
+	lx	siobloc		 . free shared open file state bloc
+	la	7,,xi
+	sa	0, x
+
+no_run	$ret
+
+runfile_scan $head_near	 params(depth,		int		;
+				share_iobloc,	int		;
+				fposition,	long	)	;
+								;
+			scalars(save_fspp,	8,	0, x)	;
+								;
+			 xframe(text,		40		)
+
+	inc	depth
+	lx	depth
+	lr	4,,xi
+	jxge	runfile_breakpoint	. 3 nested scripts are plenty
 	
+	lx	share_iobloc
+	z	fspaxq:o:column
+	c	(fs24_open)	share_iobloc	fposition,,long
+
+read_script
+	call	(fileshare_space_open)
+
+	c	(fs24_snoop)	share_iobloc	text,,i	40,,xi
+
+	jna	runfile_breakpoint
+	jza	runfile_breakpoint
+
+	lx	share_iobloc		. get non-snoop read position in open file
+					. then pull the string left over whitespace
+
+	c	(normal_string)   text,,i   text,,i   40*3-3,,xi   fspaxq:o:column
+
+	jza	text_skip		. blank line read past it
+
+	lr	a			. save containing words of extracted token
+
+	la	text
+	lk	(255*/$word-$byte:s)
+	mta	('/'*/$word-$byte:s)	. a nested path?
+	j	text_command		. no
+
+					. now consume the snooped text
+	c	(fgets_datafile)	share_iobloc   text,,i   40*3-3,,xi
+	dsr	24
+	wsr	24			. push last bytes thru WDATA
+					. staging register
+	call	(fileshare_space_open)
+	c	(fspath)		text,,i
+	jdz	read_script		. skip silently if you can't find it
+
+	lx	share_iobloc
+	lc	runfile_scan	depth   x   a,,long
+					. recurse within limits
+	j	read_script
+
+text_command
+	lx	share_iobloc
+	dl	fspaxq:serialp:absolute_pointer	. mark file position
+	ds	fposition			. in case it doesn't move
+
+	lc	action_command	  x	r	text,,i
+
+	lx	share_iobloc
+	dl	fspaxq:serialp:absolute_pointer
+	dan	fposition
+	jdz	text_skip		. so lazy he never read his own name
+	j	read_script
+
+text_skip
+	c	(fgets_datafile)	share_iobloc   text,,i	40*3-3,,xi
+	j	read_script
+
+runfile_breakpoint
+	lx	share_iobloc
+	qpop	0, x
+	qpop	4, x			. retrieve the previous file open state
+	lret	0
+
+
+action_command	 $head_near	 params(share_ioblocp,	int	;
+					textw,		int	;
+					textp,		int)	;
+								;
+				scalars(new_process,	int	)
+
+	c	(online_xqt)	textw	textp
+
+	jza	action_skip
+	jna	action_skip
+	sa	new_process
+
+	sabr	32				. start with the new thread control block
+	la	*(32*/12++ABT+2-01000)		. progress to his vector list
 	sabr	32
-	la	*(32*/12++ABT+2-01000)
-	sabr	32					. base vector list
+	la	(3*/16)
+	lb	share_ioblocp			. hand over the shared file open state
+	ds	*(32*/12++handle(1)-02000)	. as his stdin
 
-	la	(3*/16)					. point stdin to copy-from location
-	lb	fspq
-	ds	*(32*/12++handle(1)-02000)		. in vectors
+	ii	KERNEL$B1_1
+	dl	startup_osocket_encoding	. hand over UDP broacast socket encoding
+	ds	*(32*/12++handle(2)-02000)	. as his stdout
+	ds	*(32*/12++handle(3)-02000)	. and his stderr
 
-.	la	FILESHARE_TABLE				. copied to all new processes
-.	sa	*(32*/12++FILESHARE_TABLE-02000)	. if it already exists
+	la	new_process
+action_running?
+	ii	YIELD$
+	ii	THREAD$STATE
+	j	action_concluded		
+	j	action_running?
 
-	j	attach_stdout
-
-direct_command
-	lc	start_command	script_line	command,,i
-	jna	actionx			. hit the end of nvram iframes
-	jza	actionx			. couldn't start process
-
-	sabr	32
-	la	*(32*/12++ABT+2-01000)
-	sabr	32
-	dsr	48					. stdin is the device null
-	ds	*(32*/12++handle(1)-02000)
-
-attach_stdout
-	ii	KERNEL$B1_1				. in case you are another application
-	dl	startup_osocket_encoding
-	ii	B1$					. switch back to caller B1
-
-	ds	*(32*/12++handle(2)-02000)		. handle 1 stdout
-	ds	*(32*/12++handle(3)-02000)		. handle 2 stderr
-
-actionx	$ret
-
-start_command
-	$head_near	 params(file_datap,	int	;
-				out_tokenp,	int	)
-
-	lb	file_datap
-	call	(rstream_starta)
-	la	24,,xi
-	lb	out_tokenp
-	call	(tokena)				. returns token length in words
-	c	(online_xqt)	a	out_tokenp
-
+action_concluded
+action_skip
 	$ret
+
+	$endif
 
 	$root
