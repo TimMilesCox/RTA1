@@ -21,23 +21,28 @@ scan_fi $tree
 	sx	specificationp
 
 read_format
-	lcal	scanover_cr_lf
+	lcal	advance
+	jza	read_format_end
 
-	la	LAST_BYTE_READ
-	jza	read_format_end		. stream end
+	lb	RDATA
+	dsr	$byte
+	la	RDATAC
+	aa	$byte,,xi
+	ds	RDATAC
+
 	lx	specificationp
 	lk	+(1*/$byte)-1,,xi
 
 	inc	argop
 	ly	argop
 	lr	limit
-	jyge	read_format_end
+	jyge	read_format_end_backstep
 
 read_format_byte
 	ly	column
 	inc	column
 	call	(read_octet_column)
-	jza	read_format_end		. format string end
+	jza	read_format_end_backstep . format string end
 
 	mta	('%')
 	j	read_format_byte	. stuff to consume nonspace goes near here
@@ -45,7 +50,7 @@ read_format_byte
 	ly	column
 	inc	column
 	call	(read_octet_column)
-	jza	read_format_end		. format string end
+	jza	read_format_end_backstep . format string end
 
 	z	delivery_words		. set default to type default
 	lcal	edit_fo:size?		. is there a size tag before the type tag?
@@ -55,16 +60,13 @@ read_format_byte
 	ly	column
 	inc	column
 	call	(read_octet_column)	. read again for the type tag
-	jza	read_format_end
+	jza	read_format_end_backstep
 
-target?
-.	inc	argop			. next input pointer
-.	ly	argop
-.	lr	limit			. stack walkback word = end of arguments	
-.	jyge	read_format_end		. if there aint none left ya can stop
-
-	mta	('f')			. float ?
+target?	mta	('f')			. float ?
 	j	symbol?
+
+	lcal	is_it_a_number?
+	j	read_format_end_backstep
 
 	la	delivery_words
 	jza	fp96
@@ -112,6 +114,9 @@ decimal?
 	mta	('d')
 	j	hex?
 
+        lcal    is_it_a_number?
+        j       read_format_end_backstep
+
 	la	delivery_words
 	jnza	decimal_48?
 
@@ -145,6 +150,9 @@ decimal_72?
 
 hex?	mta	('x')
 	j	integer?
+
+        lcal    is_it_hex?
+        j       read_format_end_backstep
 
 	la	delivery_words
 	jnza	hex_48?
@@ -201,6 +209,9 @@ integer?
 	mta	('i')
 	j	string?
 
+        lcal    is_it_a_number?
+        j       read_format_end_backstep
+
 	la	delivery_words
 	jnza	i48?
 
@@ -247,7 +258,7 @@ string_sentinel?
 	ly	column			. read delimiter
 	inc	column
 	call	(read_octet_column)
-	jza	read_format_end
+	jza	read_format_end_backstep
 	sa	SENTINEL		. set delimiter
 	ly	argop			. transfer string until delimiter
 	ly	0, y
@@ -255,7 +266,9 @@ string_sentinel?
 
 	j	read_format		. independent callers to istring
 					. cancel SENTINEL as required
-
+read_format_end_backstep
+	dec	argop			. a field has been counted
+					. but not delivered
 read_format_end
 	la	argop			. arguments used up to here
 	ana	caller_xyab+2		. starting from here
@@ -267,26 +280,49 @@ read_format_end
 	qpop	x			. reload 4 caller registers
 	fret	0			. including result = items read
 
-scanover_cr_lf
-scanover?
+
+.	is the sampled byte of sscanf input the start of a number?
+.	stop the scan if not
+
+.	data code is not known until assembly
+.	RTA1 coding standard
+
+.	but assume sets [ '0'..'9' ] [ 'a'..'f' ] [ 'A'..'F' ]
+.	are each individually serial and contiguous
+
+is_it_hex?				. call here here for %x %X
 	la	LAST_BYTE_READ
-	jza	scan_out
+	aa	-'a'-6,,xi
+	jc	it_is_not_lowercase_hex
+	aa	6,,xi
+	jc	it_is_a_number
 
-scanova	lr	BYTES
-	READ_BYTE
-
-	jza	scan_out
-	aa	-LF,,xi
-	jza	scanover?
-	aa	LF-CR,,xi
-	jza	scanover?
-
+it_is_not_lowercase_hex
 	la	LAST_BYTE_READ
-	call	(unget)
-	sr	BYTES
+	aa	-'A'-6,,xi
+	jc	it_is_not_uppercase_hex
+	aa	6,,xi
+	jc	it_is_a_number
 
-scan_out
+it_is_not_uppercase_hex			. fall thru from hex not [ a..f A..F ]
+is_it_a_number?				. call here for decimal and %i
+	la	LAST_BYTE_READ
+	aa	-'+',,xi
+	jza	it_is_a_number
+	aa	'+'-'-',,xi
+	jza	it_is_a_number
+	aa	'-'-'^',,xi
+	jza	it_is_a_number
+	aa	'^'-'0'-10,,xi
+	jc	it_is_not_a_number
+	aa	10,,xi
+	jc	it_is_a_number
+
+it_is_not_a_number
 	lret	0
+
+it_is_a_number
+	lret	1
 
 	$root
 

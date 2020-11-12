@@ -155,7 +155,11 @@ See also the licensing notice at the foot of this document
 <dl><a href="#scheduling">Appendix G: Scheduling</a>
 </dl>
 
-<dl><a href="#remote_files">Appendix H: Remote Files</a>
+<dl><a href="#file_system">Appendix H: File Systems and API</a>
+	<dd><a href="#file_system">Ha: Available File Systems<a></dd>
+	<dd><a href="#fs_device">Hb: Device Array [ 1, 3..63 ]</a></dd>
+	<dd><a href="#fs_xs">Hc: ROM /RAM File Systems in Executable Space</a></dd>
+	<dd><a href="#fs_nfs">Hd: Remote Files</a></dd>
 </dl>
 
 <dl><a href="#diagnostic">Appendix I: File and Socket Error Codes</a>
@@ -174,10 +178,13 @@ See also the licensing notice at the foot of this document
 RTA1 kernel has services with a POSIX-like API based on handles
 
 <p>
-The kernel is nevertheless ultra-thin layer with the objective of extreme efficiency, and contains nothing approaching the complexity of a Unix operating system 
+The kernel is not similar to Unix but an ultra-thin layer with very short instruction paths
 
 <p>
-Kernel services are also callable at a lower layer than handle-based POSIX functions. This shortens instruction paths and allows single threads to serve millions of users and network connections at once. This would not be possible within a handle-based API
+Kernel services are also callable at a lower layer than handle-based POSIX functions
+
+<p>
+This allows applications to serve millions of network users at once although it is not possible to have millions of handles
 
 
 <a      name="ii_call"/>
@@ -207,26 +214,45 @@ accumulator registers
         la      <i>argument</i>
         ii      <i>isr_vector</i>
 
-
 </pre>
 
 <p>
-An interrupt vector is a value with a 16-bit page pointer and a 6-bit offset<br>
-The sign extended immediate operand of ii instruction only has 10 page bits
+An interrupt vector is a value with a 16-bit page pointer and a 6-bit offset
+
+<p>
+The immediate operand of ii instruction has 10 page bits
+<pre	style="font-size:12pt">
+
+					
+	__________________________________
+	| ii instr | 10 page bits |offset| 
+	|____code__|______________|______|
+	 23	    15		 6	0
+
+</pre>
+The first four megawords of memory may therefore contain ISR entry points
+
+<p>
+Currently the 1st 8192 words of memory contain ISRs. System call ISRs are in the second of these two pages
 
 <pre	style="font-size:12pt">
 
-        [ii opcode] pp pppp pppp offset
+         [ii opcode] 00 0000 000p offset
+				|
+			   	|{0|1}
 
 </pre>
 
-The page number in the interrupt vector must be in ISR space below Application Threshold in Port I/O 72
+Application Threshold I/O Port 72 points to the first page of application space and the end of ISR space
+
+<p>
+Only ISR space may be the target of an ii instruction
 
 <p>
 Applications may not enter restart page 0 with ii instruction
 
 <p>
-The instruction code <a href="rta.html#ii">ii</a> is 750000 hex and the vector name THREAD$ is 000047 hex = Page Index 1 offset 7
+The instruction code <a href="rta.html#ii">ii</a> is 750000<sub>16</sub> and the vector name THREAD$ is 000047<sub>16</sub> = Page Index 1 offset 7
 
 <pre	style="font-size:12pt">
 
@@ -242,7 +268,7 @@ is a variable or a constant containing the vector value
 of the target routine, or an indirect pointer to a <a href="rta.html#gate">gate<a>
 
 <p>
-The instruction code <a href="rta.html#call">call</a> is FF0000 hex and the literal at 00:000e74 is vector name __socket at Page Index 2 offset 1
+The instruction code <a href="rta.html#call">call</a> is FF0000<sub>16</sub> and the literal at 00:000e74 is vector name __socket at Page Index 2 offset 1
 
 
 <pre	style="font-size:12pt">
@@ -274,7 +300,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 <pre	style="font-size:12pt">
 
 	<a	name="spawn_ii"/>
-	SPAWN$		66 (042)	= Page Index 1	offset 2
+	SPAWN$		66 (042<sub>16</sub>)	= Page Index 1	offset 2
 
 				process launch
 		                has 4 parameters in application registers a b mantissa2 mantissa3
@@ -299,7 +325,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="thread_ii"/>
-	THREAD$		71 (047)	= Page Index 1  offset 7
+	THREAD$		71 (047<sub>16</sub>)	= Page Index 1  offset 7
 
 		                start a new thread of the current process
 
@@ -322,7 +348,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="tag_ii"/>
-	TAG$		73 (049)	= Page Index 1  offset 9
+	TAG$		73 (049<sub>16</sub>)	= Page Index 1  offset 9
 
 				name a thread
 
@@ -336,7 +362,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="bank_ii"/>
-	BANK$		67 (043)	= Page Index 1  offset 3
+	BANK$		67 (043<sub>16</sub>)	= Page Index 1  offset 3
 
 
 				<a      style="color:#0000FF">
@@ -350,7 +376,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 		                descriptor is linked to thread memory estate
 
 	<a	name="array_ii"/>
-	ARRAY$		68 (044)	= Page Index 1  offset 4
+	ARRAY$		68 (044<sub>16</sub>)	= Page Index 1  offset 4
 
 				<a      style="color:#0000FF">
 				la	(<i>STORAGE_PAGES_REQUIRED</i>)
@@ -363,7 +389,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 		                descriptor is linked to thread memory estate
 
 	<a	name="bank_free_ii"/>
-	BANK$FREE	69 (045)	= Page Index 1  offset 5
+	BANK$FREE	69 (045<sub>16</sub>)	= Page Index 1  offset 5
 
 				<a      style="color:#0000FF">
 				la	<i>START_PAGE_INDEX</i>
@@ -375,7 +401,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 		                descriptor is unlinked from thread memory estate
 
 	<a	name="switch_fp_guard_ii"/>
-	FP_GUARD$	94 (05E)	= Page Index 1  offset 30
+	FP_GUARD$	94 (05E<sub>16</sub>)	= Page Index 1  offset 30
 
 				<a      style="color:#0000FF">
 				la	(<i>ROUNDING_PATTERN</i>)
@@ -387,7 +413,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				returns old value in application register a
 
 	<a	name="fp_xpo_flag_ii"/>
-	FP_XPO$FLAG	78 (04E)	= Page Index 1  offset 14
+	FP_XPO$FLAG	78 (04E<sub>16</sub>)	= Page Index 1  offset 14
 
 				<a	style="color:#0000FF">
 				ii	FP_XPO$FLAG
@@ -401,7 +427,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				return skips one instruction if the the sum is not set at interrupt start
 
 	<a	name="yield_ii"/>
-	YIELD$		65 (041)	= Page Index 1  offset 1
+	YIELD$		65 (041<sub>16</sub>)	= Page Index 1  offset 1
 
 				<a	style="color:#0000FF">
 				ii	YIELD$
@@ -412,7 +438,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
                                 		or voluntarily
 
 	<a	name="twait_ii"/>
-	TWAIT$		91 (05B)	= Page Index 1	offset 27
+	TWAIT$		91 (05B<sub>16</sub>)	= Page Index 1	offset 27
 
 
 				<a	style="color:#0000FF">
@@ -425,7 +451,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
                 		application registers a:b
 
 	<a	name="exit_ii"/>
-	EXIT$		70 (046)	= Page Index 1	offset 6
+	EXIT$		70 (046<sub>16</sub>)	= Page Index 1	offset 6
 
 				<a	style="color:#0000FF">
 				ii	EXIT$
@@ -437,7 +463,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				instructions fret and lret also raise interrupt EXIT$ if internal stack pointer sp = 128
 
         <a      name="event_wait_ii"/>
-        EVENT_WAIT$     92 (05C)        = Page Index 1  offset 28
+        EVENT_WAIT$     92 (05C<sub>16</sub>)        = Page Index 1  offset 28
                                 <a      style="color:#0000FF">
                                 la      (<i>EVENT_SELECTORS</i>)
                                 ii      EVENT_WAIT$
@@ -451,7 +477,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
                                         200000 (thread ended) cannot be flagged for wait
 
         <a      name="event_free_ii"/>
-        EVENT_FREE$     93 (05D)        = Page Index 1  offset 29
+        EVENT_FREE$     93 (05D<sub>16</sub>)        = Page Index 1  offset 29
                                 <a      style="color:#0000FF">
 				la	<i>thread_id</i>
                                 lb      (<i>EVENT_SELECTORS</i>)
@@ -464,7 +490,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="itable_ii"/>
-	I$TABLE		75 (04B)	= initialise thread interrupts table
+	I$TABLE		75 (04B<sub>16</sub>)	= initialise thread interrupts table
 				<a      style="color:#0000FF">
 				ii	I$TABLE
 				</a>
@@ -490,7 +516,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="xint_bind_ii"/>
-	XINT$BIND	79 (04F)	= thread bind interrupt source
+	XINT$BIND	79 (04F<sub>16</sub>)	= thread bind interrupt source
 				<a      style="color:#0000FF">
 				la	<i>interrupt_source</i>
 				ii	XINT$BIND
@@ -507,7 +533,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 				see <a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
 
 	<a	name="affinity_ii"/>
-	AFFINITY$	76 (04C)	= thread attach to specific core[s]
+	AFFINITY$	76 (04C<sub>16</sub>)	= thread attach to specific core[s]
 				<a      style="color:#0000FF">
 				la	<i>cores_mask</i>
 				ii	AFFINITY$
@@ -530,7 +556,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="send_alert_ii"/>
-	ALERT$		125 (07D)	= request core to core[s] multicast transmission
+	ALERT$		125 (07D<sub>16</sub>)	= request core to core[s] multicast transmission
 				<a      style="color:#0000FF">
 				la	<i>message</i>
 				lb	<i>cores_mask</i>
@@ -563,7 +589,7 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
 
 	<a	name="zeta_ii"/>
-	$ZETA		124 (07C)	= terminate named process or thread
+	$ZETA		124 (07C<sub>16</sub>)	= terminate named process or thread
 				<a      style="color:#0000FF">
 				la	<i>thread_id</i>
 				ii	$ZETA
@@ -1475,7 +1501,7 @@ This technique will be rolled out anew for large applications when private buffe
 <pre	style="font-size:12pt">
 
 	<a	name="total_free_ii"/>
-	TOTAL$FREE	88 (058)	= Page Index 1	offset	8
+	TOTAL$FREE	88 (058<sub>16</sub>)	= Page Index 1	offset	8
 				<a	style="color:#0000FF">
 				ii	TOTAL$FREE
 				</a>
@@ -1484,7 +1510,7 @@ This technique will be rolled out anew for large applications when private buffe
 
 
         <a      name="thread_state_ii"/>
-        THREAD$STATE    114 (072)       = Page Index 1  offset 50
+        THREAD$STATE    114 (072<sub>16</sub>)       = Page Index 1  offset 50
                                 <a      style="color:#0000FF">
                                 la      <i>THREAD_CONTROL_BLOCK_INDEX</i>
                                 ii      THREAD$STATE
@@ -1497,7 +1523,7 @@ This technique will be rolled out anew for large applications when private buffe
 
 
         <a      name="storage_block_idxa_ii"/>
-        A$IDX           115 (073)       = Page Index 1  offset 51
+        A$IDX           115 (073<sub>16</sub>)       = Page Index 1  offset 51
                                 <a      style="color:#0000FF">
                                 la      [2..63],,xi
                                 ii      A$IDX
@@ -1507,7 +1533,7 @@ This technique will be rolled out anew for large applications when private buffe
                                 into register a
 
         <a      name="storage_block_idxb_ii"/>
-        B$IDX           116 (074)       = Page Index 1  offset 52
+        B$IDX           116 (074<sub>16</sub>)       = Page Index 1  offset 52
                                 <a      style="color:#0000FF">
                                 lb      [2..63],,xi
                                 ii      B$IDX
@@ -1522,7 +1548,7 @@ This technique will be rolled out anew for large applications when private buffe
 <pre	style="font-size:12pt">
 
 	<a	name="dayclock_w_ii"/>
-	DAYCLOCK$W	90 (05A)	= Page Index 1  offset 26
+	DAYCLOCK$W	90 (05A<sub>16</sub>)	= Page Index 1  offset 26
 				<a	style="color:#0000FF">
 				dl	<i>MILLISECOND</i>
 				ii	DAYCLOCK$W
@@ -1532,10 +1558,10 @@ This technique will be rolled out anew for large applications when private buffe
 				interrupt registers DAYCLOCK$U DAYCLOCK$
 
 	<a	name="xbase_ii"/>
-	XBASE$32	96 (060)	= Page Index 1	offset 32
+	XBASE$32	96 (060<sub>16</sub>)	= Page Index 1	offset 32
 	...XBASE$33 XBASE$34 XBASE$35 XBASE$36 XBASE$37
 	   XBASE$38 XBASE$39 XBASE$40 XBASE$41 XBASE$42...
-	XBASE$43	107 (06B)	= Page Index 1	offset 43
+	XBASE$43	107 (06B<sub>16</sub>)	= Page Index 1	offset 43
 				<a	style="color:#0000FF">
 				la	(<i>DEVICE_BLOCK_BASE_REQUEST</i>)
 				ii	XBASE${ 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 }
@@ -1545,7 +1571,7 @@ This technique will be rolled out anew for large applications when private buffe
 
 
 	<a	name="net2sym_ii"/>
-	NET2SYM$	113 (071)	= Page Index 1  offset 49
+	NET2SYM$	113 (071<sub>16</sub>)	= Page Index 1  offset 49
 				<a	style="color:#0000FF">
 				lx	<i>TRANSMISSION_CONTROL_BLOCK</i>
 				la	<i>THREAD_CONTROL_BLOCK_INDEX</i>
@@ -1724,7 +1750,7 @@ RTA1 emulated machine does not receive external interrupts but the intended migr
 Currently network traffic is connected with Berkeley Packet Filter passing frames on a shared memory trunk
 
 <p>
-File systems are RAM under power backed up over NFS / UDP / TCP  on other platforms and high-capacity filestore boxes
+<a href="#file_system">File systems</a> are RAM under power backed up over NFS / UDP / TCP  on other platforms and high-capacity filestore boxes
 
 <p>
 There exists no intention of changing filesystems to flash. RAM has highest performance and is without maintenance problems, and other firms and projects have best experience and knowledge at creating offline and PC filestore
@@ -1862,22 +1888,183 @@ Interrrupt mask is part of the thread state, so a thread that maintains one mask
 </pre>
 
 
-<a	name="remote_files"/>
-<h3>Appendix H: NFSv3 Remote Files</h3>
+<a      name="file_system"/>
+<h3>Appendix H: File Systems and API</h3>
 
+<h3>Ha:	Avalable File Systems</h3>
+
+File systems are
+
+<ul	type="none">
+
+	<li><a href="fs_device">Device Arrays [ 1, 3..63] </a></li>
+	<li><a href="fs_xs">RAM / ROM core file Systems in executable space</a></li>
+	<l1><a href="fs_nfs">remote files</a>
+	
+</ul>
+
+<a	name="fs_device"/>
+<h3>Hb: Device Array [ 1, 3..63 ]</h3>
+
+64 device arrays are memories up to 16 Gigawords in size where
+<ul	type="none">
+	<li>device array zero is executable space</li>
+	<li>device array 1 is a <a href="#fsda">file system</a></li>
+	<li>device array 2 is a network frames trunk</li>
+	<li>device arrays 3..63 are additional memory arrays or network trunks or <a href="#fsda">file systems</li>
+</ul>
+
+<a	name="fsda"/>
+<h3>Hb1: Device Array Filestore Medium</h3>
+Device array file systems are RAM arrays under power up to 17,179,869,184 words (51,539,607,552 octets) in size
+
+<p>
+Device array file systems may be <a href="masmx7r3.html#fsformat">constructed offline</a> and their online image is backed via network to external platforms and third-party devices
+
+<p>
+Filestore Device Array 1 is always present and treated as read-only. It contains webhost pages and loadable instruction code, which are not allowed to be read from any other device
+
+<a	"fsda_access"/>
+<h3>Hb2: Device Array Filestore Access</h3>
+<p>
+Filestores are accessed with a POSIX handle-based API or with a filestream API
+
+<p>
+Files are opened as either an array of words or an array of octets. File position and read / write counts are therefore quanta either of 24-bit words or of octets depending open flag O_8
+
+<p>
+Currently octet-oriented file access is restricted to filestream processing and is planned later for handle-based I / O
+
+
+<a	name="fsda_org"/>
+<h3>Hb3: Device Array Filestore Organisation</h3>
+<p>
+RTA1 onboard filestores are organised in granules of 64 words (192 octets). Minimum extent size is 64 words and maximum 262144 words
+
+<p>
+File system image contains directories and files. Root directory is at the start of the filestore and contains its own descriptor. The descriptors of other directories are in their containing directory
+
+<p>
+Here filestore image <a style="color:#FF0000">remington</a> has descriptors in root of directories including for example <a style="color:#FF0000">web</a>
+
+<p>
+<a style="color:#0000FF">Directory page control</a> gives next writeable word of directory block at 000067 and 000398 words writable, forward granule pointer 000000 000000 = no extension page. Writeable word at 000067 is bypass record header <a style="color:#0000FF">800398</a> pointing to end of directory block
+
+<pre	style="font-size:12"> 
+
+$ fds24 fsimages/rand7 
+000000000000: <a style="color:#0000FF">500004 000067 000398 000000</a>  "P    g      "
+000000000004: <a style="color:#0000FF">000000</a> 4c0004 00000f 000000  "   L        "
+000000000008: 000000 2e0000 4c0004 000000  "   .  L     "
+00000000000c: ffffff ffffff 2e2e00 <a style="color:#FF0000">560006</a>  "      .. V  "
+000000000010: <a style="color:#FF0000">000002 000000 001c4b 72656d</a>  "        K<a style="color:#FF0000">rem"</a>
+000000000014: <a style="color:#FF0000">696e67 746f6e</a> 440005 000010  "<a style="color:#FF0000">ington</a>D     "
+000000000018: 000000 000010 626f6f 742400  "      boot$ "
+00000000001c: 440007 000010 000000 000040  "D          @"
+000000000020: 667265 652474 726565 240000  "free$tree$  "
+000000000024: 440005 000010 000000 000050  "D          P"
+000000000028: 646d73 610000 440006 000010  "dmsa  D     "
+00000000002c: 000000 000060 736368 656d61  "     `schema"
+000000000030: 310000 440006 000010 000000  "1  D        "
+000000000034: 000070 736368 656d61 320000  "  pschema2  "
+000000000038: 440005 000010 000000 000080  "D           "
+00000000003c: 757469 6c0000 440005 000010  "util  D     "
+000000000040: 000000 0000ed 746573 740000  "      test  "
+000000000044: 440006 000010 000000 00014b  "D          K"
+000000000048: 696e69 746961 6c0000 44000a  "initial  D  "
+00000000004c: 000010 000000 00015c 617070  "        \app"
+000000000050: 6c6963 617469 6f6e5f 696672  "lication_ifr"
+000000000054: 616d65 730000 440005 000010  "ames  D     "
+000000000058: 000000 00016d 646f77 6e0000  "     mdown  "
+00000000005c: <a style="color:#FF0000">440004 000010 000000 000209</a>  "D           "
+000000000060: <a style="color:#FF0000">776562</a> 440005 000010 000000  "<a style="color:#FF0000">web</a>D        "
+000000000064: 001c3a 776562 320000 <a style="color:#0000FF">800398</a>  "  :web2     "
+000000000068: 000000 000000 000000 000000  "            "
+
+</pre>
+
+Directory <a style="color:#FF0000">web</a> is <a style="color:#FF0000">10<sub>16</sub></a> granules at granule <a style="color:#FF0000">000000 000209<sub>16</sub></a> (word address 000000 008240<sub>16</sub>) of the file system image
+<pre	style="font-size:12">
+
+000000008240: 500004 00013a 0002c5 000000  "P    :      "
+000000008244: 000000 4c0004 00005c 000000  "   L    \   "
+000000008248: 000000 2e0000 4c0004 00000f  "   .  L     "
+00000000824c: 000000 000000 2e2e00 46000c  "      .. F  "
+000000008250: 0000a7 000000 000219 000000  "            "
+000000008254: 000000 000000 000000 007d26  "          }&"
+000000008258: 666176 69636f 6e2e69 636f00  "favicon.ico "
+00000000825c: 46000c 000029 000000 0002c0  "F    )      "
+000000008260: 000000 000000 000000 000000  "            "
+000000008264: 001e0c 696e64 65782e 68746d  "   index.htm"
+000000008268: 6c0000 <a style="color:#0000FF">46000b</a> <a style="color:#FF0000">00000e 000000</a>  "l  F        "
+00000000826c: <a style="color:#FF0000">0002e9 000000 000000 000000</a>  "            "
+000000008270: <a style="color:#FF0000">000000 0009fa 72696e 672e68</a>  "      <a style="color:#FF0000">ring.h</a>"
+000000008274: <a style="color:#FF0000">746d6c</a> 46000c 000033 000000  "<a style="color:#FF0000">tml</a>F    3   "
+000000008278: 0002f7 000000 000000 000000  "            "
+00000000827c: 000000 002608 6c6f5f 636f73  "    & lo_cos"
+000000008280: 742e68 746d6c 46000b 000509  "t.htmlF     " 
+
+
+</pre>
+
+Each file entry
+<pre	style="font-size:14">
+
+	<a style="color:#0000FF">{ 'F'::words_follow }</a>
+
+</pre>
+contains
+<pre	style="font-size:14">
+
+	<a style="color:#FF0000">{ { 1st_extent_granules[24]:start_granule[48] }
+	  { next_extent_descriptor_granule[48]:word_offset[24] }
+	  octets_recorded[48]:filename[*24] }</a>
+
+</pre>
+
+
+<a	name="fs_xs"/>
+<h3>Hc: RAM / ROM core file Systems in executable space</h3>
+
+Core file systems are organised as device array file systems but with maximum extext size 4096 words
+
+<p>
+Core file systems may be inside software where they are used to identify applications and load application data sections. In this case they are a contiguous range of 64-word granules
+
+<p>
+They may instead be independent contiguous ranges of 4096-word pages of executable space
+
+<p>
+They have 24-bit word oriented access only and no octect-oriented access. They are not currently within the scheme of handle-based access but are accessed instead with file open state descriptors which also support all handle-based file access
+
+<p>
+Core file systems frequently are or contain application build-linked objects which are automatically open without search. This is the case for all application data sections which are loaded at the start of  each process instance of an application
+
+<p>
+Core file systems embedded in an application iframe export additionally a directory application_templates which links application lookup names to the execution profiles of all the applications in the iframe. application_templates is pointed by a mount descriptor at location 48<sub>16</sub> of the iframe. The file system counts the entire iframe as its space although its root directory is far inside the iframe. The root directory is not currently referenced by anything. The filestore exports directory application_templates and the initial data of each application in the iframe
+
+
+<a	name="fs_nfs"/>
+<h3>Hd: NFSv3 Remote Files</h3>
+
+RTA1 is an NFSv3 client of NFS servers
+
+<p>
 Remote files are accessed with NFS version 3 over TCP
+
+<p>
+The handle-based client API presents remote files to RTA1 applications either as octet arrays or as 24-bit word arrays according to application requirement
 
 <p>
 Server nfsd is TCP port 2049 and server mountd is required to be TCP port 1023
 
 <p>
-Paths to remote files contain encoded information used in open() function to detect NFS and connect to the server
+Remote file open path strings contain encoded information used to detect NFS and connect to the server
+
+<p>The remote mount object is in all cases the entire directory part of the path
 
 <p>
-open() consists largely in mounting the remote directory and obtaining an NFS handle to the file
-
-<p>
-the path handed to open is the path of the file. It links to the mount path which is the path of the directory
+The containing directory handle is obtained in one server interaction and the NFS file handle in a second interaction
 
 <pre    style="font-size:12pt">
 
@@ -1906,6 +2093,7 @@ Negative return codes include
 <pre>
 
 DISALLOWED      $equ    1	. therefore the RTA1 error return is 	-1
+NOT_THERE	$equ	2	.					-2
 INT_SYSCALL     $equ    4	.					-4
 NO_FILE_TYPE    $equ    9	.					-9
 NO_STORAGE      $equ    12	.					-12
@@ -1929,4 +2117,6 @@ NO_DATA         $equ    96	.					-96
 
 
 </pre>
+
+
 </div>
