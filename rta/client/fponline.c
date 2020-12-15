@@ -839,6 +839,7 @@ int main(int argc, char *argv[])
          if (flag['z'-'a']) continue;
 
          maxtry = MAXTRY;
+
          while (maxtry--)
          {
             /*************************************************

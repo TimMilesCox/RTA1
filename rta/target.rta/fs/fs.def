@@ -52,8 +52,6 @@
 
 FS$NONE		$equ	0	. never opened
 
-.		< zero = one of the following inverted on close
-
 FS$NFS		$equ	2	. remote file system via NFS client
 FS$CORE		$equ	1	. ROM / RAM executable space FS
 FS$DEVICE$ARRAY	$equ	3	. FS in device array
@@ -72,8 +70,9 @@ absolute_pointer +	p(3, 1)d	. word offset in the total file system
 		$root
 		$end
 
-FS$CORE_WORDS	$equ	FS$FILE_WORDS+6	. 12 words not including initial format word
-FS$STREAM_WORDS	$equ	FS$FILE_WORDS+2	.  8 words not including initial format word
+FS$DEVICE_WORDS	$equ	FS$FILE_WORDS+6	. 11 words not including initial format word
+FS$CORE_WORDS	$equ	FS$FILE_WORDS+6	. 11 words not including initial format word
+FS$STREAM_WORDS	$equ	FS$FILE_WORDS+2	.  7 words not including initial format word
 
 p		$proc			. serial read par with extension for seek
 fileq*		$name
@@ -88,18 +87,28 @@ quantum_pointer	$res	2
 		$root
 		$end
 
-FS$NFS3RESULT_WORDS $equ 2+5*2+8*4
-FS$NFS_WORDS	$equ	63+FS$NFS3RESULT_WORDS
+FS$NFS3ATTRIBUTE_WORDS	$equ	21*2
+FS$NFS3RESULT_WORDS	$equ	FS$NFS3ATTRIBUTE_WORDS+2
+FS$NFS_WORDS	$equ	65+FS$NFS3RESULT_WORDS
 
 p		$proc
 filenfs*	$name			. 39 words, header word not self-inclusive
 *		$tree
 fs_type		+	p(4, 1),,0
-socket		+	0:d
 quantum_pointer	+	p(3, 1)t
-dimensions	nfs3_result_attr	
+socket		+	0:d		. that makes 6 words
+o		$tree
+column		$res	1
+flags		$res	1		. that is word 7 for data files with handle
+		$root			. (but not serial-only files / net sockets)
+dimensions	post_op_attr	
 nfs_handle	$res	34
-auth		$res	24		. allow 48 characters of auth
+auth_blank	$branch
+		$res	24		. allow 48 characters of auth
+		$root
+auth_unix	$branch
+auth		authunix
+		$root
 		$root
 		$end
 

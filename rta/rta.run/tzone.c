@@ -13,7 +13,8 @@ extern struct timeval	 xronos;
 
 void tzone()
 {
-   struct tm	*timep;
+   struct tm		*timep;
+   struct timeval	 xronos;
 
    timep = localtime(&xronos.tv_sec);
 

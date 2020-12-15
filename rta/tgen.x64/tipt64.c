@@ -48,10 +48,6 @@ int			 indication;
 static struct pollfd	 attention = { 0, POLLIN } ;
 #endif
 
-#ifndef	X86_MSW
-struct timeval		 xronos;
-#endif
-
 #ifdef	GCC
 
 extern int		 iselect;
@@ -137,19 +133,18 @@ unsigned long long	 delta_base,
 static void		 accumulate_metric();
 #endif
 
-#ifdef	__X64
-static unsigned long	 dayclock_update;
-static long		 clockwise;
-#else
-static unsigned long long dayclock_update;
+#ifndef __X64
 static step_second32	 step_second;
-static unsigned 	 clockr[2];
 #endif
+
+static unsigned 	 clockr[2];
 
 static int		 interval_seconds_mask;
 int			 platform_interval = PLATFORM_INTERVAL;
 int			 dayclock_revision = DAYCLOCK_REVISION;
 int			 dayclock_increment = DAYCLOCK_REVISION;
+
+#include "../tgen.x64/dayclock.c"
 
 int main(int argc, char *argv[])
 {
@@ -347,24 +342,27 @@ int main(int argc, char *argv[])
                                               "key s for single step:");
 
             fflush(stdout);
-
-            continue;
          }
 
          action(_p);
-
-         #if 0
-         continue;
-         #endif
       }
+
+      #ifdef RATIO
+
+      /****************************************************
+	dayclock generated synchronously
+	in the instruction threead
+      ****************************************************/
+
+      #else
 
       #ifdef X86_MSW
       Sleep(1000);
-      u = GetTickCount64();
       #else
 
       usleep(dayclock_revision);
       dayclock_revision = dayclock_increment;
+      #endif
 
       /*****************************************************
 	instruction emulator may have lengthened last usleep
@@ -374,96 +372,9 @@ int main(int argc, char *argv[])
 
       if (psr & 0x00800000) continue;
 
-      gettimeofday(&xronos, NULL);
-
-      #ifdef __X64
-
-      clockwise = (xronos.tv_sec  * 1000)
-                + (xronos.tv_usec / 1000);
-
-      
-      dayclock_update = ((clockwise >> 24) & 0x00FFFFFF)
-                      | ((clockwise & 0x00FFFFFF) << 32);
-
-      /******************************************************
-        the integer modelling dayclock left DAYCLOCK$U
-	is physically on the left, DAYCLOCK$ is after hee.
-        RTA1 target registers are modelled platform endian.
-        64-bit write of 00ABCDEF must store CBA0.FED0
-        target "registers" are storage locations until bus read
-      ******************************************************/
-
-      #else
-
-
-      /*****************************************************
-	for 32-bit execution with unchanged library
-	on platforms the same age as this emulator or newer
-
-	it's not known if tv_sec will really wrap for ever
-	because systems may be set to do diagnostics instead
-
-	but if tv_sec does keep wrapping:
-	
-	this tweak casts tv_sec to unsigned and prepends
-	32 more bits which are all zeros until year 2110 approx.
-
-	the 64-bit seconds-from-1970 count is store on file
-	every 70 years when tv_sec high-order bit flips. 
-
-	On unsigned overflow every 140 years
-	the 32-bit prepend is incremented
-
-	The 2 words on file are read every emulator startup
-	and written once per 70 years
-      *****************************************************/
-
-      if (uflag['Y'-'A'] == 0)
-      {
-         if ((xronos.tv_sec & 0x80000000) ^ (step_second.low & 0x80000000))
-         {
-            /**************************************************
-               ms bit of tv_sec has changed
-               change is 1 to 0 approximately every 140 years
-               and must carry into the high number half
-            ***************************************************/
-
-            if (step_second.low & 0x80000000) step_second.high++;
-            step_second.low = (unsigned) xronos.tv_sec;
-            store_second(&step_second);
-         }
-      }
-
-      clockr[1] = (unsigned) xronos.tv_usec / 1000
-                + (xronos.tv_sec & 0xFFFF)  * 1000;
-
-      clockr[0] = ((unsigned) xronos.tv_sec >> 16) * 1000
-                + ((step_second.high * 1000) << 16)
-                + (clockr[1] >> 16);
-
-      clockr[1] = (clockr[1] & 0xFFFF)
-                | ((clockr[0] & 255) << 16);
-
-      clockr[0] = (clockr[0] >>= 8) & 0x00FFFFFF;
-
-      /*	store in emulated register stack
-		in 1 or 2 instructions in emulate() thread	*/
-
-      dayclock_update = (* (unsigned long long *) clockr);
-
-      #endif	/*	__X64	*/
-
-      /****************************************************************
-	 no need for time zone update more often than 2 second interval
-         it might do some GPS I/O 
-      *****************************************************************/
-
-      if ((xronos.tv_sec ^ interval_seconds_mask) & 0xFFFFFFFE) tzone();
-      interval_seconds_mask = xronos.tv_sec;
-
-      #endif	/*	POSIX or WINDOWS	*/
-
+      dayclock();
       indication |= TIME_UPDATE;
+      #endif
 
       /****************************************************************
          let instructions emulation thread copy the dayclock update
@@ -479,17 +390,11 @@ void *emulate()	/* thread start */
    struct timeval	 time2;
    #endif
 
-   #ifdef LP_TSLICE_HERE
-   /* It's not. It's in engine.rta/rta.c:execute() */
-   int			 icount;
+   #ifdef RATIO
+   int			 ratio;
    #endif
 
    printf("emulation start\n");
-
-   #ifdef METRIC
-   gettimeofday(&time2, NULL);
-   delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
-   #endif
 
    for (;;)
    {
@@ -504,7 +409,16 @@ void *emulate()	/* thread start */
                                 indication, register_set, psr, apc,
                                 apc - memory.p4k[0].w);
 
+      #ifdef METRIC
+      gettimeofday(&time2, NULL);
+      delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+      #endif
+
       #ifdef GCC
+      #ifdef RATIO
+      ratio = RATIO;
+      #endif
+
       for (;;)
       {
          if (indication & (EXTERNAL_INDICATIONS)) xi();
@@ -518,66 +432,79 @@ void *emulate()	/* thread start */
 
          execute(*apc++);
 
+         #ifdef RATIO
+         ratio--;
+         if (ratio < 0) indication |= TIME_UPDATE;
+         #else
          #ifdef METRIC
          metric++;
          #endif
-
-         #ifdef LP_TSLICE_HERE
-         /* It's not. It's in engine.rta/rta.c:execute() */
-
-         if (psr & 0x00870000)
-         {
-            /***************************************************
-                not during interrupt
-                or with interrupt lock
-            ***************************************************/
-         }
-         else
-         {
-            if (icount = _register[REALTIME_CLOCK] & 0x00FFFFFF)
-            {
-               icount--;
-               _register[REALTIME_CLOCK] = icount;
-               if (icount == 0) ii(YIELD,LP_TSLICE);
-            }
-         }
          #endif
+         
 
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
       #else
-      #if 1
-      leloup();
-      #else
-      __asm__
-      {
-		call	leloup 
-      }
-      #endif
+
+      #ifdef RATIO
+      _register[284] = RATIO;
       #endif
 
+      leloup();
+
+      #ifdef RATIO
+      ratio = _register[284];
+      #endif
+
+      #endif
+
+      #ifdef METRIC
+      #ifdef RATIO
+      metric = RATIO - ratio;
+      #endif
+      accumulate_metric();
+      #endif
+         
       if (indication & CHILLDOWN)
       {
-         #ifdef METRIC
-         accumulate_metric();
-         #endif
-
          indication &= -1 ^ CHILLDOWN;
          dayclock_revision = base[103] * 7 / 8;
          usleep(base[103]);
 
-         #ifdef METRIC
-         gettimeofday(&time2, NULL);
-         delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
+         #ifdef RATIO
+         indication |= TIME_UPDATE;
+         #else
+
+         /***************************************************
+		dayclock must be realigned after chilling
+		even if it's incremented asynchronously
+         ***************************************************/
+
+         dayclock();
+         indication |= TIME_UPDATE;
          #endif
       }
 
       if (indication & TIME_UPDATE)
       {
-         #ifdef __X64
-         *((unsigned long *) (_register + DAYCLOCK_U)) = dayclock_update;
+         indication &= -1 ^ TIME_UPDATE;
+
+         #ifdef RATIO
+         /*************************************************************
+		here synchronously
+         *************************************************************/
+
+         dayclock();
+
          #else
-         *((unsigned long long *) (_register + DAYCLOCK_U)) = dayclock_update;
+         /*************************************************************
+		new dayclock value generated asynchronously
+		but must be copied to RTA1 registers here synchronously
+         *************************************************************/
+
+         _register[DAYCLOCK]   = clockr[1];
+         _register[DAYCLOCK_U] = clockr[0];
+
          #endif
       }
 
@@ -594,10 +521,6 @@ void *emulate()	/* thread start */
 
       if ((indication & LOCKSTEP) == 0) continue;
 
-      #ifdef METRIC
-      accumulate_metric();
-      #endif
-
       statement();
 
       #if 1
@@ -606,11 +529,6 @@ void *emulate()	/* thread start */
       #endif
 
       while (indication & LOCKSTEP) usleep(platform_interval);
-
-      #ifdef METRIC
-      gettimeofday(&time2, NULL);
-      delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
-      #endif
    } 
 }
 

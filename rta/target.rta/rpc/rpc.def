@@ -452,7 +452,7 @@ auth
 					. declarations follow as if fhandle3 were 4 + 0 octets
 					. although they are never 4 + 0 and mostly 4 + 24
 					. the 4 contains of course the handle opaque size  in octets
-
+		$if	0
 p		$proc
 nfs3_result_attr* $name
 *		$tree
@@ -460,6 +460,7 @@ result		$res	2		.
 attributes	xdr_fattr3
 		$root
 		$end
+		$endif
 
 p		$proc
 xdr_fattr3*	$name
@@ -492,7 +493,7 @@ count		$res	2		. but transfer size up to 4G
 p		$proc
 xdr_read3res*	$name
 *		$tree
-file_attributes	nfs3_result_attr	. if it went wrong you get that much
+file_attributes	post_op_attr		. if it went wrong you get that much
 count		$res	2		. and if it went right you get these as well
 eof		$res	2
 data
@@ -500,11 +501,106 @@ data
 		$end
 
 p		$proc
+xdr_write3args*	$name
+*		$tree
+fhandle		xdr_fhandle3
+offset		$res	4
+count		$res	2
+write_stabilty	$res	2
+data
+		$root
+		$end
+
+p		$proc
+pre_op_attr*	$name
+*		$tree
+yes		$branch
+yes		$res	2
+size		$res	4
+mtime		$res	4
+ctime		$res	4
+		$root
+no		$branch
+no		$res	2
+		$root
+		$root
+		$end
+
+p		$proc
+xdr_write3res*	$name
+*		$tree
+before		pre_op_attr
+after		post_op_attr
+count		$res	2
+write_stability	$res	2
+verf		$res	4
+		$root
+		$end
+
+p		$proc
 nfs3_lookup3res* $name
 *		$tree
 fhandle		xdr_fhandle3
-contained	nfs3_result_attr	. = result bool32 1 = yes + fattr3
-container	nfs3_result_attr	. ditto
+contained	post_op_attr		. = result bool32 1 = yes + fattr3
+container	post_op_attr		. ditto
+		$root
+		$end
+
+p		$proc
+sattr3*		$name
+*		$tree
+mode		$res	2		. if this is on mode3 information follows
+uid		$res	2		.		uid3 follows if yes
+gid		$res	2		.		gid3 follows if yes
+size		$res	2		.		size3 follows if yes
+atime		$res	2		.		xdr_timeval follows if yes
+mtime		$res	2		.		"
+		$root
+		$end
+
+p		$proc
+createhow3*	$name
+*		$tree
+createmode3	$res	2		. 0 UNCHECKED 1 GUARDED, supply sattr3 [ 2 EXCLUSIVE createverf3 ]
+guarded		$branch
+obj_attributes	satt3
+		$root
+exclusive	$branch
+verf		$res	4
+		$root 
+		$root
+		$end
+
+.	request arguments are { directory name how }
+
+p		$proc
+post_op_fh3*	$name
+*		$tree
+status		$res	2
+fhandle		xdr_fhandle3	. if status came up shining
+		$root
+		$end
+
+p		$proc
+post_op_attr*	$name
+*		$tree
+status		$res	2
+attr		xdr_fattr3
+		$root
+		$end
+
+p		$proc
+create3res*	$name
+*		$tree
+status		$res	2
+ok		$branch
+obj		post_op_fh3
+attributes	post_op_attr
+dir_wcc		post_op_attr
+		$root
+fail		$branch
+dir_wcc		post_op_attr
+		$root
 		$root
 		$end
 
@@ -521,6 +617,20 @@ gid1		0L
 verf		0q
 		$end
 
-
+p		$proc	*
+authunix*	$name
+*		$tree
+family		1L
+octets		+	2*(solong-stamp)L
+stamp		0L
+name		0L
+uid		+	p(1, 1)L
+gid		+	p(1, 2)L
+gids		+	p(1, 3:)L
+?		$do	p(1, 3:),gidi(p(1, 3:?))	+	p(1, 3:?)
+solong
+verf		0q
+		$root
+		$end
 
 RPC_UDP	$equ	0

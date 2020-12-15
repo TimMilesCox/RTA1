@@ -602,10 +602,11 @@ spawn_ii
 
 	on		see$2	. read the kernel vector bank
 	dl		rx_buffers
-	lr		FILESHARE_TABLE
+	dpush		NFS_MOUNTS
 	off		see$2
+	pop		NFS_MOUNTS
+	pop		FILESHARE_TABLE
 	ds		rx_buffers
-	sr		FILESHARE_TABLE
 
 	pop		a_x	. retrieve the caller's B2
 
@@ -639,6 +640,7 @@ start	la		APPLICATION_L,,xi
 
 	on		see$2
 	ql		(0q)
+	ds		NFS_MOUNTS	. + FILESHARE_TABLE
 	lr		256/4-1,,xi
 	ly		usockb(1),,xi
 
@@ -761,9 +763,18 @@ read_handle_ii
 file_handle_ii
 	lcal		check_handle
 	jna		usocket_nane
+
 	lk		(255*/16s)
-	mta		(AF_INET*/16s)	. more file types go here
-	j		usocket_nane
+	mtane		(AF_INET*/16s)	. more file types go here
+	j		fhandle_add_pointer
+	mtane		(FS$DEVICE$ARRAY*/16)
+	j		fhandle_add_pointer
+
+	la		-NO_FILE_TYPE,,xi
+	sa		a		. tell caller what happened
+	ir		0
+
+fhandle_add_pointer
 	lb		x		. application x -> file open descriptor
 	sb		1, x
 	ir		0
@@ -792,14 +803,23 @@ usocket_ii
 	lk		-1,,xi		. handle must be a socket type
 	mtane		(IPPROTO_UDP*/16s)
 	j		usocket
-	mta		(IPPROTO_TCP*/16s)
-	j		usocket_nane
+	mtane		(IPPROTO_TCP*/16s)
+	j		usocket
+
+usocket_no_protocol
+	la		-NO_PROTOCOL,,xi
+	sa		a
+	ir		0
 
 usocket	or		b_x
 	on		see$1		. look in the thread control block
 	lb		ABT+BSOCKET	. the connections block must be based there
 	ds		0, x
+	ir		0
+
 usocket_nane
+	la		-NO_HANDLE,,xi
+	sa		a
 	ir		0
 
 read_socket_ii

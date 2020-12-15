@@ -72,7 +72,9 @@ int main(int argc, char *argv[])
 {
    word			 data = { 0, { 0, 0, 0}  } ;
 
-   int			 words,
+   unsigned int		 words,
+                         low_address = 0,
+                         high_address = 1024,
                          rom_words = 1024;
 
    int			 x, y;
@@ -82,6 +84,7 @@ int main(int argc, char *argv[])
    unsigned int		 sum, checksum, carry;
 
    off_t		 location,
+			 position,
 			 new_location,
 			 next_location = 0,
                          high_location = 0;
@@ -94,20 +97,23 @@ int main(int argc, char *argv[])
 
    if (flag['h'-'a'])
    {
-      printf("\nslab [-options] input output[.rom] [target-rom-words]\n\n");
+      printf("\nslab [-options] input output[.rom ] [ target-rom-words ] [ lower-address-limit ]\n\n");
 
       printf("default ROM size is 1024 RTA1 words\n");
       printf("target-rom-words is leading-zero for hex else decimal\n\n");
 
+      printf("slab ifile ofile -g          #  64 RTA1 words\n");
       printf("slab ifile ofile -p          #  4096 RTA1 words\n");
       printf("slab ifile ofile -b          #  262144 RTA1 words\n");
       printf("slab ifile ofile -m          #  1048576 RTA1 words\n\n");
 
       printf("slab ifile ofile number      #  number of RTA1 words\n");
+      printf("slab ifile ofile number -g   #  number * 64 RTA1 words\n");
       printf("slab ifile ofile number -k   #  number * 1024 RTA1 words\n");
       printf("slab ifile ofile number -p   #  number * 4096 RTA1 words\n");
       printf("slab ifile ofile number -b   #  number * 262144 RTA1 words\n");
-      printf("slab ifile ofile number -m   #  number * 1048576 RTA1 words\n");
+      printf("slab ifile ofile number -M   #  number * 1048576 RTA1 words\n");
+      printf("slab ifile ofile number -G   #  number * 1073741824 RTA1 words\n");
 
       printf("options -v verbose -w very verbose\n\n");
       return 0;
@@ -142,9 +148,11 @@ int main(int argc, char *argv[])
          }
          else
          {
-            if (flag['p'-'a']) rom_words = 4096;
-            if (flag['b'-'a']) rom_words = 262144;
-            if (flag['m'-'a']) rom_words = 1048576;
+             if (flag['g'-'a']) rom_words = 64;
+             if (flag['p'-'a']) rom_words = 4096;
+             if (flag['b'-'a']) rom_words = 262144;
+            if (uflag['M'-'A']) rom_words = 1048576;
+            if (uflag['M'-'A']) rom_words = 1073741824;
 
             if (arguments > 2)
             {
@@ -152,10 +160,25 @@ int main(int argc, char *argv[])
                if (*p == '0') sscanf(p, "%x", &rom_words);
                else           sscanf(p, "%d", &rom_words);
 
-               if      (flag['k'-'a']) rom_words <<= 10;
-               else if (flag['p'-'a']) rom_words <<= 12;
-               else if (flag['b'-'a']) rom_words <<= 18;
-               else if (flag['m'-'a']) rom_words <<= 20;
+               if       (flag['g'-'a']) rom_words <<=  6;
+               else if  (flag['k'-'a']) rom_words <<= 10;
+               else if  (flag['p'-'a']) rom_words <<= 12;
+               else if  (flag['b'-'a']) rom_words <<= 18;
+               else if (uflag['M'-'A']) rom_words <<= 20;
+               else if (uflag['G'-'A']) rom_words <<= 30;
+            }
+
+            high_address = rom_words;
+
+            if (arguments > 3)
+            {
+               if       (*argument[3] == '0') sscanf(argument[3], "%x", &low_address);
+               else if ((*argument[3]  > '0') &&  (*argument[3]  < '9' + 1))
+                                              sscanf(argument[3], "%d", &low_address);
+               else printf("low address argument 4 must be a number leading zero for hex else decimal\n");
+
+               high_address += low_address;
+               printf("space %x..%x\n", low_address, high_address);
             }
 
             if (flag['v'-'a']) printf("preparing %d target words\n", rom_words);
@@ -205,7 +228,6 @@ int main(int argc, char *argv[])
                               | (header[10]<<  8)
                               |  header[11];
 
-
                      if (flag['w'-'a'])
                      {		
                         #ifdef OFF_T32
@@ -242,7 +264,7 @@ int main(int argc, char *argv[])
 
                      next_location = location + words - 1;
 
-                     if (next_location < rom_words)
+                     if (next_location < high_address)
                      {
                      }
                      else
@@ -268,18 +290,19 @@ int main(int argc, char *argv[])
                         high_location = next_location;
                      }
 
-                     new_location = lseek(o, location * BYTES_TARGETW, SEEK_SET);
+                     position = location - low_address;
+                     new_location = lseek(o, position * BYTES_TARGETW, SEEK_SET);
 
                      if (new_location < 0)
                      {
                         #ifdef OFF_T32
-                        printf("%s write hex byte position %ld failed\n",
-                                                              argument[1],
-                                                 location * BYTES_TARGETW);
+                        printf("%s write hex byte position %ld out of range\n",
+                                                                   argument[1],
+                                                     location * BYTES_TARGETW);
                         #else
-                        printf("%s write hex byte position %lld failed\n",
-                                                              argument[1],
-                                                 location * BYTES_TARGETW);
+                        printf("%s write hex byte position %lld out of range\n",
+                                                                    argument[1],
+                                                      location * BYTES_TARGETW);
                         #endif
                         break;
                      }
@@ -307,7 +330,7 @@ int main(int argc, char *argv[])
                                    | (data.t[1] <<  8)
                                    |  data.t[2];
 
-                              while (carry = sum >> 24)
+                              while ((carry = sum >> 24))
                               {
                                  sum &= 0x00FFFFFF;
                                  sum += carry;
@@ -338,7 +361,7 @@ int main(int argc, char *argv[])
                                                             checksum, sum);
                            #else
                            printf("%s checksum failed in string @ %llx ["
-                                                       "%6.6lx:%6.6lx]\n",
+                                                         "%6.6x:%6.6x]\n",
                                                               argument[0],
                                                                  location,
                                                             checksum, sum);

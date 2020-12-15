@@ -1,0 +1,86 @@
+.	vector name	fs24_lseek
+
+fs24_seek	$tree
+	$head_far	 params(fblocp,		int	;
+				seek_position,	long	;
+				seek_from,	int	)
+
+	la	0, b			. read the first word of file open state
+	and	255,,xi			. is it large enough to hold restart / measurement parts?
+	aa	-FS$DEVICE_WORDS,,xi
+	jnc	fs24_not_enough		. no
+
+	lx	b
+	la	seek_from
+	jza	fs24_seek_set
+	aa	-SEEK_END,,xi
+	jza	fs24_seek_end
+	aa	SEEK_END-SEEK_CUR,,xi
+	jza	fs24_seek_cur
+
+fs24_not_enough
+	la	-BAD_ARGUMENT,,xi
+	fret	0
+
+fs24_seek_set
+	dl	seek_position
+fs24_seek_set_on
+	dan	fspaxq:quantum_pointer
+	jpa	fs24_seek_roll_forward
+
+fs24_seek_restart_roll
+	c	(fs24_open)	fblocp	fspaxq:rewind_extentp,,long
+	dl	seek_position
+
+fs24_seek_roll_forward
+	c	(fs24_advance)	fblocp	a,,long
+	fret	0
+
+fs24_seek_cur
+	dl	seek_position
+	jpa	fs24_seek_roll_forward
+	da	fspaxq:quantum_pointer	. subtract displacement from position
+	jna	fs24_not_enough		.
+	ds	seek_position
+	j	fs24_seek_restart_roll
+	
+fs24_seek_end
+	c	(fs24_words_written)	fblocp
+	da	seek_position
+	j	fs24_seek_set_on
+
+fs24_seek_z
+	$ret
+	$root
+
+fs24_words_on_file	. vector name fs24_words_written
+
+	$head_far	 params(fblocp_w,	int)
+
+	lx	fblocp_w
+	lcal	fs24_octets_on_file
+	da	(2d)
+	d	3,,xi
+	dsr	24
+	la	6
+	$ret
+
+fs24_bytes_on_file	. vector name fs24_bytes_written
+
+	$head_far	 params(fblocp_b,	int)
+
+	lx	fblocp_b
+	lcal	fs24_octets_on_file
+	$ret
+
+fs24_octets_on_file
+	la	fspaxq:serialp:fs_type
+	and	255,,xi
+	aa	-FS$DEVICE_WORDS,,xi	. a sufficient open state block to know how big?
+	jnc	fs24_octets_unresolved
+	dl	fspaxq:rewind_extentp
+	ii	XBASE$32		. that has unbased whatever was based
+	dl	fsys:quanta, b		. read the file descriptor
+fs24_octets_unresolved
+	lret	0
+

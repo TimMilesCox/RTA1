@@ -31,7 +31,7 @@ char		uflag[32];
       {									\
          q++;								\
 									\
-         while (x = *q++)						\
+         while ((x = *q++))						\
          {								\
             if ((x > 'a' - 1) && (x < 'z' + 1))  flag[x - 'a'] = 1;	\
             if ((x > 'A' - 1) && (x < 'Z' + 1)) uflag[x - 'A'] = 1;	\

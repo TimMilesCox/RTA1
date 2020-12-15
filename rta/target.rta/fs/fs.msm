@@ -64,6 +64,7 @@
 	$include	lib/ascii.def
 	$path
 
+	$include	file_io.def
 	$include	fs.def			. defines file-open application state blocks
 	$include	fs24.def		. defines directory structures on FS media
 	$include	response.def
@@ -119,7 +120,7 @@ qstart*		$vector	qstart_name
 open*		$vector	files:open
 read*		$vector files:read_by_handle
 write*		$vector	files:write_by_handle
-seek*		$vector	files:seek_by_handle
+lseek*		$vector	files:seek_by_handle
 fsync*		$vector	files:sync_by_handle
 close*		$vector	files:close_by_handle
 
@@ -151,6 +152,14 @@ fileshare_space_close*	$vector	fileshare:close
 fileshare_assign*	$vector	fileshare:assign
 fscan_datafile*		$vector	fscan24
 
+fs24_lseek*	$vector	fs24_seek
+fs24_bytes_written*	$vector	fs24_bytes_on_file
+fs24_words_written*	$vector	fs24_words_on_file
+
+dialplan_online*	$vector	remotefs:online
+speed_dial*		$vector	remotefs:dial
+nfswrite*		$vector	nfs_data_write
+
 	$list	0
 	$do	64-$,	fret	0
 	$do	$>64,	$flag	too many vectors in fs iframe
@@ -161,6 +170,7 @@ fscan_datafile*		$vector	fscan24
 	$include	readfs24
 	$include	seekfs24
 	$include	loader
+	$include	lseekf24
 	$include	fsrom			. routines, 4K-maxextent FS in executable space
 	$include	seg_load
 	$include	recursld
@@ -172,6 +182,7 @@ fs_xfer4w* $proc
 	qpush	4*?-4, y
 	qpop	4*?-4, x
 	$end
+
 $(0)
 fs_xfer	dsr		6
 	lr		a
@@ -212,10 +223,13 @@ fs_xfer1?
 	lret		0
 
 	$include	claimfob
+	$include	align
 
 	$path		../
 	$include	rpc/nfsclien
+	$include	rpc/nfswrite
 	$path
+	$include	../remotefs/remotefs
 
 	$path		../stream
 	$include	sscan

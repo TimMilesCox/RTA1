@@ -52,6 +52,7 @@ networkframe	delivery
 $(0)
 icapsule
 
+	$if	0
 	tz	ETHERNET_ARP_ARPQ_HEAD	. ethernet_arp:arpq:head
 	j	icarryon
 	tz	udpq:head
@@ -60,11 +61,12 @@ icapsule
 	j	icarryon
 	tz	icmpq:head
 	j	icarryon
+	$endif
 
 	tz	interface(2):oq:head
 	j	icarryon
 
-        $if	0
+        $if	1
 	la	interface(2):ift1:base_rx
 	ii	XBASE$32
 	la	interface(2):ift1:rx_cursor
@@ -72,7 +74,12 @@ icapsule
 	j	icarryon
 	$endif
 
-	ii		YIELD$
+	ii		YIELD$		. let some application threads fly
+					. did traffic situation change ?
+	tz	interface(2):oq:head
+	j	icarryon
+	tz	networkframe:flag, a	. a is still pointing to i / f inputs
+	j	icarryon
 
 	dl	activity_revision
 	dan	DAYCLOCK$U
@@ -86,7 +93,8 @@ stay_in_chilldown
 	la	interface(2):ift1:base_rx
 	ii	XBASE$32
 	la	interface(2):ift1:rx_cursor
-	tnz	 networkframe:flag, a	. RX traffic?
+	tz	 networkframe:flag, a	. RX traffic?
+	j	icarryon
 	j	stay_in_chilldown
 	
 icarryon

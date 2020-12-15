@@ -1,24 +1,4 @@
 
-	$list	0
-PLATFORM_NFSD   $equ    $neta(172.29.7.6:2049)		. the emulator platform
-PLATFORM_MOUNTD $equ    $neta(172.29.7.6:1023)
-
-SUSE_NFSD	$equ	$neta(192.168.0.14:2049)	. server enet
-SUSE_MOUNTD	$equ	$neta(192.168.0.14:1023)
-
-SUSE_NFSDW	$equ	$neta(192.168.0.15:2049)	. server wifi
-SUSE_MOUNTDW	$equ	$neta(192.168.0.15:1023)
-
-MACMINI_NFSD	$equ	$neta(192.168.0.10:2049)
-MACMINI_MOUNTD	$equ	$neta(192.168.0.10:1023)
-
-MACWIFI_NFSD	$equ	$neta(192.168.0.11:2049)
-MACWIFI_MOUNTD	$equ	$neta(192.168.0.11:1023)
-
-AIRBOOK_NFSD	$equ	$neta(192.168.0.16:2049)
-AIRBOOK_MOUNTD	$equ	$neta(192.168.0.16:1023)
-	$list	2
-
 $(1:01000/$1)
 cursor		0L
 
@@ -27,26 +7,6 @@ $(3:03000/$3)
 BUFFER	$equ	32
 
 handle  0
-
-
-	$list	2
-platform	mount_path	PLATFORM_NFSD::mount_platform:""
-mount_platform	mount_path	PLATFORM_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
-
-suse		mount_path	SUSE_NFSD::mount_suse:""
-mount_suse	mount_path	SUSE_MOUNTD:::"/home/laclimpide/online_files/"
-
-suse_ro		mount_path	SUSE_NFSDW::mount_suse_ro:""
-mount_suse_ro	mount_path	SUSE_MOUNTDW:::"/home/laclimpide/lookup_files/"
-
-macmini		mount_path	MACMINI_NFSD::mount_macmini:""
-mount_macmini   mount_path      MACMINI_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
-
-macwifi         mount_path      MACWIFI_NFSD::mount_macwifi:""
-mount_macwifi   mount_path      MACWIFI_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
-
-airbook		mount_path	AIRBOOK_NFSD::mount_airbook:""
-mount_airbook	mount_path	AIRBOOK_MOUNTD:::"/Users/timcox/nfsdrive/fsimages"
 
 command		$res	8
 path		$res	120/3
@@ -65,18 +25,24 @@ $(0)
 	$base_d	$zenith(3)-0x003000 1024*2
 
 	c	(seg$load)	0,,xi	(viewfile_data:d),,long
+	call	(dialplan_online)
+
 
 	fgets	request,,i 172 stdin
-	printf	$3("file viewer: %s":10),,xi request,,xi
+	printf	$3("file viewer: %s\n\0"),,xi request,,xi
 
-	sscanf	request,,xi $3("%s %:@%s"),,xi command,,xi path+6,,xi host,,xi
+	sscanf	request,,xi $3("%s %:@%s":0),,xi command,,xi path+6,,xi host,,xi
 
+	aa	-3,,xi			. field @ field acquired?
+	jc	remote_open
+	sscanf	request,,xi $3("%s %s":0),,xi command,,xi path,,xi
+	printf	$3("display %s\n":0),,xi path,,xi
+	j	open_view
 
-	printf	$3("speed dial %s@%s\n"),,xi	path+6,,xi	host,,xi
+remote_open
+	printf	$3("speed dial %s@%s\n":0),,xi	path+6,,xi	host,,xi
 
-
-	lookup,*	host						;
-			platform, suse, suse_ro, macmini, macwifi, airbook
+	c	(speed_dial)	host,,long	path,,xi
 
 	ql	0, x
 	qs	path
@@ -91,6 +57,7 @@ $(0)
 	aa	b			. add containing words of name to path structure length
 	sa	path			. update the path preamble
 
+open_view
 	c	(open)	path,,xi	;
 			O_RDONLY,,xi
 
@@ -124,7 +91,7 @@ ocomplete
 	jnc	more			. anything else means carry on
 
 	sscanf	request,,xi	$3("%li":0),,xi	cursor,,xi	. read 48-bit number
-	c	(seek)	handle	cursor,,long
+	c	(lseek)	handle	cursor,,long	SEEK_SET,,xi
 	j	more
 
 didsome	printf	$3("read failed %d\n":0),,xi a

@@ -1,6 +1,6 @@
 
-	$path		../
 	$if		0
+	$path		../
 	$include	def/rta.def
 	$include	def/vector.def
 	$include	def/ii.def
@@ -10,8 +10,8 @@
 	$include	t77.4/ip.def
 	$include	t77.4/tcp.def
 	$include	t77.4/socket.def
-	$endif
 	$path
+	$endif
 
 p	$proc
 XDR_TXLONG* $name
@@ -112,7 +112,7 @@ $(67::,y)
 readrespo	xdr_read3res
 
 $(67::,y)
-result_attr	nfs3_result_attr
+result_attr	post_op_attr
 
 $(0)
 TARGET_MOUNTD	$equ	RPCADAPT(MOUNTD)
@@ -147,8 +147,10 @@ nfs_fsmount	$tree
 	sa	mname_bytes
 
 	ly	fobloc
-	lb	openfile_bloc:auth+3
-
+	lb	openfile_bloc:auth_blank+3
+				. retrieve auth block bytes length
+				. for copying auth block
+				. to request_header
 _COUNT	$equ	4
 
 	lc	nfs:startrq	connectionp			;
@@ -157,14 +159,14 @@ _COUNT	$equ	4
 				(MOUNT_VERS:d),,long		;
 				(MOUNTPROC3_MNT:d),,long	;
 				4*4, b, i			;
-				openfile_bloc:auth,,i
+				openfile_bloc:auth_unix,,i
 
 	la	mount_pathp
 
 	lc	nfs:counted_send_opaque	connectionp		;
 					mname_bytes		;
 					6, a, i			;
-					(05000++TCP_ACK++TCP_PSH)			
+					05000++TCP_ACK++TCP_PSH,,xi			
 	jna	nfs_mount_y
 
 nfs_mount_?
@@ -228,10 +230,18 @@ nfs_open_path*	$tree
 				connectionp,	int	;
 				request_port,	int	;
 				fobloc,		int	;
+				sattr_3,	12-6	;
+				g_3,		float,	(1, 0q)		;
+				u_3,		float,	(1, 0q)		;
+				mode_3,		float,	(1, 01a4q)	;
+				createmode_3,	long,	(1L)		;
 				status,		int	)
 
 	ii	ON_NETB$				. must run with default net buffer pools
-							. in address space
+	la	NFS_MOUNTS
+	jna	common_mounts_hidden			. if you need common mounts that crashes you
+	sabr	NFS_BDIAL
+common_mounts_hidden
 
 	c	(claim_fob)	(FS$NFS,,FS$NFS_WORDS)	. file open descriptor in application external stack
 
@@ -241,11 +251,17 @@ nfs_open_path*	$tree
 	j	nfs_open_path_e
 
 forward	sy	fobloc
+	la	flags
+	sa	openfile_bloc:o:flags
 	dsr	48				. initialise 72-bit position in file
 	z	openfile_bloc:quantum_pointer
 	ds	openfile_bloc:quantum_pointer+1
 
-	lx	openfile_bloc:auth,,i		. any different auth
+	lx	openfile_bloc:auth_blank,,i		. any different auth
+	ly	pathp
+	ly	5, y				. skip the the mount path
+	ly	5, y				. pull up the auth pointer
+	tnz	y
 	ly	(authunix_blank),,i		. must be introduced here
 	lcal	nfs:deliver_auth
 
@@ -307,18 +323,82 @@ fs_mounted
 	sar	8					. centre octet is bytes in name
 	and	255,,xi
 	sa	string_bytes
-	aa	openfile_bloc:nfs_handle+1
+	lx	openfile_bloc:nfs_handle+1
+	ax	a
 
 	ly	fobloc
-	lb	openfile_bloc:auth+3
-	
+	lb	openfile_bloc:auth_blank+3		. obtain auth block bytes length
+
+        la	flags
+	and	O_CREAT,,xi
+	jza	obtain_existing_handle
+	la	flags
+	and	O_TRUNC,,xi
+	jza	open_create_unguarded
+	z	createmode_3+1		. force create again
+open_create_unguarded
+
 	lc	nfs:startrq	connectionp			;
-				8, a, i				;	+ 4 + 4	
+				8+28+12, x, i			;
+				(xdri(NFSD)d),,long 		;
+				(NFS_VERS:d),,long		;
+				(NFSPROC3_CREATE:d),,long	;
+				4*4, b, i			;
+				openfile_bloc:auth_blank,,i
+
+	ly	fobloc
+	la	openfile_bloc:nfs_handle+1
+
+	lc	nfs:send_opaque16	connectionp		;
+					4, a, i			;
+					openfile_bloc:nfs_handle,,i
+	ly	pathp
+	lc	nfs:counted_send_opaque connectionp		;
+					string_bytes		;
+					6, y, i			;
+					05000++TCP_ACK,,xi
+
+	ly	fobloc
+	la	openfile_bloc:auth_unix:auth:family+1
+	aa	-1,,xi
+	jnza	auth_another_family?
+	ql	openfile_bloc:auth_unix:auth:uid
+	ds	u_3+2
+	dl	6
+	ds	g_3+2
+
+auth_another_family?
+
+	lc	nfs:send_opaque16	connectionp		;
+					12+24+4,,xi		;
+					createmode_3,,i		.	unguarded
+
+	la	05000++TCP_PSH++TCP_ACK,,xi
+	sa	01b
+
+	la	0,,xi
+	lb	0,,xi
+	lx	connectionp
+	call	(tcp_tx)
+	
+	$if	0
+	lc	nfs:counted_send_opaque	connectionp		;	push it out
+					0,,xi			;
+					0,,xi			;
+					05000++TCP_PSH++TCP_ACK,,xi
+	$endif
+
+	lx	connectionp
+	j	readsocket
+
+obtain_existing_handle
+	lc	nfs:startrq	connectionp			;
+				8, x, i				;	+ 4 + 4	
 				(xdri(NFSD)d),,long		;
 				(NFS_VERS:d),,long		;
 				(NFSPROC3_LOOKUP:d),,long	;
 				4*4, b, i			;
-				openfile_bloc:auth,,i
+				openfile_bloc:auth_blank,,i
 
 	ly	fobloc
 	la	openfile_bloc:nfs_handle+1
@@ -331,7 +411,7 @@ fs_mounted
 	lc	nfs:counted_send_opaque	connectionp		;
 					string_bytes		;
 					6, y, i			;
-					(05000++TCP_PSH++TCP_ACK)
+					05000++TCP_PSH++TCP_ACK,,xi
 
 .	lr	a
 .	jna	nfs_open_path_u
@@ -365,14 +445,27 @@ data?	la	server_response:yes:astat+1
 data!	lx	fobloc
 	lx	openfile_bloc:nfs_handle,x,i
 	ly	server_response:yes:response,,i
-	lcal	nfs:deliver_fhandle3
 
-	$if	1
+	la	flags
+	and	O_CREAT,,xi
+	jza	handle_retrieve		. for create has different
+					. responses
+	la	1, y			. post op handle
+	anu	1,,xi			. is nice?
+	jnzb	nfs_open_path_s		. is don't nice?
+
+	ay	2,,xi			. that should be the handle
+	lcal	nfs:deliver_fhandle3	. if we'd like any post-op attributes			
+					. y should be pointing at they
+
+	j	splice_handle
+
+handle_retrieve
+	lcal	nfs:deliver_fhandle3
 
 	lx	fobloc
 	lx	openfile_bloc:dimensions,x,i
 					. y hasn't moved from -> handle byte count
-
 	la	1, y			. go past the handle
 	la	1, a, i
 	sar	1
@@ -380,18 +473,23 @@ data!	lx	fobloc
 
 	lcal	nfs:capture_fileinfo
 
-	dl	result_attr:attributes:size+2, x
-	sbl	8
-	dsr	8
-	sb	d$save3			. quick filesize lookup
-					. for assembly language callers
-	lb	result_attr:attributes:size+1, x
-	sal	16
-	drr	16
-	sa	d$save2
+	la	flags			. O_APPEND tested here
+	and	O_APPEND,,xi		. is not considered when O_CREAT
+	jza	splice_handle		. default is write file from start
+					. attributes are in fobloc
+	ly	fobloc
+	ql	openfile_bloc:dimensions:attr:size	00xxxx [4]
+	lx	openfile_bloc:quantum_pointer,,i
+	lcal	quantum:compress			00xxxx xxxxxx xxxxxx
 
-	$endif
+	la	flags
+	and	O_OCTET,,xi
+	jnza	splice_handle
 
+	ql	openfile_bloc:dimensions:attr:size
+	lcal	quantum:align
+
+splice_handle
 	la	(AF_INET*/16)		. NFS file handle encoding
 	ii	HANDLE$
 
@@ -428,6 +526,9 @@ nfs_open_path_e
 nfs_open_path_x
 	ii	FREE_NETB$		. must now mask network resources
 	ii	FREE_SOCKB$		. from address space
+	la	(0C00001s)
+	ii	XBASE$34
+	la	r
 	$ret
 	$root				. end nfsopen -> nfs_open_path
 
@@ -478,7 +579,7 @@ nfs_data_read $tree
 	ly	foblocp
 
 	la	openfile_bloc:nfs_handle+1			. opaque byte count
-	lb	openfile_bloc:auth+3				. opaque byte count
+	lb	openfile_bloc:auth_blank+3			. opaque byte count
 
 	lc	nfs:startrq	connectionp			;
 				16, a, i			; . 4 + offset8 + datacount4
@@ -486,7 +587,7 @@ nfs_data_read $tree
 				(NFS_VERS:d),,long		;
 				(NFSPROC3_READ:d),,long		;
 				4*4, b, i			; . flavour4 bytecount4 verf8
-				openfile_bloc:auth,,i
+				openfile_bloc:auth_blank,,i
 
 	ly	foblocp
 	la	openfile_bloc:nfs_handle+1
@@ -497,15 +598,19 @@ nfs_data_read $tree
 	ly	foblocp
 	lc	nfs:add_uhyper72	connectionp				;
 					openfile_bloc:quantum_pointer,,i	;
-					(05000++TCP_ACK)
+					05000++TCP_ACK,,xi
 
 	ly	foblocp
 	lb	bytes
+	la	openfile_bloc:o:flags
+	and	O_OCTET,,xi
+	jnza	read_octets	
 	mf	3,,xi
 
+read_octets
 	lc	nfs:add_uinteger	connectionp			;
 					b				;
-					(05000++TCP_ACK++TCP_PSH)
+					05000++TCP_ACK++TCP_PSH,,xi
 
 	jna	request_issue_fail
 	lx	connectionp
@@ -638,8 +743,14 @@ complete_record
 	sa	openfile_bloc:quantum_pointer
 
 	la	0,,xi
-	wsr	16		. push final octets out of WDATA
+	wsr	16			. push final octets out of WDATA
 	dl	total
+
+	la	openfile_bloc:o:flags
+
+	and	O_OCTET,,xi		. if octets
+	xor	O_OCTET,,xi		. not not words
+	jza	nfs_data_read_x		. report octets count
 
 	lb	2, b, i
 	mf	(0555556)
@@ -654,7 +765,28 @@ nfs_data_read_x
 
 .	vector name nfs_seek
 
+
 nfs_file_position	$tree
+
+	$if	1
+
+	$head_far	 params(handle,		int	;
+				position,	long	;
+				source,		int	)
+
+	la	handle
+	ii	READ_SOCKET$
+	ly	b
+
+	lc	nfs3:seek72	source					;
+				openfile_bloc:o:flags			;
+				openfile_bloc:quantum_pointer,,i	;
+				position,,long				;
+				openfile_bloc:dimensions:attr:size,,i
+	$ret
+
+	$else
+
 	$head_far	 params(handle,		int	;
 				position,	long)	;
 							;
@@ -677,6 +809,8 @@ nfs_file_position	$tree
 	pop	openfile_bloc:quantum_pointer+2
 	pop	y
 	fret	0
+
+	$endif
 
 			$root
 
@@ -907,6 +1041,37 @@ none_more
 
 	lret	0
 
+
+	$if	1
+
+	.	an unrolled function of 22 instructions is not justified
+	.	because this only happens on file open
+	.	but to avoid fooling about
+	.	the long-int boolean before result attributes
+	.	is copied with the attributes to make a multiple of 4 words 
+	.	and to avoid needing to point past the boolean
+
+capture_fileinfo
+	$do	FS$NFS3RESULT_WORDS**3^=0,	$flag	change this
+
+	lr	FS$NFS3RESULT_WORDS/4-1,,xi
+
+capture_fileinfo_quad
+	qpush	0, y
+	qpop	0, x
+	ax	4,,xi
+	ay	4,,xi
+	jdr	capture_fileinfo_quad
+
+	lret	0
+
+	.	that's the job done generating 7 instructions instead of 22
+	.	and executing 5 instructions 11 times each
+	.	instead of 22 instructions once each
+	.	use unrolled lightning for datagrams and arrays. We do
+
+	$else
+
 capture_fileinfo
 	$do	FS$NFS3RESULT_WORDS**3^=0,	;
 	$flag	do this differently
@@ -919,15 +1084,19 @@ qover*	$proc
 ?	$do	FS$NFS3RESULT_WORDS/*2,		qover
 
 	lret	0
+
+	$endif
+
 	$root
 
 .	routines mostly about xdr format data in tree nfs 
 .	routines about compression and expansion in tree nfs3
-	
+
 nfs3	$tree
-	$path		../
+.	$path		../
 	$list	3
 	$include	rpc/dataread
-	$path
+	$include	rpc/position
+.	$path
 
-	$root	
+	$root

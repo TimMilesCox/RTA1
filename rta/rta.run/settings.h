@@ -62,4 +62,4 @@
 
 #define	ACTIVITY_SPACE	1200000		/* microseconds idle before osserv / linuxnet usleeps	*/
 #define	REST_GRANULE	50000		/* osserv / linuxnet usleep step repeated on inactivity	*/
-#define	NET_GRANULE	47
+#define	NET_GRANULE	500

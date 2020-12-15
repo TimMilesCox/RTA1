@@ -257,6 +257,7 @@ static void outputq()
 
    struct timeval	 txtime;
    int			 interface_type;
+   unsigned short	 protocol;
 
    if (q->preamble.flag & FRAME)
    {
@@ -270,7 +271,9 @@ static void outputq()
       advance_activity_space();
       #endif
 
-      if (q->preamble.protocol == CONFIGURATION_MICROPROTOCOL)
+      protocol = q->preamble.protocol;
+
+      if (protocol == CONFIGURATION_MICROPROTOCOL)
       {
          printf("\n\nRESET REQUEST FROM RTA1\n\n");
          restart();
@@ -300,7 +303,18 @@ static void outputq()
       tx_bytes = PORT(q->preamble.frame_length);
       dgraml = tx_bytes - llhl;
 
-      if (flag['v'-'a']) printf("[%x:tx %x]\n", interface, tx_bytes);
+      if (flag['v'-'a'])
+      {
+         if (protocol == ARP)
+         {
+            printf("[%x:tx %x / %x %x %x %x %x ]\n", interface, tx_bytes,
+            q->preamble.flag, q->preamble.frame_length,q->preamble.ll_hl,
+            q->preamble.i_f, protocol);
+            for (x = 0; x < 42; x++) printf("%2.2x", q->frame[x]);
+            putchar(10);
+         }
+         else printf("[%x:tx %x]\n", interface, tx_bytes);
+      }
 
       x = tx_bytes;
       fdes = s[interface];
@@ -366,7 +380,7 @@ static void outputq()
          printf("TX %d\n", y);
          if (y < 0) printf("%d:%d\n", errno, fdes);
 
-         if ((x) && (flag['u'-'a']))
+         if ((x) && (flag['u'-'a']) && (protocol == IP))
          {
             iphl = (*dgram << 2) & 60;
             ipayload = dgram + iphl;
@@ -446,6 +460,7 @@ static void outputq()
    {
       #if 1
       if (net_revision < 50000) net_revision += net_granule;
+      if (flag['y'-'a']) printf("[%d]\n", net_revision);
       usleep(net_revision);
       #else
       if (quiet) usleep(rest_granule);

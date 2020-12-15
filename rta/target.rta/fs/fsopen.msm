@@ -68,22 +68,47 @@ test_forward
 
 fspath_openfile	$tree
 
-	$head_far	 params(inputp,		int	)
+	$head_far	 params(inputp,		int	;
+				flags,		int)	;
+							;
+			scalars(media_pointer,	long	;
+				state_block,	int	)
 	
 	c	(fspath)	inputp
-	jdz	no_file
+	jza	no_file
+	ds	media_pointer
 
-.	c	(fs24)	fspp,,i	a,,long
+	c	(claim_fob)	(FS$DEVICE$ARRAY,,FS$DEVICE_WORDS)
+
+	tnz	y
+	j	no_state_block
+	sy	state_block
+
+	la	flags
+	sa	fspaxq:o:flags, y
+
+	z	fspaxq:quantum_pointer, y	. initialise
+	z	fspaxq:quantum_pointer+1, y
+	dl	media_pointer
+	ds	fspaxq:rewind_extentp, y
+
+					. initialise the state block
+	c	(fs24_open)	state_block	media_pointer,,long
+	la	(FS$DEVICE$ARRAY*/16)
+	ii	HANDLE$
+	jna	file_not_ok
+	lx	state_block
+	ii	FILE$HANDLE		. sew the open file state to the handle
+	jna	file_not_ok
 	j	file_ok
 
-. not quite. This call must create the file open block and the handle
-. it's a jump from POSIX open
-. using a direct file open block because you don't want a handle
-. it's long=fspath(string) then fs24_open(fspp, longo)
-
+no_state_block
+	la	-NO_STORAGE
+	j	file_not_ok
 
 no_file	la	-NOT_THERE,,xi
 file_ok
+file_not_ok
 	$ret	0
 
 		$root
