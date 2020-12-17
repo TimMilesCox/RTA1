@@ -118,10 +118,6 @@ static struct sockaddr_in	 console_socka = { AF_INET, USTDOUT,	 { LOCAL } } ;
 
 static struct timeval		 xronos;
 
-#if 0
-static int			 quiet;
-static unsigned int		 activity_space = ACTIVITY_SPACE;
-#endif
 static int			 rest_granule = REST_GRANULE;
 
 
@@ -192,43 +188,6 @@ static void *async()
    }
 }
 
-#if 0
-static void advance_activity_space()
-{
-   int		 status = gettimeofday(&xronos, NULL);
-   int		 usec;
-
-   if (status < 0)
-   {
-      printf("time acquisition problem1 %d abandon\n", errno);
-      exit(0);
-   }
-
-   usec = xronos.tv_usec + activity_space;
-   xronos.tv_sec += usec / 1000000;
-   xronos.tv_usec = usec % 1000000;
-
-   quiet = 0;
-}
-
-static void activity_pace()
-{
-   struct timeval	 neoxronos;
-   int		 status = gettimeofday(&neoxronos, NULL);
-
-   if (status < 0) 
-   {
-      printf("time acquisition problem2 %d abandon\n", errno);
-      exit(0);
-   }
-
-   if (neoxronos.tv_sec < xronos.tv_sec) return;
-   if (neoxronos.tv_usec < xronos.tv_usec) return;
-
-   quiet = 1;
-}
-#endif
-
 static void outputq()
 {
    mm_netbuffer         *q = txdata;
@@ -265,11 +224,7 @@ static void outputq()
 		reset the usleep on idle interval
       *********************************************************/
 
-      #if 1
       net_revision = 0;
-      #else
-      advance_activity_space();
-      #endif
 
       protocol = q->preamble.protocol;
 
@@ -328,23 +283,8 @@ static void outputq()
             DLT_NULL is changed to ethernet for Linux
             only OSX gets in here
          *********************************************************/
-         #if 0
-         /*********************************************************
-            temporary trace about transmitting to platform loopback
-            with reference to link header size on various platforms
-            can be left out of distributed binaries
-            there is general trace per run flags about transmission
-         *********************************************************/
-
-         printf("[%p:%x--", p, x);
-         #endif
-
          p += 4;
          x -= 4;
-
-         #if 0
-         printf("%p:%x]\n", p, x);
-         #endif
       }
       #endif
 
@@ -367,10 +307,6 @@ static void outputq()
 
       if (flag['v'-'a'])
       {
-         #if 0
-         oversee(netdata->o, q);
-         #endif
-
          if (uflag['W'-'A'])
          {
             gettimeofday(&txtime, NULL);
@@ -458,14 +394,9 @@ static void outputq()
 
    else
    {
-      #if 1
       if (net_revision < 50000) net_revision += net_granule;
       if (flag['y'-'a']) printf("[%d]\n", net_revision);
       usleep(net_revision);
-      #else
-      if (quiet) usleep(rest_granule);
-      else activity_pace();
-      #endif
    }
 
    txdata = q;
@@ -738,13 +669,8 @@ static void forward(int x, unsigned char *p, int bytes)
             bytes -= ll_hl;
          }
 
-         #if 0
-         if ((flag['z'-'a']) && (rxdata->preamble.protocol == IP & 65535))
-         #else
-
          if (((flag['z'-'a']) && (rxdata->preamble.protocol == IP & 65535) && (interface_type == DLT_NULL))
          ||  ((uflag['Z'-'A']) && (rxdata->preamble.protocol == IP & 65535)))
-         #endif
          {
             /************************************************
 
@@ -917,11 +843,7 @@ static void forward(int x, unsigned char *p, int bytes)
          rxdata++;
          if (rxdata > &netdata->i[DEVICE_PAGES/2-1]) rxdata = netdata->i;
 
-         #if 1
          net_revision = 0;
-         #else
-         advance_activity_space();
-         #endif
 }
 
 unsigned char *peel(unsigned char *p, unsigned char *q)
@@ -1108,8 +1030,6 @@ static void configure(int x, int j)
 
    #endif
 
-   #if 1
-
    q = peel(address, addresses);
    configure_interface(x, physa_octets, address);
    i_f_first_address = *initial_address;
@@ -1148,38 +1068,6 @@ static void configure(int x, int j)
 
       deliver_configuration_tuple(x);
    }
-
-   #else
-
-   sscanf(addresses, "%hhd.%hhd.%hhd.%hhd/%hhd", rxdata->frame + 4,
-                                                 rxdata->frame + 5,
-                                                 rxdata->frame + 6,
-                                                 rxdata->frame + 7,
-                                                 rxdata->frame + 8);
-
-   rxdata->frame[9] = physa_octets;
-   rxdata->preamble.frame_length = sizeof(i_f_string) + physa_octets;
-   rxdata->preamble.ll_hl = LLHL;
-
-   rxdata->preamble.i_f = PORT(x);
-
-   rxdata->preamble.protocol = CONFIGURATION_MICROPROTOCOL;
-
-   if (flag['v'-'a']) printf("[%d %s %s]\n", x, netdevice, addresses);
-
-   memcpy(rxdata->frame + 10, refresh_phya + x, physa_octets);
-
-   p = (unsigned char *) rxdata;
-   q = rxdata->frame + 10 + physa_octets;
-
-   rxdata->preamble.flag = FRAME;
-   rxdata++;
-
-   printf("[<-");
-   while (p < q) printf("%2.2x", *p++);
-   printf("]\n");
-
-   #endif
 }
 
 static void restart()
@@ -1212,11 +1100,7 @@ static void restart()
       configure(x, j);
    }
 
-   #if 1
    net_revision = 0;
-   #else
-   advance_activity_space();
-   #endif
 }
 
 int main(int argc, char *argv[])
@@ -1517,25 +1401,6 @@ int main(int argc, char *argv[])
                printf("enet detected\n");
                physa_octets = 6;
 
-               #if 0
-               if (flag['q'-'a']) y = ioctl(fdes, BIOCSSEESENT, &one);
-               else               y = ioctl(fdes, BIOCSSEESENT, &zero);
-
-               printf("[SEESENT %d > %d %d %d]\n", flag['q'-'a'], y, (y < 0) ? errno : 0, maximum);
-
-               /********************************************************
-			external device, switch no- see transmitted frames
-			but for loopback you must see transmitted frames
-			because you don't otherwise see received frames
-               ********************************************************/
-
-               if (flag['p'-'a'])
-               {
-                  y = ioctl(fdes, BIOCPROMISC, &one);
-                  printf("PROMISC %d\n", (y < 0) ? errno : 1);
-               }
-               #endif
-
                break;
 
             default:
@@ -1642,11 +1507,6 @@ int main(int argc, char *argv[])
          {
             if (uflag['O'-'A']) putchar('.');
             if (errno == EAGAIN) continue;
-
-            #if 0
-            close(fdes);
-            s[x] = -1;
-            #endif
 
 	    printf("[rer %d:%d:%d]\n", x, errno, fdes);
             continue;

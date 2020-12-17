@@ -37,10 +37,13 @@
 .
 .
 
-ACTIVITY_SPACE		$equ	120	. 1200		. milliseconds
+ACTIVITY_SPACE		$equ	120		. milliseconds
 REST_GRANULE		$equ	1000000/20	. microseconds
 
 $(3)
+
+akt	+	ACTIVITY_SPACE:d		. for plugitinisation
+takt	+	CHILLDOWN, REST_GRANULE:d	. from the console
 
 activity_revision +	0L
 
@@ -52,7 +55,7 @@ networkframe	delivery
 $(0)
 icapsule
 
-	$if	0
+	$if	0				. these should not matter
 	tz	ETHERNET_ARP_ARPQ_HEAD	. ethernet_arp:arpq:head
 	j	icarryon
 	tz	udpq:head
@@ -66,13 +69,11 @@ icapsule
 	tz	interface(2):oq:head
 	j	icarryon
 
-        $if	1
 	la	interface(2):ift1:base_rx
 	ii	XBASE$32
 	la	interface(2):ift1:rx_cursor
 	tz	networkframe:flag, a
 	j	icarryon
-	$endif
 
 	ii		YIELD$		. let some application threads fly
 					. did traffic situation change ?
@@ -86,7 +87,8 @@ icapsule
 	jpa	icarryalong		. jump but don't move the target
 					. switch to chilldown
 stay_in_chilldown
-	dl	(CHILLDOWN, REST_GRANULE:d)
+	dl	takt			. (CHILLDOWN, REST_GRANULE:d)
+					. change from literal to variable
 	outB	chill$down
 	outA	INDICATION$
 					. glimpse activity
@@ -99,7 +101,8 @@ stay_in_chilldown
 	
 icarryon
 	dl	DAYCLOCK$U
-	da	(ACTIVITY_SPACE:d)
+	da	akt			. (ACTIVITY_SPACE:d)
+					. change from literal to variable
 	ds	activity_revision
 
 icarryalong

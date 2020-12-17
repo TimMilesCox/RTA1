@@ -45,8 +45,6 @@ extern system_memory	 memory;
 
 int			 register_pointer = 128;
 
-extern int		 dayclock_increment;
-
 int print_register_row(int index)
 {
    int           xx = 8;
@@ -553,10 +551,6 @@ void action(char request[])
 
          printf("\\\t\t\tinvert run option\n");
          printf("..\t\t\texit emulator\n");
-         break;
-
-      case '<':
-         sscanf(request + 1, "%d", &dayclock_increment);
          break;
 
       case '.':

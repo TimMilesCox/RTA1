@@ -137,12 +137,10 @@ static void		 accumulate_metric();
 static step_second32	 step_second;
 #endif
 
-static unsigned 	 clockr[2];
+static unsigned int	 clockr[2];
 
 static int		 interval_seconds_mask;
 int			 platform_interval = PLATFORM_INTERVAL;
-int			 dayclock_revision = DAYCLOCK_REVISION;
-int			 dayclock_increment = DAYCLOCK_REVISION;
 
 #include "../tgen.x64/dayclock.c"
 
@@ -291,39 +289,6 @@ int main(int argc, char *argv[])
 
    for (;;)
    {
-      #ifdef X86_MSW
-      _x = _kbhit(1);
-      #else
-      _x = poll(&attention, 1, 0);
-
-      /**************************************************
-	poll is immediate return
-	usleep(dayclock_revision) is microsecond tunable
-      **************************************************/
-
-      if (_x < 0)
-      {
-         printf("problem with input request %d. exit emulator\n", errno);
-         break;
-      }
-      else
-      #endif
-
-      if (_x)
-      {
-         #if 0
-         /************************************************
-            this is examined properly in function action()
-            sometimes poll() produces an unimportant event 
-         ************************************************/
-         flag['s'-'a'] = 1;
-         #endif
-
-         #if 0
-         putchar('>');
-         fflush(stdout);
-         #endif
-
          _p = fgets(text, 71, stdin);
 
          if (_p == NULL)
@@ -342,43 +307,11 @@ int main(int argc, char *argv[])
                                               "key s for single step:");
 
             fflush(stdout);
+
+            continue;
          }
 
          action(_p);
-      }
-
-      #ifdef RATIO
-
-      /****************************************************
-	dayclock generated synchronously
-	in the instruction threead
-      ****************************************************/
-
-      #else
-
-      #ifdef X86_MSW
-      Sleep(1000);
-      #else
-
-      usleep(dayclock_revision);
-      dayclock_revision = dayclock_increment;
-      #endif
-
-      /*****************************************************
-	instruction emulator may have lengthened last usleep
-        by out to powersave port 103
-	change to millisecond tact or similar when awaking
-      *****************************************************/
-
-      if (psr & 0x00800000) continue;
-
-      dayclock();
-      indication |= TIME_UPDATE;
-      #endif
-
-      /****************************************************************
-         let instructions emulation thread copy the dayclock update
-      ****************************************************************/
    }
 
    return 0;
@@ -414,6 +347,12 @@ void *emulate()	/* thread start */
       delta_base = time2.tv_sec * 1000000 + time2.tv_usec;
       #endif
 
+      /*********************************************************
+	time and emulated instructions
+        are measured from start of this block
+        to end of this block
+      *********************************************************/
+
       #ifdef GCC
       #ifdef RATIO
       ratio = RATIO;
@@ -440,7 +379,6 @@ void *emulate()	/* thread start */
          metric++;
          #endif
          #endif
-         
 
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
@@ -464,25 +402,19 @@ void *emulate()	/* thread start */
       #endif
       accumulate_metric();
       #endif
-         
+
       if (indication & CHILLDOWN)
       {
          indication &= -1 ^ CHILLDOWN;
-         dayclock_revision = base[103] * 7 / 8;
          usleep(base[103]);
 
-         #ifdef RATIO
-         indication |= TIME_UPDATE;
-         #else
+         /***********************************************
+		repose has been taken
+		realign the dayclock
+		to stop time driven events going slack
+         ***********************************************/
 
-         /***************************************************
-		dayclock must be realigned after chilling
-		even if it's incremented asynchronously
-         ***************************************************/
-
-         dayclock();
-         indication |= TIME_UPDATE;
-         #endif
+         indication |= TIME_UPDATE; 
       }
 
       if (indication & TIME_UPDATE)
@@ -490,17 +422,10 @@ void *emulate()	/* thread start */
          indication &= -1 ^ TIME_UPDATE;
 
          #ifdef RATIO
-         /*************************************************************
-		here synchronously
-         *************************************************************/
 
          dayclock();
 
          #else
-         /*************************************************************
-		new dayclock value generated asynchronously
-		but must be copied to RTA1 registers here synchronously
-         *************************************************************/
 
          _register[DAYCLOCK]   = clockr[1];
          _register[DAYCLOCK_U] = clockr[0];
@@ -523,10 +448,8 @@ void *emulate()	/* thread start */
 
       statement();
 
-      #if 1
       putchar('>');
       fflush(stdout);
-      #endif
 
       while (indication & LOCKSTEP) usleep(platform_interval);
    } 
