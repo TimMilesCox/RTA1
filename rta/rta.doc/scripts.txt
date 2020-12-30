@@ -110,7 +110,7 @@ An application or group of applications is realised in a subdirectory of
 <h4>4.1: Source Code</h3>
 
 How might a source file and a loadfs file look?
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#0000FF">
 
 cd rta/target/hello.app
 $ cat hello.msm 
@@ -150,8 +150,8 @@ $(0:0/$0)
 							. but hello is dynamic and is called a different way
 
 		catalog					. catalog is the minimal startup macro for a single application of any size
-							.	-which is dynamic loadable
-							.	-which is fixed but larger than one 4k page
+							.	-which is dynamic loadable or
+							.	-which is fixed and may be larger than one 4k page
 							.	-which is fixed and can be found by name
 
 							. for multiple applications macro $application is used instead of catalog
@@ -278,12 +278,12 @@ Hello is dynamic and is included in <a href="kernel.html#fsda">Device 1 file sys
 Applications in NVRAM
 
 <ul	type="square">
-	<li>have the name <a href="#__base">__BASE</a> equated to a known start page index:
+	<li>export the name <a href="#__base">__BASE</a> equated to a known start page index:
 	<pre	style="color:#0000FF;font-size:14pt">
-	 __BASE	$equ	APPLICATION(5)/*12
+	 __BASE*	$equ	APPLICATION(5)/*12
 	</pre></li>
 	
-        <li>the equate name is in <a style="color:#FF0000">rta/target.rta/def.app</a>:
+        <li>names <a style="color:#0000FF">APPLICATION(1..1024)</a> are switched in <a style="color:#FF0000">rta/target.rta/def.app</a> to inform kernel routines which NVRAM pages are the Start Page of a fixed application group. Each application group contains a search directory of launch names and parameters
 	<pre	style="color:#0000FF;font-size:14pt">
 
 	APPLICATION(5)	$equ	02A000		. for example
@@ -337,7 +337,7 @@ Applications in NVRAM
         <li>have a script named <a style="color:#FF0000">amass</a> in their application directory to govern catenation to the system image:
 	<pre	style="color:#0000FF;font-size:14pt">
 
-	cat	../initial.app/sysimage.rom [...] this_app.rom > sysimage.rom
+	insert this_app.rom ../up2here.apps/sysimage.rom
 	</pre></li>
 	<li>are called with telnet command <a style="color:#0000FF">r </a><a style="color:#FF0000">name</a> or from a script by <a style="color:#FF0000">name</a> or programmatically at their fixed address</li>
 
@@ -359,49 +359,52 @@ Applications for combining have no $vector lines at the front and the instructio
 $(0:*1/$0)
 
 </pre>
-Entry points for example [ first* second* third* ] are exported for linking
+Separate assemblies export entry points [ <a style="color:#FF0000">first* second* third*</a> ] for linking
 
 <pre	style="font-size:12pt;color:#0000FF">
 
+<div	style="width:500pt;border-radius:5pt;background-color:#F0F0F0">
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
 $(4:*1)
 $(0:*1/$0)		. relocatable instruction code section
-first*			. exported start address
+<a style="color:#FF0000">first*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
 	c		(seg$load)	0,,xi	(data_1st:d),,long
 	.
 	.
 	fret	0	. or ii EXIT$
+</div>
 
 
-
+<div	style="width:500pt;border-radius:5pt;background-color:#B0B0B0">
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
 $(4:*1)
 $(0:*1/$0)		. relocatable instruction code section
-second*			. exported start address
+<a style="color:#FF0000">second*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
 	c		(seg$load)	0,,xi	(data_2nd:d),,long
 	.
 	.
 	fret	0	. or ii EXIT$
+</div>
 
-
-
+<div	style="width:500pt;border-radius:5pt;color:#00FF00;background-color:#707070">
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
 $(4:*1)
 $(0:*1/$0)		. relocatable instruction code section
-third*			. exported start address
+<a style="color:#FF0000">third*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
 	c		(seg$load)	0,,xi	(data_3rd:d),,long
 	.
 	.
 	fret	0	. or ii EXIT$
+</div>
 
 </pre>
 
@@ -490,7 +493,7 @@ Three alternative macros construct iframes. Simple iframes may be constructed <a
 
         <li><a href="#_catalog">catalog</a> constructs a single application</li>
         <li><a href="#_application">$application</a> constructs a densely packed group of applications</li>
-        <li><a href="#_iframe">$iframe</a> constructs a library or block of subroutines</li>
+        <li><a href="#_iframe">$iframe</a> constructs a block of subroutines</li>
 
 </ul>
 iframes can be constructed singly or in a related load group
@@ -508,13 +511,13 @@ Direct address space is eight 4K-word pages or 32768 words containing up to 3270
 RTA1 application code is compact to the extent that one 4K-word page of memory may contain the instruction part of 30 applications
 
 <p>
-Simplest iframes have 64 vector locations which can be exported as an encoded value of <a style="color:#0000FF">page:offset</a>
+Simplest iframes have 64 vector locations which can be exported as an encoded value of <a style="color:#0000FF"><i>PAGE:OFFSET</i></a>
 
 <p>
 Macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> <a href="#_iframe">$iframe</a> construct gates which point to any offset in the iframe group which may be any size and either fixed or loadable
 
 <p>
-Entry to an iframe larger than one 4k-word page must be via a gate and not directly to a known <a style="color:#0000FF">page:vector</a> in order to execute instruction code in all the pages of the iframe
+Entry to an iframe larger than one 4k-word page must be via a gate and not directly to a known <a style="color:#0000FF"><i>PAGE:OFFSET</i></a> in order to execute instruction code in all the pages of the iframe
 
 
 <a      name="_catalog"/>
@@ -565,7 +568,7 @@ developer tools indicate if iframe storage is insufficient and needs correction 
 <a      name="_iframe"/>
 <h4>8.4: $iframe</h4>
 
-<a style="color:#0000FF">iframe</a> constructs one loadable or fixed subroutine or library iframe one or more pages in size
+<a style="color:#0000FF">iframe</a> constructs one loadable or fixed subroutine iframe one or more pages in size
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -603,32 +606,187 @@ independent library iframes are required to be at fixed and known addresses and 
 A complete and efficient application system image can be constructed without any instruction framing macros if
 <ul	type="square">
 
-	<li>instruction frames are one page of 4096 words</li><br>
+	<li>instruction frames are one page of 4096 words</li>
 
-	<li>instruction frames are at fixed storage locations</li><br>
+	<li>instruction frames are at fixed storage locations</li>
 
-	<li>library calls are programmatic because they always are</li><br>
+	<li>library calls are programmatic because they always are</li>
 
-	<li>application startups are</li><br>
-	<ul	type="none"> 
-		<li>programmatic, or</li><br>
-		<li>have lookup by name programmed by the integrator, or</li><br>
+	<li>application startups are</li>
+	<ul	type="square"> 
+		<li>programmatic, or</li>
+		<li>have lookup by name programmed by the integrator, or</li>
 		<li>use framing macros <a href="#_catalog">catalog</a> for one application or <a href="#_application">$application</a> for application group iframes</li>
 	</ul>
 </ul>
 Vector values are exported. They are encoded information and not address labels
 
 <p>
-Devising a lookup to match a text name to an application call vector is not complex
+Fixed address libraries are simple to construct as one-page blocks with 64 vectors and 64 far returns
 
 <p>
-Integrators may or may not require the long application names allowed by iframe macros and ROM/RAM file based lookups
+Applications fixed in the system image take more work to construct even than dynamic load applications
 
 <p>
-Application iframe  macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> automatically measure data section size and necessary heaps and stacks, but these measurements can also be reckoned
+Application <a style="color:#0000FF">2simple</a> is constructed without framing macros
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat 2simple.msm
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$path
+	$include	../image.app/imports.def
+	$list	
+
+$(3:03000/$3)
+$(0:0/$0)
+simpl*	$vector	simple
+	$list	0
+	$do	64-$,	fret	0
+	$list
+simple	$base_d	$zenith(3)-03000 1024
+	c	(seg$load)	0,,xi	(mydata:d),,long
+	printf	$3("that ought to be simple enough 4u":10:0),,xi
+	fret	0
+	$do	$<256,$(0:256)
+
+</pre>
+The directory must contain a text file loadfs
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat loadfs
+volume embedded
+file mydata lsegment
+
+</pre>
+2simple is then built like this
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ amake 2simple
+$ slab 2simple 2simple.rom 4096
+$ cat ../up2here.apps/sysimage.rom 2simple.rom &gt; ./sysimage.rom		# for example
+
+</pre>
+Then the integrator must 
+<ul	type="square">
+
+	<li>keep track at what page address the application is catenated</li>
+	<li>use that Start Page Index * 64 as the application launch vector value [<i>PAGE</i>:000000<sub>2</sub>]</a></li>
+	<li>have a way if required of looking up the application by name</li>
+	<li>bind minimal launch parameters to the application identity { vector, priority, static data size, -B1_frames }</li>
+
+</ul>
+None of this is particularly difficult to do but could become time-consuming to maintain
 
 <p>
-There is no restriction on using the system call
+There are drawbacks to manual configuration
+<ul	type="square">
+
+	<li>there is no check that the application catenates on an aligned page. There needs to be</li>
+	<li>the integrator must list what page contains each application</li>
+	<li>the integrator must keep static data size in view</li>
+	<li>to pack many applications in a page or have applications larger than a page the integrator must do more work</li>
+	<li>the integrator must program any lookup by name for interactive or scripted calls</li>
+
+</ul>
+Application <a style="color:#0000FF">simple</a> is less work for the integrator than application <a style="color:#0000FF">2simple</a> because
+<ul	 type="square">
+
+	<li>the catenated parts of the system image are page aligned</li>
+	<li>lookup and vector information is checked to correspond with load location derived from catenation</li>
+	<li>data sizes are carried forward automatically into launch parameters</li>
+	<li>the <a href="#nvram">application [group]</a> contains a launch name[s] and parameters directory</li>
+	<li>the containing storage block is listed for application lookup and launch</li>
+
+</ul>
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat simple.msm 
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	def.app/iframes.def
+	$include	language/catalog.def
+	$path
+	$include	../image.app/imports.def
+	$list	
+
+__BASE*	$equ	<a style="color:#FF0000">APPLICATION(4)</a>/*12
+
+$(3:03000/$3)
+$(0:0/$0)
+simpl*	$vector	simple
+
+	<a style="color:#FF0000">catalog</a>
+
+simple	$base_d	$zenith(3)-03000 1024
+	c	(seg$load)	0,,xi	(mydata:d),,long
+	printf	$3("that ought to be simple enough 4u":10:0),,xi
+	fret	0
+	$do	$<256,$(0:256)
+
+</pre>
+__BASE is exported
+
+<p>
+<a style="color:#0000ff">iframes.def</a> is introduced to explain <a style="color:#FF0000">APPLICATION(4)</a>
+
+<p>
+<a style="color:#0000ff">catalog.def<a> is introduced to explain <a style="color:#FF0000">catalog</a>
+
+<p>
+Two more lines in file loadfs assure a name lookup <a style="color:#0000ff">simple</a>
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat loadfs
+volume embedded
+file mydata lsegment
+tree application_templates
+link simple launch_gate G
+
+</pre>
+Storage block <a style="color:#FF0000">APPLICATION(4)</a> is identified to the kernel as containing applications for lookup and launch
+
+<p>
+A file <a style="color:#0000ff">amass</a> in the directory checks the location of <a style="color:#FF0000">APPLICATION(4)</a> and does the catenation
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat amass
+insert simple ../up2here.apps/sysimage.rom
+
+</pre>
+Application <a style="color:#0000FF">simple</a> is simpler. Build is just one command
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$ amake simple
+
+</pre>
+Application <a style="color:#0000FF">simple</a> is fixed in the system image and available after restart
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ telnet 172.29.7.7
+RTA1 smaragd7 OS shared console
+r simple
+00001f 
+that ought to be simple enough 4u
+
+</pre>
+
+Macro <a style="color:#FF0000">catalog</a> can be used to launch large and loadable single applications
+
+<p>
+Application framing  macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> automatically measure data section size and necessary heaps and stacks
+
+<p>
+However an application is constructed the programmatic launch call is
 <pre	style="font-size:12pt;color:#0000FF">
 
 	ql	(vector, PRIORITY, STATIC_SIZE, -B1_FRAMES:q)
@@ -906,9 +1064,9 @@ Applications may be loaded and started programmatically using
 <h3>Appendix B: iframe Examples</h3>
 
 <ul	type="square">
-	<li>rta/target.rta/hello.app/hello.msm is a simple loadable application</li>
+	<li><a href="#source">hello.msm</a> is a simple loadable application</li>
+	<li><a href="iframe.html">gate.msm</a> is a large loadable application consisting multiple iframes</li>
 	<li>rta/target.rta/multi.app/[first second third].msm and multiple.msm are a loadable group of applications</li> 
-	<li>rta/target.rta/edgecase.app/gate.msm is a large loadable application consisting multiple iframes</li>
 	<li>rta/target.rta/simple.app/simple.msm is a simple ROM application</li>
 	<li>rta/target.rta/rom1.app/[fixed1 fixed2].msm and apps.msm are a group of ROM applications</li>
 </ul>
@@ -969,6 +1127,28 @@ stdout from script-activated applications is a UDP broadcast displayed in a shel
 
 Multiple platforms anywhere in the local net may run <a style="color:#FF0000">oconsole</a>
 
+<p>
+stdout of background processes can only be broadcast if broadcast address 255.255.255.255 has an interface route in $HOME/.rta_net, for example
+<pre	style="font-size:12pt;color:#0000FF">
+
+	export RTA_WIFI=172.29.7.72/12@0.0.0.0/0*192.168.1.254@192.168.0.0/16@172.16.0.0/12<a style="color:#FF0000">@255.255.255.255/32</a>
+
+</pre>
+
+If an emulator platform doesn't appear to receive its own broadcast run the <a href="connect.html#run">network trunk process</a> with -o option. If RTA1 has a script /initial/script then -o should be opted on runL before the emulator is started
+<pre	style="font-size:12pt;color:#0000FF">
+
+	./runL -o		# forward background console output to platform loopback before RTA1 runs
+
+</pre>
+or else
+<pre	style="font-size:12pt;color:#0000FF">
+
+	./runL			
+	-o			# start forwarding background console output to platform loopback
+
+</pre>
+
 <pre	style="font-size:10pt;background-color:#FFFFFF00">
 <div	style="border-radius:5px;background-color:#FF0000;color:#FFFFFF;width:75pt;height:100pt;top:25pt;right:375pt;position:absolute">    NVRAM
 _____________
@@ -992,14 +1172,14 @@ _____________
 
 </a>
 
-<a      href="language.html">
+<a      href="#application_group">
 <div	style="border-radius:5px;color:#FFFFFF;background-color:#0000FF;
 	width:75pt;height:75pt;top:25pt;right:125pt;position:absolute">
- application
-   structure
 
-  structural
-      macros
+
+   fixed and
+    loadable
+applications
 </div>
 </a>
 
@@ -1044,18 +1224,19 @@ _____________
 </div>
 
 
-<a      href="app.html">
+<a      href="language.html">
 <div	style="border-radius:5px;color:#FFFFFF;background-color:#0000FF;
 	width:75pt;height:75pt;top:125pt;right:25pt;position:absolute">
+   functions
 
-   fixed and
-    loadable
-applications
+        call
+    sequence
+      macros
 
 </div>
 </a>
 
-<a      href="iframe.html">
+<a      href="#build">
 <div	style="border-radius:5px;color:#FFFFFF;background-color:#0000FF;
 	width:75pt;height:75pt;top:225pt;right:25pt;position:absolute">
 

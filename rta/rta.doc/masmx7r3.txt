@@ -236,7 +236,7 @@ Lines may be continued
 
 [label]	[command]	[argument1[,argument1_subfield2,...]]	;
 			[argument2[,argument1_subfield2,...]]	;
-			[argumentN[,argumentN_subfield2,...]] 
+			[argumentN[,argumentN_subfield2:substring2:..., ...]] 
 
 </pre>
 <a      name="labels"/>
@@ -246,9 +246,18 @@ A label starts in column 1 and ends in whitespace. A label may contain letters, 
 starts with a letter or _?!@
 
 <p>
-Substring divider : may be a character in a label or a join in a structure
+Substring divider : may be
+<ul	type="none">
 
-<p>
+	<li>a character in a label</li>
+
+	<li>a join in a <a href="#structure">structure</a></li>
+
+	<li>a divider in <a href="#proc">actual macro parameters</a> in the hierarchy [ spaces , : ]</li>
+
+	<li>a divider between <a href="#strings">text "sub":"strings"</a> and "intervening":_HORIZONTAL_TAB:"<- non_graphics ->":_LINE_FEED</li>
+
+</ul>
 A label may be in "" and then it starts with anything and contains anything
 
 <p>
@@ -1766,38 +1775,65 @@ internal stack are read and written as one or two or four 24-bit words
 
 <pre	style="font-size:12pt;color:#0000FF">
 
-		half$w = 0							half$w = 1
-		__________							__________
+
+		byte reads							byte writes
+		__________							___________
+
+		_________________________________________________		__________________________________________________
+register	|	extended signs		      data	|		|				  low order bits |
+		|______________________________|________________|		|_______________________________|________________|
+					      /		       /					       /	        /
+					     /		      /						      /		       /
+					    /		     /						     /		      /
+					   /		    /						    /		     /
+					  /		   /						   /		    /
+					 /		  /						  /		   /
+					/		 /						 /		  /
+				       /		/						/		 /
+				      /		       /					       /	        /
+				     /		      /						      /		       /
+				    /		     /						     /		      /
+				   /		    /						    /                /
+				  /		   /						   /                /
+				 /		  /						  /		   /
+		________________/________________/_______________		_________________/________________/______________
+storage	word	|		| designated byte|		|		|    unchanged	 |    written	 |  unchanged	|
+		|_______________|________________|______________|		|________________|_______________|______________|
+
+
+
+		<a style="color:#FF0000">half$w = 0</a>							<a style="color:#FF0000">half$w = 1</a>
+		<a style="color:#FF0000">__________</a>							<a style="color:#FF0000">__________</a>
 
 		  23                                          0
 		_________________________________________________
-   jjj = 001	|	t1	|////unused/////|////unused/////|
-		|_______________|____unchanged__|____unchanged__|
+   jjj = 001	|	t1	|	unused on read		|
+		|_______________|_______unchanged_on_write______|
 
 
-				xorB, t1	indicators
+   assembly language example	<a style="color:#FF0000">xorB, t1	indicators</a>
+   _________________________
+
+
+		  23                                          0			  23                                          0
+		_________________________________________________		_________________________________________________
+   jjj = 010	|unused on read	|	t2	|unused on read	|		|	    h1		|    unused on read	|
+		|unchanged_on_wr|_______________|unchanged_on_wr|		|_______________________|____unchanged on write_|
+
+
+   assembly language examples	<a style="color:#FF0000">ana		*margin,,t2					xor		crypto,b,h1</a>
+   __________________________
 
 
 
 		  23                                          0			  23                                          0
 		_________________________________________________		_________________________________________________
-   jjj = 010	|////unused/////|	t2	|////unused/////|		|	    h1		|///unused//unchanged///|
-		|____unchanged__|_______________|____unchanged__|		|_______________________|_______________________|
-
-
-				ana		*margin,,t2					xor		crypto,b,h1
-
-
-
-
-		  23                                          0			  23                                          0
-		_________________________________________________		_________________________________________________
-   jjj = 011	|////unused/////|////unused/////|	t3	|		|///unused//unchanged///|	    h2		|
-		|____unchanged__|____unchanged__|_______________|		|_______________________|_______________________|
+   jjj = 011	|       unused on read		|	t3	|		|    unused on read	|	    h2		|
+		|_______unchanged_on_write______|_______________|		|____unchanged on write_|_______________________|
 
 				
-				mf		table, x, t3					ay, h2		interval
-
+   assembly language examples	<a style="color:#FF0000">mf		table, x, t3					ay, h2		interval</a>
+   __________________________
 
 
 </pre>
@@ -3360,10 +3396,13 @@ and I/O port[ea + 1]. Register a is incremented by 2
 <a	name="locators"/>
 <h2>7: Application Memory and Location Counters</h2>
 
-Applications are written in absolute code, as if each application occupies a computer
+<a href="scripts.html#application_group">Applications</a> are written in absolute code, as if each application occupies a computer
 
 <p>
 This is because RTA1 machine translates addresses using 72 I/O ports as relocation pointers
+
+<p>
+A suite of applications may be linked from <a href="scripts.html#singlemu">relocatable code</a> in an absolute load image to optimise instruction code storage
 
 <p>
 Program sections are declared with <a href="language.html#application_structure">location counter command</a> $(.. in column 1 
@@ -3383,7 +3422,7 @@ iframe shares its first page @ adresses 256..4095 with operand space but may hav
 $(0::LOAD_SPACE_TAG/$0)		. iframe @ logical address zero
 iframe_name	$application
 
-$(1:01000)			. private data @ logical address 001000 hex
+$(1:01000)			. private data + variable indirection pointers @ logical address 001000 hex
 
 $(3:03000/$3)			. static data @ logical address 003000 hex
 
