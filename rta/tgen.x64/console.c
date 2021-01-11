@@ -174,27 +174,19 @@ void action(char request[])
          xx = sscanf(request + 1, "%x:%x", &index, &offset);
 
          if (xx == 1) breakpoint = &b0p->w[index];
-         if (xx == 2) breakpoint = &memory.p4k[index].w[offset];
+         if (xx == 2)
+         {
+            if (index | offset) breakpoint = &memory.p4k[index].w[offset];
+            else breakpoint = NULL;
+         }
 
          flag['s'-'a'] = 0;
          indication &= -1 ^ LOCKSTEP;
 
-         /***************************************************
-		some systems give -1 with errno = 0
-		when stream terminates at 1st byte
-         ***************************************************/
-
-         if (xx < 1) xx = 0;
-
-         if (xx) indication |= BREAKPOINT;
-         else
-         {
-            indication &= -1 ^ BREAKPOINT;
-            breakpoint = NULL;
-         }
-
          if (breakpoint)
          {
+            indication |= BREAKPOINT;
+
             #ifdef __X64
             #define FORMAT1 "[>%x,%lx]"
             #else
@@ -205,6 +197,7 @@ void action(char request[])
                                       indication, breakpoint - memory.p4k[0].w);
             if (flag['e'-'a']) printf("[@%p:%p]", memory.p4k[0].w, breakpoint);
          }
+         else indication &= -1 ^ BREAKPOINT;
 
          prompt = 0;
          putchar(':');
