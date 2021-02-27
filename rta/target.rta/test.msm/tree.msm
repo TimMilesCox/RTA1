@@ -1,0 +1,118 @@
+
+tree_space $tree
+
+	. return long address in 10:11 to directory page
+
+	. return address in y of the directory space for caller to write
+
+	. a new block is TREE_BLOCK words * as many as the new
+	. new entry requires with 5-word PAGE$CONTROL record and
+
+	. on success skip one instruction on return, otherwise don't
+
+INSERT_POINT	$equ	7
+WORDS_SOUGHT	$equ	8
+WORDS_DELIVERED	$equ	9
+
+	sa	WORDS_SOUGHT
+
+tree_walk
+	ly	11			. 11 should be @ directory page start
+	dl	tpage:write_point
+	sa	INSERT_POINT
+	anb	WORDS_SOUGHT		. b is tpage:write_space
+
+	jc	it_goes_in_here		. new entry fits
+
+	dl	tpage:next_page_granule
+	jdz	tree_extend
+
+	
+	drr	LOG24(GRANULE)+6	. ms bits a = offset: ls bits b = bank
+	lk	(040003F)		.
+	sal	6
+	mlb	10			. acquire device information
+
+	or, xi	BASE			. construct the pointer
+	rar	6
+	drr	24
+	ds	10
+	ly	b
+
+	sabr	BASE
+	j	tree_walk
+
+tree_extend
+	la, xi	CONTROL_WORDS$+1+1	. the new page wants a page control record
+					. and an end of page record
+	aa	WORDS_SOUGHT
+	lcal	tpage
+	lret	0			. failure to obtain
+
+	ly	11
+	ds	tpage:next_page_granule	. store forward granule ID
+					. of next directory page
+
+	lcal	granule2base10A
+	sabr	BASE
+	ds	10
+	ly	b
+
+	lb	(PAGE$CONTROL,,CONTROL_WORDS$)
+	sb	tpage:rfw
+	la	WORDS_DELIVERED
+	aa, xi	-1
+	aa	y
+	lb	(PAGE$END,0,0)
+	sb	0, a)
+
+	la, xi	CONTROL_WORDS$+1	. initialise write point
+	lb	WORDS_DELIVERED		. initialise write space
+	ab, xi	-CONTROL_WORDS$-1-1
+	anb	WORDS_SOUGHT
+
+	sa	INSERT_POINT
+
+it_goes_in_here
+
+	. at this point y points to the directory page head
+	. b has been decremented by the requested length
+	. a has write_point inside
+
+	aa	WORDS_SOUGHT		. update the write point
+	ds	tpage:write_point	. update the page control word
+	
+	ay	INSERT_POINT		. the final result pointer
+
+	ab, xi	-1			. shall we write a bypass record?
+	jnb	deliver			. no
+	orB	(BY$PASS*/16s)
+	la	WORDS_SOUGHT
+	aa	y
+	sb	0, a
+
+deliver	lret	1
+
+.	this routine is less generic. for RTA1 16-GWord filestore device arrays
+
+tpage	aa, xi	1023
+	and, xi	-1024
+	sa	WORDS_DELIVERED
+
+			. filestore24 works in a different address window
+			. and does not change BASE_FS1
+			. or save locations 10:11
+
+	lcal	filestore24
+	lret	0	. failure to obtain
+
+	
+
+	dl	10	. long address of where it's at
+	sal	2	. suppress the big flag
+	sar	8	. and the device pointer
+	sbl	6	. and the base selector
+			. assignment is a granule pointer returned in a:b
+	lret	1
+
+	$root

@@ -1,0 +1,135 @@
+$(66::,x)
+pactrl	p_array
+
+$(0)
+binary_locate $tree
+	$head_far	 params(pa_control,	int,	lx	;
+				key,		int	)	;
+							;
+			scalars(record1,	int	;
+				recordz,	int	;
+				pointers,	int,	pactrl:pointers	;
+				tchain_head_tail, long,	pactrl:tchain_head	;
+				binary_interval_aside,	long	)
+
+
+	la	pactrl:top_page
+	jza	page1_x
+	sabr	34
+
+	la	pointers
+	jza	page1_x
+	sar	1
+	sa	b
+
+page1	ds	binary_interval_aside
+	sar	12
+	or	(34*/12)
+	la	0, a
+	sabr	33
+	la	binary_interval_aside
+	and, xi	4095
+	or	(33*/12)
+	la	0, a
+	lcal	page
+	ly	(32*/18s)
+	ay	tchain_head_tail
+	sy	record1
+	lc	key_compare	pa_control	key
+	jna	key_low		. search key < first record key in page
+	jza	record1_hit
+	ly	(32*/18s)
+	ay	tchain_head_tail+1
+	sy	recordz
+	lc	key_compare	pa_control	key
+	lb	recordz
+	jza	recordz_hit
+	jna	page_search	. search key < last record key in page
+				. search key > last record key in page
+	dl	binary_interval_aside
+	sbr	1
+	jzb	page1_x
+	aa	b
+	lr	pointers
+	lx	a
+	jxge	page1_u
+	j	page1
+
+page1_u	sbr	1
+	jzb	page1_x
+	ana	b
+	lx	a
+	jxge	page1_u
+	j	page1
+
+key_low	dl	binary_interval_aside
+	sbr	1
+	jzb	page1_x
+	ana	b
+	j	page1
+	
+
+page_search
+	lk, xi	-1
+page_search1
+	ly	record1
+	la	xrecord:next
+	aa	(32*/18s)
+	mtane	recordz
+	j	insert_point
+	sa	record1
+	ly	a
+	lx	pa_control
+	lc	key_compare	pa_control	key
+	jza	record_hit
+	jpa	page_search1
+
+page1_x
+record1_hit
+record_hit
+insert_point
+	lb	record1
+recordz_hit
+	la	binary_interval_aside
+	$ret
+	$root
+	
+key_compare $tree	. x -> pactrl, y -> record
+
+	$head_near	 params(pa_control,	int,	lx	;
+				key,		int)		;
+			scalars(keyloc,	int,	pactrl:keyloc	;
+				keywords, int,	pactrl:keywords	;
+				mask1,	int,	pactrl:mask1	;
+				maskz,	int,	pactrl:maskz)
+	lx	key
+	ay	keyloc
+	la	0, x
+	lb	0, y
+	and	mask1		. word1 mask always present
+	andB	mask1
+	ana	b
+	lr	keywords	. 1st word + following complete words
+	jnza	keys_comparex
+	dec	r
+	j	key_compare?
+
+key_compare!
+	la	0, x
+	ana	0, y
+	jnza	keys_comparex
+key_compare?
+	ax, xi	1
+	ay, xi	2
+	jdr	key_compare!
+
+	la	maskz		. zero if no trailing part word
+	jza	keys_comparex
+	la	0, x
+	lb	0, y
+	and	maskz
+	andB	maskz
+	ana	b
+keys_comparex
+	$ret
+	$root

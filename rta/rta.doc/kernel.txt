@@ -89,7 +89,7 @@ See also the licensing notice at the foot of this document
 			<dd><a href="#sprintf">sprintf</a>		macro -->	__sprintf</dd>
 			<dd><a href="#fscanf">scanf/fscanf</a>		macro -->	__fscanf</dd>
 			<dd><a href="#fprintf">printf/fprintf</a>	macro -->	__printf fprintf</dd>
-			<dd><a href="#fgets">fgets</a>			macro -->	read</dd>
+			<dd><a href="#fgets">fgets</a>			macro -->	__fgets</dd>
 			<dd><a href="#fflush">fflush</a>		macro -->	fsync</dd>
 		</dl>
 	</ol>
@@ -951,16 +951,18 @@ Instruction frames can be any size in adjacent pages of 4096 words
 
         <a      style="font-family:optima;font-size:16pt;color:#0000FF">close TCP connection</a>
 
-        close() removes the connection and makes the socket
-        handle number free reassignable within the process
+        close() removes the connection and the process may reassign the handle number
 
-        a shareable port remains available for bind()
-        and may still have sockets bound to it
+	TCP listening ports are not freed when attached connections close
+	The listening socket owns the port and accesses multiple connections
 
-        a port not configured for sharing becomes available
-        for binding to one socket
+        TCP ports bound to outgoing connections
+        are freed on connection socket close
 
-        close() returns immediately. There is no blocking
+        close() returns immediately without blocking
+	but incoming traffic may still be available
+	the remote socket does not usually send after acknowledging TCP_FIN
+	and normally sends its own TCP_FIN with the acknowledgement
 	</div>
 
 </pre>
@@ -1184,7 +1186,7 @@ at least for reading
 					<i>RUN_PROFILE_RECEIVE_BUFFER</i>[,,i]
 	
 	<div	style="font-family:optima">
-	iframe_load loads a group of instruction frames constructed with macro $application or $iframe
+	iframe_load loads a group of instruction frames constructed with macros $application / catalog /  $iframe
 	from file system device array 1 to executable RAM
 
         The 48-bit <i>FILE_DESCRIPTOR_DEVICE_OFFSET</i> may be obtained with FS24 kernel routine fspath
@@ -1197,7 +1199,7 @@ at least for reading
 	The iframe group may be an application or libraries
 
 	load_iframe returns the application start specification if <i>RUN_PROFILE_RECEIVE_BUFFER</i> is nonzero
-	</div
+	</div>
 	
 	<a	name="qstart"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">qstart</a>
 
@@ -1214,6 +1216,7 @@ at least for reading
 
 	</div>
 </pre>
+<a	name="fs_stream"/>
 <h4>2.4.3: File Stream Calls</h4>
 <pre>
 
@@ -1225,23 +1228,23 @@ at least for reading
 
 	These three handles are usually one TCP dialogue leased from telnet
 
-	All stream commands are macros:	sscanf	calls		__sscanf
-					sprintf	calls		__sprintf
-					scanf and fscanf call	__fscanf
-					printf and fprintf call	__fprintf
-					fgets calls		read
-					fflush calls		fsync
+	All stream commands are macros:	sscanf		calls		__sscanf
+								sprintf		calls		__sprintf
+								scanf / fscanf	call		__fscanf
+								printf / fprintf	call		__fprintf
+								fgets			calls		__fgets
+								fflush		calls		fsync
 					
 	</div>
 	<a	name="format"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">Scan and Format Control Strings</a>
 
-	Available data type tags in format strings are:	%d	an integer in decimal
-							%i	input only, an integer in decimal or hex
-							%f	a floating number
-							%x	an integer in hex
-							%c	a character symbol
-							%s	a character string
-							%:<a style="background-color:#E0E0E0"> </a>	input only, a string terminated by the symbol after %:
+	data tags in format strings:	%d	an integer in decimal
+					%i	input only, an integer in decimal or hex
+					%f	a floating number
+					%x	an integer in hex
+					%c	a character symbol
+					%s	a character string
+					%:<a style="background-color:#E0E0E0"> </a>	input string terminated by the symbol after %:
 
 	<div	style="font-family:optima">
 	The default size of an integer is one word
@@ -1253,7 +1256,7 @@ at least for reading
 	Size overrides are:	%ld %li %lx capture two input words. %ld %lx format two output words from the internal stack
 
 				%lf on input <a href="rta.html#fp">compresses</a> the captured number to two words on storage
-				%lf on output expects the <a href="rta.html#fp">compressed floating number</a> to have been promoted to four words in the internal stack
+				%lf assumes <a href="rta.html#fp">compressed floating number</a> has been promoted on output to four internal stack words
 
 				%jd %ji %jx capture three input words. %jd %jx format three output words from the internal stack
 
@@ -1371,8 +1374,8 @@ at least for reading
 
 	<a      name="fp192_lib"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">192-Bit Floating Library</a>
 
-	Arguments referenced by address are shown here with designator ,,i which is available with base+displacement addresses and
-	equally with fixed addresses. Designator ,,xi delivers fixed immediate addresses but not addresses with base register
+	Arguments referenced by address are shown here with designator ,,i for base+displacement and fixed addresses 
+	Sign exteded immediate designator ,,xi delivers fixed immediate addresses but not addresses with base register
 
 	<a	name="fp192_add"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_add</a>
 
@@ -1384,7 +1387,7 @@ at least for reading
 
 		c	(fp192_add_negative)	<i>SUBTRAHEND</i>,,i
 
-	the 1s complement of the 8-word value at adress <i>SUBTRAHEND</i> is added to the minuend in registers a:b:mantissa2:mantissa3:8:9:10:11
+	1s complement of the 8-word <i>SUBTRAHEND</i> is added to the minuend in registers a:b:mantissa2:mantissa3:8:9:10:11
 
 	<a	name="fp192_multiply"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_multiply</a>
 
@@ -1397,7 +1400,7 @@ at least for reading
 		c	(fp192_mfa)	<i>MULTIPLICAND</i>,,i	<i>MULTIPLIER</i>,,i
 
 	the 8-word value at address <i>MULTIPLICAND</i> is multiplied by the 8-word value at address <i>MULTIPLIER</i>
-	the 8-word product is stored at address <i>MULTIPLICAND</i>. Accumulators a:b:mantissa2:mantissa3:8:9:10:11 are overwritten however
+	8-word product is stored at address <i>MULTIPLICAND</i>. Accumulators a:b:mantissa2:mantissa3:8:9:10:11 are overwritten 
 
 	<a	name="fp192_divide"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_divide</a>
 

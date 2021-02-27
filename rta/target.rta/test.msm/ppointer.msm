@@ -1,0 +1,307 @@
+LAST_WORD	$equ	k
+KEY_ARRAY	$equ	12
+
+.	there is no restriction in the size of calc keys
+.	but this routine only includes KEY_ARRAY words in
+.	the placement calc. The subsequent walk through	a
+.	calc chain compares pairs of entire keys
+
+.	this routine page_pointer() is aimed at data characters
+.	not much larger than octets and 12-bit halfwords
+
+.	where keys are strings of something much larger than octets,
+.	a good calc placement might need more words than KEY_ARRAY
+.	to be summed for page placement
+
+.	this is because most of the variation in a data character
+.	is in the ls 5 bits, whatever the data code and byte size
+
+.	page_pointer_fast() routine might be considered instead of
+.	this routine in the case of 24-bit and 16-bit data bytes,
+.	because page_pointer_fast can sum unlimited words into calc
+
+.		page_pointer()
+.		page_pointer_fast()
+
+.	are both for areas with up to 1 */ 46 primary pages
+.	(128 terapages)
+
+.	or for areas with < 16777217 primary pages
+
+.	final folded XOR includes all key bits which have
+.	been scanned
+
+page_pointer	$tree
+	$head_near	 params(key_bits,	int	;
+				primary_pages,	long	;
+				key_p,		long)	;
+			scalars(log,		int	;
+				mask,		long	;
+				key,		KEY_ARRAY)
+
+	dl	primary_pages	. obtain the containing power of 2
+	dan	(1d)		. of itself and lower numbers
+	dlsc	a		. down to the next power of 2
+	dl	(1d)		. turn that through the top
+	drr	*6
+	dan	(1d)		. 1 less is the containing mask
+	ds	mask
+	la, xi	48
+	ana	6		. reciprocal of shift count
+	sa	log
+
+	la, xi	KEY_ARRAY*$word
+	ana	key_bits
+	jc	length_in_range
+
+	la, xi	KEY_ARRAY*$word
+	sa	key_bits
+
+length_in_range
+
+	lc	key_array	key_bits	;
+				key,,i		;
+				key_p,,long
+
+	aa, xi	-1
+	sar	1		. r = word-pairs - 1
+	lr	a
+	lx, i	key
+	dl	key
+	z	6
+	z	7
+
+pair	dl	0, x
+	drr	*r		. this should reduce lanes of
+				. untouched primary pages
+	xor	6
+	xorB	7
+	ds	6
+
+	ax, xi	2
+	jdr	pair
+
+	tz	mask		. if the # primary pages is < 16777217
+	j	in_page_range
+	xorB	a		. turn the 2-word sum
+	la, xi	0		. into a 1-word accumulation
+	ds	6
+
+in_page_range
+	lx	log		. fold over the bits outside the
+	dsr	0, x		. primary-pages containing mask
+
+	xor	6
+	xorB	7
+
+	and	mask
+	andB	mask+1
+	ds	6
+
+	dan	primary_pages
+	jc	$+2
+	dl	6
+
+	$ret
+	$root
+
+.	this routine requires integral words of key
+
+.	it doesn't call key_array to load / trim / align
+.	the key and so saves processing and internal stack
+
+.	it has no key length restriction and is optimal for
+.	UTF-32 24-bit character keys which might need more
+.	than KEY_ARRAY words to get a good page placement
+
+.	this is because most of the variation in a data character
+.	is in the ls 5 bits, whatever the data code and byte size
+
+.	it can also be wrappered to use an external stack
+.	frame for very long keys with no alignment guarantee
+.	if > KEY_ARRAY words must be summed for calc
+
+page_pointer_fast $tree
+
+	$head_near	 params(key_words,	int	;
+				key,		int	;
+				primary_pages,	long)	;
+							;
+			scalars(log,		int	;
+				mask,		long)
+
+	dl	primary_pages
+	dan	(1d)		. size the containing power2-bucket
+	dlsc	a		. of the number of pages
+	dl	(1d)
+	drr	*6		. roll this through the top for size
+	dan	(1d)		. the mask is 1 less
+	ds	mask
+	la, xi	48		. the log is the shift count reciprocal
+	ana	6
+	sa	log
+
+	lr	key_words
+	off	carry$
+	src	r		. word-pairs = words / 2
+	sc	LAST_WORD
+
+	lx	key
+	dsr	48		. in case there is only
+	ds	6		. one word in the key
+	j	pair?
+
+pair!	dl	0, x
+	drr	*r		. vary the position of the most variable bits
+	drr	*LAST_WORD	. an extra flick if there is an unpaired word
+				. at the end, because that word is not rotated
+	xor	6
+	xorB	7
+	ds	6
+	ax, xi	2
+pair?	jdr	pair!
+
+	tz	LAST_WORD
+	xor	0, x
+	ds	6
+
+	tz	mask		. < 16777217 primary pages?
+	j	in_page_range
+	xorB	a
+	la, xi	0
+	ds	6
+
+in_page_range
+	lx	log		. fold the sum bits beyond pages radix
+	dsr	0, x
+	xor	6
+	xorB	7
+
+	and	mask		. find the remainder
+	andB	mask+1
+
+	ds	6
+	dan	primary_pages
+	jc	$+2
+	dl	6
+
+	$ret
+
+	$root			. page_pointer_fast
+
+
+.	this routine extracts keys
+.	for alignment / copy / comparison
+
+.	it's restricted to KEY_ARRAY words
+.	when loading the internal stack
+
+.	otherwise it extracts unlimited data words
+
+.	the number of words tabled is returned in a
+
+key_array $tree
+	$head_near	 params(key_bits,	int	;
+				key,		int	;
+				key_p,		long)
+	lx	key
+	la	key_bits
+	sa	6
+	z	7	. initialise output words count
+
+	dl	key_p
+	jza	no_offset
+
+	dsr	24
+	d, xi	24
+	aa	key_p+1
+	jnzb	offset
+	dsr	24
+	j	no_offset
+	
+offset	lcal	offset_array
+	j	key_array_x
+
+no_offset
+	lcal	quick_array
+key_array_x
+	la	7
+	$ret
+
+
+quick_array $tree
+	ly	b
+more	dl	0, y
+	ds	0, x
+
+	inc	7
+	inc	7
+
+	push,xi	-48
+	popA	6
+
+	jc	advance
+
+	n	6		. trim off the bits
+	inc	6		. which aren't in the key
+	dsr	*6
+	dsl	*6
+	ds	0, x
+	lret	0	
+
+advance	ax, xi	2
+	ay, xi	2
+	
+	tz	6
+	j	more
+	
+	lret	0
+	$root			. quick_array
+
+offset_array $tree
+
+	ly	a
+	lr	b
+
+	dl	0, y		. nnyyyy yyyyyy
+round	drl	*r		. yyyyyy yyyynn 
+	sa	0, x
+
+	inc	7
+
+	push,xi	-24
+	popA	6
+	jnc	trim
+	tnz	6
+	j	exit
+
+	ay, xi	2
+	la	0, y		. zzzzzz yyyynn
+
+	drr	*r		. nnzzzz zzyyyy
+	rbl	*r		. nnzzzz yyyyzz
+	sb	1, x
+
+	push,xi	-24
+	popA	6
+
+	jnc	trim1
+	tnz	6
+	j	exit
+
+	ax, xi	2
+	lb	1, y		. nnzzzz oooooo
+	j	round
+
+trim1	ax, xi	1		. point at 2nd word of pair
+trim	n	6
+	inc	6
+
+	la	0, x
+	sar	*6
+	sal	*6
+	sa	0, x
+
+exit	lret	0
+	$root			. offset_array
+	$root			. key_array

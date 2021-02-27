@@ -4003,7 +4003,7 @@ MASMX 7r3
 Directive $xqt_fp orders floating operations for run-time algorithms
 
 <p>
-Input is an expression of any complexity describing an algorithm step. 4- or 8-word result is in registers <b>a:b:6:7[:8:9:10:11]</b>
+Input is an expression of any complexity describing an algorithm step. 4- or 8-word result is in registers <b>a b 6 7 [ 8 9 10 11 ]</b>
 
 <p>
 An algorithm which can be stated as an expression takes one pass of one $xqt_fp line
@@ -4018,10 +4018,8 @@ Input tokens are either known at assembly time or are variables
 All terms are computed at runtime
 
 <p>
-Spans of known terms in an expression may be changed to a single <a href="http://timmilescox.github.com/masmx/masmx.html#equ">equated term</a> calculated with interactive <a href="fponline.html">fponline</a> which itself uses just-in-time $xqt_fp assembly
-
-<p>
-fponline is accessed outside the context of coding the application:
+Spans of known terms in an expression may resolved interactively with <a href="fponline.html">fponline</a>
+and <a href="http://timmilescox.github.com/masmx/masmx.html#equ">equated</a> to a name
 <pre	style="font-size:12pt;color:#0000FF">
 
 	$ cd rta/client
@@ -4031,11 +4029,9 @@ fponline is accessed outside the context of coding the application:
 	.
 	$
 
-	the assembly syntax for equating the value returned for the expression is
+	. the assembly syntax for equating the value returned for the expression is
 
-name	$equ	value
-
-	some of your variables may even be known values which you have stored as names in <a href="fponline.html">fponline</a>
+	name	$equ	value
 
 </pre>
 $xqt_fp orders operations by macro names which are implemented per target. RTA1 supplied macro code is
@@ -4102,7 +4098,7 @@ r2xample.msm: object code 190 bytes: 0 errors: 0 undefined labels
 </pre>
 masmx has taken an expression with five operands and four operators, and
 turned it into a sequence of five instructions which deliver the four-word
-floating result of the operations in the result registers <b>a:b:mantissa2:mantissa3</b>
+floating result of the operations in the result registers <b>a b mantissa2 mantissa3</b>
 
 <p>
 Three of these tokens are identifiers whose content is only known at runtime
@@ -4111,13 +4107,10 @@ Three of these tokens are identifiers whose content is only known at runtime
 The tokens which are constants appear as literals at the foot of the assembly
 
 <p>
-Operand expressions in RTA1 assembly are effective addresses which some instructions use as immediate values
+An expression in RTA1 assembly generally is an effective address which some instructions use as an immediate value
 
 <p>
-$xqt_fp directive discriminates value constants from stored data differently from general RTA1 assembly
-
-<p>
-These rules of $xqt_fp discriminate between self-evident values (constants) and stored values (unknowns or variables at a location)
+$xqt_fp has different rules to discriminate between identifiers and self-evident values
 
 	<blockquote>
 	a field of digits is a value<br><br>
@@ -4604,7 +4597,7 @@ and <a href="iframe.html">Large and Loadable Instruction Frames</a>
 Multiple small applications can be packed in one 4096-word iframe. See <a href="#linking">Linking</a>
 
 <p>
-iframe shares its first page @ adresses 256..4095 with operand space but may have more pages of instructions from address 4096 outside operand space
+iframe shares its first page @ addresses 256..4095 with operand space but may have more pages of instructions from address 4096 outside operand space
 
 <pre    style="font-size:12pt;color:#0000FF">
 
@@ -4617,7 +4610,7 @@ $(3:03000/$3)                   . static data @ logical address 003000 hex
 
 </pre>
 
-Program or static date occupies as many windows 3..31 as required at addresses 003000..01F000 / 0C0000..7FFFFF
+Program or static date occupies as many windows 3..31 as required at addresses 003000..01FFFF / 0C0000..7FFFFF
 
 <p>
 An application starts by placing assigned data memory in windows 3.. with
@@ -4637,38 +4630,40 @@ Words 0..255 of operand space are registers
 
 <h3>Location Counters</h3>
 
-Location counters correspond to program sections. masmx has 72 location counters.
-Their RTA1 usage convention with smaragd7 kernel is
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+Location counters correspond to program sections. masmx has 72 location counters
+
+<p>
+Applications running on the actual kernel have this memory map
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
-	_________________________________________________________________________________________________________________
-        |       location counter|       address window			|		purpose / address range		|
-        |_______________________|_______________________________________|_______________________________________________|
-        |       $(0) [ + $(4) ] |       instruction frame B0            |[ispace]000000..007FFF / [dspace]000100..000FFF|
-        |_______________________|_______________________________________|_______________________________________________|
-        |       $(1:01000)	|       private stack frame B1		|	     data memory space 001000..001FFF	|
-        |_______________________|_______________________________________|_______________________________________________|
-        |       $(2)            |       vector list B2			|	     data memory space 002000..002FFF	|	    
-        |_______________________|_______________________________________|_______________________________________________|
-        |       $(3:03000)	|       data windows  B3..B31		|	application data space 003000..01FFFF	|
-        |_______________________|_______________________________________|___________________________or 0C0000..7FFFFF___|
-        |			|       data windows B32..B47		|	application context kernel interface	|
-        |_______________________|_______________________________________|_______________________________________________|
-        |			|       data windows B48..B63           |		kernel				|
-        |_______________________|_______________________________________|_______________________________________________|
-        |       $(66::,x)	|       pointer in index register x	|
-        |_______________________|_______________________________________|
-        |       $(67::,y)	|       pointer in index register y	|
-        |_______________________|_______________________________________|
-        |       $(68::,a)	|       pointer in arithmetic register a|
-        |_______________________|_______________________________________|
-        |       $(69::,b)	|       pointer in arithmetic register b|
-        |_______________________|_______________________________________|
-        |       $(70::,fp)	|       frame at external stack pointer |
-        |_______________________|_______________________________________|
-        |       $(71::,sp)      |       frame at internal stack pointer |
-        |_______________________|_______________________________________|
+	_________________________________________________________________________________________________
+        |   $(locator)	|       address window			|	    purpose / address range	|
+        |_______________|_______________________________________|_______________________________________|________________________
+        <a style="background-color:#000080">|$(0) [ + $(4) ]|       instruction frame B0            |               [dspace] 000100..000FFF / [ispace] 0..007FFF	|</a>
+        <a style="background-color:#000080">|_______________|_______execute_+_read__________________|________________________________________			|</a> 
+        |   $(1:01000)	|       private stack frame B1		| application data space 001000..001FFF	|<a style="background-color:#000080">			|</a>
+        |_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">			|</a>
+        <a style="background-color:#000080">|   $(2)	|       vector list B2 read-only	|      data memory space 002000..002FFF	|			|</a>
+        <a style="background-color:#000080">|_______________|_______________________________________|_______________________________________|			|</a>
+        |   $(3:03000)	|       data windows  B3..B31		| application data space 003000..01FFFF	|<a style="background-color:#000080">			|</a>
+        |_______________|_______________________________________|_____________________or_0C0000..7FFFFF_|<a style="background-color:#000080">_______________________|</a>
+        <a style="background-color:#0000FF">|		|       data windows B32..B47		|     application / kernel interface	|			|</a>
+	<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|	    accessed by	|</a>
+        <a style="background-color:#0000FF">|		|       data windows B48..B63           |      kernel default socket buffers	|	kernel routines	|</a>
+	<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|_______________________|</a>
+        |   $(66::,x)	|       pointer in index register x	|
+        |_______________|_______________________________________|
+        |   $(67::,y)	|       pointer in index register y	|
+        |_______________|_______________________________________|
+        |   $(68::,a)	|       pointer in arithmetic register a|
+        |_______________|_______________________________________|
+        |   $(69::,b)	|       pointer in arithmetic register b|
+        |_______________|_______________________________________|
+        |   $(70::,fp)	|       frame at external stack pointer |
+        |_______________|_______________________________________|
+        |   $(71::,sp)  |       frame at internal stack pointer |
+        |_______________|_______________________________________|
 
 
 </pre>
@@ -5503,4 +5498,12 @@ Matches which are not on a quartet aligned bit position are otherwise difficult 
 
 
 </div>
+<pre>
+<a	href="index.html">
+<pre	style="border-radius:5px;color:#FFFFFF;background-color:#0000FF;font-size:16pt;
+	width:100pt;height:25pt;top:0pt;right:20pt;position:absolute">
+INTRO PAGE ->
+
+</pre>
+</a>
 </html>

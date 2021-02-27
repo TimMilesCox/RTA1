@@ -1,0 +1,133 @@
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$include	language/stack.def
+	$list
+	$path
+	$include	cdml.def
+
+SYMBOL	$equ		16
+
+$(0::CDMLB)
+bit_compare* $vector	bcompare
+
+$(0:64)
+bcompare $tree
+	$head_far	 params(symbols_left,	int	;
+				symbols_right,	int	;
+				lstring,	long	;
+				rstring,	long	;
+				fill_pattern,	int)
+
+	BSTREAMI$	lstring
+	ex		align_s1, a
+	BSTREAMI$2	rstring
+
+	lb	0, x		. read s2 1st word
+	ax	1,,xi		. advance pointer
+	rbl	0, y		. advance bit position
+
+	dl	symbols_left	. s1 L -> a : s2 L -> b
+	lr	b		. provisionally s1 L >= s2 L
+	ana	b
+	sa	symbols_right	. overhang or underhang size
+	jpa	$+2
+	lr	symbols_left	. s2 L > s1 L
+	j	symbol?
+
+symbol!	rsr	SYMBOL
+	ex	align_s2, y
+	ay	SYMBOL,,xi
+
+	ana	b
+	sal	24-SYMBOL	. only the LS SYMBOL counts
+	jnza	unequal
+symbol?	jdr	symbol!	
+
+	lr	symbols_right
+	tp	r		. overhang or underhang size
+	j	s2_longer
+	tz	r
+	j	s1_longer
+	j	complete
+
+s1_longer
+	j	s1_longer?
+s1_longer!
+	rsr	SYMBOL
+	ana	fill_pattern
+	sal	24-SYMBOL
+	jnza	unequal
+s1_longer?
+	jdr	s1_longer
+	j	complete
+
+s2_longer
+	ex	align_s2, y
+	ay	SYMBOL,,xi
+	la	fill_pattern
+	ana	b
+	sal	24-SYMBOL
+	jnza	unequal
+	inc	r
+	tz	r
+	j	s2_longer
+	
+
+
+unequal
+complete
+	saa	24-SYMBOL
+	$ret
+	$root
+
+
+	$do	$<256,$(0:256)
+align_s1
+?	$do	24,	rsr	?-1
+
+realign* $proc
+	$if	?>24-SYMBOL
+	lcal	slew2
+	$else
+	lcal	clew
+	$endif
+	$end
+
+align_s2
+	$do	24-SYMBOL+1,	rbl	SYMBOL	. once per bit position
+	$do	SYMBOL-1,	lcal	slew	. until SYMBOL needs 2 words
+	lcal	new				. leading edge of input word
+?	$do	SYMBOL-1,	realign		. last position + 1..SYMBOL
+
+new	lb	0, x
+	ax	1,,xi
+	ly	0,,xi		. will change 0->SYMBOL on return
+	$do	SYMBOL^=24,	;
+	rbl	SYMBOL
+	lret	0
+
+clew	lb	6		. get here if previous SYMBOL straddled words
+	ay	-24,,xi		. will change to 1.. on return
+	rbl	SYMBOL
+	lret	0
+
+	$if	SYMBOL>$word/2+1
+slew2	lb	6		. chiefly for out-of-kilter UTF-16 characters
+	ay	-24,,xi		. or any 2 SYMBOLs touching 3 words 
+				. fall thru to slew
+	$endif
+
+slew	push	a		. 24 - y bits are at MS positions b
+	la	0, x
+	ax	1,,xi
+
+	sbr	0, y
+	drl	SYMBOL, y	. SYMBOL-24+y, but you can't code SYMBOL-24, y (displacement < 0)
+				. so swap the registers instead of the -24
+	sb	6		. next symbol cached at MS bits register 6
+	sa	b		. this SYMBOL positioned LS bits register b
+
+	pop	a		. do not adjust y. It points outside the word
+	lret	0		. in register b at the next execute
+

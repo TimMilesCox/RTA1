@@ -1,0 +1,12 @@
+#include "ctests.h"
+	atest	TEST1
+	atest	TEST2
+	atest	TEST3
+	atest	TEST4
+	atest	TEST5
+	atest	TEST6
+	atest	TEST7
+	atest	TEST8
+	atest	TEST9
+	atest	TEST10
+	atest	TEST11

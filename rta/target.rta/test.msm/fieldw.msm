@@ -1,0 +1,298 @@
+
+store_i	$tree
+	$head_far	 params(offset,		int		;
+				pointer,	int		;
+				bits,		int		;
+				data,		int)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	ly	offset
+	tz	y
+	lcal	normalise_xy
+	sy	offset
+	ay	bits
+	la	data
+
+	lr, xi	24+1
+	jyge	word_plus	. straddles more than 1 word
+	lr, xi	24
+	jyge	word_exact	. offset plus data are 1 word
+
+word_insert			. less than 1 word
+	lb	0, x		. retrieve the target word
+	ly	offset
+	lr	bits
+	rbl	0, y		. hide offset bits if any
+	sbl	*r		. discard old values of field
+	dsr	*r		. replace old values of field
+	rbr	0, y		. replace the offset bits if any
+	sb	0, x		. store the target word
+	j	return
+
+word_exact
+	tz	offset		. is it one aligned word?
+	j	trailing_insert	. no, it's the trailing positions
+	sa	0, x		. yes it's the entire word
+	j	return
+
+word_plus	
+	ay	-24,,xi		. send some data bits
+	lb	1, x		. to target word + 1
+	sbl	0, y
+	dsr	0, y		. via register b
+	sb	1, x		. ms bits of store value remain in a
+
+trailing_insert
+	lb	0, x		. write the low order positions
+	ly	offset		. of the first target word
+	dsl	0, y		. reverse [offset] bits behind store value
+	rar	0, y		. roll them to the front
+	sa	0, x
+
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+
+store_d	$tree
+	$head_far	 params(offset,		int		;
+				pointer,	int		;
+				bits,		int		;
+				data,		long)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	ly	offset
+	tz	y
+	lcal	normalise_xy
+	sy	offset
+	ay	bits
+	dl	data
+
+	lr, xi	48+1
+	jyge	words_plus	. straddles more than 2 words
+	lr, xi	48
+	jyge	words_exact	. offset + bits = 48
+
+words_insert			. less than 48 bits
+	la	1, x
+	ay	-24,,xi		. insert offset + bits - 24
+	sal	0, y		. in second target word
+	drr	0, y		. from low-order end of value
+	sa	1, x
+
+	la	data		. refetch value 1st word
+	sbl	0, y		. replace stored bits
+	drr	24, y		. with bits from first storage word
+				. and rotate it up to a register
+	tz	offset
+	j	merge_offset	. insert in middle of target word
+	sa	0, x		. unless there is no bit offset
+	j	return
+
+words_plus
+	ay	-48,,xi		. align 2nd word
+	drr	0, y		. roll offset + bits - 48 aside
+	sb	1, x		. store a complete word
+	lb	2, x		. place offset + bits - 48
+	drl	0, y		. in 3rd word. retrieve bits from a
+	rbr	0, y		. and roll them to HS position
+	sb	2, x		. write updated word
+
+	sar	0, y		. position bits in a as other bits
+	j	merge_offset
+
+words_exact
+	tz	offset
+	j	merge_2
+	ds	0, x		. plain double store
+	j	return
+
+merge_2
+	sb	1, x		. aligned single store
+merge_offset			. back [offset] bits onto the front
+	ly	offset
+	lb	0, x
+	dsl	0, y
+	rar	0, y
+	sa	0, x
+		
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+store_t	$tree
+	$head_far	 params(offset,		int		;
+				pointer,	int		;
+				bits,		int		;
+				data,		triple)		;
+								;
+			scalars(caller_ab67,	float, a	;
+				caller_rkxy,	float, r	)
+
+	lx	pointer
+	ly	offset
+	tz	y
+	lcal	normalise_xy
+	sy	offset
+	ay	bits
+	dl	data+1
+
+	lr	72+1,,xi
+	jyge	words_plus
+	lr	72,,xi
+	jyge	words_exact
+
+words_insert			. < 72 bits
+	ay	-48,,xi		. offset + bits - 48 to 3rd word
+	drr	0, y		. roll bits for last target word aside
+	sb	1, x		. write 2nd target word
+	lb	2, x		. read 3rd target word
+	drl	0, y		. insert low-order bits of store value
+	rbr	0, y
+	sb	2, x		. write 3rd target word
+	lb	data
+	drr	24, y		. shift a down [offset + bits - 48]
+				. with new bits, then  down to b
+	tz	offset
+	j	merge_offset	. either insert in 1st target word
+	sb	0, x		. or write all of it
+	j	return
+
+words_plus			. operation straddles 4 target words
+	ay	-72,,xi		. insert offset + bits - 72 in 4th word
+	drr	0, y		. roll bits for 4th word to high-order positions a
+	sb	2, x		. write 3rd target word completely
+	lb	3, x		. read 4th target word
+	drl	0, y		. roll ls bits store value down
+	rbr	0, y		. and up
+	sb	3, x		. and write 4th target word
+	lb	data		. roll low-order bits from value 1st word
+	drr	0, y		. to high-order positions a
+	sa	1, x		. into target 2nd word
+				. high order store value bits remain in b
+				. an offset is certain
+merge_offset
+	ly	offset
+	la	0, x		. read 1st target word
+	drl	0, y		. roll [offset] bits beside remaining data
+	rbr	0, y		. rotate [offset] bits to high-order positions
+	sb	0, x		. complete storage write
+	j	return
+
+words_exact			. offset + bits = 3 words
+	ds	1, x		. write 2 low-order words
+	lb	data		. load high-order word
+	tz	offset
+	j	merge_offset	. either insert that in target 1st word
+	sb	0, x		. or write it, target is 3 words plainly
+
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+store_q	$tree
+	$head_far	 params(offset,		int		;
+				pointer,	int		;
+				bits,		int		;
+				data,		float	)	;
+								;
+			scalars(caller_ab67,	float,	a	;
+				caller_rkxy,	float,	r	)
+
+	lx	pointer
+	ly	offset
+	tz	y
+	lcal	normalise_xy
+	sy	offset
+	ay	bits
+	dl	data+2
+
+	lr	96+1,,xi
+	jyge	words_plus
+	lr	96,,xi
+	jyge	words_exact
+				. < 96 bits
+words_insert			. place offset + bits - 72 in 4th word
+	ay	-72,,xi
+	drr	0, y
+	sb	2, x		. write target 3rd word
+	lb	3, x		. read target 4th word
+	drl	0, y		. insert [offset + bits - 72] bits
+	rbr	0, y
+	sb	3, y		. write target 4th word
+	lb	data+1
+	drr	24, y		. add new bits, shift to b
+	sb	1, x		. write 2nd target word
+	lb	data
+	sal	0, y		. join residual bits
+	drr	0, y
+
+	tz	offset
+	j	merge_offset
+	sa	0, x		. or write all of 1st target word
+	j	return
+				. write straddles 5 target words
+words_plus			. place offset + bits - 96 in 5th word
+	ay	-96,,xi
+	drr	0, y		. rotate low order bits of store value to a
+	sb	3, x		. write 4th target word completely
+	lb	4, x		. read 5th target word
+	drl	0, y		. transfer low-order bits of store value
+	rbr	0, y		. high-order positions of 5th target word
+	sb	4, x		. and write it
+
+				. recover store value bits 47..24
+	lb	data+1		. from internal stack
+	drr	0, y		. transfer low-order bits of store value 47..24
+	sa	2, x		. to high-order positions of 3rd target word
+
+	sbl	0, y		. queue more bits into b
+	la	data
+	dsr	0, y
+	sb	1, x		. write 2nd target word
+				. an offset is certain
+	j	merge_offset
+	
+words_exact
+	tz	offset
+	j	merge_q		. either insert into 1 word and write 3 more words
+	ql	data		. or target field is 4 words plainly
+	qs	0, x
+	j	return
+
+merge_q	ds	2, x		. write 2nd / 3rd / 4th target words
+	dl	data
+	sb	1, x
+				. then insert into 1st target word
+merge_offset
+	ly	offset		. write value bits waiting in a
+	lb	0, x		. read [offset] bits from 1st target word
+	dsl	0, y		. transfer to high-order positions of a
+	rar	0, y
+	sa	0, x		. write 1st target word
+	
+return	qpop	r
+	qpop	a
+	fret	0
+	$root
+
+normalise_xy
+	lr, xi	24
+	jyge	$+2
+	lret	0
+	la	y
+	dsr	24
+	d	24,,xi
+	ax	a
+	ly	b
+	lret	0
+

@@ -1,0 +1,339 @@
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$include	language/stack.def
+	$list
+	$path
+
+. sscanf and sprintf are minimally functionally expanded from ANSI
+. so it's convenient to supply them instead of port them. It's also
+. hoped that these routines are quicker than routines ported in C.
+. Format processing is not foreseen to need realtime performance,
+. but a text-based transaction interface alongside XDR is possible
+
+
+FORMAT_START* $proc
+	sy	FORMAT_STRING
+	ly, xi	0
+	$end
+
+FORMAT_READ* $proc
+	ex	format_read, y
+	ay, xi	0
+	$end
+
+FORMAT_READZ* $proc
+	FORMAT_READ
+	and, xi	+(1*/$byte)-1
+	$end
+
+	$if	$t(WRITE_BYTE)=0
+WRITE_BYTE* $proc
+	sal	$word-$byte
+	wsr	$byte
+	$end
+	$endif
+
+	$do	$t(BYTES)=0,BYTES	$equ	d$save
+
+
+
+. writes	r k x y
+.		a b 6 7
+.		8 9 10 11
+.		restores them to caller values
+
+. scanf sformat write and do not restore d$save:d$save1:d$save2:d$save3
+. needs them on any resume
+
+. a resume is when (pointer). Format string, parameter list are then new
+
+. also saves some of r k x y a b 6 7 8 9 10 11 before calling edit routines
+. in ../lib
+
+MINIMUM		$equ	8
+MAXIMUM		$equ	9
+SIZE_D		$equ	10
+FORMAT_STRING	$equ	11
+TYPE_D		$equ	6
+NEXT_ARGUMENT	$equ	7
+
+$(0:64)
+sformat $tree
+	$head_far	 params(target,	int		;
+				pointer,int		;
+				format,	int	)	;
+							;
+			scalars(caller_8, float, 8	;
+				caller_a, float, a	;
+				caller_r, float, r)
+
+	la	pointer
+	jnza	started
+	lb	target
+	call	(wstream_start_normalise)
+started
+	ly	format
+	lr	2, sp		. arguments end pointer
+	lx	format+1,,i	. &first variable argument
+	sx	NEXT_ARGUMENT
+
+	lk, xi	+(1*/$byte)-1
+	FORMAT_START
+oloop	FORMAT_READZ
+	jza	xloop
+	lx	NEXT_ARGUMENT
+
+	mta	('%')
+	j	plant
+
+	lcal	token_scan
+	j	xloop		. zero byte analysing format specification
+
+	tn	MINIMUM
+	j	no_indirect_minimum
+	jxge	no_argument	. not even 1 word left in stack frame
+	la	0, x
+	sa	MINIMUM
+	la	TYPE_D
+	ax, xi	1
+
+no_indirect_minimum
+	tn	MAXIMUM
+	j	no_indirect_maximum
+	jxge	no_argument	. not even 1 word left in stack frame
+	la	0, x
+	sa	MAXIMUM
+	la	TYPE_D
+	ax, xi	1
+
+no_indirect_maximum
+
+	mtane	('c')
+	j	chario		. may only have 1 argument word
+
+	mtane	('f')
+	j	floato		. may only have 4 argument words
+
+	sx	6
+	ax	SIZE_D		. argument words - 1
+	jxge	no_argument	. display refusal without harm
+	ax, xi	1
+	sx	NEXT_ARGUMENT	. store next argument pointer
+	lx	6		. retrieve this argument pointer
+
+	mtane	('s')		. using simple or compound pointer
+	j	strio
+
+	mtane	('[')		. not previously envisaged for sprintf
+	j	instrio		. but if you did not mean it, you would
+				. not place it after %
+				. simple or compound pointer
+
+	mtane	('x')		. using 1 2 or 3 words
+	j	hexlo
+
+	mtane	('X')		. using 1 2 or 3 words
+	j	hexuo
+
+	mtane	('p')		. using simple or compound pointer
+	j	pointo
+
+	mta	('d')		. using 1 2 or 3 words
+	j	plant		. none of the above. Just output it then
+	j	decimo
+
+floato	lx	4, x, i
+	sx	NEXT_ARGUMENT
+	ax, xi	-1
+	jxge	no_argument
+	ax, xi	-3
+	ql	0, x
+	lcal	floating_edit
+	j	oloop
+
+chario	jxge	no_argument	. not even 1 word left in the stack frame
+	la	0, x		. yes there am
+	lx	1, x, i		. point up higher
+	sx	NEXT_ARGUMENT
+	WRITE_BYTE
+	j	oloop
+
+decimo	lcal	decimal_edit		. may be 1, 2, or 3 words %d %ld %lld
+	j	oloop
+pointo	lcal	pointer_edit		. simple or compound pointer %p %lp
+	j	oloop
+hexuo	lcal	hex_edit_upper		. may be 1, 2, or 3 words %X %lX %llX
+	j	oloop
+hexlo	lcal	hex_edit		. may be 1, 2, or 3 words %x %lx %llx
+	j	oloop
+strio	lcal	string_merge		. simple or compound pointer %s %ls
+	j	oloop
+instrio	lcal	instring_merge		. simple or compound pointer %s %ls
+	j	oloop
+	
+no_argument
+	la, xi	("argument words too few for format specification":10:0)
+	lcal	string_merge
+	j	oloop
+	
+plant	WRITE_BYTE
+count	j	oloop
+
+xloop	wsr	$word-$byte
+
+	qpop	r
+	qpop	a
+	qpop	8
+
+	la	BYTES
+	lb	pointer
+	ab	a
+
+	fret
+
+.	here are write routines used only by sprintf
+.	so they are in its name compartment
+
+instring_merge
+	.	adding a string until delimited
+	.	to a write stream
+	.	there are three flavours
+	.		add until a character not in [this]
+	.		add until a character in [^this] set
+	.		add until a masked delimiter in [*][argument] set
+
+	ex	format_read
+	ly	1, y, i
+
+	mtane	'^'
+	j	instring_until
+
+	.	adding to an output stream
+	.	an input stream is started for each string
+	.	
+
+	mta	'*'
+	j	instring_while
+	lx	NEXT_ARGUMENT
+	jxge	cant
+
+instring_while
+instring_until
+
+can
+cant	lret	0
+	$root		. end of sprintf name compartment
+
+			. here are routines for sprintf and scanf
+
+token_scan
+	z	MINIMUM
+	z	MAXIMUM
+	z	SIZE_D
+	z	TYPE_D
+
+	FORMAT_READZ
+	mtane	'-'		. a left-justify flag?
+	j	minimum_width?
+	la	(0800000s)
+	sa	TYPE_D		. flag it on x X d f s c [ word
+	FORMAT_READZ
+
+minimum_width?
+	sa	7
+	aa, xi	-'0'-10
+	jc	minimum_indirect?
+	aa, xi	10
+	jnc	minimum_indirect?
+	lcal	size_given
+	j	token_break
+
+	la	MAXIMUM
+	sa	MINIMUM
+	j	min_point_max?
+
+minimum_indirect?
+	la	7
+	mta	('*')
+	j	min_point_max?
+	n	MINIMUM
+	FORMAT_READZ
+
+min_point_max?
+	z	MAXIMUM
+	mta	('.')
+	j	type_size?
+	FORMAT_READZ
+	sa	7
+	aa, xi	-'0'-10
+	jc	maximum_indirect?
+	aa, xi	10
+	jc	maximum_indirect?
+	lcal	size_given
+	j	type_size?
+
+maximum_indirect?
+	la	7
+	mta	'*'
+	j	type_size?
+	n	MAXIMUM
+	FORMAT_READZ
+
+type_size?
+	mta	('l')
+	j	type?
+	inc	SIZE_D
+	FORMAT_READZ
+
+	mta	('l')
+	j	type?
+	inc	SIZE_D
+	FORMAT_READZ
+
+type?	or	TYPE_D		. this may have the field left justify flag
+	sa	TYPE_D		. whatever is there is a type s d x X f c p [
+	lret	1		. otherwise it just gets printed / scanned-until
+
+token_break
+	lret	0		. a zero byte during scan of token
+				. wrong place for end of format string
+
+size_given
+	sa	MAXIMUM
+size_byte
+	FORMAT_READZ
+	jza	size_break	. wrong place for end of format string
+	sa	7		. put this aside before mauling it
+	aa, xi	-'0'-10
+	jc	rezone1		. higher than a digit
+	aa, xi	10
+	jnc	rezone1		. lower than a digit
+
+	push	a		. maximum = maximum * 10 + new digit
+	la	MAXIMUM
+	push	a
+	sal	3
+	push	a
+	popA	MAXIMUM		. add 8 * maximim to maximum
+	popA	MAXIMUM		.   + 1 *
+	popA	MAXIMUM		. plus the new digit
+	j	size_byte
+
+rezone1	la	7		. this isn't a digit
+	lret	1		. so it's the symbol after the number string
+size_break
+	lret	0		. zero encountered
+				. before the format clause is complete
+
+	$do	$<256,$(0:256)
+format_read
+	lcal	format_reload	. this only happens at the start
+	$do	$word/$byte-1,	dsl	$byte
+	lcal	format_reload	. then this happens once per subsequent word
+format_reload
+	lb	*FORMAT_STRING
+	inc	FORMAT_STRING
+	ly, xi	1		
+	dsl	$byte
+	lret	1		. skip the add to y

@@ -1,0 +1,87 @@
+
+.	for the final extent of very large
+.	rapid-seek files
+
+.	and for rapid seek files with uniform 
+.	size extents < 262144 words
+
+.	shares a 262144-word bank of filestore
+.	in tiles of 8192 words
+.	caller gets a contiguous range of 1..32 tiles
+.	on success skip one instruction on return
+
+.	input in a is # 64-word granules sought, < 4096
+.	output is rounded up to integral tiles
+
+tile	lcal	tiles_first
+	lret	0
+
+	and, xi	262144/GRANULE-1	. don't come here for more than that
+
+	aa, xi	+(1*/LOG(TILE)-LOG(GRANULE))-1
+	sar	LOG(TILE)-LOG(GRANULE)	. tiles
+	lb, xi	32
+	anb	a
+	lr	b			. rotate limit
+	lb, xi	1
+	rbl	0, a			. this may rotate > 24 positions
+					. and the machine must do that
+	ab, xi	-1			. search mask
+	lk	b
+
+couple	dl	couplet:mask
+	lcal	fit?	
+	j	next
+	ds	couplet:mask
+
+	la	y
+	sal	LOG(TILE)-LOG(GRANULE)
+	dsr	24
+	da	couplet:granule
+	lret	1
+
+next	lcal	tiles_forward
+	lret	0		. unable to find or assign new
+	j	couple
+
+fit?	ly, xi	8
+	jyge	large_fit?	. request is for > 23 tiles
+
+	ly, xi	0
+	drr	24
+fit??	mta	k
+	j	around
+	xor	k
+	drl	24, y
+	lret	1	. hit
+
+around	jyge	nane
+	ay, xi	1
+	drr	1
+	j	fit??
+nane	lret	0	. miss
+
+large_fit?		. the mask is for the upper word
+			. and may be 0 thru 7 bits or even 8
+			. the lower 24 tiles of the rotated
+			. table must all be available
+	ly, xi	0
+large_fit??
+	mta	k
+	j	twist2
+	xorB,xi	-1
+	jnzb	twist1
+			. b is conveniently its required new value
+	xor	k	. claim any tiles in excess of 24
+	drl	0, y
+	lret	1	. hit
+
+twist1	xorB,xi	-1	. restore b
+twist2	jyge	nane_more
+	ay, xi	1
+	drr	1
+	j	large_fit??
+
+nane_more
+	lret	0	. miss
+

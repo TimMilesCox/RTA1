@@ -1,0 +1,213 @@
+	$path		../
+	$include	def/rta.def
+	$path
+
+ASIDE	$equ	8		. save registers for 48 cached bits
+
+DELIMITER $equ	6		. result: pointer to matched search
+				. string descriptor in delimiter stack
+
+LIST	$equ	7		. argument: pointer to delimiter stack
+
+STREAM	$equ	d$save		. remaining bytes not yet cached
+POINTER	$equ	d$save1		. consumed columns relative zero
+COLUMNS	$equ	d$save2		. temp: bits size of matched search string
+ALL	$equ	d$save3		. temp: all flag in matched
+				.	search string descriptor
+
+CACHE	$equ	11		. remaining bits cached in registers
+
+
+$(0:64)
+
+
+.	_________________________________
+.	| 1xxx xxxx xxxx xxxx xxxx xxxx |	delimiter mask up to 24b, not ALL
+.	|_______________________________|
+.	| 0000 0000 0000 0000 0000 0000 |	end of delimiters
+.	|_______________________________|
+.	| 0000 0000 0000 0000 0000 0001 |	ALL up to 24b
+.	|_______________________________|
+.	| 0xxx xxxx xxxx xxxx xxxx 0010 |	multiword delimiter not ALL
+.	|_______________________________|
+.	| 0xxx xxxx xxxx xxxx xxxx 0011 |	multiword delimiter ALL
+.	|_______________________________|________________________________
+.					|	last word mask		| all or multiword
+.					|_______________________________|
+					
+up	z	DELIMITER
+	ly	LIST
+
+up1	lk	0, y
+	tp	k
+	j	up2_24by1	. simplest path
+				. nonrepeat delimiter up to 24 bits
+	tnz	k
+	lret	1		. even simpler, end of delimiter list
+				. store 1 byte and advance
+
+	off	carry$
+	src	k		. low bit is for ALL
+	sc	ALL
+
+	tz	k		. otherwise zero = one-word-ALL
+	j	up2_48		. positive nonzero = multiword
+
+	lk	1, y		. 2nd simplest path
+				. delimiter up to 24 bits, ALL may be set
+	mta	2, y
+	j	up3		. but no hit anyway
+
+	ds	ASIDE		. hit
+	lsc	k		. measure the delimiter length
+	sb	COLUMNS		. in bits
+	sy	DELIMITER	. save the delimiter pointer
+
+up2_more
+	lcal	along		. advance the input stream delimiter bits
+	ds	ASIDE
+
+	tnz	ALL		. if not repeating jump to caller, itsa hit
+	lret	0		. margin
+
+	tz	CACHE		. exhausted input anyway?
+	tp	CACHE		. nonzero? positively?
+	lret	0		. reach here if zero or less
+
+	ly	DELIMITER	. try again, but it'a already a hit
+	mta	2, y
+	lret	0		. margin
+	j	up2_more	. pass by any more instances this delimiter
+
+up3	ay, xi	3
+	j	up1
+
+
+up2_48	lk, xi	-1		. first of 2 words, compare all bits
+	mta	2, y
+	j	up4		. next comparand
+	ds	ASIDE
+	la	b		. the masked compare is 2nd delimiter word
+	lk	1, y
+	mta	3, y
+	j	up4reload	. notso
+
+	lsc	k		. yesso
+	lb, i	24, b		. delimiter length is 24 + mask width
+	sb	COLUMNS		. save the delimiter width in bits
+	sy	DELIMITER	. and the pointer which delimiter was it
+
+up4_more
+	lcal	along		. slip by the size of the encountered delimiter
+	ds	ASIDE
+
+	tnz	ALL		. ALL ?
+	lret	0		. no, jump to caller after one hit
+
+	tz	CACHE		. run out of bits?
+	tp	CACHE		. nonzero? positively?
+	lret	0		. margin
+
+	ly	DELIMITER	. compare again, one whole word +
+	lk, xi	-1
+	mta	2, y
+	lret	0		. jump to caller. One hit at least
+	la	b		. compare second delimiter part
+	lk	1, y		. under mask
+	mta	3, y
+	j	$+2		. not quite more so, jump to caller now
+	j	up4_more	. calls along = reloads a
+	la	ASIDE
+	lret	0
+
+up4reload
+	la	ASIDE
+up4	ay, xi	4		. move from long delimiter to next delimiter
+	j	up1
+
+				. simplest, 1-word delimiter not ALL
+up2_24by1			. search string up to 24 bits nonrepeat
+	mta	1, y		. hit?
+	j	up2		. no, next delimiter
+	ds	ASIDE		. yes
+	lsc	k		. measure the delimiter width
+	sb	COLUMNS		. in bits
+	sy	DELIMITER	. save the delimiter pointer
+	lcal	along		. move delimiter bits along the input
+	ds	ASIDE
+	lret	0		. jump to caller
+
+up2	ay, xi	2
+	j	up1
+	
+initial	ana	b		. reduce outstanding bytes by POINTER
+	ds	STREAM		. POINTER is relative zero here
+
+	ly, xi	48		. startup load CACHE
+	sy	CACHE		. after RDATA RDATAC are initialised
+				. with any subscripts, POINTER etc
+	lr, xi	48/$byte-1
+init1b	lcal	nexp		. do not advance POINTER
+	jdr	init1b		. this is caching input columns
+	lret	0		. not consuming them
+
+along	dl	ASIDE
+	ly	COLUMNS
+along1	lcal	next
+	ay, xi	-$byte		. count down delimiter width
+	tz	y
+	tp	y
+	lret	0		. reached zero or less
+	j	along1
+
+next	inc	POINTER		. one column consumed
+	sar	$byte		.	00xxxx
+nexp	tz	STREAM
+	tp	STREAM
+	j	next_space
+
+	dec	STREAM
+	rsr	$byte		.	xxxxYY
+	rar	$byte		.	YYxxxx
+	drl	$byte		.	xxxxyy yyyyYY
+	lret	0
+
+next_space
+	push,xi	-$byte		. no more bytes to load
+	popA	CACHE		. pay out what's cached
+	dsl	$byte		.	xxxxyy yyyy00
+
+	$do	$o('c')--$o('z')=0,	;
+	orB, xi	' '		. some programming languages match
+				. trailing space in delimiters with
+				. shadow space outside the field
+	lret	0
+
+
+				. extract a field from input
+				. bytes delivered = maximum + NOT r
+				. detect input exhaust if that is
+				. the next position after maximum
+				. in order to walk the delimiter
+aquif	dec	r		. final count r + 1 in all cases
+aquif!	lcal	up
+	lret	0		. return because a delimiter is walked
+	tz	CACHE
+	tp	CACHE
+	lret	0		. return because no more bytes in stream
+	wsr	$byte
+	lcal	next
+	jdr	aquif!
+	lret	0		. return because no more bytes wanted
+
+
+
+walk	lcal	up		. find the search argument and step past
+	lret	0		. with DELIMITER written
+	tz	CACHE		. this column is not a delimiter
+	tp	CACHE
+	lret	0		. with DELIMITER clear
+	lcal	next
+	j	walk
+
+	$do	$<256,$(0:256)

@@ -1,0 +1,89 @@
+
+OFFSET		$equ	6
+UNDERHANG	$equ	OFFSET+1
+
+.	ARGUMENTS ARE
+.	offset		unused leading bit positions in 1st word of key	
+.	underhang	unused trailing bit positions in last 48 bits read for key
+.	words		number of data words containing the key
+.	key		address of the 1st word containing the key
+.	configp		address of area descriptor in schema
+
+calc	$tree
+	$head_near	 params(offset,		int	;
+				underhang,	int	;
+				words,		int	;
+				key,		int	;
+				configp,	int)	;
+							;
+			scalars(caller_r, 	int, r	;
+				caller_x, 	int, x	;
+				temp,		long	)
+
+	dl	offset		. bit offset in 1st word of key
+	ds	OFFSET		. plus unused bit positions last word pair
+	lx	key		. address of 1st containing word
+	ax	words		.
+	lr	x		. address last word of key + 1
+	lx	key		. address of 1st containing word
+
+				. it is safe to read one word more than the
+				. record contains. record is never at page end
+	dl	0, x		. first two words of key
+	ax	2,,xi
+	dsl	*OFFSET
+	dsr	*OFFSET
+	jxge	very_short_key	. 48 bits or less in key + offset
+	j	pair		. key + offset > 48 bits. read more words
+
+very_short_key			. 48 bits or less in key + offset
+	ds	temp		. try to stop bunching in case the key
+	and	(0202020)	. is ASCII octets
+	andB	(0202020)	. XOR the case bits onto octets bit 7
+	drr	6
+	xor	temp
+	xorB	temp+1
+	dsr	*UNDERHANG	. unused trailing bits numbering 0..47
+	j	adjust2		. in last 48 bits read
+
+				. there are always 1+ more word pairs
+				. when you get here
+pair	drr	1		. corkscrew everything so far
+	ds	temp		. to prevent 7-bit ASCII bunching
+	dl	0, x
+	ax	2,,xi
+	jxge	adjust1		. key complete with these 2 words
+				. or part of them
+
+	xor	temp		. there are these 2 words and more
+	xorB	temp+1
+	j	pair
+				. unused trailing bits numbering 0..47
+adjust1	dsr	*UNDERHANG	. in last 48 bits read
+	xor	temp
+	xorB	temp+1
+
+	
+adjust2	ds	temp
+	lx	configp		. point to area descriptor in schema
+
+	lr	area_config:primary_pages_log
+	dsr	*r
+	xor	temp		. fold sum positions outside pages radix
+	xorB	temp+1		. back into the sum
+
+	and	area_config:primary_pages_mask
+	andB	area_config:primary_pages_mask+1
+	ds	temp
+	dan	area_config:primary_pages
+	jc	$+2
+	dl	temp		. long divide
+	
+	lr	area_config:page_size_log
+	ds	6		. return page id in 6:7
+	dsl	*r		. return seek location in a:b
+
+	lr	caller_r
+	lx	caller_x
+	$ret
+	$root

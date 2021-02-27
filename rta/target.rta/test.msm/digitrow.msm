@@ -1,0 +1,181 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+.	conversion to binary for a fixed-format row of digits
+.	faster than the free-format scan
+
+.	the trailing end is fixed
+.	spaces at the leading end are skipped
+.	a leading sign is noted. The calling routine may action it
+
+.	A trailing sign may be read at the trailing edge on return
+
+
+rfixint	z	SIGNS
+	z	QUAD
+	z	TRIPLE
+	z	TRIPLE+1
+	z	TRIPLE+2
+	lr, xi	6
+
+	lcal	sensef
+	lret	0		. if you got here there are no digits
+
+				. otherwise 1st digit is in a
+				. x now = digits - 1
+	lb, xi	0
+	jxge	sextet1
+	
+	lr	(r1f, r2f, r3f, r4f, r5f, r6f:h), x
+	lcal	*r
+	sb	TRIPLE+2
+	lret	0
+
+sextet1	lcal	r6f
+	ax, xi	-6
+
+	jxge	sextet2
+	mf	(10, 100, 1000, 10000, 100000, 1000000:h), x
+	ds	TRIPLE+1
+	la	(r1, r2, r3, r4, r5, r6:h), x
+	lb, xi	0
+	lcal	0, a
+
+	la, xi	0
+	da	TRIPLE+1
+	ds	TRIPLE+1
+	lret	0
+
+sextet2	mf	(1000000)
+	ds	TRIPLE+1
+	lb, xi	0
+	lcal	r6
+	la, xi	0
+	da	TRIPLE+1
+	ds	TRIPLE+1
+
+	ax, xi	-6
+	lb, xi	0
+	jxge	sextet3
+
+	la	(r1, r2, r3, r4, r5, r6:h), x
+	lcal	0, a
+
+	lk	(10, 100, 1000, 10000, 100000, 1000000:h), x
+	lcal	raise48
+	lret	0
+
+sextet3	lcal	r6
+	lk	(1000000)
+	lcal	raise48
+
+	ax, xi	-6
+	lb, xi	0
+	jxge	sextet4
+
+	la	(r1, r2, r3, r4, r5, r6:h), x
+	lcal	0, a
+
+	lk	(10, 100, 1000, 10000, 100000, 1000000:h), x
+	lcal	raise72
+	lret	0
+
+sextet4	lcal	r6
+	lk	(1000000)
+	lcal	raise72
+
+	ax, xi	-6
+	lb, xi	0
+	jxge	sextet5
+	j	sextetz
+
+sextet5	lcal	r6
+	lk	(10000000)
+	lcal	raise96
+	ax, xi	-6
+	lb, xi	0
+	jxge	sextet5
+
+sextetz	la	(r1, r2, r3, r4, r5, r6:h), x
+	lcal	0, a
+	
+	lk	(10, 100, 1000, 10000, 100000, 1000000:h), x
+	lcal	raise96
+	lret	0
+
+	
+sensef	ax, xi	-1
+	tp	x
+	lret	0
+	rsr	$byte
+	aa, xi	-' '	. is it a space?
+	jza	sensef	. slip past it and decrement x
+	aa, xi	' '-'-'	. is it not space but minus?
+	jza	sensen	. indicate sign reverse and
+	aa, xi	'-'-'+'	. go to find a digit
+	jza	sensep
+	aa, xi	'+'	. is not a plus sign?
+	lret	1	. is should be the first numeral
+			. already buffered in register a
+
+sensen	n	SIGNS
+sensep	ax, xi	-1	. read the first digit
+	tp	x	. if it's there
+	lret	0	. no it's not
+	rsr	$byte	. yes it is
+	lret	1
+
+
+r6	rsr	$byte
+r6f	ab	hunthou-'0', a
+r5	rsr	$byte
+r5f	ab	tenthou-'0', a
+r4	rsr	$byte
+r4f	ab	thousands-'0', a
+r3	rsr	$byte
+r3f	ab	hundreds-'0', a
+r2	rsr	$byte
+r2f	ab	tens-'0', a
+r1	rsr	$byte
+r1f	ab	units-'0', a
+	lret	0
+
+

@@ -1,0 +1,135 @@
+PAGE_B	$equ	34
+$(70::,14)
+nominal
+
+$(66::,2)
+area_config aconfig
+
+$(PAGE_B:PAGE_B*262144)
+
+p	$proc
+area*	$name
+*	$tree
+log	$res	1
+actual	$res	1	. pointer to control block current record of area
+	$root
+	$end
+
+
+p	$proc
+record*	$name
+*	$tree
+dbk		$res 2
+area		$res 1	. may be used for determining placement	
+slot_location	$res 1	. pointer into page_location
+page_location	$res 2	. long virtual address of extent/page
+	$root
+	$end
+
+p	$proc
+set*	$name
+*	$tree
+owner	$res	2	. dbk current owner
+member	record		. control block current record of set
+	$root
+	$end
+
+p	$proc
+aconfig* $name
+*	$tree
+primary_pages_log	$res	1
+page_size_log		$res	1
+primary_pages		$res	2
+primary_pages_mask	$res	2
+	$root
+	$end
+
+p	$proc
+subschema* $name *
+*	$tree
+actual	$res	1 			. pointer control block current record of run unit
+run_area $res	1			. current area of run-unit
+page	$res	2			. current page number of run-unit
+?	$do	AREAS,area_actual(?)		+	area_(?)
+?	$do	RECORDS,record_actual(?) +	record_(?)
+?	$do	SETS,set_actual(?)	+	set_(?)	. kept in line by find
+?	$do	p(1),"area_(p(1, ?))"	area
+?	$do	p(2),"record_(p(2, ?))"	record
+?	$do	p(3),"set_(p(3, ?))"	set
+	$root
+	$end
+
+p	$proc
+dpage*	$name
+*	$tree
+data	$res	1
+slots	$res	1
+	$root
+	$end
+
+p	$proc
+schema*	$name
+
+LOG*	$func
+fulcrum	$set	LOG(1, 1)-1
+?	$do	15,	$do	1*/?>fulcrum,	$return	?
+	$return	16
+	$end
+
+AREAS****	$set	nominal
+RECORDS****	$set	nominal
+SETS****	$set	nominal
+
+p	$proc
+area*	$name
+AREAS*****	$set	AREAS+1
+log	$set	LOG(p(1, 3:2))
+"p(1, 2)"**** $equ nominal+?
+"p(1, 2)"* +	log
+	+	p(1, 4)
+tiles	$set	(p(1, 3:1)*/log)//8192
+primary	$set	(p(1, 3:3)*/log)//8192
+	size	tiles,tile,primary
+	$end
+
+p	$proc
+set*	$name
+*	$tree
+	$note	set
+dbk	$res	2
+	$if	p(0, 2)=owner
+SETS******	$set	SETS+1
+	$do	p(1)^=0,"p(1, 1)"****** $set SETS
+	$endif
+	$root
+	$end
+
+p	$proc	$(70)
+record* $name
+
+owner   $equ    0AAAAAA555555AAAAAA555555
+member  $equ    0555555AAAAAA555555AAAAAA
+RECORDS*****	$set	RECORDS+1
+"p(1, 2)"** $branch
+"p(1, 2)_ordinal"*****	$set	RECORDS
+hw	$res	1
+
+?	$do	p(1)-2,	;
+	$do	p(1, ?+2:1)=member,;
+!	$do	p(1, ?+2:)-1,"p(1, ?+2:!+1)_next"	set,member	p(1, ?+2:!+1)
+
+?	$do	p(1)-2,	;
+	$do	p(1, ?+2:1)=owner,;	$note	owner
+!	$do	p(1, ?+2:)-1,"p(1, ?+2:!+1)_first"	set,owner	p(1, ?+2:!+1)
+
+data	p(1, 2)
+	$root
+	$end
+
+*	$tree
+
+?	$do	p(),	p(?,1)	p(?)
+
+	$root
+	$end
+

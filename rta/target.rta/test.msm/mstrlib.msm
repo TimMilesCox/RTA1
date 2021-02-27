@@ -1,0 +1,156 @@
+
+	$path		../
+	$include	def/rta.def
+
+.	don't treat any registers as volatile
+.	trust the caller not to base a section
+.	on a or b
+
+
+target		$equf	0, a
+displacement	$equf	1, a
+index		$equf	2, a
+boffset		$equf	3, a
+bits		$equf	4, a
+
+
+$(0:64)
+.	what's it for?
+.	inserting at runtime 3-word variable search arguments
+.	in an assembly-time list of literal search string descriptors
+
+.	this is an application call, and
+.	there is much reentry to the related library, so no scratch
+.	registers may get messed up, and none of [x y 6 7] either
+
+.	because the 2nd pass knows literal bit sizes
+.	which the 1st pass didn't know, the call sequence to this
+.	has musted to be words-given at two words, to match the
+.	simpler inserts (otherwise subsequent labels and literal table
+.	move. Fortunately masmx notices these things)
+
+.		la	variable		dl	variable
+.		sa	search_list_entry	ds	search_list_entry
+
+.		ql	variable
+.		qs	*search_list_entry
+
+.	The internal stack ought not either get squeezed because of
+.	displacement alterations, so the parameter list is a 3-word literal
+
+.	when we get to having dynamic-based copies of static
+.	(reentrant and recursive subprograms), it may become unavoidable
+.	to have a base-pointer-id for search_list_entry as well
+.	...or ban programs of that kind from updating a search strings list
+
+.	la,i	(search_list_entry, from_offset, from_base_ptr_id:T)
+.	call	(append_3words_vector)
+
+.	to have a piece of alterable moveable static and be able to
+.	have an address constant of it: place it in B1. Thats just
+.	as big as displacement,fp and the address is not dynamic
+.	BUT, don't give that address to anything which swaps B1.
+.	string libraries most likely won't swap B1. If you do it
+.	this way, it's bound to THIS recursion of THIS subprogram
+.	and invisible to further recursions, as long as you stack B1s
+
+append3	qpush	x
+	dl	displacement
+	tz	b		. are you possibly dynamic pointer based?
+	aa	0, b		. don't obliterate x or y until after this point
+	ly	a
+	la	2, sp		. saved copies->x:y:a:b
+	lx	target		. this can be an absolute pointer for now
+	lb	0, y
+	sb	0, x
+	dl	1, y
+	ds	1, x
+	qpop	x
+	fret	0
+	
+
+.	what's it for?
+.	inserting at runtime variable search arguments which aren't aligned
+.	in an assembly-time list of literal search string descriptors
+
+.	this is an application call, and
+.	there is much reentry to the related library, so no scratch
+.	registers may get messed up, and none of [x y 6 7] either
+
+.	because the 2nd pass knows literal bit sizes
+.	which the 1st pass didn't know, the call sequence to this
+.	has musted to be words-given at two words, to match the
+.	simpler inserts (otherwise subsequent labels and literal table
+.	move. Fortunately masmx notices these things)
+
+.		la	variable		dl	variable
+.		sa	search_list_entry	ds	search_list_entry
+
+.		ql	variable
+.		qs	*search_list_entry
+
+.	The internal stack ought not either get squeezed because of
+.	displacement alterations, so the parameter list is a 5-word literal
+
+.	when we get to having dynamic-based copies of static
+.	(reentrant and recursive subprograms), it may become unavoidable
+.	to have a base-pointer-id for search_list_entry as well
+.	...or ban programs of that kind from updating a search strings list
+
+.	la,i	(search_list_entry, from_offset, from_base_ptr_id, bits, bit_offset:P)
+.	call	(append_async_vector)
+
+.	to have a piece of alterable moveable static and be able to
+.	have an address constant of it: place it in B1. Thats just
+.	as big as displacement,fp and the address is not dynamic
+.	BUT, don't give that address to anything which swaps B1.
+.	string libraries most likely won't swap B1. If you do it
+.	this way, it's bound to THIS recursion of THIS subprogram
+.	and invisible to further recursions, as long as you stack B1s
+
+append_async
+	qpush	r		. minimise the disruption
+	dpush	a		. because we shall reenter library
+				. with state all over the registers 
+				. especially the scratch registers
+
+	dl	displacement	. we can retrieve a again
+	tz	b		. base register?
+	aa	0, b		. can't rely on absolute constants
+	ly	a		. user segment might be pointer based void
+				. on [x y fp sp scratch-register/storage-ptr]
+
+	la	0, sp		. hello again
+	lr	bits		.
+	lk	boffset
+	lx	target		. this can be an absolute pointer for now
+
+	dl	0, y		. good, now we'll begin
+	drl	*k
+
+	sa	0, x		.	xxyyyy yyxxxx
+
+
+append_async_next
+	push,xi	-24
+	popA	r
+	tz	r
+	tp	r
+	j	append_async_restore
+
+	ax, xi	1
+	ay, xi	1
+	la	1, y		.	zzzzzz yyxxxx
+	sbr	*k		.	zzzzzz 0000yy
+	drl	*k		.	zz0000 yyzzzz
+	sb	0, x
+	dsr	24		.	000000 zz0000
+
+	j	append_async_next
+
+append_async_restore
+	pop	a
+	pop	b
+	qpop	r
+	fret	0
+

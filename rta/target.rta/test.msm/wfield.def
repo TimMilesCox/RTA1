@@ -1,0 +1,253 @@
+p	$proc	. input is in a:b
+
+storei*	$name	24
+stored*	$name	48
+storet*	$name	72
+storeq*	$name	96
+
+"$offset"	$equ	p(1, 4)
+"$positions"	$equ	p(1, 5)
+"$range"	$equ	$offset+$positions
+
+	$if	$o('S')
+	$trace	$offset
+	$trace	$positions
+	$trace	$range
+	$endif
+
+	$if	p(0, 0)=storei
+	  $if	$positions<24+1
+	    store_integer	p(1)
+	  $elseif $positions<48+1
+	    dsa		24
+	    store_double	p(1)
+	  $else
+	    dsa		24
+	    ds		6
+	    dsa		24
+	    $if	$positions<72+1
+	    store_triple	p(1)
+	    $else
+	    store_quad		p(1)
+	    $endif
+	  $endif
+	$elseif	p(0, 0)=stored
+	  $if	$positions<24+1
+	    la		b
+	    store_integer	p(1)
+	  $elseif $positions<48+1
+	    store_double	p(1)
+	  $else
+	    ds		6
+	    dsa		48
+	    $if	$positions<72+1
+	    store_triple	p(1)
+	    $else
+	    store_quad		p(1)
+	    $endif
+	  $endif
+	$elseif	p(0, 0)=storet
+	  $if		$positions<24+1
+	    la		7
+	    store_integer	p(1)
+	  $elseif	$positions<48+1
+	    dl		6
+	    store_double	p(1)
+	  $elseif $positions>72
+	    la		b
+	    saa		24
+	    store_quad		p(1)
+	  $else
+	    store_triple	p(1)
+	  $endif
+	$elseif	p(0, 0)=storeq
+	  $if		$positions>72
+	    store_quad		p(1)
+	  $elseif 	$positions>48
+	    store_triple	p(1)
+	  $elseif	$positions>24
+	    dl		6
+	    store_double	p(1)
+	  $else
+	    la		7
+	    store_integer	p(1)
+	  $endif
+	$else
+	$note	strange that you got here
+	$endif
+	$end
+
+p	$proc
+store_double*	$name
+	$if	$range>48
+	$do	$o('S'),	$note	> 2 words
+	  drr	$range-48
+	  sb	p(1)+1
+	  lb	p(1)+2
+	  drl	$range-48
+	  rbr	$range-48
+	  sb	p(1)+2
+	  lb	p(1)
+	  dsl	$offset
+	  rar	$offset
+	  sa	p(1)
+	$elseif	$range<48
+	  $do	$o('S'),	$note	< 2 words
+	  dsl	48-$range
+	  $if	$range>32
+	  lk	+(1*/48-$range)-1,,xi
+	  $else
+	  lk	((1*/48-$range)-1)
+	  $endif
+	  mlb	p(1)+1
+	  sb	p(1)+1
+	  $if	$offset
+	    $if	($SENSE=12)**($offset=12)
+	    sa	p(1, 1), p(1, 2), h2
+	    $elseif ($SENSE=8)**($offset=16)
+	    sa	p(1, 1), p(1, 2), t3
+	    $else
+	    lb	p(1)
+	    dsl	$offset
+	    rar	$offset
+	    sa	p(1)
+	    $endif
+
+	  $else
+	  ds	p(1)
+	  $endif
+
+	$else
+	$do	$o('S'),	$note	2 words
+
+	  $if	$offset
+	    sb	p(1)+1
+	    $if		($SENSE=12)**($offset=12)
+	    sa		p(1, 1), p(1, 2), h2
+	    $elseif	 ($SENSE=8)**($offset=16)
+	    sa		p(1, 1), p(1, 2), t3
+	    $else
+	    lb	p(1)
+	    dsl	$offset
+	    rar	$offset
+	    sa	p(1)
+	    $endif
+	  $else
+	  ds	p(1)
+	  $endif
+
+	$endif
+	$end
+
+p	$proc
+store_integer* $name
+	$if	$range>24
+	  $do	$o('S'),	$note	> 1 word
+
+	    dsr	$range-24
+
+	    $if	$range>32
+	    lk	+(1*/48-$range)-1,,xi
+	    $else
+	    lk	((1*/48-$range)-1)
+	    $endif
+	    mlb	p(1)+1
+	    sb	p(1)+1
+
+	    $if	($SENSE=12)**($offset=12)
+	    sa	p(1, 1), p(1, 2), h2
+	    $elseif ($SENSE=8)**($offset=16)
+	    sa	p(1, 1), p(1, 2), t3
+	    $else
+	    lb	p(1)
+	    dsl	$offset
+	    rar	$offset
+	    sa	p(1)
+	    $endif
+
+	$elseif	$range<24
+	$do	$o('S'),	$note	< 1 word
+	  $if	($SENSE=12)**($positions=12)**($offset///12=0)
+	  sa	p(1, 1), p(1, 2), h1+$offset/12
+	  $elseif ($SENSE=8)**($positions=8)**($offset///8=0)
+	  sa	p(1, 1), p(1, 2), t1+$offset/8
+	  $else
+	  lb	p(1)
+	  $do	$offset^=0,	rbl	$offset
+	  sbl	$positions
+	  dsr	$positions
+	  $do	$offset^=0,	rbr	$offset
+	  sb	p(1)
+	  $endif
+	$else			. $range=24
+	$do	$o('S'),	$note	1 word
+	  $if	offset
+	    $if	($SENSE=12)**($offset=12)
+	    sa	p(1, 1), p(1, 2), h2
+	    $elseif ($SENSE=8)**($offset=16)
+	    sa	p(1, 1), p(1, 2), t3
+	    $else
+	    lb	p(1)
+	    dsl	$offset
+	    rar	$offset
+	    sa	p(1)
+	    $endif
+	  $else
+	  sb	p(1)
+	  $endif
+	$endif
+	$end
+
+p	$proc
+			. input	is	in	a:b:6:7
+store_triple*	$name
+store_quad*	$name
+
+	$if	$range>96
+	$do	$o('S'),	$note  > 4 words
+	$elseif	$range<96
+	$if	$range>72
+	$do	$o('S'),	$note	> 3 words
+	$elseif	$range<72
+	$do	$o('S'),	$note	< 3 words
+	$else			. $range=72
+	$do	$o('S'),	$note	3 words
+
+	  $if $offset
+	  $if	($SENSE=12)**($offset=12)
+	  sb	p(1, 1), p(1, 2), h2
+	  $elseif ($SENSE=8)**($offset=16)
+	  sb	p(1, 1), p(1, 2), t3
+	  $else
+	  la	p(1)
+	  drl	$offset
+	  rbr	$offset
+	  sb	p(1)
+	  $endif
+	  $else
+	  sb	p(1)
+	  $endif
+	  dl	6
+	  ds	p(1)+1
+	$endif
+	$else			. $range=96
+	$do	$o('S'),	$note	4 words
+	  $if	$offset
+	  sb	p(1)+1
+	  $if	($SENSE=12)**($offset=12)
+	  sa	p(1, 1), p(1, 2), h2
+	  $elseif ($SENSE=8)**($offset=16)
+	  sa	p(1, 1), p(1, 2), t3
+	  $else
+	  lb	p(1)
+	  dsl	$offset
+	  rar	$offset
+	  sa	p(1)
+	  $endif
+	  dl	6
+	  ds	p(1)+2
+	  $else
+	  qs	p(1)
+	  $endif
+	$endif
+	$end 

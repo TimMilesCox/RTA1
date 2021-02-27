@@ -1,0 +1,112 @@
+
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$list
+	$path
+
+AREAS	$equ	4
+RECORDS	$equ	6
+SETS	$equ	4
+
+LOG	$equ	8
+PAGE_SIZE $equ	d$save
+SLOT	$equ	9
+PAGE	$equ	10
+
+	$include	schema.def
+
+$(1:01000)
+this	subschema	1,3	3, 6	2, 4
+
+$(66::,x)
+target	area
+
+$(68::,y)
+recb	record
+
+$(69::,b)
+page	dpage
+
+$(0:64)
+
+	ds	6
+	sar	12
+	jza	notreally
+	lx, xi	this:area_actual(1)-1
+	ax	a
+
+	lr, xi	this:area_actual(AREAS)+1
+	jxge	notreally		. outside schema
+
+	lx	0, x
+	tnz	x
+	j	notreally		. in schema but not subschema
+
+	sa	AREA
+
+	qpush	target
+	qpop	8
+	dl	6
+	ds	target:dbk
+
+	and, xi	4095
+	drr	*LOG
+	ds	SLOT_PAGE
+
+					.
+	lcal	page			. page buffering is in the schema
+
+	jdz	notreally		. so is page I/O
+	sabr	PAGE_B
+	ds	PAGE_LVA		. page bank index : address
+
+	lb, xi	0
+	la	SLOT_PAGE
+	drl	*LOG
+	sar	*LOG
+	sa	SLOT_PAGE
+	la	page_slots
+	ana	b
+	jnc	notreally
+	
+	
+	sb	this:slot
+	la	1,,xi
+	sal	*LOG
+	sal	2
+	aa	PAGE_LVA+1		. point to page end + 1
+	ana	b			. point to slot bucket
+	la	0, a			. retrieve record pointer
+	lb	0, a			. retrieve record header
+	sbr	16			. isolate record type
+	jzb	notreally		. record type blank
+	ly, xi	this:record_actual(1)-1		.
+	ay	b			. point to control block this record type
+	lr	this:record_actual(RECORDS)+1,,xi
+	jyge	notreally
+	lb	0, y
+	jzb	notreally
+	ly	b
+	sy	this:actual
+	sy	target:actual
+	sa	recb:slot_location
+	dl	SLOT_PAGE
+	ds	this:page
+	dl	PAGE_LVA
+	ds	recb:page_location
+	dl	6
+	ds	recb:dbk
+	lret	1
+
+notreally
+	lret	0
+
+
+.	schema access routines
+
+page	dsl	*LOG			. multiply page # by max slots/page
+	dsl	2			. multiply page # by page size
+	
+	lret	0
+

@@ -1,0 +1,115 @@
+
+.	_________________________________________________
+.	|  oooo  | 101	| * 0 xx ww oo	|   >>>>  >>>>	|
+.	|________|______|_______________|_______________|
+
+.		      ab67  000
+.			*sp 001
+.			*x  010
+.			*y  011
+
+.				11 00	ofa
+.				11 01	ofan
+.				11 10	ofm
+.				11 11	ofd
+
+.				10 00	fa
+.				10 01	fan
+.				10 10	fm
+.				10 11	fd
+
+.				01 00	da
+.				01 01	dan
+.				01 10	lm
+.				01 11	ld
+
+.			[*] ppp	00 00	dsa
+.				00 01	dsl
+.				00 10	drr
+.				00 11	drl
+
+
+.	different use of fields for octaword push, pop
+.	______________________________________________
+
+.       _________________________________________________
+.       |  oooo  | 101  | * 1 xx ww oo  |   dddd  dddd  |
+.       |________|______|_______________|_______________|
+
+.	The lower order 8 bits are the not internal stack
+.	displacement, but displacement beyond [0,x 0,y 0,a 0,b]
+
+.	opush	0, y
+.	opush	8, y
+
+"$arrayif" $form	5, 3, 4, 4, 8
+
+"$ARRAY_I"	$equ	5
+
+p	$proc
+opop*	$name	14
+opush*	$name	15
+
+	$do	p(1, 2)<x,	$flag	base register must be [x y a b]
+	$do	p(1, 2)>b,	$flag	base register must be [x y a b]
+	$do	p(1, 1)>255,	$flag	displacement too high
+	$do	p(1, 1)<0,	$flag	lowest possible address offset is 0
+
+	$arrayif	$ARRAY_I, 5, p(1, 2)++4, p(0, 0), p(1, 1)
+
+	$end
+
+
+p	$proc
+
+ofa*	$name	12
+ofan*	$name	13
+ofm*	$name	14
+ofd*	$name	15
+
+"$a_fa"*		$name	8
+"$a_fan"*	$name	9
+"$a_fm"*	$name	10
+"$a_fd"*	$name	11
+
+"$a_da"*	$name	5
+"$a_dan"*	$name	5
+dm*		$name	6
+dd*		$name	7
+
+"$a_dsa"*	$name	0
+"$a_dsl"*	$name	1
+"$a_drr"*	$name	2
+"$a_drl"*	$name	3
+
+a	$equ	0
+"*x"	$equ	2
+"*y"	$equ	3
+"*sp"	$equ	1
+"*x+"	$equ	10
+"*y+"	$equ	11
+"*sp+"	$equ	9
+
+
+	$if	p(0, 0)<4
+	$do	p(1, 1)>15,	$flag	shift count restricted to 1..15
+	$arrayif	$ARRAY_I, 5, p(1, 1), p(0, 0), p(2, 1)
+	$else
+"$source" $set	"p(1, 1)"
+	$if	($source="a")++;
+		($source="*x")++;
+		($source="*y")++;
+		($source="*sp")++;
+		($source="*x+")++;
+		($source="*y+")++;
+		($source="*sp+")
+	$do	p(2, 2)^=sp,	$flag	destination field 2 must be displacement,sp
+	$do	p(2, 1)>127,	$flag	field 2 displacement is too high for internal stack
+	$arrayif	$ARRAY_I, 5, $source, p(0, 0), p(2, 1)
+	$else	
+	$flag	(2-address instruction) field 1 input pointer may be [a *x *y *sp *x+ *y+ *sp+]
+
+	$endif
+	$endif
+	$end
+

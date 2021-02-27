@@ -1,0 +1,185 @@
+
+p	$proc
+retrieve* $name		1	. signed if field is flag signed
+retrieves* $name	2	. signed override
+retrieveu* $name	0	. unsigned override 
+
+SIGNED	$set	p(2, *5)+p(0, 0)/*1
+BITS	$set	p(2, 5)
+OFFSET	$set	p(2, 4)
+A_REG	$set	p(1, 1)
+
+	$do	p(1)>1,A_REG	$set	0
+A_REGA	$set	A_REG
+
+SAVE	$set	p(0, *2)
+
+	$do	BITS>$word,	$flag	use lretrieve for fields > 24 bits
+
+p	$proc
+SHIFT_LEFT* $name
+	$do	p(2, 1)^=0,	$do	p(1, 1)=a,	sal	p(2, 1)
+	$do	p(2, 1)^=0,	$do	p(1, 1)=b,	sbl	p(2, 1)
+	$end
+
+p	$proc
+SHIFT_RIGHT* $name
+	$do	p(2, 1)^=0,	$do	p(1, 1)=a,	sar	p(2, 1)
+	$do	p(2, 1)^=0,	$do	p(1, 1)=b,	sbr	p(2, 1)
+	$end
+
+p	$proc
+SHIFT_ALGEBRAIC* $name
+	$do	p(2, 1)^=0,	$do	p(1, 1)=a,	saa	p(2, 1)
+	$do	p(2, 1)^=0,	$do	p(1, 1)=b,	sba	p(2, 1)
+	$end
+
+	
+p	$proc
+DSHIFT_RIGHT* $name
+	$if	A_REG=b
+	dsr	p(2, 1)+$word
+	$do	SAVE,	la	6
+	$else
+	$do	p(2, 1)^=0,	sar	p(2, 1)
+	$if	A_REG=a
+	$do	SAVE,	lb	7
+	$else
+	sa	p(1)
+	$do	SAVE,	dl	6
+	$endif
+	$endif
+	$end
+
+p	$proc
+DSHIFT_LEFT* $name
+	$do	p(2, 1)^=0,	dsl	p(2, 1)
+	$end
+
+p	$proc
+DSHIFT_ALGEBRAIC* $name
+	$if	A_REG=b
+	dsa	p(2, 1)+$word
+	$do	SAVE,	la	6
+	$else
+	$do	p(2, 1)^=0,	saa	p(2, 1)
+	$if	A_REG=a
+	$do	SAVE,	lb	7
+	$else
+	sa	p(1)
+	$do	SAVE,	dl	6
+	$endif
+	$endif
+	$end
+
+
+	$if	BITS+OFFSET>$word
+		$do	SAVE,	ds	6
+		dl	p(2)
+		DSHIFT_LEFT	A_REG	OFFSET
+		$if	SIGNED
+		DSHIFT_ALGEBRAIC p(1)	$word-BITS
+		$else
+		DSHIFT_RIGHT	p(1)	$word-BITS
+		$endif
+	$else
+		$if	(A_REGA^=a)**(A_REGA^=b)
+A_REG		$set	b
+		$do	SAVE,	sb	7
+		$endif
+
+		$do	A_REG=a,	la	p(2)
+		$do	A_REG=b,	lb	p(2)
+		SHIFT_LEFT	A_REG	OFFSET
+		$if	SIGNED
+		SHIFT_ALGEBRAIC A_REG	$word-BITS
+		$else
+		SHIFT_RIGHT	A_REG	$word-BITS
+
+		$if	(A_REGA^=a)**(A_REGA^=b)
+		sb	p(1)
+		$do	SAVE,	lb	7
+		$endif
+
+		$endif
+	$endif
+	$end
+
+
+p	$proc
+lretrieve* $name	1	. signed if field is flag signed
+lretrieves* $name	2	. signed override
+lretrieveu* $name	0	. unsigned override
+
+SIGNED	$set	p(2, *5)+p(0, 0)/*1
+BITS	$set	p(2, 5)
+OFFSET	$set	p(2, 4)
+A_REG	$set	p(1, 1)
+A_REGB	$set	7
+
+SAVE	$set	p(0, *2)
+	$do	p(1)>1,A_REG	$set	0
+A_REGA	$set	A_REG
+
+	$do	BITS<$word+1,	$flag	use retrieve for fields <= 24 bits
+
+p	$proc
+SHIFT_LEFT* $name
+	$do	p(2, 1)^=0,	dsl	p(2, 1)
+	$end
+
+p	$proc
+SHIFT_RIGHT* $name
+	$do	p(2, 1)^=0,	dsr	p(2, 1)
+	$end
+
+p	$proc
+SHIFT_ALGEBRAIC* $name
+	$do	p(2, 1)^=0,	dsa	p(2, 1)
+	$end
+
+p	$proc
+SSHIFT_RIGHT* $name
+	$do	p(2, 1)^=0,	sar	p(2, 1)
+	$end
+
+p	$proc
+SSHIFT_ALGEBRAIC* $name
+	$do	p(2, 1)^=0,	saa	p(2, 1)
+	$end
+
+	$if	A_REGA^=a
+	$do	SAVE,	ds	6
+	$do	SAVE,A_REGB	$set	k
+A_REG	$set	a
+	$endif
+
+	$if	BITS+OFFSET>$word*2
+		dl		p(2)+1
+		dsr		$word*3-BITS-OFFSET
+		sb		A_REGB
+		dsr		BITS+OFFSET-2*$word
+		la		p(2)
+		SHIFT_LEFT	A_REG	OFFSET
+		lb		A_REGB
+		$if		SIGNED
+		SSHIFT_ALGEBRAIC A_REG	$word*2-BITS
+		$else
+		SSHIFT_RIGHT	A_REG	$word*2-BITS
+		$endif
+	$else
+		dl		p(2)
+		SHIFT_LEFT	A_REG	OFFSET
+		$if		SIGNED
+		SHIFT_ALGEBRAIC	A_REG	$word*2-BITS
+		$else
+		SHIFT_RIGHT	A_REG	$word*2-BITS
+		$endif
+	$endif
+
+	$if	A_REGA^=a
+	ds	p(1)
+	$do	SAVE,	dl	6
+	$endif
+
+	$end

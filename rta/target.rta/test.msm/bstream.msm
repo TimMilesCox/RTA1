@@ -1,0 +1,180 @@
+$(66::,x)
+bchan	bstream
+
+$(0)
+
+sichan_new
+	lx	ICHANNELX
+	lr, xi	ICHANNEL_LIMIT_LOW
+	ax, xi	-4
+	jxge	$+2
+	lx, xi	ICHANNEL_FIRST		. default stream
+	sx	ACTIVE_ICHANNEL
+	sa	q			. stream pointer
+
+	$if	0
+	sa	bchan:pointer		. it's now the active stream
+	z	bchan:datac		. so these will be saved
+	z	bchan:pointer		. at the next stream switch
+	$endif
+
+	z	RDATAC
+	z	RDATA
+	lret	0
+
+sichan_store
+	dl	RDATAC			. retrieve data count and buffer
+	on	see$1			. switch to TCB
+	sx	b			. the displaced stream 
+	ds	bchan:datac		. save data count and buffered data
+	lb	q			. retrieve stream read pointer
+	sb	bchan:pointer		. save storage read pointer
+	lret	0
+
+sichan_load
+	lr, xi	ICHANNEL_LIMIT_LOW
+	jxge	sichan_ll_plus
+	j	sichan_ll_minus		. handle value below range
+sichan_ll_plus
+	lr, xi	ICHANNEL_LIMIT
+	jxge	sichan_ul_plus		. handle value above range
+	sx	ACTIVE_ICHANNEL		. write next stream state save pointer
+	dl	bchan:datac		. next stream state data count and buffer
+	ds	RDATAC			. set data count and buffer
+	lb	bchan:pointer		. next stream state flags and read pointer
+	sb	q			. next stream storage read pointer
+	lret	1			. good answer
+sichan_ll_minus
+sichan_ul_plus
+	lret	0			. bad answer
+
+
+sochan_new
+	lx	OCHANNELX
+	ax, xi	-4
+	lr, xi	OCHANNEL_LIMIT_LOW
+	jxge	$+2
+	lx, xi	OCHANNEL_FIRST
+	sx	ACTIVE_OCHANNEL
+	sa	p
+
+	$if	0
+	sa	bchan:pointer		. it's now the active stream
+	z	bchan:datac		. so these will be saved
+	z	bchan:data		. at the next stream switch
+	$endif
+
+	z	WDATAC
+	z	WDATA
+	lret	0
+
+sochan_store
+	dl	WDATAC			. retrieve data count and buffer
+	on	see$1			. switch to TCB
+	ds	bchan:datac		. save data count and buffered data
+	lb	p			. retrieve stream write pointer
+	ds	bchan:pointer		. save storage write pointer
+	lret	0
+
+sochan_load
+	lr, xi	OCHANNEL_LIMIT_LOW
+	jxge	sochan_ll_plus
+	j	sochan_ll_minus		. handle value below range
+sochan_ll_plus
+	lr, xi	OCHANNEL_LIMIT
+	jxge	sochan_ul_plus		. handle value above range
+	sx	ACTIVE_OCHANNEL		. write next stream state save pointer
+	dl	bchan:datac		. next stream state data count and buffer
+	ds	WDATAC			. set data count and buffer
+	lb	bchan:pointer		. next stream state flags and write pointer
+	sb	p			. next stream storage write pointer
+	lret	1			. good answer
+sochan_ll_minus
+sochan_ul_plus
+	lret	0			.bad answer
+	
+.	1. use with sscan / sprintf
+
+.	   Streams may be nested with contained streams strung / unstrung
+.	   changing streams in a push / pop fashion
+.	   but there will only one format / scan at a time in one thread
+.	   the user of a new stream saves the handle of the pushed stream
+.	   for restore
+
+.	2. use with ANSI filestreams
+
+.	   many filestreams may be open at once, but the notion is switching
+.	   not pushing / popping
+
+
+.	retrieving from a stream
+.	and opening a filestream
+
+sichan_new_ii
+	lcal	sichan_store	. save stream state if any
+	push	x		. save key of pushed stream
+	la	a		. read pointer from application registers
+	lcal	sichan_new	. program the new stream
+	sx	a		. this is your key
+	pop	b		. this is the pushed stream key
+	la	1, sp		. copy stream control PSR flags
+	sa	bchan:psr_flags	. to stream descriptor
+	ir	0
+
+
+.	switching filestreams
+
+sichan_switch_ii
+	lx	ACTIVE_ICHANNEL
+	la	x_x
+	ana	a		. is it the stream you have already?
+	jza	sichan_flagged	. if so do not even refresh the PSR flags
+				. new / old handles might be zero=
+	tz	x		. outgoing stream nonzero?
+	lcal	sichan_store	. save stream state if any and if not yours already
+	lx	a		. parameter in application register a
+	lcal	sichan_load	. load next stream state
+	j	sichan_flagged	. handle value out if range
+				. handle value in range
+	lk, xi	b$stream16r++b$streamZR	. mask PSR stream control flags
+	lb	1, sp		. copy read stream control flags
+	mlb	bchan:psr_flags	. from stream descriptor
+	sb	1, sp		. to interrupted PSR
+sichan_flagged
+	ir	0
+
+.	inserting in a stream
+.	and opening a filestream
+
+sochan_new_ii
+	lcal	sochan_store	. save stream state if any
+	push	x		. save key of pushed stream
+	dl	a		. write pointer from application registers
+	lcal	sochan_new	. program the new stream
+	sx	a		. this is your key
+	pop	b		. this is the pushed stream key
+	la	1, sp		. copy stream control PSR flags
+	sa	bchan:psr_flags	. to stream desciptor
+	ir	0
+
+.	switching filestreams
+
+sochan_switch_ii
+	lx	ACTIVE_OCHANNEL
+	la	x_x
+	ana	a		. is it the stream you have already?
+	jza	sochan_flagged	. if so do not even refresh the PSR flags
+				. old / new streams may be zero=
+	tz	x		. outgoing stream?
+	lcal	sochan_store	. save stream state if any and if not yours already
+	lx	a		. parameter in application register a
+	lcal	sochan_load	. load next stream state
+	j	sochan_flagged	. stream handle out of range
+				. stream handle in range
+	lk, xi	b$stream16w	. mask PSR stream control bits
+	lb	1, sp		. copy write stream control flags
+	mlb	bchan:psr_flags	. from stream descriptor
+	sb	1, sp		. to interrupted PSR
+sochan_flagged
+	ir	0
+
