@@ -17,6 +17,11 @@
 	<li><a href="#run">How is the Application Run?</a></li>
 	<li><a href="#nvram">If Applications are ROM instead of Dynamic?</a>
 	<li><a href="#group">Multiple Applications in one Load or ROM Group</a></li>
+	<ol>
+		<li><a href="#group">Application Collections</a></li>
+		<li><a href="#make_rel">make_rel File</a></li>
+		<li><a href="#link_u">Linking Assembly</a></li>
+	</ol>
 	<li><a href="#iframes">iframe Construction and Macro Language</a></li>
 	<ol>
 		<li><a href="#_macros">Macros which frame Instruction Code</a></li>
@@ -351,11 +356,14 @@ Applications in NVRAM
 <a	name="group"/>
 <h3>7: Multiple Applications in one Load or ROM Group</h3>
 
-<p>
+<h4>7.1: Application Collections</h4>
 Applications in shared iframes are assembled with relocatable instruction sections and linked
 
 <p>
-Their data sections are all at absolute 001000 hex and 003000 hex as all applications
+Their data sections are all at absolute 001000<sub>16</sub> and 003000<sub>16</sub> as all applications
+
+<p>
+The application directory has a file <a href="#make_rel">make_rel</a> to command relocatable assemblies of each application for collection
 
 <p>
 Applications for combining have no $vector lines at the front and the instruction code section declaration <a style="color:#0000FF;font-family:courier">$(0:*1/$0)</a> has instead of an address a relocation alignment term <a style="color:#0000FF;font-family:courier">*1</a>
@@ -372,7 +380,7 @@ Separate assemblies export entry points [ <a style="color:#FF0000">first* second
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
-$(4:*1)
+$(4:*1)			. iframe literal constants section
 $(0:*1/$0)		. relocatable instruction code section
 <a style="color:#FF0000">first*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
@@ -387,7 +395,7 @@ $(0:*1/$0)		. relocatable instruction code section
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
-$(4:*1)
+$(4:*1)			. iframe literal constants section
 $(0:*1/$0)		. relocatable instruction code section
 <a style="color:#FF0000">second*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
@@ -401,7 +409,7 @@ $(0:*1/$0)		. relocatable instruction code section
 $(1:01000)		. B1 frame still absolute
 $(3:03000)		. static variable section absolute as ever
 	$lit	4
-$(4:*1)
+$(4:*1)			. iframe literal constants section
 $(0:*1/$0)		. relocatable instruction code section
 <a style="color:#FF0000">third*</a>			. exported start address
 	$base_d		$zenith(3)-003000	1024
@@ -413,13 +421,17 @@ $(0:*1/$0)		. relocatable instruction code section
 
 </pre>
 
-<p>
-A new  section $(4:*1) also appears. This is explained at <a href="#literal_tables">literal tables</a>
+<a>
+A new relocatable section $(4:*1) also appears. This is explained at <a href="#literal_tables">literal tables</a>
 
 <p>
 Only instruction sections are constructed as relocatable. Data sections $(1) variable pointers / private data and $(3) static are at absolute 001000 hex and 003000 hex (but physically anywhere) for all instances of all applications
 
-<p>
+
+<a	name="make_rel"/>
+<h4>7.2: make_rel File</h4>
+
+
 Applications for linking in a group are named to command <a style="color:FF0000">rels</a>
 in one-line text file <a style="color:#FF0000">make_rel</a>
 <pre    style="font-size:12pt;color:#0000FF">
@@ -433,11 +445,15 @@ in one-line text file <a style="color:#FF0000">make_rel</a>
 
 </pre>
 
-<p>
-The applications are collected in another assembly named to command <a style="color:#FF0000">amake</a>
+<a name="link_u"/>
+<h4>7.3: Linking Assembly</h4>
 
 <p>
-Command <a style="color:#FF0000">amake</a> assembles the files on the rel line then for example apps_group.msm
+Command <a style="color:#FF0000">amake</a> assembles the files on the <a href="#make_rel"/>rels</a> line then assembles another file to construct the load object (whether actually loadable or in NVRAM)
+
+<p>
+In this example the linking assembly  is apps_group.msm
+
 <pre	style="font-size:12pt;color:#0000FF">
 
 	amake apps_group	# the file which collects the applications is apps_group.msm in this example
@@ -907,7 +923,7 @@ By default literals are in the current iframe. Many iframe literals are call vec
 Literals in the iframe must be in words 256..4095 of the iframe. Lower operand adresses than 256 are registers. Operand adresses 4096+ are not in the iframe. Only instructions can be obtained from addresses 4096+ of the iframe
 
 <p>
-The construction <a style="color:#0000FF">$do  $<256),$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
+The construct <a style="color:#0000FF">$do  $<256),$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
 
 <p>
 If instructions + literals > 4096, literals need to be placed in front of instructions, not after
@@ -936,7 +952,7 @@ startup
 If multiple applications are linked in one iframe all their default literal pools must be collected within iframe locations 256..4096, either before instruction code or after it if instructions + literals < 4097
 
 <p>
-All <a href="#group">relocatable applications</a> included must be assembled with automatic literals in a different section, here $(4), from instruction code in $(0)
+All <a href="#group">relocatable applications</a> included must be assembled with automatic literals in a separate relocatable section, here $(4), from instruction code in $(0)
 
 <pre    style="font-size:12pt;color:#0000FF">
 

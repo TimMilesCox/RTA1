@@ -93,9 +93,12 @@ See also the licensing notice at the foot of this document
 		</ol>
 	<li><a href="#algors">Runtime Algorithmic Expressions</a></li>
 		<ol>
+		<li><a href="#algors">Floating and Integer Expressions</a></li>
 		<li><a href="#x_fp">Floating Algorithm Run Time Planner $xqt_fp</a></li>
 		<li><a href="#x_i">Integer Algorithm Run Time Planner $xqt_i</a></li>
-		<li><a href="#x_atoi_fp">Data Coversion of Input Terms to Algorithms</a></li>
+		<li><a href="#i_radix">Integer Radix of Algorithmic Expressions</a></li>
+		<li><a href="#i_gcc64">Benchmarking Integer Algorithms with GCC</a></li>
+		<li><a href="#x_atoi_fp">Data Conversion of Input Terms to Algorithms</a></li>
 		</ol>
 	<li><a href="#structure">Structures</a></li>
 		<ol>
@@ -114,6 +117,7 @@ See also the licensing notice at the foot of this document
 		<li><a href="#txo">rom Format</a></li>
 		</ul>
 	<li><a href="#locators">Appendix B: Application Memory Map</a></li>
+	<li><a href="#i_bench">Appendix C: Constructing Integer Algorithm Benchmarks</a></li>
 	<li><a href="#command_line">Appendix X: masmx Command Line</a></li>
 	<li><a href="#binary_utilities">Appendix Y: Binary Utilities</a></li>
 		<ul	type="none">
@@ -545,26 +549,37 @@ see also sections <b>$form</b> and <b>$proc</b>
 <h4>4.1.1: Operators</h4>
 
 Operators by rank are
+<pre    style="font-size:12pt;color:#0000FF">
 
-	<blockquote>
-	()<br>
-	=<br>
-	^=<br>
-	><br>
-	<<br>
-	--<br>
-	++<br>
-	/*<br>
-	*/<br>
-	*/-<br>
-	**<br>
-	*+ *-<br>
-	+ -<br>
-	* / // ///<br>
-	&plusmn; ^unary<br>
-	</blockquote>
+	()
 
+	^=	=
 
+	^&gt;	&gt;
+
+	^&lt;	&lt;
+
+	--
+
+	++
+
+	/*
+
+	*/
+
+	*/-
+
+	**
+
+	*+	*-
+
+	+	-
+
+	*	/	//	///
+
+	&plusmn;	^unary
+
+</pre>
 Operators in the same rank have left-to-right precedence as they are
 encountered in the expression
 
@@ -578,13 +593,17 @@ The operators are
 <pre	style="font-size:12pt;color:#0000FF">
 
 	_________________________________________
-	|	=	|	equal		|	= 1 ^= 0
+	|	=	|	equal		|	=  : 1 else 0
 	|_______________|_______________________|
-	|	^=	|	unequal		|	^= 1 = 0
+	|	^=	|	unequal		|	=  : 0 else 1
 	|_______________|_______________________|
-	|	>	|	greater		|	> 1 = 0 < 0
+	|	&gt;	|	greater		|	&gt;  : 1 else 0
 	|_______________|_______________________|
-	|	<	|	less		|	< 1 = 0 > 0
+	|	&lt;	|	less		|	&lt;  : 1 else 0
+	|_______________|_______________________|
+	|	^&gt;	|	not greater	|	&gt;  : 0 else 1
+	|_______________|_______________________|
+	|	^&lt;	|	not less	|	&lt;  : 0 else 1
 	|_______________|_______________________|
 	|	--	|	XOR		|
 	|_______________|_______________________|
@@ -1591,7 +1610,7 @@ PSR is stored and loaded at interrupt and interrupt return. Its flag assignments
 <a	name="ioar"/>
 <h4>6.2.2: Architectural Space Mapped via I/O</h4>
 <p>
-Storage relocation pointers and limits are addressable by being mapped as I/O ports
+Storage relocation pointers and limits are addressable as I/O ports
 
 <a	name="register_stack"/>
 <h4>6.2.3: The Register Stack</h4>
@@ -3996,10 +4015,36 @@ MASMX 7r3
 
 <a	name="algors"/>
 <h2>9: Runtime Algorithmic Expressions</h2>
+<h3>9.1: Floating and Integer Expressions</h3>
+
+Directives <a href="#x_fp">$xqt_fp</a> and <a href="#x_i">$xqt_i</a> program run time resolution of expressions referencing variable and literal values
+
+<p>
+<a href="#x_fp">$xqt_fp</a> and <a href="#x_i">$xqt_i</a> order and parameterise macro calls with universal names and target-specific implementations
+
+<p>
+<a href="#x_fp">$xqt_fp</a> delivers a floating value in result registers and expression terms are operators and floating numbers
+
+<p>
+Input terms may include ad-hoc conversions of data which is not in floating format
+
+<p>
+<a href="#x_i">$xqt_i</a> delivers an integer value in result registers and expression terms are operators and integers
+
+<p>
+Input terms may include ad-hoc conversions of data which is not binary integer
+
+<p>
+RTA1 platform has a suite of macros for floating arithmetic expressions and a suite of macros for calculating integers at radix 24 to 96 bits
+
 
 <a name="x_fp"/>
-<h3>9.1: Floating Algorithm Run Time Planner $xqt_fp</h3>
+<h3>9.2: Floating Algorithm Run Time Planner $xqt_fp</h3>
+<pre	style="font-size:12pt;color:#0000FF"e>
 
+	$include	language/fpxpress.def
+
+</pre>
 Directive $xqt_fp orders floating operations for run-time algorithms
 
 <p>
@@ -4014,41 +4059,10 @@ $xqt_fp supports four functions and parentheses. All algorithmic steps are const
 <p>
 Input tokens are either known at assembly time or are variables
 
-<p>
-All terms are computed at runtime
+Supplied macros calculate 96-bit floating expressions
 
 <p>
-Spans of known terms in an expression may resolved interactively with <a href="fponline.html">fponline</a>
-and <a href="http://timmilescox.github.com/masmx/masmx.html#equ">equated</a> to a name
-<pre	style="font-size:12pt;color:#0000FF">
-
-	$ cd rta/client
-	[./rundum]	# or ./prun  set routing to RTA1 machine[s] if you have not
-	fponline	[172.29.7...]
-	expression
-	.
-	$
-
-	. the assembly syntax for equating the value returned for the expression is
-
-	name	$equ	value
-
-</pre>
-$xqt_fp orders operations by macro names which are implemented per target. RTA1 supplied macro code is
-<pre	style="font-size:12pt;color:#0000FF">
-
-	language/fpxpress.def	. for 96-bit floating point
-	
-	language/xpres192.def	. for 192-bit floating point
-
-</pre>
-Only one of these definitions can go in one assembly because they define the same macro callnames
-
-<p>
-It would be possible to merge macro-language definitions. This would need an acceptable syntax for indicating an exceptional operand size to macro language. If an application needs to mix 96-bit and 192-bit operations, instructions can also be coded outside the framework of an $xqt_fp directive, which is fixed to one or other set of operational definitions per assembly. It is also simple to link separate assemblies
-
-<p>
-96-bit definitions resolve to single instructions. 192-bit definitions resolve to library calls because each operation is several instructions
+Support for 192-bit values in expression language is scheduled for later release
 
 <p>
 Here a simple algorithm with five inputs is executed in five instructions, including
@@ -4107,14 +4121,14 @@ Three of these tokens are identifiers whose content is only known at runtime
 The tokens which are constants appear as literals at the foot of the assembly
 
 <p>
-An expression in RTA1 assembly generally is an effective address which some instructions use as an immediate value
+An expression in RTA1 instruction assembly language generates an effective address which some instructions use as an immediate value
 
 <p>
-$xqt_fp has different rules to discriminate between identifiers and self-evident values
+$xqt_fp has different rules to discriminate between identifiers and self-evident values in an intuitive sense
 
 	<blockquote>
 	a field of digits is a value<br><br>
-	the address label of storage is a location<br><br>
+	an address label of storage is a location<br><br>
 	a label equated or set to digits is a value<br><br>
 	a label equated or set to a storage label or to a location counter is a location<br><br>
 	a label equated or set to another label is what that label is<br><br>
@@ -4203,13 +4217,32 @@ The macro must have a <a href="http://timmilescox.github.io/masmx/masmx.html#nam
 which is called being in macro Ring 111.
 See <a href="#x_atoi_fp"/>Data Conversion of Input Terms to Algorithms</a>
 
+<p>
+All floating terms in the expressions are computed at runtime including sequences of literal terms. This is in contrast to integer expressions which are computed as far as possible at assembly time
+
+<p>
+Spans of known floating terms in an expression may be resolved interactively before inclusion in assembly with <a href="fponline.html">fponline</a>
+and <a href="http://timmilescox.github.com/masmx/masmx.html#equ">equated</a> to a name
+<pre    style="font-size:12pt;color:#0000FF">
+
+        $ cd rta/client
+        ./rundum]      			# for routing if ./prun or ./rundum has not already run on platform
+        fponline        [172.29.7...]	# if not default 172.29.7.7 = this platform
+        expression
+        .
+        $
+
+        . the assembly syntax for equating the value returned for the expression is
+
+        name    $equ    value
+
+</pre>
+
+
+
 <a name="x_i"/>
-<h3>9.2: Integer Algorithm Run Time Planner $xqt_i</h3>
+<h3>9.3: Integer Algorithm Run Time Planner $xqt_i</h3>
 
-<p>
-Assemblers mostly resolve expressions whose tokens are all known at assembly time
-
-<p>
 Directive <a href="http://timmilescox.github.io/masmx/masmx.html#xqt_i">$xqt_i</a> codes an instruction plan
 to resolve an integer expression including runtime storage contents 
 
@@ -4218,18 +4251,116 @@ These instruction steps are planned with the support of target-specific macros w
 fixed call-names known to masmx 
 
 <p>
+Integer expressions may contain many more operators than floating expressions and process a fluid radix or size of value
+
+<p>
+Avaliable operators are all the operators available to an assembly time expression 
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+
+	$include	language/fpxpress.def
+	$include	language/iconsta.def
+	$include	language/types.def
+	$include	language/i_xpress.def
+
+</pre>
+
+Macro suite i_xpress.def forms a dialect altered for intuitive sense from RTA assembly language
+
+<p>
+To avoid intense casting of input integer sizes integers are typed with macros in types.def
+<pre	style="font-size:12pt;color:#0000FF">
+
+source1	long	80000000000000
+source2	int	7000000
+
+dest	i72	0
+
+
+</pre>
+Casting is supported to expand if necessary the loaded size of integers to accommodate intermediate results
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$xqt_i	source1.i72 * source2
+
+</pre>
+i72 and triple are synonyms
+
+<p>
+Shift counts stated as the names of storage fields are understood to be the values stored at those fields. This is different from RTA assembly language where the shift count is the effective address and any indirection is stated specifically
+
+<p>
+This has the effect that a term
+<pre	style="font-size:12pt;color:#0000FF">
+
+	*/ field_name  	. << field_name
+
+</pre>
+has the same meaning as
+<pre	style="font-size:12pt;color:#0000FF">
+
+
+	*/ *field_name	. << *field_name
+
+</pre>
+Option -C or -K uppercase has effect that indirection flag * means a pointer to another word containing the shift count
+<pre	style="font-size:12pt;color:#0000FF">
+
+	*/- *pointer_name . >> *pointer_name
+
+</pre>
+
+
+An inclusion
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$include	language/c.def
+
+.	switches -C option on
+
+.	changes $sterm from : to . and $cont_char from ; to \
+
+.	interprets C language operators	from the point of inclusion
+
+.	switches -c option on for C language integer and string syntax from the point of inclusion
+
+
+</pre>
+
+If identifiers are not typed and also not cast i_xpress.def macros apply a default size of 48 bits to most integer names in the expression terms
+
+<p>
+The default size applied to multipliers, divisors and shift counts (where shift counts are obtained from storage) is 24
+
+<p>
+A shift count which is a number not a storage identifier is applied as assembly language: the effective address is the shift count
+
+<p>
+A storage field larger than one word from which a shift count is read must be either typed or cast to its actual size to alert macro language to read the shift count from the low-order word of the field
+
+<p>
+Multipliers and divisors may be any size up to 72 bits and are most efficient at 24 bits 
+
+
+<p>
+Expressions containing literals need a subfunction <a style="color:#0000FF">$iii</a> on the $xqt_i directive to make literals the most efficient size for the operation which uses them
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$xqt_i,$iii	1500000000 + left * right
+
+</pre>
+
+<p>
 $xqt_i resolves expression steps
 between constants at assembly time, leaving the fewest possible operations
 for run time calculation
 
 <p>
-If all the terms are known $xqt_i delivers a constant to result registers
+If all the terms are known at assembly time, $xqt_i delivers a resolved constant to result registers without any runtime calculation
 
 <p>
-The set of macros in i_xpress.def delivers a 48-bit result in registers a:b. It is possible to define other sets of macros for larger or smaller integers. Macro language in i_xpress.def interprets some size symbols to override its defaults. Terms are 48 bits and may be flagged 24 bits [ w0 ] or a byte selector [ h1 h2 t1 t2 t3 ]
-
-<p>
-Overrides of any kind are subfield 3 of an expression term, as they are in subroutine call arguments
+In addition to typing and casting <a style="color:#0000FF">[ int short long triple i72 quad ]</a>  macro language in i_xpress.def interprets some size designators as subfield 3 of the token.  These designators are a word <a style="color:#0000FF">[ w0 ]</a> or a byte selector <a style="color:#0000FF">[ h1 h2 t1 t2 t3 ]</a>
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -4284,8 +4415,55 @@ MASMX 7r3
 
 </pre>
 
+<a	name="i_radix"/>
+<h3>9.4: Integer Radix of Algorithmic Expressions</h3>
+
+Macro language supplied for integer algorithms assigns each $i_xpress line an initial radix size associated with the first loaded term by type, cast or default
+<pre	style="font-size:12pt;color:#0000FF">
+
+		quad
+		triple
+		long
+
+aname		int		. the type int is 24 bits
+
+
+		aname.long	. aname is 24 bits but it's expanded on load to contain 48 bits = running radix
+
+		untyped_name	. 48 bits of storage will be loaded and the running radix starts at 48 bits
+
+</pre>
+The running radix is reassessed larger by the size in words of any multipliers applied to the calculation
+
+<p>
+If any other operations like left-shifts and additions are likely to overflow the reckoned radix, it should be expanded by casting
+
+<p>
+The radix may have a reckoned maximum expansion of 96 bits and operations are programmed to compute all words containing part of the running value
+
+<p>
+Some algorithms are expressed to deliver values which can be truncated for efficiency instead of expanded in size
+
+<p>
+Macro language can be directed to truncate oversize intermediate values with the directive
+<pre	style="font-size:12pt;color:#0000FF">
+
+__RADIX	$set	48	. can be set again to large sizes
+
+</pre>
+
+
+<a	name="i_gcc64"/>
+<h3>9.5: Benchmarking Integer Algorithms with GCC</h3>
+
+Algorithic expressions can be benchmarked by comparing their results with output from 64-bit gcc programs on personal computers
+
+<p>
+See <a href="#i_bench">Appendix C: Constructing Integer Algorithm Benchmarks</a>
+
+
 <a	name="x_atoi_fp"/>
-<h3>9.3: Data Conversion of Input Terms to Algorithms</h3>
+<h3>9.6: Data Conversion of Input Terms to Algorithms</h3>
 
 An override <a style="color:#0000FF">,,macro_name</a> calls a macro in Ring 111 to adapt input data, for example convert between float and integer or translate from text string to number
 
@@ -4341,7 +4519,7 @@ is part of supplied macro language binding RTA1 to masmx
 <a href="http://timmilescox.github.io/masmx/masmx.html#xqt_fp">$xqt_fp</a> and
 <a href="http://timmilescox.github.io/masmx/masmx.html#xqt_i">$xqt_i</a> directives
 
-
+<a	name="structure"/>
 <h2>10: Structures</h2>
 <h3>10.1: Structures for Data and Instruction Code</h3>
 
@@ -4679,7 +4857,7 @@ Program visible addresses start at zero
 The third field of the $(0::) declaration contains a load address
 which may be known at buîld or known at load
 
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $(0::IFRAME_LOAD_ADDRESS)
 
@@ -4692,7 +4870,7 @@ If the application contains multiple instruction frames, successive load address
 
 <p>
 $(1) contains private data in bank B1 starting at program-visible address 4096
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $(1:01000)
 
@@ -4716,7 +4894,7 @@ pages in address windows $(3) from address 003000
 
 <p>
 A simple application example might be
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	$include	def/rta.def		. registers and instruction set
 	$include	def/vector.def		. this defines the vector list
@@ -4787,7 +4965,7 @@ BANK_INDEX_OF_CORE_FS_START is usually zero to mean <i>this iframe Start Page In
 
 The 48-bit file pointer <i>my_ram_loadup_filename</i> is exported from the link of the
 micro-filesystem into the application image and is known not searched
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	$base_d MY_APPLICATION_DATA_SIZE EXTERNAL_STACK_SIZE	. base the memory space
 
@@ -4804,7 +4982,7 @@ A program section may have no addresses but instead a pointer.
 <p>
 The pointer is a register capable of indexing [ x y a b fp sp ] and reference may override which register that is 
 
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $(66::,x)
 label	$res	4
@@ -4822,7 +5000,7 @@ Locator numbers are not fixed to any pointer register, but as specific purposes 
 to [ $(0) $(1) $(2) $(3) $(4) ] supplied code keeps a convention of assigning to index registers 
 [ $(66) $(67) $(68) $(69) $(70) $(71) ]
 
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $(66::,x)
 $(67::,y)
@@ -4835,7 +5013,7 @@ $(71::,sp)
 
 The indentifiers inside these sections are base + displacement tuples.
 masmx calls these names $equf labels. In the example
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	$include	dq.def
 
@@ -4846,13 +5024,13 @@ descriptor	acw
 
 </pre>
 is the same as
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	la	descriptor:bytes, fp
 
 </pre>
 The base register assigned at the section head can be overriden on reference
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $(70::,fp)
 descriptor      acw
@@ -4879,7 +5057,7 @@ macros which generate data do not generate any data in a void section
 
 It is also possible to have data tables at high addresses accessed by base register plus displacement
 
-<pre	style="font-size:12pt;background-color:#B2E8FF;border-radius:10px">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 $ masmx oreilly -lnke oreilly
 MASMX 7r3A Build 8
@@ -4926,6 +5104,76 @@ $00:000100
 
 </pre>
 
+
+<a	name="i_bench"/>
+<h2>Appendix C: Constructing Integer Algorithm Benchmarks</h2>
+
+A set of benchmarked integer algorithmic expressions is in loadable test application rta/target.rta/ctests.app/ctests
+
+<p>
+It is possible to add to or change these expressions in order to test the outputs of other expressions
+
+<p>
+The benchmark is executed on RTA1 by loading and executing ctests for example with telnet
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	telnet	172.29.7.7	# for example
+	r load /util/algo
+
+</pre>
+
+/util/algo is target.rta/ctests.app/ctests included in RTA1 Device 1 file system by rta/mrand7 directed by rta/fsimages/baseload
+
+<p>
+The control for comparison is a 64-bit PC program ctests which is generated into $RTA_BIN_64
+
+<p>
+$RTA_BIN_64/ctests gives the same answers as /util/algo except for a few examples where 64-bit radix does not cover the values generated
+
+<p>
+Tests TEST1 to TEST86 defined in C language as #define TESTn <i>expression</i> are in files csample.h to csample5.h
+
+<p>
+To have a different set of tests or more of them update rta/ialgo.rta/ctests.c to include and execute test expressions
+
+<p>
+The test lines in 64-bit gcc are like
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	printf("%ld\n", TESTn);
+
+</pre>
+All the csample[n].h or similar files defining tests must be in the working directory to generate both ctests PC binary and RTA1 executable like target.rta/ctests.app/ctests
+
+<p>
+rta/ialgo.rta needs to be in $PATH. ctests PC binary is generated with the command mctests from the directory containing test definitions
+
+<p>
+the same working directory contains a c file which includes the same test definition headers
+
+<p>
+Command msample generates for example csample[n].msm from csample[n].c
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	msample	csample[n]
+
+</pre>
+
+and csample[n].c is like
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+#include "csample[n].h"
+[#include "csample[o].h"]
+	.
+	.
+
+	atest	TEST91
+	atest	TEST92
+	.
+	.
+
+</pre>
+csample[n].msm is included in target.rta/ctests.app/ctests.msm or a similar application
 
 <a	name="command_line"/>
 <h2>Appendix X: masmx Command Line</h2>

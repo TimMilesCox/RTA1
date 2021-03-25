@@ -90,45 +90,79 @@ T*		$name	72
 		$end
 
 p		$proc
+"$$i_compare"*	$name
+		$i_subtract     p(1)
+		$if	$$significands>48
+		or	6
+                orB	7
+		$endif
+"$$significands"****	$set	24
+"$msize"**	$set		24
+		$end
+
+p		$proc
+"$$i_retrieve_compare"* $name
+		$i_retrieve_subtract
+		$if	$$significands>48
+		or	6
+		orB	7
+		$endif
+"$$significands"****	$set	24
+"$msize"**	$set		24
+		$end
+
+p		$proc
 
 "$i_testequal"* $name
-		$aax	p(1)
-                dan     $aaa		. a result is double
-                jdz     $+3
-                dsr     48
-                j       $+2
-                lb, xi  1
+		$$i_compare	p(1)
+		jdz	$+3
+		la	0,,xi
+		lb	1,,xi
+		xorB	1,,xi
                 $return
 
 "$i_testunequal"* $name
-		$aax	p(1)
-                dan     $aaa		. a result is double
+		$$i_compare	p(1)
                 jdz     $+3
                 la, xi  0
                 lb, xi  1
                 $return
 
-"$i_testgreater"* $name			. a result is double
-                $aax	p(1)
-		dan	$aaa
-                jdz     $+6
-                jna     $+4
-                la, xi  0
-                lb, xi  1
-                j       $+2
-                dsr     48
-                $return
+"$i_testgreater"* $name
+		$$i_compare	p(1)
+                jdz     $+5		. = = not >
+		lb	1,,xi		. say > for a moment
+                jpa     $+2
+		lb	0,,xi		. unsay +
+                la	0,,xi		. conceptually 24 bits
+                $return			. represented as 48
+
+"$i_test_noless"* $name
+		$$i_compare	p(1)
+		jdz	$+3		. = = jump to + 1
+		lb	0,,xi		. say < for a moment
+		jna	$+2		
+		lb	1,,xi		. unsay it if +
+		la	0,,xi		. represent the 24 bit object
+		$return			. in a 48-bit field
 
 "$i_testless"* $name
-		$aax	p(1)
-                dan     $aaa
-                jdz     $+6
-                jpa     $+4
-                la, xi  0
-                lb, xi  1
-                j       $+2
-                dsr     48
+		$$i_compare	p(1)
+                jdz     $+5		. not a bit less
+		lb	0,,xi		. say no less for a moment
+                jpa     $+2
+                lb	1,,xi		. unsay it. <
+                la	0,,xi
                 $return
+
+"$i_test_nogreater"* $name
+		$$i_compare	p(1)
+		jdz	$+3		. yes it isn't greater
+		lb	0,,xi		. say it's > for now
+		jpa	$+2
+		lb	1,,xi		. yes it isn't
+		la	0,,xi
+		$return
 
 "$i_shift"*	$name
 
@@ -536,7 +570,7 @@ push_radix	$set	$$significands
 		  lb	a
 		  la	6
 		  $else
-		  c	(x72_d72_24)	$aaa
+		  c	(x72_d72_24)	$aaa	0,,xi
 		  $endif
 		$elseif	size<49	
                   $if		$$significands>48
@@ -569,7 +603,7 @@ push_radix	$set	$$significands
 "$i_load"*	$name
 "$iiw"	$set	0
 size	$set	48
-"$$significands"***	$set	48
+"$$significands"*****	$set	48
 "$$cast"		$set	0
 "$iii"	$set	'bandicoot serenade'
 
@@ -611,7 +645,7 @@ size	$set	$$cast
 "$i_load_negative"* $name
 size	$set	48
 "$iiw"	$set	0
-"$$significands"***	$set	48
+. "$$significands"***	$set	48
 
 
 		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
@@ -625,7 +659,6 @@ size	$set	48
 size	$set	p(1, 1:2)
 		$aax	p(1, 1:1), p(1, 2), p(1, 3)
 		$else
-		$do	p(1, 5)^=0,size	$set	p(1, 5)
 		$aax	p(1)
 		$endif
 
@@ -650,7 +683,9 @@ size	$set	p(1, 1:2)
 		dsr	48
 		dan	$aaa
 		$endif
-		$do	size>24,"$$significands"***	$set	size
+.		$do	size>24,
+
+"$$significands"***	$set	size
 		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
 "$msize"*	$set	$$significands
 		$endif
@@ -658,7 +693,7 @@ size	$set	p(1, 1:2)
 
 "$i_reserve"*	$name			. lookaside is always double
 		$ipush
-"$$significands"***	$set	48
+. "$$significands"***	$set	48
 		$return
 
 "$i_reverse"*	$name
@@ -702,49 +737,63 @@ tag$aside($ASIDE+1)***	$set	$$significands
 "$ipop"*	$name
 "$ASIDE"***	$set	$ASIDE-1
 	$do	tag$aside($ASIDE)<0,"$ASIDE"***		$set	$ASIDE-1 . bypass
-"$$significands"***	$set	tag$aside($ASIDE)
+. "$$significands"***	$set	tag$aside($ASIDE)
 	$do	tag$aside($ASIDE)>48,"$ASIDE"***	$set	$ASIDE-1 . large
 	$do	$ASIDE<1,	$flag	lookaside underrun
 		$return
 
+
 "$i_retrieve_testequal"* $name
-		$ipop
-                dan	i$aside($ASIDE)
-		jdz	$+3
+		$$i_retrieve_compare
+		jdz	$+3		. up 1 bit	
 		dsr	48
 		j	$+2
 		lb, xi	1
                 $return
 
 "$i_retrieve_testunequal"* $name
-		$ipop
-                dan     i$aside($ASIDE)
+		$$i_retrieve_compare	. not even up 1 bit
                 jdz     $+3
                 la, xi  0
 		lb, xi	1
                 $return
 
 "$i_retrieve_testgreater"* $name
-		$ipop
-                dan     i$aside($ASIDE)
-                jdz     $+6
-		jna	$+4
-		la, xi	0
-                lb, xi  1
-		j	$+2
-		dsr	48
+		$$i_retrieve_compare
+                jdz     $+5		. it already isn't >
+		lb	1,,xi		. it's different so is it + ?		
+		jpa	$+2		. yes
+		lb	0,,xi		. no
+		la	0,,xi		. finally
                 $return
 
+"$i_retrieve_test_noless"* $name
+		$$i_retrieve_compare
+		jdz	$+3		. = ^= <
+		lb	0,,xi
+		jpa	$+2		. yes it's lower
+		lb	1,,xi		. notso
+		la	0,,xi
+		$return	
+
 "$i_retrieve_testless"* $name
-		$ipop
-                dan     i$aside($ASIDE)
-		jdz	$+6
-                jpa	$+4
-                la, xi	0
-                lb, xi  1
-		j	$+2
-		dsr	48
+		$$i_retrieve_compare
+		jdz	$+5		. no contest
+		lb	0,,xi
+                jpa	$+4		. yes it isn't
+		lb	1,,xi		. no it is
+                la	0,,xi
                 $return
+
+"$i_retrieve_test_nogreater"* $name
+		$$i_retrieve_compare
+		jdz	$+3		. yes no higher
+		lb	0,,xi		. not no greater
+		jpa	$+2		. + and not =
+		lb	1,,xi		. 
+		la	0,,xi
+		$return
+
 
 "$i_retrieve_shift"* $name		. setaside shift count is LS word
 		$ipop			. and is indirect
@@ -760,7 +809,7 @@ tag$aside($ASIDE+1)***	$set	$$significands
 		$ipop	
 		or	i$aside($ASIDE)
 		orB	i$aside($ASIDE)+1
-		$do	tag$aside($ASIDE)>$$ignificands,"$$ignificands"***	$set	tag$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
 		$if	$$significands>48
 		$do	tag$aside($ASIDE)>48,	c	(x72_orU)	i$aside($ASIDE+1),,long	0,,xi
 		$endif
@@ -770,7 +819,7 @@ tag$aside($ASIDE+1)***	$set	$$significands
 		$ipop
                 xor     i$aside($ASIDE)
                 xorB    i$aside($ASIDE)+1
-		$do	tag$aside($ASIDE)>$$ignificands,"$$ignificands"***	$set	tag$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
 		$if	$$significands>48
 		$do	tag$aside($ASIDE)>48,	c	(x72_xorX)	i$aside($ASIDE+1),,long	0,,xi
 		$endif
@@ -780,7 +829,7 @@ tag$aside($ASIDE+1)***	$set	$$significands
 		$ipop
                 and     i$aside($ASIDE)
                 andB    i$aside($ASIDE)+1
-		$do	tag$aside($ASIDE)>$$ignificands,"$$ignificands"***	$set	tag$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
 		$if	$$significands>48
 		$do	tag$aside($ASIDE)>48,	c	(x72_andU)	i$aside($ASIDE+1),,long	0,,xi
 		$endif
@@ -788,21 +837,22 @@ tag$aside($ASIDE+1)***	$set	$$significands
 
 "$i_retrieve_add"*	$name
 		$ipop
+		$do	$$significands<49,	$do	tag$aside($ASIDE)>48,	call	(x72_xtend)
 		da	i$aside($ASIDE)
-		$do	tag$aside($ASIDE)>$$ignificands,"$$ignificands"***	$set	tag$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
 		$do	$$significands>48,	c	(x72_aU)	i$aside($ASIDE+1),,long	0,,xi
 		$return
 
 "$i_retrieve_subtract"*	$name
 		$ipop
+		$do	$$significands<49,	$do	tag$aside($ASIDE)>48,	call	(x72_xtend)
 		dan	i$aside($ASIDE)
-		$do	tag$aside($ASIDE)>$$ignificands,"$$ignificands"***	$set	tag$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
 		$do	$$significands>48,	c	(x72_anU)	i$aside($ASIDE+1),,long	0,,xi
 		$return
 
 "$i_retrieve_multiply"*	$name
 		$ipop
-
 		$if	tag$aside($ASIDE)>48
 		$if	$msize<25
 		sb	i$aside($ASIDE+2)+1
@@ -854,7 +904,7 @@ tag$aside($ASIDE+1)***	$set	$$significands
 			$endif
 		$else
 			$if	$$significands>48
-				c	(x72_d72_24)	i$aside($ASIDE)+1
+				c	(x72_d72_24)	i$aside($ASIDE)+1	0,,xi
 			$else
 				d	i$aside($ASIDE)+1
 				sb	7

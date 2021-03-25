@@ -245,6 +245,7 @@ end_around:
 	dec	ebx
 	jns	end_around_repeat
 
+	%if	0
 	mov	eax, dword ptr [edi+7*4]
 	mov	dword ptr [__register+286*4], eax
         mov     eax, dword ptr [edi+6*4]
@@ -259,6 +260,7 @@ end_around:
         mov     dword ptr [__register+281*4], eax
         mov     eax, dword ptr [edi+1*4]
         mov     dword ptr [__register+280*4], eax
+	%endif
 
 	ret
 
@@ -870,6 +872,7 @@ fd_restore:	pop	ecx
 ;	using source and target registers in the internal stack
 ;	with maximum mantissa size 168 bits
 
+	%if	0
 
 _fa:	push	ebp				; _input2 is [register]+absolute
 	mov	ebp, __register
@@ -877,9 +880,12 @@ _fa:	push	ebp				; _input2 is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUT2
 	call	compress4to8
+
 	mov	eax, a
-	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-	push	eax				; save target register name
+	push	eax				; save target register name net of ebp ->
+	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
+						; not that any ISRs issue floating instructions
+
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
@@ -899,9 +905,12 @@ _fan:	push	ebp
 	call	_burst_read4
 	mov	esi, _INPUT2
 	call	compress4to8
+
 	mov	eax, a
-	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-	push	eax				; save target register name
+ 	push	eax				; save target register name net of ebp ->
+	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
+						; not that any ISRs issue floating instructions
+
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
@@ -921,9 +930,12 @@ _fm:	push	ebp
 	call	_burst_read4
 	mov	esi, _INPUT2
 	call	compress4to8
+
 	mov	eax, a
-	or	eax, dword ptr [_iselect]	; this application targets registers+a
-	push	eax				; save target register name
+	push	eax				; save target register name net of ebp ->
+	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
+						; not that any ISRs issue floating instructions
+
 	mov	ebx, _inputr			; _inputr is [register]+absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
@@ -939,14 +951,17 @@ _fm_:	call	fm
 	
 _fd:	push	ebp
 	mov	ebp, __register			; _input2 is [register]+absolute
-	mov	ebx, _input2
+	mov	ebx, _input2			; and read4_registers uses ebp-> context Int / App
 	call	_burst_read4
 	mov	esi, _INPUT2
 	call	compress4to8
+
 	mov	eax, a
-	or	eax, dword ptr [_iselect]	; action [ebp->register_set]+a
-	push	eax				; save target register name
-	mov	ebx, _inputr			; _inputr is [register]+absolute
+	push	eax				; save target register name net of ebp ->
+	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
+						; not that any ISRs issue floating instructions
+
+	mov	ebx, _inputr			; _inputr is [register] + absolute
 	call	_burst_read4
 	mov	esi, _INPUTR
 	call	compress4to8
@@ -958,4 +973,82 @@ _fd_:	call	fd
 	pop	ebx				; retrieve target register name
 	pop	ebp
 	jmp	_deliver_
+
+	%else
+
+_fa:	mov	ebx, a
+_far:	push	ebx
+	call	fp_operands
+	call	fp_registers_a
+	call	fa
+	pop	ebx
+	jmp	_deliver_edi
+
+_fan:	mov	ebx, a
+_fanr:	push	ebx
+	call	fp_operands
+	call	fp_registers_a
+	call	fan
+	pop	ebx
+	jmp	_deliver_edi
+
+_fm:	mov	ebx, a
+_fmr:	push	ebx
+	call	fp_operands
+	call	fp_registers_m
+	call	fm
+	pop	ebx
+	jmp	 _deliver_
+
+_fd:	mov	ebx, a				; default target register
+_fdr:	push	ebx
+	call	fp_operands
+	call	fp_registers_m
+	call	fd
+	pop	ebx
+	jmp	_deliver_
+
+fp_operands
+	push	eax				; effective address often useful
+	mov	esi, _INPUTR
+	call	_load_quad
+	call	compress4to8
+	pop	eax				; effective address
+	push	ebp
+	mov	ebp, __register			; registers absolute array
+	mov	ebx, _input2			; if source2 is a register
+	call	_burst_read4
+	mov	esi, _INPUT2
+	call	compress4to8
+	pop	ebp				; App / Int register context
+	ret
+
+fp_registers_a
+	mov	ecx, 00040208h
+	test	dword ptr [_psr], FP_R
+	jz	fp_registers_x
+	mov	ecx, 00070410h
+fp_registers_x
+	ret
+
+fp_registers_m
+	mov	ecx, 00040208h
+	test	dword ptr [_psr], FP_R
+	jz	fp_registers_z
+	mov	ecx, 00060410h
+fp_registers_z
+	ret
+
+	%endif
+
+_load_quad
+	mov	eax, dword ptr[ebp+ebx*4+3*4]
+	mov	dword ptr [esi+3*4], eax
+	mov	eax, dword ptr  [ebp+ebx*4+2*4]
+	mov	dword ptr [esi+2*4], eax
+	mov	eax, dword ptr [ebp+ebx*4+1*4]
+	mov	dword ptr [esi+1*4], eax
+	mov	eax, dword ptr [ebp+ebx*4]
+	mov	dword ptr [esi], eax
+	ret
 

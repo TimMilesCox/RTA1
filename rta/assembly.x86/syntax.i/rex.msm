@@ -1,0 +1,282 @@
+
+_rextable_1
+	dd	r_inA?, r_inB?, r_outA?, r_outB?, r_sa, r_sb, r_sabr?, 0
+	dd	0, 0, 0, 0, r_la, r_lb, 0, r_jdz?
+	dd	0, 0, r_or, r_orB, r_and, r_andB, r_xor, r_xorB
+	dd	r_aa, r_ab, r_ana, r_anb, r_ms, r_lm, r_d, r_ld
+
+_rextable_6
+	dd	r_sar, r_sbr, r_dsr, 0, r_sal, r_sbl, r_dsl, 0
+	dd	r_rar, r_rbr, r_drr, 0, r_ral, r_rbl, r_drl, 0
+	dd	r_saa, r_sba, r_dsa, r_jpa, r_jpb, 0, r_jpo
+	dd	r_jza, r_jzb, r_jnza, r_jnzb, r_jna, r_jnb, 0, 0
+
+_rextable_7
+	dd	0, 0, 0, 0, 0, 0, 0, 0
+	dd	r_qs, r_ql, 0, 0, r_fa, r_fan, r_fm, r_fd
+	dd	0, 0, 0, 0, 0, r_mta, 0, r_mlb
+	dd	r_ds, r_dl, r_da, r_dan, 0, 0, 0, 0
+
+_rex:	test	byte ptr [_psr+2], 128
+	js	near _rex_z				; ISRs can't do this
+
+	call	memory_read				; ea -> instruction for repeat	
+	mov	dword ptr [__register+286*4], eax	; save instruction word
+	call	__ea					; get initial ea of repeated  instruction
+	movzx	ebx, ch					; spin-off is opcode index in ch
+							; and operand type in cl
+	cmp	cl, 6
+	jb	_rex_itable1
+	ja	_rex_itable7
+							; instruction list 6
+	mov	ebx, dword ptr [_rextable_6+ebx*4]	; shifts and jumps
+	jmp	_rex_evaluate
+
+_rex_itable7:						; instruction list 7
+	mov	ebx, dword ptr [_rextable_7+ebx*4]	; large arithmetic
+	jmp	_rex_evaluate
+
+_rex_itable1:						; instruction list 1
+	mov	ebx, dword ptr [_rextable_1+ebx*4]	; single integer arithmetic
+
+_rex_evaluate:
+	and	ebx, ebx				; instruction for repeat execute?
+	jz	near _rex_z				; no
+	mov	dword ptr [__register+285*4], ebx	; yes: save execution logic pointer
+
+							; if repeat instruction is indexed:
+							; quick lookup tag for index increment
+	mov	dword ptr [__register+284*4], 0		; default no index register referenced
+	mov	ecx, dword ptr [__register+286*4]	; identify any index register tag
+	and	cx, cx					; in the instruction word
+	jns	_rex_configure?				; by testing bit 15
+	shr	cx, 12
+							; must be > indirection tags *B0+ *B1+
+	cmp	cl, 10					; pointers in storage not incremented
+	jb	_rex_configure?				; index registers may increment
+	cmp	cl, 14
+	jnb	_rex_indexed				; [   fp sp ]  registers   [ 14 15 ]
+	and	cl, 7					; [ x y a b ]  registers [ 2 3 4 5 ]
+
+_rex_indexed:
+	and	ecx, 15					; make 32-bit index value
+	mov	dword ptr [__register+284*4], ecx	; write quick lookup
+
+_rex_configure?:					; if counter < 0 
+							; 1st pass configure
+	test	dword ptr [__register+RDATAC], 00800000h
+	jz	 _rex_configured			; configuration not required: execute
+							; configure:
+	mov	ecx, dword ptr [__register+WDATAC]	; restart counter
+	mov	dword ptr [__register+RDATAC], ecx
+
+	mov	ecx, dword ptr [__register+S_P]		; restart register pointer
+	and	ecx, 00FFFFFFh				; at internal stack top
+	mov	dword ptr [__register+Q], ecx
+
+_rex_configured:
+_rex_repeat:
+
+	mov	ecx, ebx
+	mov	ebx, dword ptr [__register+Q]		; default target register [ q ] ->	
+	call	ecx					; execute logic ecx ->
+
+	mov	ecx, dword ptr [__register+RDATA]	; register pointer q -> update ?
+	and	ecx, 00FFFFFFh
+	jz	_rex_same_register			; no
+	add	ecx, dword ptr [__register+Q]		; yes
+	and	ecx, 00FFFFFFh
+	mov	dword ptr [__register+Q], ecx		; write back q
+
+_rex_same_register:
+	mov	eax, dword ptr [__register+284*4]	; index register tag?
+	and	ax, ax
+	jz	_rex_count				; no
+
+	mov	ecx, dword ptr [__register+WDATA]
+	and	ecx, 00FFFFFFh				; index register increment configured?
+	jz	_rex_count				; no
+
+	add	ecx, dword ptr [__register+eax*4]	; calculate index + increment
+	and	ecx, 00FFFFFFh				; 
+	mov	dword ptr [__register+eax*4], ecx	; write back to tagged index register
+
+_rex_count:
+	mov	eax, dword ptr [__register+RDATAC]
+	dec	eax
+	and	eax, 00FFFFFFh
+
+	mov	dword ptr [__register+RDATAC], eax
+	test	eax, 00800000h
+	jnz	_rex_z					; reached -1 end
+
+	;	test for interrupt request
+
+	mov	eax, [__register+286*4]			; instruction encoding
+	call	__ea
+	mov	ebx, [__register+285*4]			; command pointer
+	jmp	_rex_repeat
+_rex_z:	ret
+
+_rex_chex_124:
+	cmp	ebx, 124
+	ja	_rex_chexit
+	cmp	ebx, 24
+	jb	_rex_chexit
+	ret
+
+_rex_chexit
+	jmp	guard_ii_authority
+
+
+;	eax = EA
+;	q -> target register selected
+
+r_fa:	call	_rex_chex_124
+	call	_far
+	ret
+
+r_fan:	call	_rex_chex_124
+	call	_fanr
+	ret
+
+r_fm:	call	_rex_chex_124
+	call	_fmr
+	ret
+
+r_fd:	call	_rex_chex_124
+	call	_fdr
+	ret
+
+r_inA?	cmp	cl, 4
+	jnz	r_noio
+
+r_inB?:	cmp	cl, 4
+	jnz	r_noio
+
+r_outA?:
+	cmp	cl, 4
+	jnz	r_noio
+
+r_outB?:
+	cmp	cl, 4
+	jnz	r_noio
+
+r_sabr?:
+	cmp	cl, 4
+	jnz	r_noio
+
+r_jdz?:
+	cmp	cl, 4
+	jnz	r_noio
+
+r_noio:	ret
+
+r_sa:
+	ret
+r_sb:
+	ret
+r_la:
+	ret
+r_lb:
+	ret
+r_or:
+	ret
+r_orB:
+	ret
+r_and:
+	ret
+r_andB:
+	ret
+r_xor:
+	ret
+r_xorB:
+	ret
+
+r_aa:
+	ret
+r_ab:
+	ret
+r_ana:
+	ret
+r_anb:
+	ret
+r_ms:
+	ret
+r_lm:
+	ret
+r_d:
+	ret
+r_ld:
+	ret
+
+r_sar:
+	ret
+r_sbr:
+	ret
+r_dsr:
+	ret
+r_sal:
+	ret
+r_sbl:
+	ret
+r_dsl:
+	ret
+
+r_rar:
+	ret
+r_rbr:
+	ret
+r_drr:
+	ret
+r_ral:
+	ret
+r_rbl:
+	ret
+r_drl:
+	ret
+
+r_saa:
+	ret
+r_sba:
+	ret
+r_dsa:
+	ret
+r_jpa:
+	ret
+r_jpb:
+	ret
+r_jpo:
+	ret
+
+r_jza:
+	ret
+r_jzb:
+	ret
+r_jnza:
+	ret
+r_jnzb:
+	ret
+r_jna:
+	ret
+r_jnb:
+	ret
+
+r_qs:
+	ret
+r_ql:
+	ret
+
+r_mta:
+	ret
+r_mlb:
+	ret
+
+r_ds:
+	ret
+r_dl:
+	ret
+r_da:
+	ret
+r_dan:
+	ret

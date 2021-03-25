@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include "csample.h"
 #include "csample1.h"
+#include "csample2.h"
+#include "csample3.h"
+#include "csample4.h"
 
 static long	 left	= 9000000000000,
 		 right	= 7000000000000,
@@ -29,6 +32,12 @@ static int	*indirect_scale_left	= &scale_left;
 
 static unsigned	 and_u32	= -8;
 
+static int	 one = 1,
+		 two = 2,
+		 four = 4,
+		 eight = 8,
+		 sixteen = 16;
+
 int main()
 {
    printf("%ld\n", TEST1);
@@ -56,5 +65,53 @@ int main()
    printf("%ld\n", TEST28);
    printf("%ld\n", TEST29);
 
+   printf("%ld\n", TEST31);
+   printf("%ld\n", TEST32);
+   printf("%ld\n", TEST33);
+   printf("%ld\n", TEST34);
+   printf("%ld\n", TEST35);
+   printf("%ld\n", TEST36);
+
+   printf("%d\n", TEST37);
+   printf("%d\n", TEST38);
+   printf("%d\n", TEST39);
+   printf("%d\n", TEST40);
+   printf("%d\n", TEST41);
+   printf("%d\n", TEST42);
+
+   printf("%ld\n", TEST45);
+   printf("%ld\n", TEST46);
+   printf("%ld\n", TEST47);
+   printf("%ld\n", TEST48);
+   printf("%ld\n", TEST49);
+   printf("%ld\n", TEST50);
+
+   printf("%d\n", TEST51);
+   printf("%d\n", TEST52);
+   printf("%d\n", TEST53);
+   printf("%d\n", TEST54);
+   printf("%d\n", TEST55);
+   printf("%d\n", TEST56);
+
+   printf("%ld\n", TEST61);
+   printf("%ld\n", TEST62);
+   printf("%ld\n", TEST63);
+   printf("%ld\n", TEST64);
+   printf("%ld\n", TEST65);
+   printf("%ld\n", TEST66);
+
+   printf("%ld\n", TEST71);
+   printf("%ld\n", TEST72);
+   printf("%ld\n", TEST73);
+   printf("%ld\n", TEST74);
+
+   printf("%ld\n", TEST75);
+   printf("%ld\n", TEST76);
+
+   printf("%ld\n", TEST80);
+   printf("%ld\n", TEST81);
+   printf("%ld\n", TEST82);
+   printf("%ld\n", TEST83);
+   printf("%ld\n", TEST84);
    return 0;
 }

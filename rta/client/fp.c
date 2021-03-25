@@ -22,7 +22,6 @@
 #include "../include.rta/address.h"
 #include "fp.h"
 
-
 #ifdef	LINUX
 static struct sockaddr_in target = {     AF_INET, PORT(FP_SERVICE) } ;
 
@@ -60,6 +59,8 @@ int main(int argc, char *argv[])
    int			 f = fcntl(s, F_GETFL, 0);
    int			 u = fcntl(s, F_SETFL, f | O_NONBLOCK);
    #endif
+
+   int			 ostates;
 
    int			 x,
 			 y,
@@ -132,15 +133,19 @@ int main(int argc, char *argv[])
    y = connect(s, (struct sockaddr *) &target, 16);
    if (y < 0) y = 0 - errno;
 
-   if ((uflag['Q'-'A'] == 0)
-   ||  (s < 0) || (x < 0) || (f < 0) || (u < 0) || (y < 0))
-   printf("remote application socket %d bind state %d "
-          "F %x NB %d udconnect state %d\n",
-	   s, x, f, u, y);
+   ostates = s | x | f | u | y ;
 
+   if ((uflag['Q'-'A'] == 0) || (ostates < 0))
+   {
+      printf("remote application socket %d bind state %d "
+             "F %x NB %d udconnect state %d\n",
+              s, x, f, u, y);
+   }
 
    for (;;)
    {
+      if (ostates < 0) break;
+
       p = fgets(sdata, TEXTL, stdin);
       if (!p) break;
 
@@ -162,8 +167,13 @@ int main(int argc, char *argv[])
 
          x = send(s, sdata, bytes, 0);
 
-         if ((uflag['Q'-'A'] == 0) || (x < 0))
-         printf("send state %d\n", x);
+         if (x < 0)
+         {
+            printf("socket TX E %d\n", errno);
+            break;
+         }
+
+         if (uflag['Q'-'A'] == 0) printf("send state %d\n", x);
 
          if (flag['z'-'a']) continue;
 
@@ -197,8 +207,9 @@ int main(int argc, char *argv[])
          if (x) break;
       }
 
-      if (x < 0) rdata[0] = 0;
-      else rdata[x] = 0;
+      if (x < 0) break;
+
+      rdata[x] = 0;
 
       if (flag['x'-'a'])
       {

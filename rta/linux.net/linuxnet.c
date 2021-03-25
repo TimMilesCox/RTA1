@@ -45,6 +45,8 @@
 #include "../include.rta/physa.h"
 #include "../portal/portal.h"
 
+#define	RED		"\033[38;5;9m"
+#define	PRIMARY		"\033[0m"
 #define	LLHL		0
 #define	MASKS		120
 
@@ -1240,11 +1242,30 @@ int main(int argc, char *argv[])
       #endif
       #ifdef OSX
       s[x] = fdes = open(device, O_RDWR | O_NONBLOCK, 0777);
-      printf("[s %d %d %s]\n", fdes, (fdes < 0) ? errno : 0, device);
+      printf("[s %d %d %s %s]\n", fdes, (fdes < 0) ? errno : 0, device, netdevice);
       #endif
       
       if (fdes < 0)
       {
+         #ifdef OSX
+         printf(RED
+               "\n%s FILE OPEN FAILURE. USE ANOTHER bpf FILE"
+		PRIMARY	" ERROR %d\a\n\n", device, errno);
+         #endif
+
+         #ifdef LINUX
+         printf(RED
+               "\n%s BPF SOCKET OPEN FAILURE"
+                PRIMARY " ERROR %d\a\n\n", netdevice, errno);
+         #endif
+
+         halt_flag = -1;
+         break;
+
+         /*************************************************************
+		easier to see and fix the problem
+		if no more initialisation is done
+         *************************************************************/
       }
       else
       {
@@ -1469,7 +1490,14 @@ int main(int argc, char *argv[])
       }
    }
 
-   restart();
+   if (halt_flag < 0)
+   {
+      /******************************************************
+	startup snags, don't activate
+	else no snags, activate
+      ******************************************************/
+   }
+   else restart();
 
    x = pthread_attr_init(&asyncb);
 
