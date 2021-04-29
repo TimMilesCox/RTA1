@@ -298,9 +298,9 @@ static void recall_store(int bytes, char *text)
    y = posix_spawnp(&x, ONLINE "masmx", NULL, NULL, scriptl, environ);
    chdir(client_d);
 
-   if (y < 0)
+   if (y)
    {
-      printf("names reassembly launch fail %d\n", errno);
+      printf("names reassembly launch fail %d\n", y);
       return;
    }
    else if (x == 0)
@@ -517,10 +517,10 @@ int main(int argc, char *argv[])
    x = 0;
    y = posix_spawnp(&x, "bash", NULL, NULL, scriptq, environ);
 
-   if ((y < 0) || (x == 0))
+   if ((y) || (x == 0))
    {
       printf("please cd rta/client and run  ./fponline.cfg\n"
-             "then execute fponline again: error %d \n", errno);
+             "then execute fponline again: error %d \n", y);
 
       return 0;
    }
@@ -768,9 +768,9 @@ int main(int argc, char *argv[])
          chdir(client_d);
       }
 
-      if (y < 0)
+      if (y)
       {
-         printf("mpdu launch fail %d\n", errno);
+         printf("mpdu launch fail %d\n", y);
          continue;
       }
       else if (x == 0)
