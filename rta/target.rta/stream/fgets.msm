@@ -32,7 +32,6 @@ FGETS_DIRECT	$equ	1
 
 fgets24	$tree
 
-	$if	FGETS_DIRECT
 	$head_far	 params(file_openp,	int		;
 				bufferp,	int		;
 				bytes,		int	)	;
@@ -42,7 +41,8 @@ fgets24	$tree
 				final_count,	int		;
 				bytes_delivered,int		;
 				extentp,	int		;
-				share,		int		)
+				share,		int		;
+				stream_registers,  float, RDATAC)
 
 	la	(B_FS2*/12)
 	lk	(63*/12)
@@ -73,31 +73,6 @@ sample	ds	data_sampled
 	sb	extentp
 	dl	data_sampled
 
-	$else
-
-	$head_far	 params(file_openp,	int		;
-				bufferp,	int		;
-				bytes,		int	)	;
-			scalars(data_sampled,	long		;
-				transfer,	int		;
-				final_count,	int		;
-				bytes_delivered,int		;
-				text,		8		)
-
-	lx	bufferp
-	call	(wstream_starta)
-
-	. the objective of a sample cached read is to straddle extents transparently
-	. this method is more portable if filestore is not memory word addressable
-	. and if extents are not buffered in memory
-
-sample	c	(fs24_snoop)	file_openp	text,,i		8,,xi
-
-	jna	away
-	jza	away
-	dsr	24
-	ds	data_sampled
-	$endif
 					. b = words remaining in extent
 	mf	$word/$byte,,xi		. from actual position. Translate for bytes
 
@@ -185,6 +160,10 @@ away	la	bytes_delivered		. this result goes back to the macro
 	 
 break	tp	share
 	call	(fileshare_space_close)
+.	USTREAM				. defaults -> b$stream / SIMD registers
+
+	qpop	RDATAC			. stream registers need to be nonvolatile
+"$$frame" $set	$$frame-4
 	$ret				. return whatever result has been placed in a
 
 pointerise

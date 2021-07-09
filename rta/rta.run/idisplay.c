@@ -76,9 +76,9 @@ static char *jname[16]         = { "",",t1",",t2",",t3",
 
 
 static char *i_o_name[16] = { "inA", "inB", "outA",       "outB",
-                "reload",  "emulator_cool", "sabr",       "unassigned",
+                "reload",  "unassigned", "sabr",       "unassigned",
                 "impossible", "impossible", "impossible", "impossible",
-                "impossible", "impossible", "unassigned", "jdz"      } ;
+                "impossible", "impossible", "rex", "jdz"      } ;
    
 
 static char *x_i_name[16] = { "on", "off", "rsr",        "wsr",
@@ -99,7 +99,7 @@ static char *shift_j_name[32] = { "sar","sbr","dsr","jdr",
 
 static char *ifile_3_name[32] = { "ts","n","inc","dec",
                                   "sim","popA","src","slc",
-                                  "qs","ql","fpp","fpx",
+                                  "qs","ql","dte","dpop",
                                   "fa","fan","fm","fd",
                                   "qpop","qpush","ex","dpush",
                                   "lsc","mta","sc","mlb",

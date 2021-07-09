@@ -11,6 +11,8 @@
 	$include	fs/fs24.def
 	$include	stream/stream.def
 	$include	table/lookup.def
+	$include	array.app/array.def
+	$include	lib/compress.def
 	$include	image.app/imports.def
 	$path
 	$list
@@ -31,6 +33,7 @@ capture	$res	36//3
 
 gate	200, 03FFFFF:d
 return	03FFFFF, 200d
+relay	0L
 fields	0
 offset	+	right
 
@@ -174,18 +177,24 @@ prang	sscanf	left,,xi	$3("%x:%x":0),,xi	return,,xi return+1,,xi
 	drr	24
 	ds	gate
 
-	lookup	how					;
-		ref, j, go, call, fret, ir, sir, barg,	;
-		bats, bang, base, load, store, push, pop, lcal,		;
-		lret, lretched, popA, ii, gii, xint, sim, ireqs, launch,	;
-		outA, outB, activate, xerc, on, off				;
+	lookup	how								;
+		ref, j, go, call, 		fret, ir, sir, barg,		;
+		bats, bang, base, load, 	store, push, pop, lcal,		;
+		lret, lretched, popA, ii,	gii, xint, sim, ireqs,		;
+		launch, outA, outB, activate,	xerc, on, off, aa,		;
+		r_mta, dte, r_dte, rex,		range, d__, xor, xtend,		;
+		clam, r_tz, r_tp						;
 		dothat
 
-	prompt	prang					;
-		ref, j, go, call, fret, ir, sir, barg,	;
-		bats, bang, base, load, store, push, pop, lcal,		;
-		lret, lretched, popA, ii, gii, xint, sim, ireqs, launch,	;
-		outA, outB, activate, xerc, on, off
+	$if	1
+	prompt	prang								;
+		ref, j, go, call,		fret, ir, sir, barg,		;
+		bats, bang, base, load,		store, push, pop, lcal,		;
+		lret, lretched, popA, ii,	gii, xint, sim, ireqs,		;
+		launch,	outA, outB, activate,	xerc, on, off, aa,		;
+		r_mta, dte, r_dte, urex,	range, d__, xor, xtend,		;
+		clam, r_tz, r_tp
+	$endif
 
 	j	input
 
@@ -196,33 +205,54 @@ doso	la	*(31*/18)
 	j	*(31*/18)
 	go	(1*/23++gate:s)
 	call	(1*/23++gate:s)
+
 	lcal	refret
 	lcal	refire
 	z	128+32
 	lcal	barg
+
 	lcal	bats
 	lcal	bang
 	lcal	base
 	lcal	load
+
 	lcal	store
 	lcal	upush
 	lcal	upop
 	lcal	ulcal
+
 	lcal	ulret
 	lcal	ulretch
 	lcal	upopa
 	lcal	uii
+
 	lcal	ugii
 	lcal	uxint
 	sim	return
 	lcal	uireqs
+
 	lcal	ulaunch
 	lcal	uoutA
 	lcal	uoutB
 	lcal	uactivate
+
 	lcal	uxerc
 	on	000300
 	off	000300
+	lcal	uaa
+
+	lcal	ur_mta
+	lcal	udte
+	lcal	ur_dte
+	lcal	urex
+
+	lcal	urange
+	lcal	ud
+	lcal	uxor
+	lcal	uxtend
+	lcal	uclam
+	lcal	ur_tz
+	lcal	ur_tp
 
 refret
 		dpush	return
@@ -452,6 +482,333 @@ uxerc	lb	return
 	printf	$3("%x:%x":10:0),,xi	a,,long
 	lret	0
 
+urange
+?	$do	20,	qpush	(1.0*+?)
+	SIMD_CONTROL	(-1, 4, 40, 0q)
+	rex	(fa	(1.0))
+	lret	0
+
+ur_mta
+	lx	(0333333, 0555555, 0777777, 0AAAAAA, 0CCCCCC, 0EEEEEE, 0111111, 0BBBBBB:o),,xi
+	la	(0EEEEEE:s)
+	lk	-1,,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(mta	0, x)
+	xor	-1,,xi		. ya got none
+	lret	0		. unless rex skipped to here
+
+udte	lx	("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"),,xi
+	dl	("WXYZ01")
+	lr	60/6,,xi
+	j	udte_next?
+udte_next!
+	dte	0, x
+	j	$+2
+	lret	0
+	ax	2,,xi
+udte_next?
+	jdr	udte_next!
+	lret	0
+
+ur_dte
+	lx	("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"),,xi
+	dl	("WXYZ01")
+	SIMD_CONTROL	(-1, 0, 60/6-1, 2q)
+	rex	(dte	0, x)
+	lret	0
+	lret	0
+
+urex	
+ur_fan	qpush	(16384.0)
+	rex	(fa	(-8192.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+ur_fa
+?       $do     20,     qpush   (1.0*+?)
+        SIMD_CONTROL    (-1, 4, 20-1, 0q)
+        rex     (fa     (1.0))
+	$do	20,	qpop	8
+        printf	$3("%f ":10:0),,xi	8,,float
+
+ur_fm	SIMD_CONTROL	(-1, 0, 0, 0q)
+	qpush	(12.0)
+	rex	(fm	(0.33333333333333333333333333))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_fd	qpush	(24*+1250000)
+	rex	(fd	(3.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_d	dpush	(1000000000000)
+	rex	(d	3,,xi)
+	dpop	a
+	printf	$3("%ld":10:0),,xi	a,,long
+
+	push	0,,xi
+	dpush	(-1000000000000)
+	on	fp$r
+	rex	(d	-3,,xi)
+	off	fp$r
+	dpop	a
+	pop	r
+	printf	$3("%ld %d":10:0),,xi	a,,long	r
+
+ur_m	dpush	(0033333333333)
+	rex	(m	7,,xi)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sar	push	21*/3,,xi
+	rex	(sar	3)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_sbr	push	(42*/19s)
+	push	-1,,xi
+	rex	(sbr	*(20))
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_dsr	dpush	(99*/41d)
+	rex	(dsr	41)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sal	push	33,,xi
+	rex	(sal	17)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_sbl	push	20,,xi
+	push	0,,xi
+	rex	(sbl	19)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_dsl	dpush	(99d)
+	rex	(dsl	18)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_rar	push	0444,,xi
+	rex	(rar	9)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_rbr	push	0444,,xi
+	push	0,,xi
+	rex	(rbr	17)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_drr	dpush	(000AAAAAA000)
+	rex	(drr	25)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_ral	push	0AAA,,xi
+	rex	(ral	*(8+11))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_rbl	push	0AAA,,xi
+	push	0,,xi
+	rex	(rbl	4+11)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_drl	dpush	(000AAAAAA000)
+	rex	(drl	23)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_saa	push	-16384,,xi
+	rex	(saa	1)
+	pop	a	sp
+	printf	$3("%x":10:0),,xi	a
+
+ur_sba	SIMD_CONTROL	(-1, 2, 6-1, 1q)
+?	$do	6,	dpush	(-16384+?:d)
+	ly	0,,xi
+	rex	(sba	3, y)
+	qpop	a
+	qpop	8
+	qpop	d$save
+	printf	$3("%x %x %x %x %x %x":10:0),,xi	b 7 9 11 d$save1 d$save3
+
+ur_dsa	SIMD_CONTROL	(-1, 0, 0, 0q)
+	dpush	(-16384*/24)
+	rex	(dsa	16)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sa	push	47,,xi
+	rex	(sa	8)
+	inc	sp
+	printf	$3("%x":10:0),,xi	8
+
+ur_sb	push	49,,xi
+	push	-1,,xi
+	rex	(sb	9)
+	dpop	a
+	printf	$3("%x":10:0),,xi	9
+
+ur_la	push	-1,,xi
+	lb	('inb')
+	rex	(la	b)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_lb	push	-1,,xi
+	push	0,,xi
+	la	('ina')
+	rex	(lb	a)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_or	push	(020202)
+	rex	(or	(050505))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_orB	dpush	(0a0a0a:d)
+	rex	(orB	(040404))
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_and	push	(0e0e0e)
+	rex	(and	1++-256,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a	
+
+ur_andB	dpush	(0FFFFFF070707:d)
+	rex	(andB	3++-256,,xi)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_xor	push	(0e0e0e)
+	rex	(xor	(0c0c0c))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_xorB		dpush	(0e0e0e:d)
+	rex	(xorB	(0443322))
+	dpop	a	
+	printf	$3("%x":10:0),,xi	b
+
+ur_aa	push	90,,xi
+	rex	(aa	9,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_ab	push	90,,xi
+	push	0,,xi
+	rex	(ab	11,,xi)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_ana	push	90,,xi
+	rex	(ana	-9,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_anb	SIMD_CONTROL	(-1, 2, 3-1, 0q)
+?	$do	3,	dpush	(87+?:d)
+	rex	(anb	-11,,xi)
+	qpop	a
+	dpop	8
+	printf	$3("%x %x %x":10:0),,xi	b 7 9
+
+ur_mf	SIMD_CONTROL	(-1, 1, 4-1, 1q)
+	qpush	(-10, -8, -6, -4q)
+	lx	(-3, 4, -5, 6q),,xi
+	rex	(mf	0,x)
+	qpop	a
+	printf	$3("%d %d %d %d":10:0),,xi	a b 6 7
+
+ur_ds	SIMD_CONTROL	(-1, 0, 0, 0q)
+	dpush	("abcdef")
+	rex	(ds	6)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	6,,long
+
+ur_dl	dpush	(-10d)
+	dl	("ghijkl")
+	rex	(dl	a)
+	dpop	6
+	printf	$3("%lx":10:0),,xi	6,,long
+
+ur_qs	qpush	(-1*+10)
+	rex	(qs	8)
+	qpop	a
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_ql	qpush	(-1*+1)
+	rex	(ql	(10.3))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_da	dpush	(10d)
+	rex	(da	(-5d))
+	dpop	a
+	printf	 $3("%lx":10:0),,xi	a,,long
+	
+ur_dan	SIMD_CONTROL	(-1, 2, 4-1, 0q)
+?	$do	4,	dpush	(-10-1+?:d)
+	rex	(dan	(-20d))
+	qpop	a
+	qpop	8
+	printf  $3("%lx %lx %lx %lx":10:0),,xi	a,,long 6,,long 8,,long 10,,long
+	SIMD_CONTROL	(-1, 0, 0, 0q)	. change to default
+	lret	0
+
+uaa	lx	return+1
+	la	return
+	aa	0, x
+	lret	0
+
+ud	sscanf	$3("%ld:%d":0),,xi	relay,,xi	return+1,,xi
+	dl	(1000000000000)
+	d	3,,xi
+	printf	$3("%ld %d":10:0),,xi 6 a b
+	lret	0
+
+uxor	la	return
+	lx	return+1
+	xor	0, x
+	lret	0
+
+uxtend	SIMD_CONTROL	(-1, 0, 8000000-1, 0q)
+	qpush	(1.0*+1250000)
+	rex	(fd	(10.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+
+uclam	pop	x
+	dpush	(1000000000000)
+	on	fp$r
+	rex	(fd	(3))
+	off	fp$r
+	j	0, x
+
+ur_tz	lx	(-6, -5, -4, -3, -2, -1, 0, 1o),,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(tz	0, x)
+	lret	0
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+
+ur_tp	lx	(-6, -5, -4, -3, -2, -1, 0, 1o),,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(tp	0, x)
+	lret	0
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+	
 ra_thread
 	la	1,,xi
 	ii	AFFINITY$

@@ -47,7 +47,6 @@
 extern int		 iselect,
 			 psr,
 			 b0_name,
-                         contingency,
 			 _register[],
 			 base[];
 
@@ -65,6 +64,7 @@ void ii(int ea, int latent_parameter)
    int			*temp_sp;
    int			 v;
 
+
    #if 1
    if (ea == XBASE_U)
    {
@@ -79,11 +79,6 @@ void ii(int ea, int latent_parameter)
          2nd: advise the current instruction
               in case it's better not to complete
       ***************************************************/
-
-      #if 0
-      if (contingency < 0) return;
-      contingency = -1;
-      #endif
 
       if (uflag['Z'-'A']) indication |= LOCKSTEP;
    }
@@ -129,9 +124,11 @@ void ii(int ea, int latent_parameter)
    base[64] = b0_name;
    b0p     = &memory.p4k[b0_name];
 
-   apc = &b0p->w[ea & 63];
-   apcz = &b0p->w[4095];
+   apc = b0p->w + (ea & 63);
+   apcz = b0p->w + 4095;
+   if (flag['f'-'a']) printf("[%x:%x %p %p %p]\n", b0_name, ea & 63, apc, memory.p4k[0].w, b0p);
 }
+
 extern void *breakpoint;
 void xi()
 {

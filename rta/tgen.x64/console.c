@@ -195,7 +195,7 @@ void action(char request[])
 
             if (flag['v'-'a']) printf(FORMAT1,
                                       indication, breakpoint - memory.p4k[0].w);
-            if (flag['e'-'a']) printf("[@%p:%p]", memory.p4k[0].w, breakpoint);
+            if (flag['f'-'a']) printf("[@%p:%p]", memory.p4k[0].w, breakpoint);
          }
          else indication &= -1 ^ BREAKPOINT;
 

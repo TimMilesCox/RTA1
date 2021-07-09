@@ -382,16 +382,16 @@ void *emulate()	/* thread start */
 
          if (indication & (CHILLDOWN|TIME_UPDATE|LOCKSTEP|BREAKPOINT)) break;
       }
-      #else
+      #else	/*	machine code not GCC	*/
 
       #ifdef RATIO
-      _register[284] = RATIO;
+      _register[283] = RATIO;
       #endif
 
       leloup();
 
       #ifdef RATIO
-      ratio = _register[284];
+      ratio = _register[283];
       #endif
 
       #endif

@@ -52,6 +52,7 @@
 #include "sr.h"
 #include "ii.h"
 #include "stack.h"
+#include "operand.h"
 
 #include "../rta.run/settings.h"
 
@@ -73,7 +74,6 @@ word		*apcz = &memory.p4k[0].w[4095];
 #endif
 
 int		 iselect = 128;
-int		 contingency;
 int		 b0_name;
 unsigned	 b0_scope;
 page		*b0p = memory.p4k;
@@ -84,6 +84,15 @@ unsigned	*register_set = _register + 128;
 
 #include "../tgen.x64/ioports.c"
 #include "../engine.rta/ioportab.c"
+
+extern void gshiftr(int positions, int words, int fill, int target[]);
+extern void gshiftl(int positions, int words, int fill, int target[]);
+
+extern int __m(int ea, int designator, int target[]);
+extern int __mf(int ea, int designator, int target[]);
+extern int __d(int ea, int designator, int target[]);
+
+extern void rex(int ea);
 
 static void oport(int ea, int value)
 {
@@ -150,7 +159,8 @@ static void oport(int ea, int value)
 
 void execute(word instruction)
 {
-   int		 designator = instruction.t1 & 7;
+   int		 icode = instruction.t1;
+   int		 designator = icode & 7;
    int		 ea, xtag;
 
    int		*_p,
@@ -159,30 +169,29 @@ void execute(word instruction)
    int		 v, w, device_index;
    unsigned	 device_descriptor;
    int		 buffer[4];
+   int		 signs;
    device	*devicep;
 
    word		*_w;
-
-
-   contingency = 0;		/* no guard fault this far this instruction */
+   word		 x_instruction;
 
    EFFECTIVE_ADDRESS
 
    switch (designator)
    {
       case 6:
-         switch (instruction.t1)
+         if ((icode & 128) == 0) switch (icode)
          {
             case SAR:
-               sar(ea);		/* shift A right	alu.c	*/
+               a = (a >> ea) & 0x00FFFFFF;	/* shift A right	*/
                break;
 
             case SBR:
-               sbr(ea);         /* shift B right        alu.c   */
+               b = (b >> ea) & 0x00FFFFFF;	/* shift B right	*/
                break;
 
             case DSR:
-               dsr(ea);         /* double shift right   alu.c   */
+               gshiftr(ea, 2, 0, &a);		/* double shift right	*/
                break;
 
             case JDR:
@@ -203,15 +212,15 @@ void execute(word instruction)
                break;
 
             case SAL:
-               sal(ea);         /* shift A left         alu.c   */
+               a = (a << ea) & 0x00FFFFFF;	/* shift A left		*/
                break;
 
             case SBL:
-               sbl(ea);         /* shift B left         alu.c   */
+               b = (b << ea) & 0x00FFFFFF;	/* shift B left		*/
                break;
 
             case DSL:
-               dsl(ea);         /* double shift left    alu.c   */
+               gshiftl(ea, 2, 0, &a);		/* double shift left	*/
                break;
 
             case LCAL:
@@ -236,52 +245,69 @@ void execute(word instruction)
 
                apc = &b0p->w[ea];
                break;
-
+ 
             case RAR:
-               rar(ea);         /* rotate A right       alu.c   */
+               gshiftr(ea, 1, a, &a);		/* rotate A right	*/
                break;
 
             case RBR:
-               rbr(ea);         /* rotate B right       alu.c   */
+               gshiftr(ea, 1, b, &b);		/* rotate B right	*/
                break;
 
             case DRR:
-               drr(ea);         /* double rotate right  alu.c   */
+               buffer[0] = buffer[2] = a;
+               buffer[1] = buffer[3] = b;
+
+               gshiftr(ea % 48, 4, 0, buffer);
+               a = buffer[2];			/* double rotate right	*/
+               b = buffer[3];
                break;
 
             case JNC:
-
-				/* 	jump no carry		*/
+						/* 	jump no carry	*/
 	       if ((psr & CARRY) == 0) apc = &b0p->w[ea];
                break;
 
             case RAL:
-               ral(ea);         /* rotate A left        alu.c   */
+               gshiftl(ea, 1, a, &a);		/* rotate A left	*/
                break;
 
             case RBL:
-               rbl(ea);         /* rotate B left        alu.c   */
+               gshiftl(ea, 1, b, &b);		/* rotate B left	*/
                break;
 
             case DRL:
-               drl(ea);         /* double rotate left   alu.c   */
+               buffer[0] = buffer[2] = a;
+               buffer[1] = buffer[3] = b;
+
+               gshiftl(ea % 48, 4, 0, buffer);
+               a = buffer[0];			/* double rotate left	*/
+               b = buffer[1];
                break;
 
             case JC:
-				/* jump carry			*/
+						/* jump carry		*/
 	       if (psr & CARRY) apc = &b0p->w[ea];
                break;
-
+        }
+        else switch (icode)
+        {
             case SAA:
-               saa(ea);		/* shift A algebraic	alu.c	*/
+               signs = 0x00FFFFFF & ((a << 8) >> 31);
+               gshiftr(ea, 1, signs, &a);
+						/* shift A algebraic	*/
                break;
 
             case SBA:
-               sba(ea);         /* shift B algebraic    alu.c   */
+               signs = 0x00FFFFFF & ((b << 8) >> 31);
+	       gshiftr(ea, 1, signs, &b);
+						/* shift B algebraic	*/
                break;
 
             case DSA:
-               dsa(ea);         /* double shift algebraic alu.c */
+               signs = 0x00FFFFFF & ((a << 8) >> 31);
+               gshiftr(ea, 2, signs, &a);
+					/* double shift algebraic	*/
                break;
 
             case JAO:
@@ -406,7 +432,7 @@ void execute(word instruction)
          break;
 
       case 7:
-         switch (instruction.t1)
+         if ((icode & 128) == 0) switch (icode)
          {
             case TS:
 
@@ -438,8 +464,8 @@ void execute(word instruction)
                   of course TS target is never in range 0..255
                ************************************************/
 
-	       _w = memory_hold(ea);
-               if (_w == NULL) break;
+	       if ((_w = memory_hold(ea)) == NULL) break;
+
                v = _w->t1;
                v ^= 128;
 
@@ -451,7 +477,7 @@ void execute(word instruction)
 
                #else
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                v ^= 0x00800000;
 
                if (v & 0x00800000)
@@ -477,7 +503,7 @@ void execute(word instruction)
 
                ************************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                v ^= 0x00FFFFFF;
                operand_write(v, ea, 7);
                break;
@@ -492,7 +518,7 @@ void execute(word instruction)
 
                ***********************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                v++;
                operand_write(v & 0x00FFFFFF, ea, 7);
                break;
@@ -507,7 +533,7 @@ void execute(word instruction)
 
                **************************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                v--;
                operand_write(v & 0x00FFFFFF, ea, 7);
                break;
@@ -523,10 +549,9 @@ void execute(word instruction)
 
                **************************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                operand_write(((psr >> 16) & 0x7F), ea, 7);
-               psr &= (0x0080FFFF);
-               psr |= (v & 0x7F) << 16;
+               psr = (psr & 0x0080FFFF) | ((v & 0x7F) << 16);
                break;
 
             case POPA:
@@ -550,14 +575,13 @@ void execute(word instruction)
 
                STACK_READ(1)
                _p = _register + v;
-               w = *_p;
-               w += operand_read(ea, 7);
+               OPERAND7(w)
+               w += *_p;
 
                v++;
                *_q = v;
 
-               psr &= (0x00FFFFFE);
-               psr |= ((w >> 24) & 1);
+               psr = (psr & 0x00FFFFFE) | ((w >> 24) & 1);
                operand_write(w & 0x00FFFFFF, ea, 7);
 
                break;
@@ -578,7 +602,7 @@ void execute(word instruction)
 
                *************************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                operand_write((v >> 1) | ((psr & CARRY) << 23),
                              ea, 7);
                psr &= CARRY^0x00FFFFFF;
@@ -601,7 +625,7 @@ void execute(word instruction)
 
                *************************************************/
 
-               v = operand_read(ea, 7);
+               OPERAND7(v)
                operand_write(0x00FFFFFF & ((v << 1) | (psr & CARRY)), ea, 7);
                psr &= CARRY^0x00FFFFFF;
                psr |= (v & 0x00800000) >> 23;               
@@ -633,6 +657,7 @@ void execute(word instruction)
                burst_read4(&a, ea);
                break;
 
+            #ifdef FPP
             case FPP:
 
                /*************************************************
@@ -662,7 +687,9 @@ void execute(word instruction)
                *_q = v;
 
                break;
+            #endif	/*	FPP	*/	
 
+            #ifdef FPX
             case FPX:
 
                /*************************************************
@@ -690,6 +717,46 @@ void execute(word instruction)
                *_q = v;
 
                break;
+            #endif	/*	FPX	*/
+
+            case DTE:
+
+               /*************************************************
+
+                        double test subtract [ a b ] - operand
+                        skip equal
+
+               *************************************************/
+
+               if ((burst_read2(buffer, ea)) < 0) break;
+
+               if ((a ^ buffer[0]) | (b ^ buffer[1]))
+               {
+               }
+               else apc++;
+
+               break;
+
+            case DPOP:
+
+               /*************************************************
+
+                        double pop
+
+                        pop two words from the internal
+                        stack top
+
+                        decrement sp before burst write
+                        in case the popped objects include sp
+
+               *************************************************/
+
+               STACK_READ(2);
+               _p = _register + v;
+               *_q = v + 2;
+
+               burst_write2(_p, ea);
+               break;
 
             case FA:
 
@@ -703,7 +770,7 @@ void execute(word instruction)
 
                *************************************************/
 
-               fa(ea);
+               __fa(ea, &a);
                break;
 
             case FAN:
@@ -719,7 +786,7 @@ void execute(word instruction)
 
                *************************************************/
 
-               fan(ea);
+               __fan(ea, &a);
                break;
 
             case FM:
@@ -734,7 +801,7 @@ void execute(word instruction)
 
                *************************************************/
 
-               fm(ea);
+               __fm(ea, &a);
                break;
 
             case FD:
@@ -749,9 +816,11 @@ void execute(word instruction)
 
                *************************************************/
 
-               fd(ea);
+               __fd(ea, &a);
                break;
-
+         }
+         else switch (icode)
+         {
             case QPOP:
 
                /*************************************************
@@ -794,7 +863,7 @@ void execute(word instruction)
                STACK(4)
                v -= 4;
                _p = _register + v;
-               burst_read4(_p, ea);
+               if ((burst_read4(_p, ea)) < 0) break;
                *_q = v;
 
                break;
@@ -810,7 +879,8 @@ void execute(word instruction)
 
                *************************************************/
 
-               execute(memory_read(ea));
+               x_instruction = memory_read(ea);
+               execute(x_instruction);
                break;
 
             case DPUSH:
@@ -833,7 +903,7 @@ void execute(word instruction)
                STACK(2)
                v -= 2;
                _p = _register + v;
-               burst_read2(_p, ea);
+               if ((burst_read2(_p, ea)) < 0) break;
                *_q = v;
 
                break;
@@ -872,7 +942,7 @@ void execute(word instruction)
 
 
                
-               v = operand_read(ea, 7);
+               OPERAND7(v)
 
                if ((a & k) ^ (v & k))
                {
@@ -906,8 +976,8 @@ void execute(word instruction)
 
                **************************************************/
 
-               v = k & 0x00FFFFFF;
-               b = (b & (v ^ 0x00FFFFFF)) | (operand_read(ea, 7) & v);
+               OPERAND7(v)
+               b = ((b & (k ^ 0x00FFFFFF)) | (v & k)) & 0x00FFFFFF;
                break;
 
             case DS:
@@ -954,7 +1024,13 @@ void execute(word instruction)
 
                *************************************************/
 
-               da(ea);
+               if ((burst_read2(buffer, ea)) < 0) break;
+
+               buffer[1] += b;
+               b = buffer[1] & 0x00FFFFFF;
+               buffer[0] = buffer[0] + a + ((buffer[1] >> 24) & 1);
+               a = buffer[0] & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((buffer[0] >> 24) & 1);
                break;
 
             case DAN:
@@ -971,7 +1047,15 @@ void execute(word instruction)
 
                *************************************************/
 
-               dan(ea);
+               if ((burst_read2(buffer, ea)) < 0) break;
+
+               buffer[1] ^= 0x00FFFFFF;
+               buffer[0] ^= 0x00FFFFFF;
+               buffer[1] = buffer[1] + b + 1;
+               b = buffer[1] & 0x00FFFFFF;
+               buffer[0] = buffer[0] + a + ((buffer[1] >> 24) & 1);
+               a = buffer[0] & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((buffer[0] >> 24) & 1);
                break;
 
             case DLSC:
@@ -1023,7 +1107,7 @@ void execute(word instruction)
 
                ***************************************************/
 
-               b0_name = operand_read(ea, 7);
+               OPERAND7(b0_name)
 
                if (b0_name & 0x00800000)
                {
@@ -1031,7 +1115,7 @@ void execute(word instruction)
 			read the gate
                   ************************************************/
 
-                  burst_read2(buffer, b0_name & 0x007FFFFF);
+                  if ((burst_read2(buffer, b0_name & 0x007FFFFF)) < 0) break;
                   b0_name = buffer[1];
                   if (buffer[0] & 0x00FC0000) b0_name |= 0x00800000;
                   b0_scope = b0_name & 0x003FFFFF;
@@ -1081,7 +1165,9 @@ void execute(word instruction)
          break;
 
       default:
-         switch (instruction.t1 & 248)
+
+         icode &= 248;
+         if ((icode & 128) == 0) switch (icode)
          {
             case SR:
                if (designator == I)
@@ -1265,7 +1351,7 @@ void execute(word instruction)
                   if (ea <  2) break;
                   if (ea > 62) break;
 
-                  burst_read2(buffer, a);
+                  if ((burst_read2(buffer, a)) < 0) break;
 
                   if (buffer[0] & 0x00800000)
                   {
@@ -1378,7 +1464,7 @@ void execute(word instruction)
                                     too easy to do inadvertantly
                                  **********************************/
 
-                                 ii(XBASE_U, LP_AUTHORITY);
+                                 GUARD_AUTHORITY
                                  return;
                               }
 
@@ -1447,7 +1533,7 @@ void execute(word instruction)
 				window tag < 2 or > 63
                      **************************************************/
 
-                     ii(XBASE_U, LP_AUTHORITY);
+                     GUARD_AUTHORITY
                   }
 
                   break;
@@ -1585,7 +1671,8 @@ void execute(word instruction)
 
                **********************************************************/
 
-               r = operand_read(ea, designator);
+               OPERAND(v)
+               r = v;
                break;
 
             case LK:
@@ -1596,7 +1683,8 @@ void execute(word instruction)
 
                *********************************************************/
 
-               k = operand_read(ea, designator);
+               OPERAND(v)
+               k = v;
                break;
 
             case LX:
@@ -1607,7 +1695,8 @@ void execute(word instruction)
 
                *********************************************************/
 
-               x = operand_read(ea, designator);
+               OPERAND(v)
+               x = v;
                break;
 
             case LY:
@@ -1618,7 +1707,8 @@ void execute(word instruction)
 
                ********************************************************/
 
-               y = operand_read(ea, designator);
+               OPERAND(v)
+               y = v;
                break;
 
             case LA:
@@ -1629,7 +1719,8 @@ void execute(word instruction)
 
                ********************************************************/
 
-               a = operand_read(ea, designator);
+               OPERAND(v)
+               a = v;
                break;
 
             case LB:
@@ -1640,17 +1731,21 @@ void execute(word instruction)
 
                ********************************************************/
 
-               b = operand_read(ea, designator);
+               OPERAND(v)
+               b = v;
                break;
 
             case TZ:
 
-               if (designator == I) break;
+               if (designator == I)
+               {
+                  /*****************************************************
+                                repeat execute instruction
+                  *****************************************************/
 
-               /*******************************************************
-					spare
-               *******************************************************/
-
+                  rex(ea);
+                  break;
+               }
 
                if (designator == XI)
                {
@@ -1687,7 +1782,7 @@ void execute(word instruction)
 
                ************************************************/
 
-               v = operand_read(ea, designator);
+               OPERAND(v)
 
                if (v & 0x00FFFFFF)
                {
@@ -1793,7 +1888,7 @@ void execute(word instruction)
 
                ************************************************/
 
-               v = operand_read(ea, designator);
+               OPERAND(v)
 
                if (v & 0x00800000)
                {
@@ -1802,6 +1897,9 @@ void execute(word instruction)
 
                break;
 
+         }
+         else switch (icode)
+         {
             case AX:
 
                /***********************************************
@@ -1812,8 +1910,8 @@ void execute(word instruction)
 
                ************************************************/
 
-               v = x + operand_read(ea, designator);
-               x = v & 0x00FFFFFF;
+               OPERAND(v)
+               x = (x + v) & 0x00FFFFFF;
                break;
 
             case AY:
@@ -1826,8 +1924,8 @@ void execute(word instruction)
 
                ************************************************/
 
-               v = y + operand_read(ea, designator); 
-               y = v & 0x00FFFFFF;
+               OPERAND(v)
+               y = (y + v) & 0x00FFFFFF;
                break;
 
             case OR:
@@ -1842,7 +1940,8 @@ void execute(word instruction)
 
                *****************************************************/
 
-               or(operand_read(ea, designator));
+               OPERAND(v)
+               a = a | v;
                break;
 
             case ORB:
@@ -1857,7 +1956,8 @@ void execute(word instruction)
 
                ****************************************************/
 
-               orb(operand_read(ea, designator));
+               OPERAND(v)
+               b = b | v;
                break;
 
             case AND:
@@ -1872,7 +1972,8 @@ void execute(word instruction)
 
                ****************************************************/
 
-               and(operand_read(ea, designator));
+               OPERAND(v)
+               a = a & v;
                break;
 
             case ANDB:
@@ -1887,7 +1988,8 @@ void execute(word instruction)
 
                ****************************************************/
 
-               andb(operand_read(ea, designator));
+               OPERAND(v)
+               b = b & v;
                break;
 
             case XOR:
@@ -1902,7 +2004,8 @@ void execute(word instruction)
 
                ***************************************************/
 
-               xor(operand_read(ea, designator));
+               OPERAND(v)
+               a = a ^ v;
                break;
 
 
@@ -1918,38 +2021,9 @@ void execute(word instruction)
 
                ***************************************************/
 
-               xorb(operand_read(ea, designator));
+               OPERAND(v)
+               b = b ^ v;
                break;
-
-
-               #ifdef ANU
-
-            case ANU:
-
-               /**************************************************
-
-			add negative upper		alu.c
-
-			test-subtract the operand from accumulator A
-                        
-                        psr flag CARRY is updated
-
-			the data result is stored in register 5 or 133
-			accumulator B
-
-			the instruction code assign is now xorB
-
-			ANU is substituted with macros
-
-				anu	[b = a - operand]
-				anuba	[a = b - operand]
-
-               **************************************************/
-
-               anu(operand_read(ea, designator));
-               break;
-
-               #endif
 
             case AA:
 
@@ -1963,7 +2037,10 @@ void execute(word instruction)
 
                **************************************************/
 
-               aa(operand_read(ea, designator));
+               OPERAND(v)
+               v += a;
+               a = v & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((v >> 24) & 1);
                break;
 
             case AB:
@@ -1978,7 +2055,10 @@ void execute(word instruction)
 
                *************************************************/
 
-               ab(operand_read(ea, designator));
+               OPERAND(v)
+               v += b;
+               b = v & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((v >> 24) & 1);
                break;
 
             case ANA:
@@ -1994,7 +2074,10 @@ void execute(word instruction)
 
                ***********************************************************/
 
-               ana(operand_read(ea, designator));
+               OPERAND(v)
+               v = (v ^ 0x00FFFFFF) + 1 + a;
+               a = v & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((v >> 24) & 1);
                break;
 
             case ANB:
@@ -2010,7 +2093,10 @@ void execute(word instruction)
 
                **********************************************************/
 
-               anb(operand_read(ea, designator));
+               OPERAND(v)
+               v = (v ^ 0x00FFFFFF) + 1 + b;
+               b = v & 0x00FFFFFF;
+               psr = (psr & 0x00FFFFFE) | ((v >> 24) & 1);
                break;
 
             case M:
@@ -2027,7 +2113,7 @@ void execute(word instruction)
 
                ***********************************************************/
 
-               m(operand_read(ea, designator));
+               __m(ea, designator, &a);
                break;
 
             case MF:
@@ -2046,7 +2132,7 @@ void execute(word instruction)
 
                ***********************************************************/
 
-               mf(operand_read(ea, designator));
+               __mf(ea, designator, &a);
                break;
 
             case D:
@@ -2067,7 +2153,7 @@ void execute(word instruction)
 
                 **********************************************************/
 
-               d(operand_read(ea, designator));
+               __d(ea, designator, &a);
                break;
 
             case PUSH:
@@ -2087,7 +2173,7 @@ void execute(word instruction)
                STACK(1)
                v--;
                _p = _register + v;
-              *_p = operand_read(ea, designator);
+              if ((*_p = operand_read(ea, designator)) < 0) break;
               *_q = v;
 
                break;
@@ -2105,7 +2191,7 @@ void execute(word instruction)
    }
    else
    {
-      if (icount = _register[REALTIME_CLOCK] & 0x00FFFFFF)
+      if ((icount = _register[REALTIME_CLOCK] & 0x00FFFFFF))
       {
          icount--;
          _register[REALTIME_CLOCK] = icount;

@@ -154,7 +154,7 @@ static int addcarry(int startvalue, int words,
 	in registers 8:9:10:11
 *************************************************************/
 
-static void store_minor_result(int signs, int characteristic, int result[])
+static int store_minor_result(int signs, int characteristic, int result[])
 {
    int		 normalising_count = 0;
 
@@ -179,7 +179,7 @@ static void store_minor_result(int signs, int characteristic, int result[])
 
       #ifdef XPO_INTERRUPT
       XPO_INTERRUPT
-      return;
+      return -3;
       #else
       characteristic = 0;
       result[0] = signs;
@@ -192,6 +192,7 @@ static void store_minor_result(int signs, int characteristic, int result[])
    mantissa1a = result[0];
    mantissa2a = result[1];
    mantissa3a = result[2];
+   return 0;
 }
 
 /************************************************************
@@ -405,7 +406,7 @@ static int add_bias(int bias, int left[], int biased_addend[])
 ******************************************************************/
 
 
-static void ones_add(int ea, int direction)
+static int ones_add(int ea, int target[], int direction)
 {
    int		 normalised_addend[8];
    int		 biased_addend[8];
@@ -418,21 +419,21 @@ static void ones_add(int ea, int direction)
                  carry;
 
 
-   burst_read4(biased_addend, ea);
+   if ((burst_read4(biased_addend, ea)) < 0) return -LP_ADDRESS;
 
    biased_addend[0] ^= direction;
    biased_addend[1] ^= direction;
    biased_addend[2] ^= direction;
    biased_addend[3] ^= direction;
 
-   signs       = 0x00FFFFFF & (0 - ((a >> 23) & 1));
+   signs       = 0x00FFFFFF & (0 - ((__CHARACTERISTIC >> 23) & 1));
    signs_right = 0x00FFFFFF & (0 - ((biased_addend[0] >> 23) & 1));
 
    if ((biased_addend[1] ^ signs_right) & 0x00800000)
    {
-      if ((b ^ signs) & 0x00800000)
+      if ((__MANTISSA_1 ^ signs) & 0x00800000)
       {
-         magnitude_characteristic_difference = ((a & 0x00FFFFFF) ^ signs)
+         magnitude_characteristic_difference = ((__CHARACTERISTIC & 0x00FFFFFF) ^ signs)
                               - ((biased_addend[0] & 0x00FFFFFF) ^ signs_right);
 
          if (magnitude_characteristic_difference < 0)
@@ -448,9 +449,9 @@ static void ones_add(int ea, int direction)
             normalised_addend[4] = signs_right ^ GUARD_BITS;
             
             biased_addend[0] = signs;
-            biased_addend[1] = b;
-            biased_addend[2] = mantissa2;
-            biased_addend[3] = mantissa3;
+            biased_addend[1] = __MANTISSA_1;
+            biased_addend[2] = __MANTISSA_2;
+            biased_addend[3] = __MANTISSA_3;
             biased_addend[4] = signs;
 
             magnitude_characteristic_difference =
@@ -464,10 +465,10 @@ static void ones_add(int ea, int direction)
             if (magnitude_characteristic_difference > 72) return;
             #endif
 
-            normalised_addend[0] = a;
-            normalised_addend[1] = b;
-            normalised_addend[2] = mantissa2;
-            normalised_addend[3] = mantissa3;
+            normalised_addend[0] = __CHARACTERISTIC;
+            normalised_addend[1] = __MANTISSA_1;
+            normalised_addend[2] = __MANTISSA_2;
+            normalised_addend[3] = __MANTISSA_3;
             normalised_addend[4] = signs ^ GUARD_BITS;
 
             biased_addend[4] = signs_right;
@@ -504,7 +505,7 @@ static void ones_add(int ea, int direction)
             ***************************************************/
 
             XPO_INTERRUPT
-            return;
+            return -3;
          }
          #endif
 
@@ -527,13 +528,13 @@ static void ones_add(int ea, int direction)
          ******************************************************/
 
 
-         a         = characteristic ^ normalised_addend[0];
-         b         = normalised_addend[1];
-         mantissa2 = normalised_addend[2];
-         mantissa3 = normalised_addend[3];
+         __CHARACTERISTIC = characteristic ^ normalised_addend[0];
+         __MANTISSA_1 = normalised_addend[1];
+         __MANTISSA_2 = normalised_addend[2];
+         __MANTISSA_3 = normalised_addend[3];
 
          if (psr & FLOATING_RESIDUE)
-         store_minor_result(normalised_addend[0], characteristic, normalised_addend + 4);
+         return store_minor_result(normalised_addend[0], characteristic, normalised_addend + 4);
       }
       else
       {
@@ -548,10 +549,10 @@ static void ones_add(int ea, int direction)
 
          *************************************************************/
 
-         a         = biased_addend[0];
-         b         = biased_addend[1];
-         mantissa2 = biased_addend[2];
-         mantissa3 = biased_addend[3];
+         __CHARACTERISTIC  = biased_addend[0];
+         __MANTISSA_1 = biased_addend[1];
+         __MANTISSA_2 = biased_addend[2];
+         __MANTISSA_3 = biased_addend[3];
 
          if (psr & FLOATING_RESIDUE)
          {
@@ -581,25 +582,27 @@ static void ones_add(int ea, int direction)
       mantissa2a = signs;
       mantissa3a = signs;
    }
+
+   return 0;
 }
 
 
-void fa(int ea)
+int __fa(int ea, int target[])
 {
-   ones_add(ea, 0);
+   return ones_add(ea, target, 0);
 }
 
-void fan(int ea)
+int __fan(int ea, int target[])
 {
-   ones_add(ea, 0x00FFFFFF);
+   return ones_add(ea, target,  0x00FFFFFF);
 }
 
-void fm(int ea)
+int __fm(int ea, int target[])
 {
    int		 around[8] = { 0, 0, 0, GUARD_BITS, 0, 0, 0, GUARD_BITS} ;
 
    int		 result[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 } ;
-   int		 addend[8] = { a, b, mantissa2, mantissa3, 0, 0, 0, 0 } ;
+   int		 addend[8] = { __CHARACTERISTIC, __MANTISSA_1, __MANTISSA_2, __MANTISSA_3, 0, 0, 0, 0 } ;
 
    int		 multiplier[4] = { 0, 0, 0, 0 } ;
 
@@ -607,7 +610,7 @@ void fm(int ea)
    int		 add_words = (psr & FLOATING_RESIDUE) ? 7 : 3;
 
 
-   burst_read4(multiplier, ea);
+   if ((burst_read4(multiplier, ea)) < 0) return -LP_ADDRESS;
 
    if (addend[0] & 0x00800000)
    {
@@ -743,7 +746,7 @@ void fm(int ea)
 
          #ifdef XPO_INTERRUPT
          XPO_INTERRUPT
-         return;
+         return -3;
 
          /***************************************************
 		indicate for application
@@ -789,19 +792,21 @@ void fm(int ea)
       }
    }
 
-   a = result[0];
-   b = result[1];
-   mantissa2 = result[2];
-   mantissa3 = result[3];
+   __CHARACTERISTIC = result[0];
+   __MANTISSA_1 = result[1];
+   __MANTISSA_2 = result[2];
+   __MANTISSA_3 = result[3];
 
    if (psr & FLOATING_RESIDUE)
-   store_minor_result(signs, characteristic, result + 4);
+   return store_minor_result(signs, characteristic, result + 4);
+
+   return 0;
 }
 
 #if 1
-void fd(int ea)
+int __fd(int ea, int target[])
 {
-   int		 remainder[8] = { a, b, mantissa2, mantissa3,
+   int		 remainder[8] = { __CHARACTERISTIC, __MANTISSA_1, __MANTISSA_2, __MANTISSA_3,
                                 GUARD_BITS, 0, 0, GUARD_BITS } ;
 
    int		 divisor[8]   = { 0, 0, 0, 0,
@@ -819,17 +824,17 @@ void fd(int ea)
                  carry;
 
 
-   burst_read4(divisor, ea);
+   if ((burst_read4(divisor, ea)) < 0) return -LP_ADDRESS;
 
    if ((divisor[0] ^ divisor[1]) & 0x00800000)
    {
    }
    else
    {
-      a = 0x00FFFFFF;
-      b = 0x00FFFFFF;
-      mantissa2 = 0x00FFFFFF;
-      mantissa3 = 0x00FFFFFF;
+      __CHARACTERISTIC = 0x00FFFFFF;
+      __MANTISSA_1 = 0x00FFFFFF;
+      __MANTISSA_2 = 0x00FFFFFF;
+      __MANTISSA_3 = 0x00FFFFFF;
 
       if (psr & FLOATING_RESIDUE)
       {
@@ -839,7 +844,7 @@ void fd(int ea)
          mantissa3a = 0x00FFFFFF;
       }
 
-      return;
+      return 0;
    }
 
    if (divisor[0] & 0x00800000) signs = 0x00FFFFFF;
@@ -923,24 +928,26 @@ void fd(int ea)
       ***************************************************/
 
       XPO_INTERRUPT
-      return;
+      return -3;
    }
    #else
    reciprocal[0] &= 0x007FFFFF;
    #endif
 
-   a = reciprocal[0] ^ signs1;
-   b = reciprocal[1] ^ signs1;
-   mantissa2 = reciprocal[2] ^ signs1;
-   mantissa3 = reciprocal[3] ^ signs1;
+   __CHARACTERISTIC = reciprocal[0] ^ signs1;
+   __MANTISSA_1 = reciprocal[1] ^ signs1;
+   __MANTISSA_2 = reciprocal[2] ^ signs1;
+   __MANTISSA_3 = reciprocal[3] ^ signs1;
 
    if (psr & FLOATING_RESIDUE)
    {
       reciprocal[4] ^= signs1;
       reciprocal[5] ^= signs1;
       reciprocal[6] ^= signs1;
-      store_minor_result(signs1, reciprocal[0], reciprocal + 4);
+      return store_minor_result(signs1, reciprocal[0], reciprocal + 4);
    }
+
+   return 0;
 }
 #else
 void fd(int ea)

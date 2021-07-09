@@ -215,57 +215,6 @@ round2more:
 	jnz	round2more
 	ret
 
-LONG_CARRY equ	1
-LONG_BORROW equ -1
-
-	%if	LONG_CARRY=0
-
-end_around_down:
-	mov	eax, LONG_BORROW
-	sar	eax, cl
-	not	eax
-	movzx	ebx, ch
-	add	dword ptr [edi+ebx*4+2*4], eax	; 1st "borrow" is truncated -1 in eax
-	mov	eax, LONG_BORROW
-	jmp	end_around
-
-end_around_carry:				; eax is LONG_CARRY or LONG_BORROW
-	mov	eax, LONG_CARRY
-	ror	eax, cl
-	ror	ecx, 16
-	movzx	ebx, ch
-	add	dword ptr [edi+ebx*4+2*4], eax	; 1st "carry" is rotated 1 in eax
-	mov	eax, 0				; do not change carry
-	jmp	end_around
-
-end_around_repeat:
-	adc	dword ptr [edi+ebx*4+2*4], eax
-
-end_around:
-	dec	ebx
-	jns	end_around_repeat
-
-	%if	0
-	mov	eax, dword ptr [edi+7*4]
-	mov	dword ptr [__register+286*4], eax
-        mov     eax, dword ptr [edi+6*4]
-        mov     dword ptr [__register+285*4], eax
-        mov     eax, dword ptr [edi+5*4]
-        mov     dword ptr [__register+284*4], eax
-        mov     eax, dword ptr [edi+4*4]
-        mov     dword ptr [__register+283*4], eax
-        mov     eax, dword ptr [edi+3*4]
-        mov     dword ptr [__register+282*4], eax
-        mov     eax, dword ptr [edi+2*4]
-        mov     dword ptr [__register+281*4], eax
-        mov     eax, dword ptr [edi+1*4]
-        mov     dword ptr [__register+280*4], eax
-	%endif
-
-	ret
-
-	%else
-
 end_around_down:
 	mov	eax, -1
 	shr	eax, cl
@@ -285,8 +234,6 @@ eoc:	adc	dword ptr [edi+ebx*4], eax
 	dec	ebx
 	jnz	eoc
 	ret
-
-	%endif
 
 restore_trailing_signs:
 	movzx	ebx, ch
@@ -872,109 +819,6 @@ fd_restore:	pop	ecx
 ;	using source and target registers in the internal stack
 ;	with maximum mantissa size 168 bits
 
-	%if	0
-
-_fa:	push	ebp				; _input2 is [register]+absolute
-	mov	ebp, __register
-	mov	ebx, _input2
-	call	_burst_read4
-	mov	esi, _INPUT2
-	call	compress4to8
-
-	mov	eax, a
-	push	eax				; save target register name net of ebp ->
-	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
-						; not that any ISRs issue floating instructions
-
-	mov	ebx, _inputr			; _inputr is [register]+absolute
-	call	_burst_read4
-	mov	esi, _INPUTR
-	call	compress4to8
-	mov	ecx, 00040208h
-	test	dword ptr [_psr], FP_R
-	jz	_fa_
-	mov	ecx, 00070410h
-_fa_	call	fa
-	pop	ebx				; retrieve target register name
-	pop	ebp
-	jmp	_deliver_edi
-
-_fan:	push	ebp
-	mov	ebp, __register			; _input2 is [register]+absolute
-	mov	ebx, _input2
-	call	_burst_read4
-	mov	esi, _INPUT2
-	call	compress4to8
-
-	mov	eax, a
- 	push	eax				; save target register name net of ebp ->
-	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
-						; not that any ISRs issue floating instructions
-
-	mov	ebx, _inputr			; _inputr is [register]+absolute
-	call	_burst_read4
-	mov	esi, _INPUTR
-	call	compress4to8
-	mov	ecx, 00040208h
-	test	dword ptr [_psr], FP_R
-	jz	_fan_
-	mov	ecx, 00070410h
-_fan_:	call	fan
-	pop	ebx				; retrieve target register name
-	pop	ebp
-	jmp	_deliver_edi
-
-_fm:	push	ebp
-	mov	ebp, __register			; _input2 is [register]+absolute
-	mov	ebx, _input2
-	call	_burst_read4
-	mov	esi, _INPUT2
-	call	compress4to8
-
-	mov	eax, a
-	push	eax				; save target register name net of ebp ->
-	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
-						; not that any ISRs issue floating instructions
-
-	mov	ebx, _inputr			; _inputr is [register]+absolute
-	call	_burst_read4
-	mov	esi, _INPUTR
-	call	compress4to8
-	mov	ecx, 00040208h
-	test	dword ptr [_psr], FP_R
-	jz	_fm_
-	mov	ecx, 00060410h
-_fm_:	call	fm
-	pop	ebx				; retrieve target register name
-	pop	ebp
-	jmp	_deliver_
-	
-_fd:	push	ebp
-	mov	ebp, __register			; _input2 is [register]+absolute
-	mov	ebx, _input2			; and read4_registers uses ebp-> context Int / App
-	call	_burst_read4
-	mov	esi, _INPUT2
-	call	compress4to8
-
-	mov	eax, a
-	push	eax				; save target register name net of ebp ->
-	or	eax, dword ptr [_iselect]	; generate target register number + context Int / App
-						; not that any ISRs issue floating instructions
-
-	mov	ebx, _inputr			; _inputr is [register] + absolute
-	call	_burst_read4
-	mov	esi, _INPUTR
-	call	compress4to8
-	mov	ecx, 00040208h
-	test	dword ptr [_psr], FP_R
-	jz	_fd_
-	mov	ecx, 00060410h
-_fd_:	call	fd
-	pop	ebx				; retrieve target register name
-	pop	ebp
-	jmp	_deliver_
-
-	%else
 
 _fa:	mov	ebx, a
 _far:	push	ebx
@@ -1038,8 +882,6 @@ fp_registers_m
 	mov	ecx, 00060410h
 fp_registers_z
 	ret
-
-	%endif
 
 _load_quad
 	mov	eax, dword ptr[ebp+ebx*4+3*4]

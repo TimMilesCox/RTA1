@@ -39,7 +39,8 @@
 <ul	type="none">
 	<li><a href="#load_app">Appendix A: load Application</a></li>
         <li><a href="#iframe_examples">Appendix B: iframe Examples</a></li>
-	<li><a href="#auto">Appendix C: Scripts and Automatic Start</a></li>
+	<li><a href="#locators">Appendix C: Application Memory Map</a></li>
+	<li><a href="#auto">Appendix D: Scripts and Automatic Start</a></li>
 </ul>
 
 <a      name="build"/>
@@ -1113,8 +1114,384 @@ Applications may be loaded and started programmatically using
 	<li><a href="#_app4kq">simple.msm</a> is a simple ROM application</li>
 </ul>
 
+
+
+<div	style="font-size:14pt">
+
+<a      name="locators"/>
+<h2>Appendix C: Application Memory Map</h2>
+
+<h3>Application Memory, Location Counters and Dynamic Data Segment Load</h3>
+
+<a href="scripts.html#application_group">Applications</a> are written in absolute code, as if each application occupies a computer
+
+<p>
+This is because RTA1 machine translates addresses using 72 I/O ports as relocation pointers
+
+<p>
+A suite of applications may be linked from <a href="scripts.html#singlemu">relocatable code</a> in an absolute load image to optimise instruction code storage
+
+<p>
+Program sections are declared with <a href="language.html#application_structure">location counter command</a> $(.. in column 1
+
+<p>
+Instruction Frame is in $(0). See <a href="app.html">Simplest Application Structure</a>
+and <a href="iframe.html">Large and Loadable Instruction Frames</a>
+
+<p>
+Multiple small applications can be packed in one 4096-word iframe. See <a href="#linking">Linking</a>
+
+<p>
+iframe shares its first page @ addresses 256..4095 with operand space but may have more pages of instructions from address 4096 outside operand space
+
+<pre    style="font-size:12pt;color:#0000FF">
+
+__BASE	$equ	APPLICATION_START_PAGE_INDEX	. known or unknown, see <a href="#__base">B0 description</a>
+
+$(0:__BASE/$0)         . iframe @ logical address zero
+iframe_name     $application
+
+$(1:01000)                      . private data + variable indirection pointers @ logical address 001000 hex
+
+$(3:03000/$3)                   . static data @ logical address 003000 hex
+
+</pre>
+
+Program or static date occupies as many windows 3..31 as required at addresses 003000..01FFFF / 0C0000..7FFFFF
+
+<p>
+An application starts by placing assigned data memory in windows 3.. with
+<a      href="language.html#base_d">$base_d</a> macro
+
+and calling kernel routine <a href="language.html#seg_load">seg$load</a> to unpack initial data values from ROM image.
+All RTA1 instruction code is shared code
+
+<p>
+Vector list which every application needs to run is preconstructed by the kernel in window 2 at addresses 002000..002FFF
+
+<p>
+Instruction memory begins at address zero in the current instruction frame
+
+<p>
+Words 0..255 of operand space are registers
+
+<h3>Location Counters</h3>
+
+Location counters correspond to program sections. masmx has 72 location counters
+
+<p>
+Applications running on the actual kernel have this memory map
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+
+_________________________________________________________________________________________________
+|   $(locator)	|       address window			|	    purpose / address range	|
+|_______________|_______________________________________|_______________________________________|________________________
+<a style="background-color:#000080">|$(0) [ + $(4) ]|       instruction frame B0            |      [data read space] 000100..000FFF /  instruction space	|</a>
+<a style="background-color:#000080">|_______________|_______execute_+_read__________________|________________________________________  000000..		|</a> 
+|   $(1:01000)	|       private stack frame B1		| application data space 001000..001FFF	|<a style="background-color:#000080">			|</a>
+|_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">			|</a>
+<a style="background-color:#000080">|   $(2)	|       vector list B2 read-only	|      data memory space 002000..002FFF	|			|</a>
+<a style="background-color:#000080">|_______________|_______________________________________|_______________________________________|			|</a>
+|   $(3:03000)	|       data windows  B3..B31		| application data space 003000..01FFFF	|<a style="background-color:#000080">			|</a>
+|									      or C00000..7FFFFF |<a style="background-color:#000080">			|</a>	
+|												|<a style="background-color:#000080">			|</a>
+|												|<a style="background-color:#000080">			|</a>
+|												|<a style="background-color:#000080">			|</a>
+|_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">_______________________|</a>
+<a style="background-color:#0000FF">|		|       data windows B32..B47		|     application / kernel interface	|			|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|	    accessed by	|</a>
+<a style="background-color:#0000FF">|		|       data windows B48..B63           |      kernel default socket buffers	|	kernel routines	|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|															|</a>
+<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|_______________________|</a>
+|   $(66::,x)	|       pointer in index register x	|
+|_______________|_______________________________________|
+|   $(67::,y)	|       pointer in index register y	|
+|_______________|_______________________________________|
+|   $(68::,a)	|       pointer in arithmetic register a|
+|_______________|_______________________________________|
+|   $(69::,b)	|       pointer in arithmetic register b|
+|_______________|_______________________________________|
+|   $(70::,fp)	|       frame at external stack pointer |
+|_______________|_______________________________________|
+|   $(71::,sp)  |       frame at internal stack pointer |
+|_______________|_______________________________________|
+
+
+</pre>
+$(0) : window B0 is the current instruction frame and contains locally accessed constants
+
+<p>
+See also <a href="app.html">The Simplest Application Structure</a> and <a href="iframe.html">Large and Loadable Instruction Frames</a>
+
+<p>
+Program visible addresses start at zero
+
+<p>
+<a	name="__base">
+The second field of the $(0:__BASE/$0) ist __BASE which is the Start Page Index of the iframe and has been equated to a known like APPLICATION(5) or a dynamic unknown like LOAD_PAGE_THIS_APP
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+__BASE	$equ	LOAD_PAGE_THIS_APP	. stays unknown until load time
+
+. __BASE $equ	APPLICATION(5)/*12	. for example: absolute page address defined in rta/target.rta/def.app/iframes.def 
+					. generated for lookup list in kernel vectors by running rta/target.rta/def.app/nvlist
+					. included in File System 1 for read on startup by running rta/mrand
+
+$(0::__BASE/$0)				. These /$0 /$3 etc clauses on program section headers are literal table flags
+					. and it's sometimes good to have followed that naming convention for them
+
+</pre>
+<p>
+If the application contains multiple instruction frames, successive load addresses are larger relative to the first
+
+<h3>7.3: Data Sections $(1) and $(3)</h3>
+
+<p>
+$(1) contains private data in bank B1 starting at program-visible address 4096
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$(1:01000)
+
+</pre>
+
+<p>
+The kernel constructs the vector list window $(2) and places the containing page in address space 002000..002FFF
+
+<p>
+The vector list  is defined in including target.rta/def/vector.def and is shared by all threads of the process.
+
+<p>
+File and socket handles are in the vector list and are common to all threads of the process
+
+<p>
+The kernel places initial B1 frame pointer in I/O port 1
+
+<p>
+Application static data buffer is in the vector list. Macro $base_d reads this value and places
+pages in address windows $(3) from address 003000
+
+<p>
+A simple application example might be
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	$include	def/rta.def		. registers and instruction set
+	$include	def/vector.def		. this defines the vector list
+						. in address window 02000
+
+$(0::INSTRUCTIONS_LOAD_ADDRESS)
+$(1:01000)					. private RAM
+	+	variables
+$(3:03000)					. application RAM
+	+	data
+
+$(0)
+callname* $vector get_going
+	$do	64-$,	fret	0
+
+get_going	<a	name="base_d"/>
+	$base_d	APPLICATION_DATA_SIZE [EXTERNAL_STACK_SIZE]
+						. macro base_d reads VECTOR_D static 1st page index
+						. and bases enough windows for application data in B3..B31
+						. and points external stack pointer fp
+						. to the high end of APPLICATION_DATA_SIZE + EXTERNAL_STACK_SIZE
+						. and open-file-descriptor heap pointer
+						. to the high end of APPLICATION_DATA_SIZE
+
+	<a	name="seg_load"/>
+	c	(seg$load)	CORE_FS,,xi	;	. this call copies initialised
+				(my_data_segments:d),,long  . variables to process RAM space
+
+	.
+	.
+
+	fret	0
+
+</pre>
+
+<p>
+The second argument of $base_d EXTERNAL_STACK_SIZE is needed
+
+<blockquote>
+ 
+	if the application uses any external stack for
+	<blockquote>
+		loading dynamic data sections<br><br>
+		paging internal stack with $zero_stack flag<br><br>
+		xframe dynamic variables
+	</blockquote>
+	for fprintf or printf because formatting takes a 1024-word frame<br><br>
+	for open data file descriptors but not for network sockets
+
+</blockquote>
+Data file open descriptors are in a heap from the end of static data mounting towards external stack top
+and are common to threads as their handles in the vector list are common to threads
+
+<p>
+External stack must be large enough for all threads which use any
+
+
+<h3>seg$load Realtime RAM Initialisation</h3>
+Application code is reentrant shared code and each process instance of the application
+loads initial data to B1 and $(3) spaces with kernel call seg$load
+
+
+<p>
+seg$load unpacks initial values from the micro-filesystem embedded in the application image
+
+<p>
+START_PAGE_INDEX_OF_CORE_FS is usually zero to mean <i>this iframe Start Page Index</i>
+
+The 48-bit file pointer <i>my_ram_loadup_filename</i> is exported from the link of the
+micro-filesystem into the application image and is known not searched
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	$base_d MY_APPLICATION_DATA_SIZE EXTERNAL_STACK_SIZE	. base the memory space
+
+	c	(seg$load)	START_PAGE_INDEX_OF_CORE_FS,,xi	;
+				(my_ram_loadup_filename:d),,long	
+
+</pre>
+
+
+<h3>Void Sections and Structure by Pointer</h3>
+
+A program section may have no addresses but instead a pointer.
+
+<p>
+The pointer is a register capable of indexing [ x y a b fp sp ] and reference may override which register that is 
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$(66::,x)
+label	$res	4
+label2	structure
+
+$(70::,fp)
+descriptor acw
+
+</pre>
+If address and load address are both declared zero then the program section number is reusable
+for different pointer-based structures
+
+<p>
+Locator numbers are not fixed to any pointer register, but as specific purposes have been assigned
+to [ $(0) $(1) $(2) $(3) $(4) ] supplied code keeps a convention of assigning to index registers 
+[ $(66) $(67) $(68) $(69) $(70) $(71) ]
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$(66::,x)
+$(67::,y)
+$(68::,a)
+$(69::,b)
+$(70::,fp)
+$(71::,sp)
+
+</pre>
+
+The indentifiers inside these sections are base + displacement tuples.
+masmx calls these names $equf labels. In the example
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	$include	dq.def
+
+$(70::,fp)
+descriptor	acw
+
+	la	descriptor:bytes
+
+</pre>
+is the same as
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	la	descriptor:bytes, fp
+
+</pre>
+The base register assigned at the section head can be overriden on reference
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$(70::,fp)
+descriptor      acw
+
+$(67::,y)
+dgram           datagram
+
+$(0)
+
+        ly      descriptor:dgram
+        dl      dgram:ipsource
+
+
+	lx	descriptor:next
+	lr	descriptor:bytes, x
+
+</pre>
+
+
+No data is generated inside void sections.
+macros which generate data do not generate any data in a void section
+
+<h3>Data-Tables with Base +  Displacement View</h3>
+
+It is also possible to have data tables at high addresses accessed by base register plus displacement
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx oreilly -lnke oreilly
+MASMX 7r3A Build 8
+3/oreilly.msm
+*EOF*
+  :                            1: 	$include	..//def/rta.def
+  :                            2 
+  :                            3 TABLE1	$equ	79*1024
+  :                            4 
+  :                            5 $(20:TABLE1,x)
+14:000000  400001 C00000 000000 000000
+                              +6 one	+	1.5
+14:000004  400001 D00000 000000 000000
+                              +7 two	+	1.625
+14:000008  400001 E00000 000000 000000
+                              +8 three	+	1.75
+14:00000C  400001 F00000 000000 000000
+                              +9 "O'Leary" +	1.875
+  :                            10 
+  :                            11 $(0:64)
+00:000040  500100              +12 	lx	(TABLE1)
+00:000041  77A000              +13 	fm	one
+00:000042  67A004              +14 	fa	two
+00:000043  6FA008              +15 	fan	three
+00:000044  7FA00C              +16 	fd	"O'Leary"
+  :                            17 
+  :                            18 	$do	$<256,$(0:256)	. force literal table above register addresses
+*EOF*
+00:000100+013C00
+:$(00):000040:000101 :$(14):013C00:013C10 
+
+$ cat oreilly.txo
+
+$14:013C00
+400001C00000000000000000 400001D00000000000000000
+400001E00000000000000000 400001F00000000000000000
+$00:000040
+500100 77A000 67A004 6FA008 7FA00C
+$00:000100
+013C00
+
+:$00*000000:000040:000101
+:$14*000000:013C00:013C10
+
+</pre>
+</div>
+
 <a	name="auto"/>
-<h3>Appendix C: Scripts and Automatic Start</h3>
+<h3>Appendix D: Scripts and Automatic Start</h3>
 
 Kernel routine <a style="color:#FF0000">run_start</a> runs applications serially from a script at absolute path in <a href="kernel.html#fsda">file system Device 1</a>
 <pre	style="font-size:12pt;color:#0000FF">

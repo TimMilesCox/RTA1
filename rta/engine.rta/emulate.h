@@ -456,7 +456,6 @@ else							\
       }							\
    }							\
 }							\
-							\
 ea &= 0x00FFFFFF;
 
 #define	WPROTECT
@@ -481,6 +480,8 @@ ea &= 0x00FFFFFF;
 #define	LP_ADDRESS	14		/* latent parameter for GUARD INTERRRUPT
                            		   in most cases off-limits memory address	*/
 
+#define	LP_DEVICE	6		/*	pointer to non-existent resource	*/
+
 #define	LP_AUTHORITY	1		/*	latent parameter permission GUARD interrupt
 						application attempt to
 						   call / return / go into interrupt space
@@ -491,7 +492,14 @@ ea &= 0x00FFFFFF;
 
 #define	YIELD_INTERRUPT	ii(II_YIELD,0);
 #define	GUARD_INTERRUPT	ii(XBASE_U,LP_ADDRESS);
+
+#if	1
 #define	GUARD_AUTHORITY	ii(XBASE_U,LP_AUTHORITY);
+#else
+#define	GUARD_AUTHORITY	printf("[%s:%d]\n", __FILE__, __LINE__);	\
+			ii(XBASE_U,LP_AUTHORITY);
+#endif
+
 #define	EXIT_INTERRUPT	ii(II_TXIT,0);
 #define	XPO_INTERRUPT	ii(II_XPO,0);
 #define	RESTART		ii(RESTART1,0);
@@ -760,8 +768,15 @@ ea &= 0x00FFFFFF;
 
 #define	QS	64+7
 #define	QL	72+7
+
+#if	1
+#define	DTE	80+7
+#define	DPOP	88+7
+#else
 #define	FPP	80+7
 #define	FPX	88+7
+#endif
+
 #define	FA	96+7
 #define	FAN	104+7
 #define	FM	112+7

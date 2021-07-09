@@ -29,8 +29,10 @@ $(0)
 	. stack walkback pointer at arguments - 1 is limit of arguments
 
 scan_tcp* $tree
-	$head_far	 params(sotcp,	int	;
-				formap,	int	)
+	$head_far	 params(sotcp,	int			;
+				formap,	int		)	;
+								;
+			scalars(stream_registers,  float, RDATAC)
 
 	lcal	derive_tcp_tcb		. handle tuple is already expanded in a:b
 					. base the containing block of connections
@@ -60,21 +62,24 @@ data	ii	ON_NETB$
 								. other than socket
 	sa	sotcp						. borrow a stack location
 	call	(tcp_release_rxline)
-	ii	FREE_NETB$
-	ii	FREE_SOCKB$
 	la	sotcp						. until after tcp_release_rxline
-	fret	0
+	j	nexitx
 
 keyboard_eof
 	call	(tcp_release_rxline)
-	ii	FREE_NETB$
-	ii	FREE_SOCKB$
 	la	-NO_DATA,,xi
-	fret	0
+	j	nexitx
 
 file_not_open
-	ii	FREE_SOCKB$
 	la	-FILE_NOT_OPEN,,xi
+	j	nexity
+
+.	USTREAM					. defaults -> b$stream / SIMD registers
+
+nexitx	ii	FREE_NETB$
+nexity	ii	FREE_SOCKB$
+
+nexitz	qpop	RDATAC				. stream registers need to be nonvolatile
 	fret	0
 	$root
 

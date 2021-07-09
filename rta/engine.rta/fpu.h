@@ -41,12 +41,12 @@
 **********************************************************************/
 
 
+extern int  __fa(int ea, int target[]);
+extern int __fan(int ea, int target[]);
+extern int  __fm(int ea, int target[]);
+extern int  __fd(int ea, int target[]);
 
-extern void fpp(int ea, int *stack_top);
-extern void fpx(int ea, int *stack_top);
-
-extern void  fa(int ea);
-extern void fan(int ea);
-extern void  fm(int ea);
-extern void  fd(int ea);
-
+#define	__CHARACTERISTIC	target[0]
+#define __MANTISSA_1		target[1]
+#define	__MANTISSA_2		target[2]
+#define	__MANTISSA_3		target[3]

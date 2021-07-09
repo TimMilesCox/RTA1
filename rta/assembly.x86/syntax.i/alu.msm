@@ -42,11 +42,16 @@ _ana:	call	_operand_read
 	xor	eax, 00FFFFFFh
 	add	eax, 1
 _aa_:	add	eax, dword ptr [ebp+A]
+	call	_alu_carry
+
+	%if	0
 	rol	eax, 8
 	and	al, 1
 	and	byte ptr [_psr], 254
 	or	byte ptr [_psr], al
 	shr	eax, 8
+	%endif
+
 	mov	dword ptr [ebp+A], eax
 	ret
 
@@ -56,33 +61,38 @@ _anb:	call	_operand_read
 	xor	eax, 00FFFFFFh
 	add	eax, 1
 _ab_:	add	eax, dword ptr [ebp+B]
+	call	_alu_carry
+
+	%if	0
 	rol	eax, 8
 	and	al, 1
         and     byte ptr [_psr], 254
 	or	byte ptr [_psr], al
 	shr	eax, 8
+	%endif
+
 	mov	dword ptr [ebp+B], eax
 	ret
 
 _m:	push	edx			; 80386 platform has it ready made, so
 	call	_operand_read
-	shl	eax, 8
-	sar	eax, 8
-	mov	ebx, dword ptr [ebp+B]	; this is really RTA1 multiplicand but
+	shl	eax, 8			; prepare multiplier to be multiplicand 
+	sar	eax, 8			; sign it in eax
+	mov	ebx, dword ptr [ebp+B]	; this is register side multiplicand but
 					; it makes no difference which is which
-	shl	ebx, 8
-	sar	ebx, 8
+	shl	ebx, 8			; so use it as multiplier if that is OK
+	sar	ebx, 8			; sign it first
 
 	imul	ebx
 
-	rol	eax, 8
+	rol	eax, 8			; move 8 bits up from eax to edx
 	shl	edx, 8
 	mov	dl, al
 	shr	eax, 8
-	mov	dword ptr [ebp+B], eax
+	mov	dword ptr [ebp+B], eax	; product bits 23..0
 	shl	edx, 8
 	shr	edx, 8
-	mov	dword ptr [ebp+A], edx
+	mov	dword ptr [ebp+A], edx	; product high order bits
 	pop	edx
 	ret
 
@@ -118,7 +128,113 @@ _mfstore:
 	pop	edx
 	ret
 
-_d:	xor	ebx, ebx
+_d:	mov	edi, a
+	call	_divide
+	mov	dword ptr [ebp+A], ebx
+	mov	dword ptr [ebp+MANTISSA2], eax
+	mov	dword ptr [ebp+B], ecx
+	ret
+
+	%if	1
+
+;	this divide made from 2 Intel divides should be a better method
+;	than the procession of 1-bit shifts and test subtracts
+;	which is the %else which it replaces. That also works
+
+;	this converts to and from positive magnitude
+;	because zoning the 2nd divide with a zero 1st remainder
+;	can't tell +0 from -0 in platform 2s complement
+
+;	polarity conversions before and after need no explanation
+
+;	1st dividend is 48 zero bits and high order 16 data bits
+;	of the the 48-bit RTA1 dividend
+
+;	2nd dividend is 1st remainder and the remaining 32 bits
+;	the the RTA1 dividend
+
+;	input is compressed from 24-bit words and output unpacked
+;	to 24-bit words
+
+;	64-bit dividend in 386 mode is high order bits in edx, low in eax
+;	platform faults if quotient carries from eax. Remainder in edx
+
+;	RTA1 quotient is 48 bits so it takes 2 divides in 32-bit mode
+
+_divide:
+	push	edx
+	push	edi
+	call	_operand_read	; read divisor
+	pop	edi
+	xor	ecx, ecx	; final sign
+	test	eax, 00800000h
+	jz	_dsig?
+	xor	eax, 00FFFFFFh
+	not	ecx		; reverse final sign
+	inc	eax
+_dsig?:	and	eax, 00FFFFFFh	; check zerodiv here mebbes
+	mov	ebx, eax	; eax will be used twice as divisor LS word
+	jz	_d_ont		; zero results in eax ebx already
+
+	mov	eax, dword ptr [ebp+edi*4+4]
+	mov	edx, dword ptr [ebp+edi*4]
+	shl	eax, 8		; pack two 24-bit words to 64 bits 
+	mov	al, dl
+	ror	eax, 8
+	shl	edx, 8
+	shr	edx, 16
+	mov	cx, dx		; save dividend sign
+	and	dx, dx		; bit 47 on?
+	jns	_dive_in
+
+	xor	ecx, 0FFFF0000h	; reverse final sign
+	not	eax
+	not	dx
+	add	eax, 1
+	adc	dx, 0
+
+_dive_in:
+	mov	esi, eax	; reserve 2nd dividend
+	mov	eax, edx	; position 1st dividend
+	xor	edx, edx	; with leading zero
+	div	ebx
+	xchg	eax, esi	; save 1st quotient
+	div	ebx		; generate 2nd quotient
+
+	and	cx, cx		; dividend negative?
+	jns	_d_remainder_plus
+	not	edx
+	inc	edx
+
+_d_remainder_plus:
+	and	edx, 00FFFFFFh
+	xchg	edx, ecx	; remainder -> ecx / final sign -> edx
+
+	mov	ebx, eax	; low order quotient
+	mov	eax, esi	; high order quotient
+
+	and	edx, edx	; final sign?
+	jns	_d_quotient_plus
+
+	not	ebx		; invert + increment quotient
+	not	ax		; RTA1 integer is also 2s complement
+	add	ebx, 1
+	adc	ax, 0
+
+_d_quotient_plus:
+	movzx	eax, ax		; unpack from 32-bit words to 24-bit words
+	shl	eax, 8		; move 8 bits up
+	rol	ebx, 8
+	mov	al, bl
+	shr	ebx, 8		; quotient in eax:ebx
+
+_d_ont:	pop	edx		; give back the emulated program counter
+	ret
+
+	%else
+
+_divide:
+	xor	ebx, ebx
 	push	ebx		;
 	push	ebx		; quotient
 	push	ebx		; dividend[b]
@@ -141,7 +257,10 @@ _D_DIVIDENDL	equ	6*4
 _D_QUOTIENTU	equ	7*4
 _D_QUOTIENTL	equ	8*4
 
+	push	edi
 	call	_operand_read
+	pop	edi
+
 	test	eax, 00800000h
 	jnz	_d_nmagnitude1			; must be stored negative
 	xor	eax, 00FFFFFFh
@@ -165,11 +284,13 @@ _d_allsigns:
 	mov	dword ptr [esp+_D_DIVISORL], ebx
 	mov	dword ptr [esp+_D_DIVISORU], eax
 
-
 	mov	ecx, 1				; precarry
-	mov	ebx, dword ptr [ebp+B]	; dividend
-	mov	eax, dword ptr [ebp+A]
 
+;	mov	ebx, dword ptr [ebp+B]	; dividend
+;	mov	eax, dword ptr [ebp+A]
+
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	mov	eax, dword ptr [ebp+edi*4] 
 
 	test	eax, 00800000h
 	jz	_d_pmagnitude			; must be stored positive
@@ -191,7 +312,6 @@ _d_pmagnitude:
 	shr	eax, 16
 	mov	dword ptr [esp+_D_DIVIDENDL], ebx
 	mov	dword ptr [esp+_D_DIVIDENDU], eax
-
 
 	mov	ecx, dword ptr [esp+_D_BEATS]
 
@@ -236,14 +356,14 @@ _d_carried_or_not:
 
 _d_remplus:
 	and	ebx, 00FFFFFFh	; store remainder
-	mov	dword ptr [ebp+B], ebx
+;	mov	dword ptr [ebp+B], ebx
 
 	xor	ecx, eax	; set sign of quotient to difference of signs
-
+	mov	ecx, ebx	; remainder for return
 	pop	eax		; QUOTIENTU
 	pop	ebx		; QUOTIENTL
 
-	jns	_d_quotient_plus		; cc set from xor
+	jns	_d_quotient_plus		; cc set from xor of signy
 
 	not	eax
 	not	ebx
@@ -258,9 +378,11 @@ _d_quotient_plus:
 	shl	eax, 8
 	shr	eax, 8
 
-	mov	dword ptr [ebp+A], ebx
-	mov	dword ptr [ebp+MANTISSA2], eax
+;	mov	dword ptr [ebp+A], ebx
+;	mov	dword ptr [ebp+MANTISSA2], eax
 	ret
+
+	%endif
 
 
 _sar:	mov	cl, al			; platform shift radix is 32
@@ -601,9 +723,10 @@ _da:	call	_burst_read2
 _dan:	call	_burst_read2
 	xor	ebx, 00FFFFFFh
 	xor	eax, 00FFFFFFh
-	add	ebx, 1			; carry from bit 23 
+	inc	ebx			; carry from bit 23 
 					; remains in bit 24 for now
-	%if	1
+	%if	0
+
 _da_:	add	ebx, dword ptr [ebp+B]
 	mov	dword ptr [ebp+B], ebx
 	and	dword ptr [ebp+B], 00FFFFFFh
@@ -620,19 +743,25 @@ _da_:	add	ebx, dword ptr [ebp+B]
 	ret
 
 	%else
+
 _da_:	add	ebx, [ebp+B]
-	rol	ebx, 8
-	movzx	ecx, bl
+	shl	ebx, 8
+	adc	eax, 0
 	shr	ebx, 8
 	mov	[ebp+B], ebx
-	add	eax, ecx
 	add	eax, [ebp+A]
+	call	_alu_carry
+	mov	[ebp+A], eax
+	ret
+
+_alu_carry:
 	rol	eax, 8
+	and	al, 1
 	and	byte ptr [_psr], 254
 	or	byte ptr [_psr], al
 	shr	eax, 8
-	mov	[ebp+A], eax
 	ret
+
 	%endif
 
 scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0
@@ -727,6 +856,8 @@ _dlsc24:				; different when high order word is all signs
 	mov	dword ptr [ebp+A], eax	; store the rotated value
 	ret
 
+	%if	0
+
 _fpx:	call	_burst_read2		; data read in eax ebx
 	push	ebx			; ebx is used in RTA1 stack frame
 	call	stack4			; construct RTA1 stack frame
@@ -815,3 +946,4 @@ _fpp:	call	stack_read4
 	mov	ebp, dword ptr [_register_set]	; do this after all stack_readX
 	jmp	_burst_write2
 
+	%endif

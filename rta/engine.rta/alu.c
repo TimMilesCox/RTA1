@@ -45,6 +45,7 @@
 #include "emulate.h"
 #include "rw.h"
 #include "alu.h"
+#include "i64.h"
 
 #ifdef	EDGE
 #include "../rta.run/idisplay.h"
@@ -54,7 +55,7 @@ extern int	 iselect;
 extern int	 _register[];
 extern int	 psr;
 
-static void gshiftr(int positions, int words, int fill, int target[])
+void gshiftr(int positions, int words, int fill, int target[])
 {
    int		 offset_word = words - positions / 24 - 1;
    int		 offset_bits = positions % 24;
@@ -85,7 +86,7 @@ static void gshiftr(int positions, int words, int fill, int target[])
    }
 }
 
-static void gshiftl(int positions, int words, int fill, int target[])
+void gshiftl(int positions, int words, int fill, int target[])
 {
    int		 word_offset = positions / 24;
    int		 bits_offset = positions % 24;
@@ -109,7 +110,7 @@ static void gshiftl(int positions, int words, int fill, int target[])
    }
 }
 
-
+#if 0
 void sar(int ea)	/*	shift A right	*/
 {
    a = (a >> ea) & 0x00FFFFFF;
@@ -203,13 +204,22 @@ void dsa(int ea)	/*	double shift algebraic	*/
    gshiftr(ea, 2, signs, &a);
 }
 
+#endif
 
 void lsc(int ea)	/*	load shift and count	*/
 {
-   int		 operand = operand_read(ea, 7);
+   int		 operand;
    int		 final_count = 0;
    int		 sign = operand & 0x00800000;
    int		 cycle = operand >> 23;
+
+
+   if ((operand = operand_read(ea, 7)) < 0) return;
+   
+   /***********************************************
+        if guard fault has happened break off and
+        do not write back to interrupt registers
+   ***********************************************/
 
    while (final_count < 24)
    {
@@ -223,38 +233,48 @@ void lsc(int ea)	/*	load shift and count	*/
    b = final_count;
 }
 
-void  da(int ea)	/*	double add		*/
+#if 0
+
+void  __da(int ea, int target[])	/*	double add		*/
 {
    int		 operand[2];
    int		 carry;
 
-   burst_read2(operand, ea);
+   if ((burst_read2(operand, ea)) < 0) return;
+   
+   /***********************************************
+        if guard fault has happened break off and
+        do not write back to interrupt reg1sters
+   ***********************************************/
 
    #ifdef EDGE
    if (psr & 32768) b4double(operand[0], operand[1]);
    #endif
  
-   carry = operand[1] + b;
-   b = carry & 0x00FFFFFF;
-   carry >>= 24;
-   carry += a;
-   carry += operand[0];
-   a = carry & 0x00FFFFFF;
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+
+   carry = operand[1] + target[1];
+   target[1] = carry & 0x00FFFFFF;
+   carry = ((carry >> 24) & 1) + target[0] + operand[0];
+   target[0] = carry & 0x00FFFFFF;
+   psr = (psr & 0x00FFFFFE) | ((carry >> 24) & 1);
 
    #ifdef EDGE
    if (psr & 32768) q4double();
    #endif
 }
 
-void dan(int ea)	/*	double add negative	*/
+void __dan(int ea, int target[])	/*	double add negative	*/
 {
    int		 operand[2];
    int		 carry = 1;
 
-   burst_read2(operand, ea);
+   if ((burst_read2(operand, ea)) < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off and
+        do not write back to interrupt registers
+   ***********************************************/
+
 
    #ifdef EDGE
    if (psr & 32768) b4double(operand[0], operand[1]);
@@ -263,21 +283,17 @@ void dan(int ea)	/*	double add negative	*/
    operand[0] ^= 0x00FFFFFF;
    operand[1] ^= 0x00FFFFFF;
 
-   carry += b;
-   carry += operand[1];
-   b = carry & 0x00FFFFFF;
-   carry >>= 24;
-   carry += a;
-   carry += operand[0];
-   a = carry & 0x00FFFFFF;
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+   carry = carry + operand[1] + target[1];
+   target[1] = carry & 0x00FFFFFF;
+   carry = ((carry >> 24) & 1) + target[0] + operand[0];
+   target[0] = carry & 0x00FFFFFF;
+   psr = (psr & 0x00FFFFFE) | ((carry >> 24) & 1);
 
    #ifdef EDGE
    if (psr & 32768) q4double();
    #endif
 }
+#endif
 
 void dlsc(int ea)	/* double load shift and count	*/
 {
@@ -285,7 +301,13 @@ void dlsc(int ea)	/* double load shift and count	*/
    int		 final_count = 0;
    int		 sign;
 
-   burst_read2(operand, ea);
+   if ((burst_read2(operand, ea)) < 0) return;
+   
+   /***********************************************
+        if guard fault has happened break off and
+        do not write back to interrupt registers
+   ***********************************************/
+   
    sign = operand[0] & 0x00800000;
 
    while (final_count < 48)
@@ -300,108 +322,267 @@ void dlsc(int ea)	/* double load shift and count	*/
    mantissa2 = final_count;
 }
 
-
-void  or(int operand)	/*	OR with register A	*/
+#if 0
+void  __or(int ea, int designator, int *target)	/*	OR with register a register	*/
 {
-   a |= operand;
+   int operand = operand_read(ea, designator);
+
+   if (contingency < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to  registers
+   ***********************************************/
+
+   *target |= operand;
 }
 
-void orb(int operand)	/*	OR with register B	*/
+void __and(int ea, int designator, int *target)	/*	AND with register a register	*/
 {
-   b |= operand;
+   int operand = operand_read(ea, designator);
+
+   if (contingency < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   *target &= operand;
 }
 
-void and(int operand)	/*	AND with register A	*/
+void __xor(int ea, int designator, int *target)	/*	XOR with register register	*/
 {
-   a &= operand;
+   int operand = operand_read(ea, designator);
+
+   if (contingency < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   *target ^= operand;
 }
 
-void andb(int operand)	/*	AND with register B	*/
+void  __aa(int ea, int designator, int *target)	/*	add to a register		*/
 {
-   b &= operand;
+   int		 operand = operand_read(ea, designator);
+   int		 carry = *target + operand;
+
+   if (contingency < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off 
+        and do not write back to registers
+   ***********************************************/
+
+   *target = carry + 0x00FFFFFF;
+   psr = (psr & 0x00FFFFFE) | ((carry >> 24) & 1);
 }
 
-void xor(int operand)	/*	XOR with register A	*/
+void __ana(int ea, int designator, int *target)	/*	add negative to a reguster	*/
 {
-   a ^= operand;
+   int		 operand = operand_read(ea, designator);
+   int		 carry = (operand ^ 0x00FFFFFF) + 1 + *target;
+
+   if (contingency < 0) return;
+
+   /***********************************************
+        if guard fault has happened break off 
+        and do not write back to registers
+   ***********************************************/
+
+   *target = carry & 0x00FFFFFF;
+   psr = (psr & 0x00FFFFFE) | ((carry >> 24) & 1);
 }
-
-void xorb(int operand)	/*	XOR with register B	*/
-{
-   b ^= operand;
-}
-
-#ifdef	ANU
-
-/*********************************************************
-
-	substituted with macros
-
-	anu[b = a - operand] and anuba[a = b - operand]
-
-*********************************************************/
-
-void  anu(int operand)	/*	test subtract from A	*/
-			/*	result in B		*/
-{
-   int		 carry = operand ^ 0x00FFFFFF;
-
-   carry += 1;
-   carry += a;
-
-   b = carry & 0x00FFFFFF;
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
-}
-
 #endif
 
-void  aa(int operand)	/*	add to A		*/
-{
-   int		 carry = a + operand;
+#if 1
 
-   a = carry & 0x00FFFFFF;
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+/********************************************************
+
+	this one is only used in the SIMD version
+	of fixed point multiply
+	it has 48-bit multiplicand and 48-bit product
+
+********************************************************/
+
+int __mm(int ea, int designator, int target[])
+{
+   i64		 multiplicand;
+   int		 multiplier;
+
+   if ((multiplier = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
+   
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   multiplicand = (((i64) target[0] << 40) | ((i64) target[1] << 16)) >> 16;   
+   multiplier = (multiplier << 8) >> 8;
+
+   multiplicand = (i64) multiplicand * multiplier;
+
+   target[1] = multiplicand & 0x00FFFFFF;
+   target[0] = (multiplicand >> 24) & 0x00FFFFFF;
+   return 0;
 }
 
-void  ab(int operand)	/*	add to B		*/
-{
-   int		 carry = b + operand;
+/*************************************************
+	this one is the fixed point multiply
+	in the regular accumulators
+	multiplier is 24 bits in register b
+	product is 48 bits in a:b
+*************************************************/
 
-   b = carry & 0x00FFFFFF;
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+int __m(int ea, int designator, int target[])
+{
+   i64		 product;
+
+   int		 multiplicand;
+   int		 multiplier;
+
+   if ((multiplier = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
+   
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   multiplicand = (target[1] << 8) >> 8;
+   multiplier = (multiplier << 8) >> 8;
+
+   product = (i64) multiplicand * multiplier;
+   
+   target[1] = product & 0x00FFFFFF;
+   target[0] = (product >> 24) & 0x00FFFFFF;
+   return 0;
 }
 
-void ana(int operand)	/*	add negative to A	*/
+/*************************************************
+	this one is the short multiply used in SIMD
+	instead of fractional multiply 
+	both sides are signed
+	multiplier and product are both 24 bits
+*************************************************/
+
+int __ms(int ea, int designator, int *target)
 {
-   int		 carry = operand ^ 0x00FFFFFF;
+   int		 multiplicand = *target;
+   int		 multiplier;
 
-   carry += 1;
-   carry += a;
-   a = carry & 0x00FFFFFF;
+   if ((multiplier = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
 
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   multiplicand = (multiplicand << 8) >> 8;
+   multiplier = (multiplier << 8) >> 8;
+   *target = (multiplicand * multiplier) & 0x00FFFFFF;
+   return 0;
 }
 
-void anb(int operand)	/*	add negative to B	*/
+/*************************************************
+   this one is multiply fractional
+   in the regular accumulators
+   multiplicand is unsigned 24 bits in b
+   multiplier is signed 24 bits
+   product is 48 bits in a:b
+*************************************************/
+
+int __mf(int ea, int designator, int target[])
 {
-   int		 carry = operand ^ 0x00FFFFFF;
+   i64		 product;
+   
+   int		 multiplicand = target[1] & 0x00FFFFFF;
+   int		 multiplier;
 
-   carry += 1;
-   carry += b;
-   b = carry & 0x00FFFFFF;
+   if ((multiplier = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
 
-   carry >>= 24;
-   psr &= 0x00FFFFFE;
-   psr |= carry;
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   multiplier = (multiplier << 8) >> 8;
+
+   product = (i64) multiplicand * multiplier;
+
+   target[1] = product & 0x00FFFFFF;
+   target[0] = (product >> 24) & 0x00FFFFFF;
+   return 0;
 }
+
+/****************************************************
+	this divide is used with regular accumulators
+	remainder -> b
+	quotient low   -> a
+	quotient hhigh -> 6	
+****************************************************/
+
+int __d(int ea, int designator, int target[])
+{
+   i64		 dividend;
+   int		 divisor;
+
+   if ((divisor = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
+
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   divisor = (divisor << 8) >> 8;
+   dividend = (((i64) target[0] << 40) | ((i64) target[1] << 16)) >> 16;
+   target[1] = (dividend % divisor) & 0x00FFFFFF;
+   dividend = (i64) dividend / divisor;
+
+   target[0] = dividend & 0x00FFFFFF;
+   target[2] = (dividend >> 24) & 0x00FFFFFF;
+   return 0;
+}
+
+/***************************************************
+	this divide is used in SIMD
+	quotient is a word pair
+	remainder is optional @ quotient + 2 
+***************************************************/
+
+int __dd(int ea, int designator, int target[])
+{
+   i64           dividend;
+   int           divisor;
+
+   if ((divisor = operand_read(ea, designator)) < 0) return -LP_ADDRESS;
+
+   /***********************************************
+        if guard fault has happened break off
+        and do not write back to registers
+   ***********************************************/
+
+   divisor = (divisor << 8) >> 8;
+   dividend = (((i64) target[0] << 40) | ((i64) target[1] << 16)) >> 16;
+   if (psr & FLOATING_RESIDUE) target[2] = (dividend % divisor) & 0x00FFFFFF;
+   dividend = (i64) dividend / divisor;
+   
+   target[1] = dividend & 0x00FFFFFF;
+   target[0] = (dividend >> 24) & 0x00FFFFFF;
+   return 0;
+}
+
+
+#else
+
+/*************************************************
+	these bitrace routines have always worked
+	but the multiplies and divides of the
+	platform circuitry probably work faster
+	and cooler
+*************************************************/
 
 void   m(int operand)	/*	multiply		*/
 {
@@ -675,4 +856,4 @@ void   d(int operand)	/*	divide			*/
    a = quotient    & 0x00FFFFFF;
    b = dividend[1] & 0x00FFFFFF;
 }
-
+#endif

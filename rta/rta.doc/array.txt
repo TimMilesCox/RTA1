@@ -1,23 +1,22 @@
 <div	style="font-size:14pt">
 <h2>Single Instruction Multiple Data</h2>
 <pre>
-	<a style="color:#0000FF"><i>Repeat Execute feature rolled out in i386 Linux and OSX emulators
-	tipa[ 1 2 4 8 32 64 256 1024 ] Stepping 31.03.2021 [USA 03.31.2021]</i></a>
+	<a style="color:#0000FF"><i>Repeat Execute feature in all RTA1 emulators
+	Stepping 14.07.2021 [USA 07.14.2021]</i></a>
 
 </pre>
-Single Instruction Multiple DataPoint is modelled as an instruction repeat paradigm in RTA1
-
-<p>
-Parallel ALUs and FPUs are not necessarily present in any one core
+<a href="rta.html#sim_d">Single Instruction Multiple DataPoint</a> is modelled as an instruction repeat paradigm in RTA1
+in order to be available with or without parallel hardware
 
 <p>
 Multiple operation is implemented with Repeat Execute instruction rex.
-See <a href="rta.html#sim_d">instruction architecture SIMD</a>
+See <a href="rta.html#rex">Repeat Execute instruction</a> and <a href="rta.html#sim_d">instruction architecture SIMD</a>
 
 <p>
 RTA1 SIMD uses an array of registers in the internal stack as accumulators
+for floating and integer math, boolean operations and shifts
 <pre>
-
+										<--------- internal stack root
 						_________________________
 						|	last object	|
 						|			|
@@ -27,7 +26,7 @@ RTA1 SIMD uses an array of registers in the internal stack as accumulators
 						|_______________________|
 	_________________			|	1st object	|
 	| dest. cursor	|--------------------->	|_______________________|
-	|_______________|
+	|_______________|							<--------- internal stack top
 
 </pre>
 Destination cursor is by default initialised to the internal stack top and may instead point to another region of the internal stack
@@ -39,10 +38,7 @@ At main program level SIMD can use all 104 internal stack registers which would 
 Loop-counting instructions and instructions updating the selection of destination register and source-2 data point are saved
 
 <p>
-SIMD has potentially the second advantage that multiple values may reside in registers for <a href="rta.html#lanes">successive operations</a>
-
-<p>
-Initial rollout is 4-function floating point only
+Multiple values may remain loaded in internal stack accumularos for successive operations
 
 
 <h2>Loadable Application Group array + 1off</h2>
@@ -82,7 +78,7 @@ One application is called array and uses standard quadword push instructions to 
 		$base_d	$zenith(3)-003000 1024
 		c	(seg$load)	0,,xi	(array_data:L),,long
 	
-		SIM_CONTROL	(-1, 4, LANES-1, 4q)	. dest and source-2 both at 4-word intervals here
+		SIMD_CONTROL	(-1, 4, LANES-1, 4q)	. dest and source-2 both at 4-word intervals here
 		lx	addend(1),,xi			. [source-1 source-2 may be at any intervals]
 	
 	?	$do	LANES,	qpush	input(LANES+1-?) . 5 source-1 values -> 5 dest registers
@@ -114,13 +110,13 @@ One application is called array and uses standard quadword push instructions to 
 	load><a style="color:#000000">@eof</a>
 
 </pre>
-The second application 1off demonstrates using the stack top as a second set of accumulators
+The second application 1off demonstrates using the stack top as a <a href="rta.html#A2_2">second set of accumulators</a>
 
 <p>
 1off also does a calculation in regular accumulators [ 4..7 ] then selects a destination inside the internal stack for a third calculation
 
 <p>
-Any registers in the internal stack can be selected for a single or multiple calculation with macro SIM_TARGET
+Any registers in the internal stack can be selected for a single or multiple calculation with macro SIMD_TARGET
 
 <p>
 Parameters and dynamic variables are addressable by name as destination registers  
@@ -164,7 +160,7 @@ Parameters and dynamic variables are addressable by name as destination register
 				scalars(another1,	float,	(2.0),,float		;
 					one_off,	float,	along			)
 	
-		SIM_CONTROL	(-1, 0, 0, 0q)		. single operation at internal stack top
+		SIMD_CONTROL	(-1, 0, 0, 0q)		. single operation at internal stack top
 							. increment neither cursor
 	
 		rex	(fd	(3.0e-60000))		. divide on stack top [object called one_off]
@@ -172,7 +168,7 @@ Parameters and dynamic variables are addressable by name as destination register
 		ql	(0.333333333333333333333e50000)
 		fm	along				. multiply in regular accumulators [ 4..7 ]
 	
-		SIM_TARGET	another1		. single operation inside the internal stack
+		SIMD_TARGET	another1		. single operation inside the internal stack
 		rex	(fm	a)			. multiply next object after stack top
 	
 							. return 3 results in available scalar registers

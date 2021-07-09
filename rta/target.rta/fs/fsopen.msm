@@ -8,7 +8,8 @@ fspath_walk	$tree
 	$head_far	 params(inputp,		int)			;
 									;
 			scalars(directory,	2			;
-				extract,	24			)
+				extract,	24			;
+				stream_registers, float, RDATAC		)
 
 	lb	inputp			. initialise the input stream
 	call	(rstream_starta)
@@ -47,10 +48,16 @@ next	lcal	test_forward		. a branch has just been read?
 
 	j	next
 
-no_next	qpop	8			. return four words of leaf name
-	push	24+2-4, sp, i		. if you change scalars()
-	pop	sp			. don't forget to change this
-	fret	0
+no_next	qpop	RDATAC
+	qpop	8			. return four words of leaf name
+					. now needs to be nonvolatile
+"$$frame" $set	$$frame-4-4
+	$ret
+
+.	push	24+2-4, sp, i		. if you change scalars()
+.	pop	sp			. don't forget to change this
+.	USTREAM				. defaults -> b$stream / SIMD registers
+.	fret	0
 
 test_forward
 	dpush	a
@@ -60,8 +67,7 @@ test_forward
 	lk	255,,xi
 	mtane	('/')
 	inc	2, sp			. that means inc by 1 the word @ [sp + 2]
-	pop	a			. which is the near return address
-	pop	b
+	dpop	a			. which is the near return address
 	lret	0
 	
 		$root

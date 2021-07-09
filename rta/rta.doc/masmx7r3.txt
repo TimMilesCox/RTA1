@@ -79,10 +79,14 @@ See also the licensing notice at the foot of this document
 			</ol>
 		<li><a href="#smi">Storage Modify Instructions</a></li>
 		<li><a href="#si">Shift Instructions</a></li>
+		<li><a href="#sim_d">SIMD and Instruction Repeat</a></li>
 		<li><a href="#bsi">Bit Stream Instructions</a></li>
-		<li><a href="#ji">Jump Instructions</a></li>
-		<li><a href="#nar">Non-Addressable Registers</a></li>
-		<li><a href="#crii">Call / Return, Iframe Jump, Internal Interrupt / Return</a></li>
+			<ol>
+			<li><a href="#rsr">Read Staging Register</a></li>
+			<li><a href="#wsr">Write Staging Register</a></li>
+			</ol>
+		<li><a href="#ji">Jump Instructions, Local Call / Local Return</a></li>
+		<li><a href="#crii">Iframe Call / Return, Iframe Go, Internal Interrupt / Interrupt Return</a></li>
 		<li><a href="#crio">Control and I/O Instructions</a></li>
 		</ol>
 	<li><a href="#do">$do</a> Code Iteration and Variation</li>
@@ -106,7 +110,7 @@ See also the licensing notice at the foot of this document
 		<li><a href="#bit_structures">Bit Structures</a></li>
 		</ol>
 	<li><a href="#directives">masmx Directives and Automatic Functions</a></li>
-	<li><a href="#linking">Linking</a</li>
+	<li><a href="#linking">Assembling and Linking for RTA1</a</li>
 	</ol>
 
 	<ul	type="none">
@@ -114,10 +118,9 @@ See also the licensing notice at the foot of this document
 		<ul	type="none">
 		<li><a href="#txo">Text Encoded Binary (.txo) Format</a></li>
 		<li><a href="#load_string">Load String Format</a></li>
-		<li><a href="#txo">rom Format</a></li>
+		<li><a href="#rom">ROM Format</a></li>
 		</ul>
-	<li><a href="#locators">Appendix B: Application Memory Map</a></li>
-	<li><a href="#i_bench">Appendix C: Constructing Integer Algorithm Benchmarks</a></li>
+	<li><a href="#i_bench">Appendix B: Constructing Integer Algorithm Benchmarks</a></li>
 	<li><a href="#command_line">Appendix X: masmx Command Line</a></li>
 	<li><a href="#binary_utilities">Appendix Y: Binary Utilities</a></li>
 		<ul	type="none">
@@ -246,7 +249,7 @@ The line of assembly language code has an arbitrary number of fields
 
 <pre	style="font-size:12pt;color:#0000FF">
 
-[label]	[command]		[argument1[,argument1_subfield2,...]]	[argumentN[,argumentN_subfield2,...]]	[. comment ]
+[label]	[command]	[argument1[,argument1_subfield2,...]]	[argumentN[,argumentN_subfield2,...]]	[. comment ]
 
 </pre>
 Lines may be continued
@@ -1017,7 +1020,7 @@ An RTA1 floating operand is four words
 An eight word floating constant is generated with the macro major_minor for <a href="#fp192data">192-bit floating library</a> computation
 
 <p>
-<a href="rta.html#fpx">fpx</a> instruction promotes a 48-bit compressed floating number to four words in the internal stack top
+Macro <a href="rta.html#fp48_data">fpx</a>  promotes a 48-bit compressed floating number to four words in the internal stack top
 
 <p>
 See also <a href = "#fp192i">192-Bit Floating Point</a>
@@ -1056,60 +1059,66 @@ left_plus_right
 <a	name="fp48data"/>
 <h4>4.1.4: Floating Storage Compression</h4>
 <p>
-The two-word suffix [ d D l L] assembles the floating expression as a 48-bit constant which RTA1 can
-expand to four words at the internal stack top with the
-<a href="rta.html#fpx">floating push and expand</a> instruction fpx
+The two-word suffix [ d D l L] assembles the floating expression as a 48-bit constant which library can
+expand to four words at the internal stack top with macro
+<a href="kernel.html#fpx">fpx</a>
 
 <p>
-RTA1 computes 96-bit floating-point but the <a href="rta.html#fpp">floating pop and pack</a>
-instruction fpp stores a 96-bit number in a 48-bit floating format
+RTA1 computes 96-bit floating-point but library macro <a href="kernel.html#fpp">fpp</a>
+pops a 96-bit number in a 48-bit floating format
 <pre	style="font-size:12pt;color:#0000FF">
 
-	$ masmx -ln
-MASMX 7r3
+$ masmx -lnke
+MASMX 7r3A Build 12
 0/-INPUT>>
-
-	$list		0
-	$include	freeware/RTA1/rta/def/rta.def
+	$list	        0
+	$path		../
+	$include	def/rta.def
+	$include	lib/compress.def
+	$path
 	$list
 
 $(0:64)
 
-	fpx		(4.096:d*+200)		. load and expand the 2-word input
-	fa		0, sp			. use the expanded number
+        fpx             (4.096:d*+200)          . load and expand the 2-word input
+        fa              0, sp                   . use the expanded number
 
-	qs		0, sp
-	fpp		compressed_storage	. store and compress the result
-						. from 4 words to 2
-	$do		$<256,$(0:256)
+        qs              0, sp
+        fpp             compressed_storage      . store and compress the result
+                                                . from 4 words to 2
+        $do             $<256,$(0:256)
 
 $(3:03000)
-compressed_storage $res	2
-	$end
-  :                            1 
-  :                            429 	$list
-  :                            430 
-  :                            431 $(0:64)
-  :                            432 
-00:000040 5F0100              +433 	fpx	(4.096:d*+200)		. load and expand the 2-word input
-00:000041 67F000              +434 	fa	 0, sp			. use the expanded number
-  :                            435 
-00:000042 47F000              +436 	qs	 0, sp
-00:000043 573000              +437 	fpp	compressed_storage	. store and compress the result
-  :                            438  					. from 4 words to 2
-  :                            439 	$do	$<256,$(0:256)
-  :                            440 
-  :                            441 $(3:03000)
-  :                            442 compressed_storage $res 2
-  :                            443 	$end
+compressed_storage $res 2
+        $end
+  :                            493  $list
+  :                            494 
+  :                            495 $(0:64)
+  :                            496 
+00:000040  9F0100              +497         fpx             (4.096:d*+200)          . load and expand the 2-word input
+00:000041  9FF000              +497 
+00:000042  FF0102              +497 
+00:000043  67F000              +498         fa              0, sp                   . use the expanded number
+  :                            499 
+00:000044  47F000              +500         qs              0, sp
+00:000045  FF0103              +501         fpp             compressed_storage      . store and compress the result
+00:000046  5F3000              +501 
+00:000047  5FF000              +501 
+  :                            502                                                 . from 4 words to 2
+  :                            503         $do             $<256,$(0:256)
+  :                            504 
+  :                            505 $(3:03000)
+  :                            506 compressed_storage $res 2
+  :                            507         $end
 00:000100+69BAB3C2FDDF
-:$(00):000040:000102 :$(03):003000:003002 
-
+00:000102+[0000]18:000000
+00:000103+[0001]18:000000
+:$(00):000040:000104 :$(03):003000:003002 
 
 </pre>
 
 48-bit compressed floating format has 11 exponent bits equivalent to decimal exponent range approximately &plusmn;307
-<pre>
+<pre	style="font-size:10pt;color:#00AF6F">
 
 
 	47 46     36 35                                        0
@@ -1119,7 +1128,7 @@ compressed_storage $res	2
 
 </pre>
 96-bit compute format has 23 exponent bits equivalent to decimal exponent range approximately &plusmn;1262611
-<pre>
+<pre	style="font-size:10pt;color:#00AF6F">
 
 	_________________________________________________________________________________________________
 	|s|	    23		|			   mantissa 72 bits				|
@@ -1190,85 +1199,106 @@ These library calls compute 192-bit floating values:
 <a	name="literals"/>
 <h3>4.2: Literals</h3>
 
-<a	name="automatic_literals"/>
-<h3>4.2.1: Automatic Literals</h3>
-
-Automatic literals are enabled with assembly flag -a
-
-<p>
-This two-word compressed floating constant is an automatic literal because it is in parentheses
-
-<pre	style="font-size:12pt;color:#0000FF">
-
-
-00:000040 5F0100              +433      fpx     (4.096:d*+200)          . load and expand the 2-word input
-  :                            438                                      . from 4 words to 2
-  :                            439      $do     $<256,$(0:256)		. force literal table to address 256+
-  :                            440
-  :                            443      $end
-00:000100+69BAB3C2FDDF
-:$(00):000040:000102 :$(03):003000:003002
-
-
-
-</pre>
-
 <p>
 A literal is a constant declared as an operand and
-assembled at the end of a designated section
+assembled at the end of a default program section or a specified section
 
 <p>
 Literals look like immediate operands but are storage
 constants of any size. The instruction contains their
 address, not their value
-<pre	style="font-size:12pt;color:#0000FF">
 
-$ masmx -lnz
-MASMX 7r3
+<a	name="automatic_literals"/>
+<h3>4.2.1: Automatic Literals</h3>
+
+<p>
+Automatic literals are enabled with assembly flag -a
+
+<p>
+-a is already opted in header rta.def
+
+<p>
+Automatic literals are generated by reference to a value in parentheses with no operators outside as shown
+<pre	style="font-size:10pt;color:#0000FF">
+
+	ql	(1.65*+1200000)		. a 4-word floating literal generated by reference
+
+</pre>
+
+This literal is generated as part of this sample assembly at address 000102<sub>16</sub>
+
+<p>
+The quad load instruction invoking it is at address 000042<sub>16</sub>
+
+<pre	style="font-size:10pt;color:#0000FF">
+
+$ masmx -lnkez
+MASMX 7r3A Build 12
 0/-INPUT>>
-	$list	0
-	$include	freeware/RTA1/rta/def/rta.def
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	stream/stream.def
+	$include	language/stack.def
+	$include	lib/ascii.def
+	$path
 	$list
+
 $(31:01F000)
-	$list	0
-?	$do	1024,number(?)	1.75*+?-1
-	$list
+        $list   0
+?       $do     1024,number(?)  1.75*+?-1
+        $list
 $(3:03000)
 $(0:64)
-	lx	(number(512))
-	lk	(127*/16)
-	dl      (1.65*+1200000)
-	$lit	3
-	ly, xi	("the result is %f":10)
-	$do	$<256,$(0:256)
-        $end
-  :                            428 	$list
-  :                            429 $(31:01F000)
-  :                            432 	$list
-  :                            433 $(3:03000)
-  :                            434 $(0:64)
-00:000040 500100              +435 	lx	(number(512))
-00:000041 480101              +436 	lk	(127*/16)
-00:000042 CF0102              +437 	dl	(1.65*+1200000)
-  :                            438 	$lit	3
-00:000043 5D3000              +439 	ly, xi	("the result is %f":10)
-  :                            440 	$do $<256,$(0:256)
-  :                            441 	$end
+	lx	(number(512))		. a literal pointer halfway in the table of floating numbers
+	lk	(127*/16)		. a literal mask value too wide to be an immediate operand
+	ql	(1.65*+1200000)		. a 4-word floating literal generated by reference
+
+	$lit	3			. change the default section for literals from 0 to 3
+
+	printf	("the acquired floating value is %f":LF:0),,xi	a,,float
+	fret	0
+
+	$do	$<256,$(0:256)		. force section 0 literals into memory range 256+
+	$end
+  :                            1071  $list
+  :                            1072 
+  :                            1073 $(31:01F000)
+  :                            1076         $list
+  :                            1077 $(3:03000)
+  :                            1078 $(0:64)
+00:000040  500100              +1079  lx (number(512))		. a literal pointer halfway in the table of floating numbers
+00:000041  480101              +1080  lk (127*/16)		. a literal mask value too wide to be an immediate operand
+00:000042  4F0102              +1081  ql (1.65*+1200000)	. a 4-word floating literal generated by reference
+  :                            1082 
+  :                            1083  $lit 3			. change the default section for literals from 0 to 3
+  :                            1084 
+00:000043  8F0004              +1085  printf ("the acquired floating value is %f":LF:0),,xi a,,float
+00:000044  FD3000              +1085 
+00:000045  FD0001              +1085 
+00:000046  FCF006              +1085 
+00:000047  FF300C              +1085 
+00:000048  38000F              +1085 
+00:000049  3D0000              +1086  fret 0
+  :                            1087 
+  :                            1088  $do $<256,$(0:256)		. force section 0 literals into memory range 256+
+  :                            1089  $end
 00:000100+01F7FC
 00:000101+7F0000
 00:000102+7CD38BAD344C64F0DD0432C5
-03:003000+74686520726573756C742069732025660A00
-:$(00):000040:000106 :$(03):003000:003006 :$(1F):01F000:020000 
+03:003000+74686520616371756972656420666C6F6174696E67207661
+6C75652069732025660A0000
+03:00300c+[0000]18:000000
+:$(00):000040:000106 :$(03):003000:00300D :$(1F):01F000:020000 
 
 </pre>
 By default automatic literals are assembled at the end of program section $(0)
 
 <p>
-The <b>$lit</b> directive may place automatic literals 
-at the end of another program section
+The <b>$lit</b> directive designates which program section has automatic literals at the end
 <pre	style="font-size:12pt;color:#0000FF">
 
-[tag]	$lit	55
+[tag]	$lit	3		. change the default section for literals from 0 to 3
 
 </pre>
 If <b>$lit</b> directive has no argument, automatic literals are placed
@@ -1605,8 +1635,6 @@ PSR is stored and loaded at interrupt and interrupt return. Its flag assignments
 
 </pre>
 
-<a	name="crii"/>
-
 <a	name="ioar"/>
 <h4>6.2.2: Architectural Space Mapped via I/O</h4>
 <p>
@@ -1714,12 +1742,12 @@ in the internal stack. This is achieved for kernel, IP stack and supplied applic
 </pre>
 
 Bitstream channel buffer and counter registers only exist once at locations 20..23.
-It is not envisaged that ISRs manipulate streams of bits, but if they do they must
-first push <b>RDATAC RDATA / WDATAC WDATA</b>, because applications program those registers
+It is not intended that ISRs program streams of bits, but if they do they must
+first push <b>RDATAC RDATA / WDATAC WDATA</b>, because they are application registers
 
 <p>
 If ISRs program bitstreams, interrupt registers <b>p_x</b> and <b>q_x</b> are used as bitstream
-storage pointers, and ISRs need not save user registers <b>p</b> and <b>q</b>
+storage pointers, and ISRs need not save application registers <b>p</b> and <b>q</b>
 
 <a	name="instruction_form"/>
 <h3>6.3: Instruction Layout</h3>
@@ -1804,7 +1832,7 @@ in the address space. These are
 
 If xxx is 2..7 then index register [x y a b fp sp] is added to to the unsigned
 12-bit displacement to form the effective address
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#0000FF">
 
 		  23                                          0			  23                                          0
 		_________________________________________________		_________________________________________________
@@ -1855,7 +1883,7 @@ bits on read and unused fields are unchanged on byte write. Bytes are not
 read from registers or written to registers. All registers including the
 internal stack are read and written as one or two or four 24-bit words 
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#0000FF">
 
 
 		byte reads							byte writes
@@ -1954,75 +1982,75 @@ The ,,i and ,,xi options of instructions sr sk sx sy sa sb z pop tz tp
 are assigned to I/O and control instructions which take only an immediate
 operand
 
-The integer store instructions do not update <b>carry$</b>
+Integer store instructions do not update <b>carry$</b>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	_________________________________________________________________________________________________________
 	|	mnemonic|   fffff.jjj	|			|		jjj				|	
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sr">sr</a>	|   00000.0jj	|  store repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sr" style="color:#00FF00">sr</a>	|   00000.0jj	|  store repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sk">sk</a>	|   00001.0jj	|  store mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sk" style="color:#00FF00">sk</a>	|   00001.0jj	|  store mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sx">sx</a>	|   00010.0jj	|  store x		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sx" style="color:#00FF00">sx</a>	|   00010.0jj	|  store x		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sy">sy</a>	|   00011.0jj	|  store y		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sy" style="color:#00FF00">sy</a>	|   00011.0jj	|  store y		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sa">sa</a>	|   00100.0jj	|  store a		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sa" style="color:#00FF00">sa</a>	|   00100.0jj	|  store a		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#sb">sb</a>	|   00101.0jj	|  store b		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#sb" style="color:#00FF00">sb</a>	|   00101.0jj	|  store b		| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#z">z</a>	|   00110.0jj	|  zero			| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#z" style="color:#00FF00">z</a>	|   00110.0jj	|  zero			| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#pop">pop</a>	|   00111.0jj	|  pop internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#pop" style="color:#00FF00">pop</a>	|   00111.0jj	|  pop internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div    style="color:FF0000">
+
 	sx		save_pointer
         sb, h2          control_word, y
 	sa		total
         z               lock_cell, x
 	sr		*(HIGH_ADDRESS)
-        <div>
-	<div	style="color:0000FF">
+	<div	style="color:FF0000">
 	push, t1	before
-	push		update<div><div    style="color:FF0000">
+	push		update
+	</div>
 	pop		before
 	pop, t1		before
-	</div>
+
 
 </pre>
 
 <a	name="sili"/>
 <h3>6.6: Single Integer Load Instructions</h3>
 
-The integer load instructions do not update <b>carry$</b>
+Integer load instructions do not update <b>carry$</b>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#lr">lr</a>	|   01000.jjj	|  load repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#lr" style="color:#00FF00">lr</a>	|   01000.jjj	|  load repeat counter	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#lk">lk</a>	|   01001.jjj	|  load mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#lk" style="color:#00FF00">lk</a>	|   01001.jjj	|  load mask register	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#lx">lx</a>	|   01010.jjj	|  load x		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#lx" style="color:#00FF00">lx</a>	|   01010.jjj	|  load x		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#ly">ly</a>	|   01011.jjj	|  load y		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#ly" style="color:#00FF00">ly</a>	|   01011.jjj	|  load y		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#la">la</a>	|   01100.jjj	|  load a		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#la" style="color:#00FF00">la</a>	|   01100.jjj	|  load a		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#lb">lb</a>	|   01101.jjj	|  load b		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#lb" style="color:#00FF00">lb</a>	|   01101.jjj	|  load b		| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#push">push</a>	|   11111.jjj	|  push internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
+	|	<a href="rta.html#push" style="color:#00FF00">push</a>	|   11111.jjj	|  push internal stack	| [w0] ++ [t1 t2 t3] -- [h1 h2]	++ [i xi]	|
 	|_______________|_______________|_______________________|_______________________________________________|
 
 
@@ -2030,7 +2058,6 @@ The integer load instructions do not update <b>carry$</b>
 	Assembly Language Examples
 	__________________________
 
-	<div    style="color:FF0000">
 	lr	HOW_MANY,,xi
 	lk	(0FFC000s)
 
@@ -2040,7 +2067,7 @@ The integer load instructions do not update <b>carry$</b>
 
 	push, t1        before
         push            update
-	</div>
+
 
 
 </pre>
@@ -2052,36 +2079,39 @@ before the operation the guard interrupt intervenes
 <a	name="ti"/>
 <h3>6.7: Test Instructions</h3>
 
-The integer test instructions do not update <b>carry$</b>
+Integer test instructions do not update <b>carry$</b>
 
 <p>
 The operand is tested for zero or for bit 23=0. If so, the next instruction is skipped. Storage half-and
 third-words are sign-extended
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
         |_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#tz">tz</a>	|   01110.0jj	|  test zero skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#tz" style="color:#00FF00">tz</a>	|   01110.0jj	|  test zero skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
-	|	<a href="rta.html#tp">tp</a>	|   01111.0jj	|  test positive skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
+	|	<a href="rta.html#tp" style="color:#00FF00">tp</a>	|   01111.0jj	|  test positive skip	| [w0] ++ [t1 t2 t3] -- [h1 h2]			|
 	|_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
+<div	style="color:#FF0000">
   :                            430 $(3:03000)
   :                            431 left		$res	1
   :                            432 right	$res	1
   :                            433 
   :                            434 $(0:64)
-  :                            435 examine<div	style="color:red">
+</div>
+  :                            435 examine
 00:000040 783000              +436 	tp	left 
 00:000041 B60046              +437 	j	left_is_negative
 00:000042 703001              +438 	tz	right
-00:000043 B60046              +439 	j	right_is_nonzero</div>
+00:000043 B60046              +439 	j	right_is_nonzero
+<div	style="color:#FF0000">
   :                            440 
 00:000044 650000              +441	la, xi	0 
 00:000045 350000              +442 	lret 0
@@ -2090,65 +2120,64 @@ third-words are sign-extended
   :                            445 right_is_nonzero
 00:000046 65FFFF              +446 	la, xi	-1
 00:000047 350000              +447 	lret	0
-
+</div>
 
 </pre>
 
 <a	name="xai"/>
 <h3>6.8: Index Register Add  Instructions</h3>
 
-The index register add instructions do not update <b>carry$</b>
+Index register add instructions do not update <b>carry$</b>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#ax">ax</a>      |   10000.jjj   |  x += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#ax" style="color:#00FF00">ax</a>      |   10000.jjj   |  x += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#ay">ay</a>      |   10001.jjj   |  y += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#ay" style="color:#00FF00">ay</a>      |   10001.jjj   |  y += operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 	ax, xi	-30000
 	ay	increment
-	</div>
+
+
 </pre>
 
 <a	name="booli"/>
 <h3>6.9: Boolean Algebra Instructions</h3>
 
-The boolean algebra instructions do not update <b>carry$</b>
+Boolean algebra instructions do not update <b>carry$</b>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#or">or</a>      |   10010.jjj   |  a OR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#or" style="color:#00FF00">or</a>      |   10010.jjj   |  a OR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#orB">orB</a>     |   10011.jjj   |  b OR operand ->b     | [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#orB" style="color:#00FF00">orB</a>     |   10011.jjj   |  b OR operand ->b     | [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#and">and</a>     |   10100.jjj   |  a AND operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#and" style="color:#00FF00">and</a>     |   10100.jjj   |  a AND operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#andB">andB</a>    |   10101.jjj   |  a AND operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#andB" style="color:#00FF00">andB</a>    |   10101.jjj   |  a AND operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#xor">xor</a>     |   10110.jjj   |  a XOR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#xor" style="color:#00FF00">xor</a>     |   10110.jjj   |  a XOR operand ->a	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#xorB">xorB</a>    |   10111.jjj   |  b XOR operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#xorB" style="color:#00FF00">xorB</a>    |   10111.jjj   |  b XOR operand ->b	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 
 	orB,xi	BASE_32
 	or	(0800000s)
@@ -2157,7 +2186,6 @@ The boolean algebra instructions do not update <b>carry$</b>
 	xor	key, x
 	xorB	key+1, x
 
-	</div>
 
 </pre>
 
@@ -2173,18 +2201,18 @@ carry from bit 23 of the addition is stored in <b>carry$</b>.
 Carry is not inverted after negative adds. They write carry as the positive add
 of the 2s complement would write carry
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |				|               jjj                             |
         |_______________|_______________|_______________________________|_______________________________________________|
-        |       <a href="rta.html#aa">aa</a>      |   11000.jjj   |  a += operand			| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#aa" style="color:#00FF00">aa</a>      |   11000.jjj   |  a += operand			| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________________|_______________________________________________|
-        |       <a href="rta.html#ab">ab</a>      |   11001.jjj   |  b += operand			| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#ab" style="color:#00FF00">ab</a>      |   11001.jjj   |  b += operand			| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________________|_______________________________________________|
-        |       <a href="rta.html#ana">ana</a>     |   11010.jjj   |  a += 2s complement of operand| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#ana" style="color:#00FF00">ana</a>     |   11010.jjj   |  a += 2s complement of operand| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________________|_______________________________________________|
-        |       <a href="rta.html#anb">anb</a>     |   11011.jjj   |  b += 2s complement of operand| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#anb" style="color:#00FF00">anb</a>     |   11011.jjj   |  b += 2s complement of operand| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________________|_______________________________________________|
 
 
@@ -2192,11 +2220,10 @@ of the 2s complement would write carry
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 	aa	0, b
 	ab, xi	-INCREMENT
 	ana	6, x
-	</div>
+
 
 </pre>
 
@@ -2209,22 +2236,21 @@ by the operand and stores the 48-bit product in arithmetic registers a:b
 
 <b>carry$</b> is not updated
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#m">m</a>	|   11100.jjj   |  a:b = b * operand	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#m" style="color:#00FF00">m</a>	|   11100.jjj   |  a:b = b * operand	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 	m	scale, x
-	</div>
+
 
 </pre>
 
@@ -2246,13 +2272,13 @@ integer multiplicands more than one word in length
 <p>
 <b>carry$</b> is not updated
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               jjj                             |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#mf">mf</a>	|   11101.jjj   |  a:b = b * operand	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#mf" style="color:#00FF00">mf</a>	|   11101.jjj   |  a:b = b * operand	| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________|_______________________________________________|
 
 
@@ -2260,9 +2286,7 @@ integer multiplicands more than one word in length
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 	mf	1000,,xi
-	</div>
 
 </pre>
 
@@ -2278,13 +2302,13 @@ stored in register 6 mantissa2
 <p>
 <b>carry$</b> is not updated
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |				|               jjj                             |
         |_______________|_______________|_______________________________|_______________________________________________|
-        |       <a href="rta.html#d">d</a>	|   11110.jjj   |	a:b /= operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
+        |       <a href="rta.html#d" style="color:#00FF00">d</a>	|   11110.jjj   |	a:b /= operand		| [w0] ++ [t1 t2 t3] -- [h1 h2] ++ [i xi]       |
         |_______________|_______________|_______________________________|_______________________________________________|
 					|   a = qotient 23:0		|
 					|_______________________________|
@@ -2315,35 +2339,35 @@ stored in register 6 mantissa2
 	Assembly Language Examples
 	__________________________
 
-
-	<div  style="color:FF0000">
 	d	proportions, y
 	d, xi	1000
-	</div>
+
 
 </pre>
 
 
 <a	name="llsi"/>
 <h3>6.14: Large Load and Store Instructions</h3>
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                          |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#ds">ds</a>      |   11000.111   |  double store		| a:b -> 2 words @ ea				|
+        |       <a href="rta.html#ds" style="color:#00FF00">ds</a>      |   11000.111   |  double store		| a:b -> 2 words @ ea				|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#dl">dl</a>      |   11001.111   |  double load		| 2 words @ ea -> a:b				|
+        |       <a href="rta.html#dl" style="color:#00FF00">dl</a>      |   11001.111   |  double load		| 2 words @ ea -> a:b				|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#dpush">dpush</a>   |   01011.111   |  double push		| sp -= 2, 2 words @ ea added to internal stack	|
+        |       <a href="rta.html#dpop" style="color:#00FF00">dpop</a>    |   01011.111   |  double pop		| 2 words @ [sp] -> ea, internal sp += 2	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#qs">qs</a>      |   01000.111   |  quadruple store      | a:b:mantissa2:mantissa3 -> 4 words @ ea	|
+        |       <a href="rta.html#dpush" style="color:#00FF00">dpush</a>   |   01011.111   |  double push		| sp -= 2, 2 words @ ea added to internal stack	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#ql">ql</a>      |   01001.111   |  quadruple load	| 4 words @ ea -> a:b:mantissa2:mantissa3       |
+        |       <a href="rta.html#qs" style="color:#00FF00">qs</a>      |   01000.111   |  quadruple store      | a:b:mantissa2:mantissa3 -> 4 words @ ea	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#qpop">qpop</a>	|   10000.111   |  quadruple pop	| 4 words @ internal stack top -> 4 words @ ea  |
+        |       <a href="rta.html#ql" style="color:#00FF00">ql</a>      |   01001.111   |  quadruple load	| 4 words @ ea -> a:b:mantissa2:mantissa3       |
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       <a href="rta.html#qpop" style="color:#00FF00">qpop</a>	|   10000.111   |  quadruple pop	| 4 words @ internal stack top -> 4 words @ ea  |
         |_______________|_______________|_______________________|_______________________________________sp_+=_4_|
-        |       <a href="rta.html#qpush">qpush</a>   |   10001.111   |  quadruple push	| sp -= 4, 4 words @ ea added to internal stack |
+        |       <a href="rta.html#qpush" style="color:#00FF00">qpush</a>   |   10001.111   |  quadruple push	| sp -= 4, 4 words @ ea added to internal stack |
         |_______________|_______________|_______________________|_______________________________________________|
 
 
@@ -2351,7 +2375,6 @@ stored in register 6 mantissa2
 	__________________________
 
 
-	<div  style="color:FF0000">
 	qpush	from, y
 	qpop	to, x
 
@@ -2360,51 +2383,50 @@ stored in register 6 mantissa2
 
 	dl	socka
 	ds	save
-	</div>
+
 
 </pre>
 
 <a	name="liai"/>
 <h3>6.15: Large Integer Arithmetic Instructions</h3>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                          |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#da">da</a>      |   11010.111   |  double add		| a:b += 2 words @ ea, carry from MS bit of add	|       
+        |       <a href="rta.html#da" style="color:#00FF00">da</a>      |   11010.111   |  double add		| a:b += 2 words @ ea, carry from MS bit of add	|       
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#dan">dan</a>	|   11011.111   |  double add negative	| a:b += 2s complement of 2 words @ ea, 	|
+        |       <a href="rta.html#dan" style="color:#00FF00">dan</a>	|   11011.111   |  double add negative	| a:b += 2s complement of 2 words @ ea, 	|
         |_______________|_______________|_______________________|______________________carry_from_MS_bit_of_add_|
-        |       <a href="rta.html#sc">sc</a>      |   10110.111   |  store carry          | PSR AND 1 -> word @ ea			|
+        |       <a href="rta.html#sc" style="color:#00FF00">sc</a>      |   10110.111   |  store carry          | PSR AND 1 -> word @ ea			|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#mlb">mlb</a>	|   10111.111   |  masked load b	| b AND NOT k OR word @ ea AND k -> b		|
+        |       <a href="rta.html#mlb" style="color:#00FF00">mlb</a>	|   10111.111   |  masked load b	| b AND NOT k OR word @ ea AND k -> b		|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#mta">mta</a>     |   10101.111   |  masked test equal	| skip if a AND k = word @ ea AND k		|
+        |       <a href="rta.html#mta" style="color:#00FF00">mta</a>     |   10101.111   |  masked test equal	| skip if a AND k = word @ ea AND k		|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#lsc">lsc</a>     |   10100.111   |  load shift & count	| 1 word @ ea -> a, rotate left [sign bits]	|
+        |       <a href="rta.html#dte" style="color:#00FF00">dte</a>     |   01010.111   |  double test equal	| skip if value registers a:b = 2 words @ ea	|
+        |_______________|_______________|_______________________|_______________________________________________|
+        |       <a href="rta.html#lsc" style="color:#00FF00">lsc</a>     |   10100.111   |  load shift & count	| 1 word @ ea -> a, rotate left [sign bits]	|
         |_______________|_______________|_______________________|_______________________________count in b______|
-        |       <a href="rta.html#dlsc">dlsc</a>    |   11100.111   |double load shift&count| 2 words @ ea -> a:b, rotate left [sign bits]	|
+        |       <a href="rta.html#dlsc" style="color:#00FF00">dlsc</a>    |   11100.111   |double load shift&count| 2 words @ ea -> a:b, rotate left [sign bits]	|
         |_______________|_______________|_______________________|__________________________count_in_mantissa2___|
-        |       <a href="rta.html#ex">ex</a>	|   10010.111   |  execute		| execute the instruction @ ea			|
+        |       <a href="rta.html#ex" style="color:#00FF00">ex</a>	|   10010.111   |  execute		| execute the instruction @ ea			|
         |_______________|_______________|_______________________|_______________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div  style="color:FF0000">
 	da	INTERVAL
 	dan	usecs
-	</div><div      style="color:0000FF">
+
 	la	('F'*/16)
 	lk	(255*/16s)
-	</div><div      style="color:FF0000">
 	mta	0, fp
-	</div><div	style="color:0000FF">
 	j	not_file_descriptor
+
 	lk	(00FFFF)
-	</div><div      style="color:FF0000">
 	mlb	0, fp
 
 	da	more
@@ -2412,7 +2434,7 @@ stored in register 6 mantissa2
 
 	dlsc	integer2
 
-	</div>
+
 </pre>
 
 
@@ -2430,7 +2452,7 @@ Floating numbers used in the four arithmetic function instructions are 96 bits o
 <p>
 The midpoint exponent is 23 bits and the all-fraction mantissa is 72 bits
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#00AF6F">
 
 
 
@@ -2476,22 +2498,18 @@ the rounding value from before is returned in application register a
 </pre>
 <p>
 Floating arithmetic instructions do not update <b>carry$</b>
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                          |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#fpp">fpp</a>     |   01010.111   |  floating pop & pack	| 4 word fp number @ sp -> 2 word fp number @ ea|       
-        |_______________|_______________|_______________________|_______________________________internal_sp_+= 4|
-        |       <a href="rta.html#fpx">fpx</a>     |   01011.111   | floating push & expand| internal sp -= 4, 2 words @ ea -> 4 words @ sp|
+        |       <a href="rta.html#fa" style="color:#00FF00">fa</a>      |   01100.111   |  floating add		| a:b:mantissa2:mantissa3 += 4 words @ ea	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#fa">fa</a>      |   01100.111   |  floating add		| a:b:mantissa2:mantissa3 += 4 words @ ea	|
+        |       <a href="rta.html#fan" style="color:#00FF00">fan</a>     |   01101.111   |  floating add negative| a:b:mantissa2:mantissa3 += 4 words @ ea XOR 1s|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#fan">fan</a>     |   01101.111   |  floating add negative| a:b:mantissa2:mantissa3 += 4 words @ ea XOR 1s|
+        |       <a href="rta.html#fm" style="color:#00FF00">fm</a>	|   01110.111   |  floating multiply	| a:b:mantissa2:mantissa3 *= 4 words @ ea	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#fm">fm</a>	|   01110.111   |  floating multiply	| a:b:mantissa2:mantissa3 *= 4 words @ ea	|
-        |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#fd">fd</a>	|   01111.111   |  floating divide	| a:b:mantissa2:mantissa3 /= 4 words @ ea	|
+        |       <a href="rta.html#fd" style="color:#00FF00">fd</a>	|   01111.111   |  floating divide	| a:b:mantissa2:mantissa3 /= 4 words @ ea	|
         |_______________|_______________|_______________________|_______________________________________________|
 
 
@@ -2529,7 +2547,7 @@ MASMX 7r3
 </pre>
 
 <p>
-Floating Pop and Pack instruction <href="rta.html#fpp">fpp</a> can compress numbers not requiring
+Floating Pop and Pack macro <href="#fp48data">fpp</a> can compress numbers not requiring
 mantissa precision larger than 36 bits or exponentiation outside the equivalent
 of around &plusmn;305 decimal places from 96 bits at the internal stack top to
 this 48-bit stored format
@@ -2542,7 +2560,7 @@ this 48-bit stored format
         |_|__________|__________________________________|
 
 </pre>
-Floating Push and Expand instruction <a href="rta.html#fpx">fpx</a> loads and expands compressed floating numbers to 96-bit compute format
+Floating Push and Expand macro <a href="#fp48data">fpx</a> loads and expands compressed floating numbers to 96-bit compute format
 at the internal stack top
 
 <a	name="fp192i"/>
@@ -2695,26 +2713,26 @@ Test and Set is only executed with any purpose on a storage location for inter-p
 The other seven modify instructions can be executed on a register or on storage. Execution on storage
 causes a memory read followed by memory write. Execution on a register is at register-access speed
  
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                          |
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#ts">ts</a>      |   00000.111   |  test and set		| set bit 23 of word @ ea, skip if b23 was zero	|
+        |       <a href="rta.html#ts" style="color:#00FF00">ts</a>      |   00000.111   |  test and set		| set bit 23 of word @ ea, skip if b23 was zero	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#n">n</a>	|   00001.111   |  negate		| word @ ea XOR= all 1s				|
+        |       <a href="rta.html#n" style="color:#00FF00">n</a>	|   00001.111   |  negate		| word @ ea XOR= all 1s				|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#inc">inc</a>	|   00010.111   |  increment		| word @ ea += 0000 0000 0000 0000 0000 0001	|
+        |       <a href="rta.html#inc" style="color:#00FF00">inc</a>	|   00010.111   |  increment		| word @ ea += 0000 0000 0000 0000 0000 0001	|
         |_______________|_______________|_______________________|______________________carry$_is_not_updated____|
-        |       <a href="rta.html#dec">dec</a>	|   00011.111   |  decrement		| word @ ea += 1111 1111 1111 1111 1111 1111	|
+        |       <a href="rta.html#dec" style="color:#00FF00">dec</a>	|   00011.111   |  decrement		| word @ ea += 1111 1111 1111 1111 1111 1111	|
         |_______________|_______________|_______________________|______________________carry$_is_not_updated____|
-        |       <a href="rta.html#sim">sim</a>	|   00100.111   |  switch interrupt mask| switch interrupt mask with word @ea, b23:3 = 0|
+        |       <a href="rta.html#sim" style="color:#00FF00">sim</a>	|   00100.111   |  switch interrupt mask| switch interrupt mask with word @ea, b23:3 = 0|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#popA">popA</a>    |   00101.111   |  pop and add to store	| word @ ea += word at internal stack top, sp++	|
+        |       <a href="rta.html#popA" style="color:#00FF00">popA</a>    |   00101.111   |  pop and add to store	| word @ ea += word at internal stack top, sp++	|
         |_______________|_______________|_______________________|_____________________________carry$_is_updated_|
-        |       <a href="rta.html#src">src</a>	|   00110.111   |shift right thru carry	| R.rotate word @ ea in 25-bit ring with carry	|
+        |       <a href="rta.html#src" style="color:#00FF00">src</a>	|   00110.111   |shift right thru carry	| R.rotate word @ ea in 25-bit ring with carry	|
         |_______________|_______________|_______________________|_______________________________________________|
-        |       <a href="rta.html#slc">slc</a>	|   00111.111	| shift left thru carry	| L.rotate word @ ea in 25-bit ring with carry	|
+        |       <a href="rta.html#slc" style="color:#00FF00">slc</a>	|   00111.111	| shift left thru carry	| L.rotate word @ ea in 25-bit ring with carry	|
         |_______________|_______________|_______________________|_______________________________________________|
 
 
@@ -2722,17 +2740,20 @@ causes a memory read followed by memory write. Execution on a register is at reg
 	__________________________
 
 
-		push, xi	MAXIMUM_INTERRUPT_MASK	. internal stack = register location<div style="color:FF0000">
+		<a style="color:#FF0000">push, xi	MAXIMUM_INTERRUPT_MASK	. internal stack = register location</a>
 		sim		0, sp
-		ts		lock_word		. this has to be in memory</div>
+
+
+		ts		lock_word		. this has to be in memory
 		j		$-1			. try again
 
 		.
 		.
 
-		z		lock_word		. free the resource<div style="color:FF0000">
+		<a style="color:#FF0000">z		lock_word		. free the resource</a>
 		sim		0, sp			. restore the interrupt mask
-		inc		sp			. restore the internal stack</div>
+		inc		sp			. restore the internal stack
+
 
 </pre>
 
@@ -2748,100 +2769,181 @@ a single 48-bit register
 
 <p>
 Shift instructions do not update <b>carry$</b>
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                          	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#sar">sar</a>	|   00000.110   |  shift a right	|  shift a [ea] bits right, zero fill vacated positions	|
+        |       <a href="rta.html#sar" style="color:#00FF00">sar</a>	|   00000.110   |  shift a right	|  shift a [ea] bits right, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#sbr">sbr</a>	|   00001.110   |  shift b right	|  shift b [ea] bits right, zero fill vacated positions	|
+        |       <a href="rta.html#sbr" style="color:#00FF00">sbr</a>	|   00001.110   |  shift b right	|  shift b [ea] bits right, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#dsr">dsr</a>	|   00010.110   |  double shift right	|shift a:b [ea] bits right, zero fill vacated positions	|
+        |       <a href="rta.html#dsr" style="color:#00FF00">dsr</a>	|   00010.110   |  double shift right	|shift a:b [ea] bits right, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#sal">sal</a>	|   00100.110   |  shift a left		|  shift a [ea] bits left, zero fill vacated positions	|
+        |       <a href="rta.html#sal" style="color:#00FF00">sal</a>	|   00100.110   |  shift a left		|  shift a [ea] bits left, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#sbl">sbl</a>	|   00101.110   |  shift b left		|  shift b [ea] bits left, zero fill vacated positions	|
+        |       <a href="rta.html#sbl" style="color:#00FF00">sbl</a>	|   00101.110   |  shift b left		|  shift b [ea] bits left, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#dsl">dsl</a>	|   00110.110   |  double shift left	|shift a:b [ea] bits left, zero fill vacated positions	|
+        |       <a href="rta.html#dsl" style="color:#00FF00">dsl</a>	|   00110.110   |  double shift left	|shift a:b [ea] bits left, zero fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#rar">rar</a>	|   01000.110   |  rotate a right	|rotate a [ea] bits right, LS bit values to MS positions|
+        |       <a href="rta.html#rar" style="color:#00FF00">rar</a>	|   01000.110   |  rotate a right	|rotate a [ea] bits right, LS bit values to MS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#rbr">rbr</a>	|   01001.110   |  rotate b right	|rotate b [ea] bits right, LS bit values to MS positions|
+        |       <a href="rta.html#rbr" style="color:#00FF00">rbr</a>	|   01001.110   |  rotate b right	|rotate b [ea] bits right, LS bit values to MS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#drr">drr</a>	|   01010.110   |  double rotate right	|rotate a:b [ea] bits right,LS bitvalues to MS positions|
+        |       <a href="rta.html#drr" style="color:#00FF00">drr</a>	|   01010.110   |  double rotate right	|rotate a:b [ea] bits right,LS bitvalues to MS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#ral">ral</a>	|   01100.110   |  rotate a left	| rotate a [ea] bits left, MS bit values to LS positions|
+        |       <a href="rta.html#ral" style="color:#00FF00">ral</a>	|   01100.110   |  rotate a left	| rotate a [ea] bits left, MS bit values to LS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#rbl">rbl</a>	|   01101.110   |  rotate b left	| rotate b [ea] bits left, MS bit values to LS positions|
+        |       <a href="rta.html#rbl" style="color:#00FF00">rbl</a>	|   01101.110   |  rotate b left	| rotate b [ea] bits left, MS bit values to LS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#drl">drl</a>	|   01110.110   |  double rotate left	|rotate a:b [ea] bits left, MS bitvalues to LS positions|
+        |       <a href="rta.html#drl" style="color:#00FF00">drl</a>	|   01110.110   |  double rotate left	|rotate a:b [ea] bits left, MS bitvalues to LS positions|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#saa">saa</a>	|   10000.110   |  shift a algebraic	|  shift a [ea] bits right, sign fill vacated positions	|
+        |       <a href="rta.html#saa" style="color:#00FF00">saa</a>	|   10000.110   |  shift a algebraic	|  shift a [ea] bits right, sign fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#sba">sba</a>	|   10001.110   |  shift b algebraic	|  shift b [ea] bits right, sign fill vacated positions	|
+        |       <a href="rta.html#sba" style="color:#00FF00">sba</a>	|   10001.110   |  shift b algebraic	|  shift b [ea] bits right, sign fill vacated positions	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#dsa">dsa</a>	|   10010.110   | double shift algebraic|shift a:b [ea] bits right, sign fill vacated positions |
+        |       <a href="rta.html#dsa" style="color:#00FF00">dsa</a>	|   10010.110   | double shift algebraic|shift a:b [ea] bits right, sign fill vacated positions |
         |_______________|_______________|_______________________|_______________________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div	style="color:FF0000">
 	dsa	48
 	sbl	*log
-	</div>
 
 
 </pre>
 
-<a	name="bsi"/>
-<h3>6.19: Bit Stream Instructions</h3>
+<a	name="sim_d"/>
+<h3>6.19: SIMD and Instruction Repeat</h3>
 
-Read Staging Register instruction <b>rsr</b> shifts immediate bit count <b>xi</b> bits left from staging register RDATA
-to arithmetic register a. Register RDATAC is decremented by shift count <b>xi</b>. If RDATAC reaches zero during the
-transfer RDATA is reloaded from memory pointed by register *q++ and RDATAC is restarted at 24 bits. If PSR flag
-<b>b$stream16r</b> = 1 the restart count in RDATAC is 16 and RDATA is shifted left 8 bit positions on reload. If PSR
-flag <b>b$streamZR</b> = 1 arithmetic register a is cleared before the transfer
+<a href="rta.html#rex">Repeat Execute instruction</a> iterates operations on multiple datapoints
 
 <p>
+Up to 104 internal stack registers are used as accumulators
 
-Write Staging Register instruction <b>wsr</b> shifts immediate bit count <b>xi</b> bits left from arithmetic register a
-to staging register WDATA. Register WDATAC is incremented by shift count <b>xi</b>. If WDATAC reaches 24 during the
-transfer WDATA is stored at memory pointed by register *p++ and WDATAC is restarted at zero. if PSR flag <b>b$stream16w</b>
-= 1 data is stored and WDATAC restarted when WDATAC reaches 16
+<p>
+See also <a href="rta.html#sim_d">Instruction Architecture: SIMD and instruction repeat</a>
 
-<pre	style="font-size:12pt;color:#0000FF">
+<p>
+All threads are launched with a SIMD table one object in depth at the internal stack top so that the application has a second set of accumulators
+
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                                  |
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#rsr">rsr</a>	|   10010.101   | read staging register	| shift [xi &le; 24] bits a<-RDATA [reload RDATA]		|
+        |       <a href="rta.html#rex" style="color:#00FF00">rex</a>	|   01110.100   |  repeat execute	|  execute instruction @ EA RDATAC times restart RDATAC	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#wsr">wsr</a>	|   00011.101   |write staging register	| shift [xi &le; 24] bits WDATA<-a [store WDATA]		|
+
+
+
+	Assembly Language Example
+	_________________________
+
+
+	SIMD_CONTROL	(-1, 4, REPEATS-1, SIZEOF_CONTAINING_STRUCTURE:q)	. walk 4-register floating accumulators
+										. data points 2 from a structure array
+	lx	table,,xi
+
+	rex	(fa	OFFSET_IN_STRUCTRE, x)
+
+
+	Instructions in the Scope of Repeat Execute
+	___________________________________________
+
+	<a href="rta.html#fa" style="color:#00FF00">Floating Add</a>	<a href="rta.html#fan" style="color:#00FF00">Floating Add Negative</a>	<a href="rta.html#fm" style="color:#00FF00">Floating Multiply</a>	<a href="rta.html#fd" style="color:#00FF00">Floating Divide</a>
+
+
+	<a href="rta.html#da" style="color:#00FF00">Double Add</a>	<a href="rta.html#dan" style="color:#00FF00">Double Add Negative</a>
+
+	<a href="rta.html#aa" style="color:#00FF00">Add to a</a>	<a href="rta.html#ab" style="color:#00FF00">Add to b</a>	<a href="rta.html#ana" style="color:#00FF00">Add Negative to a</a>	<a href="rta.html#anb" style="color:#00FF00">Add Negative to b</a>
+
+
+	<a href="rta.html#or" style="color:#00FF00">OR  a</a>	<a href="rta.html#orB" style="color:#00FF00">OR  b</a>	<a href="rta.html#and" style="color:#00FF00">AND a</a>	<a href="rta.html#andB" style="color:#00FF00">AND b</a>	<a href="rta.html#xor" style="color:#00FF00">XOR a</a>	<a href="rta.html#xorB" style="color:#00FF00">XOR b</a>
+
+
+	<a href="rta.html#sar" style="color:#00FF00">Shift a Right</a>	<a href="rta.html#sbr" style="color:#00FF00">Shift b Right</a>	<a href="rta.html#dsr" style="color:#00FF00">Double Shift Right</a>	<a href="rta.html#sal" style="color:#00FF00">Shift a Left</a>	<a href="rta.html#sbl" style="color:#00FF00">Shift B Left</a>	<a href="rta.html#dsl" style="color:#00FF00">Double Shift Left</a>
+	<a href="rta.html#rar" style="color:#00FF00">Rotate a Right</a>	<a href="rta.html#rbr" style="color:#00FF00">Rotate b Right</a>	<a href="rta.html#drr" style="color:#00FF00">Double Rotate Right</a>	<a href="rta.html#ral" style="color:#00FF00">Rotate a Left</a>	<a href="rta.html#rbl" style="color:#00FF00">Rotate b Left</a>	<a href="rta.html#drl" style="color:#00FF00">Double Rotate Left</a>
+
+	<a href="rta.html#saa" style="color:#00FF00">Shift a Algebraic</a>	<a href="rta.html#sba" style="color:#00FF00">Shift b Algebraic</a>	<a href="rta.html#dsa" style="color:#00FF00">Double Shift Algebraic</a>
+
+
+	<a href="rta.html#la" style="color:#00FF00">Load a</a>		<a href="rta.html#lb" style="color:#00FF00">Load b</a>		<a href="rta.html#dl" style="color:#00FF00">Double Load</a>	<a href="rta.html#ql" style="color:#00FF00">Quadruple Load</a>
+	<a href="rta.html#sa" style="color:#00FF00">Store a</a>		<a href="rta.html#sb" style="color:#00FF00">Store b</a>		<a href="rta.html#ds" style="color:#00FF00">Double Store</a>	<a href="rta.html#qs" style="color:#00FF00">Quadruple Store</a>
+
+	
+	<a href="rta.html#tz" style="color:#00FF00">Test Zero</a>	<a href="rta.html#tp" style="color:#00FF00">Test Positive</a>	<a href="rta.html#mta" style="color:#00FF00">Masked Test Equal a</a>	<a href="rta.html#dte" style="color:#00FF00">Double Test Equal</a>
+
+
+</pre>
+
+
+<a	name="bsi"/>
+<h3>6.20: Bit Stream Instructions</h3>
+
+
+<a	name="rsr"/>
+<h4>6.20.1: Read Staging Register</h4>
+rsr instruction shifts [sign extended ea] bits left from staging register RDATA to arithmetic register a
+
+<p>
+Register RDATAC is decremented by shift count ea
+
+<p>
+If RDATAC reaches zero with shift count outstanding RDATA is reloaded from memory pointed by register [q++] -> and RDATAC is restarted at 24 bits
+
+<p>
+If PSR flag <b>b$stream16r</b> = 1 the restart count in RDATAC is 16 and RDATA is shifted left 8 bit positions on reload
+
+<p>
+If PSR flag <b>b$streamZR</b> = 1 arithmetic register a is cleared before the transfer
+
+<p>
+
+
+<a	name="wsr"/>
+<h4>6.20.2: Write Staging Register</h4>
+
+wsr instruction shifts [sign extended ea] bits left from arithmetic register a to staging register WDATA
+
+<p>
+Register WDATAC is incremented by shift count <b>xi</b>
+
+<p>
+If WDATAC reaches 24 during the transfer WDATA is stored at memory pointed by register [p++] ->  and WDATAC is restarted at zero
+
+<p>
+If PSR flag <b>b$stream16w</b> = 1 data is stored and WDATAC restarted when WDATAC reaches 16
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+        _________________________________________________________________________________________________________________
+        |       mnemonic|   fffff.jjj   |                       |               action                                  |
+        |_______________|_______________|_______________________|_______________________________________________________|
+        |       <a href="rta.html#rsr" style="color:#00FF00">rsr</a>	|   10010.101   | read staging register	| shift [xi &le; 24] bits a<-RDATA [reload RDATA]		|
+        |_______________|_______________|_______________________|_______________________________________________________|
+        |       <a href="rta.html#wsr" style="color:#00FF00">wsr</a>	|   00011.101   |write staging register	| shift [xi &le; 24] bits WDATA<-a [store WDATA]		|
         |_______________|_______________|_______________________|_______________________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div    style="color:FF0000">
 	rsr	$byte			. read a field from RDATA
-	</div>
-
-	<div    style="color:0000FF">
+	<div	style="color:FF0000">
 	sal	$word-$byte		. shift data to high-order positions
-	</div><div    style="color:FF0000">
+	</div>
 	wsr	$byte
 	wsr	$word-$byte		. write latent bits from WDATA
-	</div>
 
 
 </pre>
 
 <a	name="ji"/>
-<h3>6.20: Jump Instructions</h3>
+<h3>6.21: Jump Instructions, Local Call / Local Return</h3>
 
 Jump instructions transfer execution to effective address within current address window B0
 
@@ -2851,53 +2953,52 @@ The effective address may be indexed or indirect
 <p>
 Absolute program counter is updated with B0 * 4096 + effective address
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |  action			symbol B0* = B0 * 4096	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#j">j</a>	|   10110.110   |  jump			|  continue execution @ B0* + ea			|
+        |       <a href="rta.html#j" style="color:#00FF00">j</a>	|   10110.110   |  jump			|  continue execution @ B0* + ea			|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jdr">jdr</a>     |   00011.110   |  jump decrement r	|  add -1 to r, jump if r &ne; -1, carry is not updated	|
+        |       <a href="rta.html#jdr" style="color:#00FF00">jdr</a>     |   00011.110   |  jump decrement r	|  add -1 to r, jump if r &ne; -1, carry is not updated	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jnc">jnc</a>	|   01011.110   |  jump no carry	|  jump if carry$ of PSR = zero				|
+        |       <a href="rta.html#jnc" style="color:#00FF00">jnc</a>	|   01011.110   |  jump no carry	|  jump if carry$ of PSR = zero				|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jc">jc</a>	|   01111.110   |  jump carry		|  jump if carry$ of PSR = one				|
+        |       <a href="rta.html#jc" style="color:#00FF00">jc</a>	|   01111.110   |  jump carry		|  jump if carry$ of PSR = one				|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jza">jza</a>	|   11000.110   |  jump zero a		|  jump if arithmetic register a = zero			|
+        |       <a href="rta.html#jza" style="color:#00FF00">jza</a>	|   11000.110   |  jump zero a		|  jump if arithmetic register a = zero			|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jzb">jzb</a>     |   11001.110   |  jump zero b		|  jump if arithmetic register b = zero			|
+        |       <a href="rta.html#jzb" style="color:#00FF00">jzb</a>     |   11001.110   |  jump zero b		|  jump if arithmetic register b = zero			|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jnza">jnza</a>	|   11010.110   |  jump nonzero a	|  jump if arithmetic register a = nonzero		|
+        |       <a href="rta.html#jnza" style="color:#00FF00">jnza</a>	|   11010.110   |  jump nonzero a	|  jump if arithmetic register a = nonzero		|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jnzb">jnzb</a>	|   11011.110   |  jump nonzero b	|  jump if arithmetic register b = nonzero		|
+        |       <a href="rta.html#jnzb" style="color:#00FF00">jnzb</a>	|   11011.110   |  jump nonzero b	|  jump if arithmetic register b = nonzero		|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jpa">jpa</a>	|   10100.110   |  jump positive a	|  jump if arithmetic register a high-order bit = zero	|
+        |       <a href="rta.html#jpa" style="color:#00FF00">jpa</a>	|   10100.110   |  jump positive a	|  jump if arithmetic register a high-order bit = zero	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jpb">jpb</a>	|   10101.110   |  jump positive b	|  jump if arithmetic register b high-order bit = zero	|
+        |       <a href="rta.html#jpb" style="color:#00FF00">jpb</a>	|   10101.110   |  jump positive b	|  jump if arithmetic register b high-order bit = zero	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jna">jna</a>	|   11100.110   |  jump negative a	|  jump if arithmetic register a high-order bit = one	|
+        |       <a href="rta.html#jna" style="color:#00FF00">jna</a>	|   11100.110   |  jump negative a	|  jump if arithmetic register a high-order bit = one	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jnb">jnb</a>	|   11101.110   |  jump negative b	|  jump if arithmetic register b high-order bit = zero	|
+        |       <a href="rta.html#jnb" style="color:#00FF00">jnb</a>	|   11101.110   |  jump negative b	|  jump if arithmetic register b high-order bit = zero	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jao">jao</a>	|   10011.110   |  jump a odd		|  jump if arithmetic register a low-order bit = one	|
+        |       <a href="rta.html#jao" style="color:#00FF00">jao</a>	|   10011.110   |  jump a odd		|  jump if arithmetic register a low-order bit = one	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jpo">jpo</a>	|   10111.110   |  jump parity odd	|  jump if a AND mask register k has odd parity		|
+        |       <a href="rta.html#jpo" style="color:#00FF00">jpo</a>	|   10111.110   |  jump parity odd	|  jump if a AND mask register k has odd parity		|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jxge">jxge</a>	|   11110.110   |jump x greater or equal|  jump if index register x &ge; repeat counter r		|
+        |       <a href="rta.html#jxge" style="color:#00FF00">jxge</a>	|   11110.110   |jump x greater or equal|  jump if index register x &ge; limit pointer r		|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jyge">jyge</a>	|   11111.110   |jump y greater or equal|  jump if index register y &ge; repeat counter r		|
+        |       <a href="rta.html#jyge" style="color:#00FF00">jyge</a>	|   11111.110   |jump y greater or equal|  jump if index register y &ge; limit pointer r		|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#jdz">jdz</a>	|   01111.100   |  jump double zero	|  jump if 48-bit integer in registers a and b = zero	|
+        |       <a href="rta.html#jdz" style="color:#00FF00">jdz</a>	|   01111.100   |  jump double zero	|  jump if 48-bit integer in registers a and b = zero	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#lcal">lcal</a>    |   00111.110   |  local call           |  push absolute PC - B0* on internal stack, jump to ea	|
+        |       <a href="rta.html#lcal" style="color:#00FF00">lcal</a>    |   00111.110   |  local call           |  push absolute PC - B0* on internal stack, jump to ea	|
         |_______________|_______________|_______________________|_______________________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div    style="color:FF0000">
 	j	again?
 again!
 
@@ -2905,78 +3006,87 @@ again!
 
 again?	jdr	again!
 
-	</div><div    style="color:0000FF">
+	<div    style="color:FF0000">
 	lr	limit
-	</div><div    style="color:FF0000">
+	</div>
 	jxge	enough
 	lcal	more
 	jc	enough
 	jnb	enough
-	</div>
+
+
+	_________________________________________________________________________________________________________________
+	|       mnemonic|   fffff.jjj   |                       |  action						|
+	|_______________|_______________|_______________________|_______________________________________________________|
+	|       <a href="rta.html#lret" style="color:#00FF00">lret</a>	|   00110.101   |  local return		|  pop offset += ea*xi + B0 * 4k -> PC			|
+	|_______________|_______________|_______________________|_______________________________________________________|
+
+
+
+        Assembly Language Examples
+        __________________________
+
+<a style="color:#FF0000">  :                            430 $(3:03000)
+  :                            431 left         $res    1
+  :                            432 right        $res    1
+  :                            433
+  :                            434 $(0:64)</a>
+  :                            435 examine
+00:000040 783000              +436      tp      left
+00:000041 350000              +437      lret    0       . return to instruction after lcal
+00:000042 703001              +438      tz      right
+00:000043 350000              +439      lret    0       . return to instruction after lcal
+00:000044 350001              +440      lret    1       . return and skip one instruction
 
 </pre>
 
 <a	name="crii"/>
-<h3>6.21: Call / Return, Iframe Jump, Internal Interrupt / Return</h3>
+<h3>6.22: Iframe Call / Return, Iframe Go, Internal Interrupt / Interrupt Return</h3>
 
-<pre	style="font-size:12pt;color:#0000FF">
-
-        _________________________________________________________________________________________________________________________
-        |       mnemonic|   fffff.jjj   |                       |  action				symbol B0* = B0 * 4096	|
-        |_______________|_______________|_______________________|_______________________________________________________________|
-	_________________________________________________________________________________________________________________________
-        |       <a href="rta.html#lret">lret</a>	|   00110.101   |  local return		|  word @ internal stack top + xi + B0 * 4k -> PC, sp++		|
-        |_______________|_______________|_______________________|_______________________________________________________________|
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 
+_________________________________________________________________________________________________________________________
+|       mnemonic|   fffff.jjj   |                       |  action							|
+|_______________|_______________|_______________________|_______________________________________________________________|
+|       <a href="rta.html#go" style="color:#00FF00">go</a>	|   11110.111   |  go to another iframe	|  target iframe page 0  -> B0: * 4k -> PC += vector		|
+|_______________|_______________|_______________________|_______________________________________________________________|
 
-	_________________________________________________________________________________________________________________________
-        |       <a href="rta.html#go">go</a>	|   11110.111   |  go to another iframe	|  target iframe page 0  -> B0: * 4k -> PC += vector		|
-        |_______________|_______________|_______________________|_______________________________________________________________|
 
 
-        _________________________________________________________
-        |                                                       |
-        |       Jump to Iframe                                  |
-        |                                                       |
-        |       Program Counter minus B0 * 4096                 |
-        |       is pushed to internal stack                     |
-        |                                                       |
-        |       B0 is pushed to Internal Stack                  |
-        |                                                       |       indirect operand pointing to gate constant or variable
-        |       operand is storage word or register at EA       |
-        |                                                       |        23                                                    0
-        |                                                       |       _________________________________________________________
-        |       if operand bit 23 = 1 --------------------------------> | 1 |               address of gate                     |____
-        |       bits 22:0 point to a constant or variable       |       |___|___________________________________________________|    |
-        |       containing a 48-bit gate value                  |            22                                                0     |
-        |                                                       |                                                                    |
-        |       if operand bit 23 = 0                           |                                                                    |
-        |                                                       |                                                                    |
-        |               bit 22 is reserved                      |                                                                    |
-        |                                                       |                                                                    |
-        |               bits 21:6 are a 16-bit index of the 1st |                                                                    |
-        |               4K page of the target iframe            |       gate to target iframe:offset                                 |
-        |                                                       |                                                                    |
-        |               bits 5:0 are an entry point vector      |        47          42                                       24     |
-        |               to locations 0..63 of the target iframe |       _________________________________________________________    |
-        |                                                       |       | page high idx|        target instruction offset       |    |
-        |_______________________________________________________|       |______________|________________________________________|<---+
-        | 00 |       pointer to 4K-aligned page   |       vector|       | F 0 |                 iframe start page index         |
-        |____|21__________________________________|5___________0|       |_____|_________________________________________________|
-        |                                                       |              21                                              0
-        |                                                       |
-	|	        B0 = operand bits 21..6 >> 6            |		B0 = gate bits 21..0 Start Page Index
-        |               Page High Index = 0                     |		Page High Index = bits 47..42 of gate
-        |               Iframe Name = B0                        |		Iframe Name = B0 OR (Page High Index nonzero) 1 << 23
-        |               B64 = B0                                |		B64 = B0 + Page High Index
-        |               PC = B0 * 4096 + operand 5..0 offset    |		PC = B0 * 4096 + gate bits 41..24 offset
-        |                                                       |
-        |                                                       |
-        |_______________________________________________________|________________________________________________________________
-        |                                                                                                                       |
-        |       operand is the  register or storage word at EA                                                                  |
-        |_______________________________________________________________________________________________________________________|
+_________________________________________________________
+|							|	  indirect operand pointing to gate constant or variable
+|       operand is storage word or register at EA       |
+|                                                       |        23                                                    0
+|                                                       |       _________________________________________________________
+|       if operand bit 23 = 1 --------------------------------> | 1 |               address of gate                     |____
+|       bits 22:0 point to a constant or variable       |       |___|___________________________________________________|    |
+|       containing a 48-bit gate value                  |            22                                                0     |
+|                                                       |                                                                    |
+|       if operand bit 23 = 0                           |                                                                    |
+|                                                       |                                                                    |
+|               bit 22 is reserved                      |                                                                    |
+|                                                       |                                                                    |
+|               bits 21:6 are a 16-bit index of the 1st |                                                                    |
+|               4K page of the target iframe            |       gate to target iframe:offset                                 |
+|                                                       |                                                                    |
+|               bits 5:0 are an entry point vector      |        47          42                                       24     |
+|               to locations 0..63 of the target iframe |       _________________________________________________________    |
+|                                                       |       | page high idx|        target instruction offset       |    |
+|_______________________________________________________|       |______________|________________________________________|<---+
+| 00 |       pointer to 4K-aligned page   |       vector|       | F 0 |                 iframe start page index         |
+|____|21__________________________________|5___________0|       |_____|_________________________________________________|
+|                                                       |              21                                              0
+|                                                       |
+|		B0 = operand bits 21..6 >> 6            |		B0 = gate bits 21..0 Start Page Index
+|               Page High Index = 0                     |		Page High Index = bits 47..42 of gate
+|               Iframe Name = B0                        |		Iframe Name = B0 OR (Page High Index nonzero) 1 << 23
+|               B64 = B0                                |		B64 = B0 + Page High Index
+|               PC = B0 * 4096 + operand 5..0 offset    |		PC = B0 * 4096 + gate bits 41..24 offset
+|                                                       |
+|                                                       |
+|_______________________________________________________|
+
 
 
 	assembler examples	go		target_identifier[, {x|y|a|b|fp|sp}]
@@ -2985,7 +3095,7 @@ again?	jdr	again!
 
 				go		(LOCATION/4096*64++VECTOR_0_63)
 
-				go		LITERALS_TAG(0800000++LITERALS_TAG(page_high_index*/18++offset, start_page_index:d)s)
+				go	[LITERALS_TAG](0800000++LITERALS_TAG(page_high_index*/18++offset, start_page_index:d)s)
 
 						for large and namically loadable iframes see iframe and gate
 
@@ -2993,65 +3103,65 @@ again?	jdr	again!
 
 
 
-	________________________________________________________________________________________________________________________
-        |       <a href="rta.html#call">call</a>	|   11111.111   |  call another iframe	|  push offset:Iframe Name. target iframe -> B0 * 4K->PC+=vector|
-        |_______________|_______________|_______________________|_______________________________________________________________|
+________________________________________________________________________________________________________________________
+|       <a href="rta.html#call" style="color:#00FF00">call</a>	|   11111.111   |  call another iframe	|  push offset:Iframe Name. target iframe -> B0 * 4K->PC+=vector|
+|_______________|_______________|_______________________|_______________________________________________________________|
 
 
         <a      name="call"/>
-        Call                    call                                                            return address -> internal stack
+        Call                    call                                                    return address -> internal stack
         ____                    ____
-                                                                         23                                                    0
-        _________________________________________________________       _________________________________________________________
-        |                                                       | <a style="color:#00FF00">sp + 1</a>|                       saved offset                    |
-        |       Call Iframe                                     |	|_______________________________________________________|
-        |                                                       | <a style="color:#00FF00">sp --></a>| F 0 |                 saved Start Page Index          |
-        |       Program Counter minus B0 * 4096                 |	|_____|_________________________________________________|
-        |       is pushed to internal stack                     |             |21                                              0
-        |                                                       |
-        |       Iframe Name pushed to Internal Stack            |         0 0 | <- B64 = B0 : Page High Index on return = 0
-        |       = B0 -> bits 21:0 Start Page Index              |         1 0 | <- B64 > B0 : Page High Index on return
-        |       + iframe size flags -> bits 23:22               |			      = gate bits 47:42 @ iframe + 64
-        |                                                       |
-        |                                                       |
-        |_______________________________________________________|_______________________________________________________________
-        |                                                       |
-        |                                                       |
-        |                                                       |       indirect target operand pointing to gate constant or variable
-        |       operand is storage word or register at EA       |
-        |                                                       |        23                                                    0
-        |                                                       |       _________________________________________________________
-        |       if operand bit 23 = 1 --------------------------------> | 1 |               address of gate                     |____
-        |       bits 22:0 point to a constant or variable       |       |___|___________________________________________________|    |
-        |       containing a 48-bit gate value                  |            22                                                0     |
-        |                                                       |                                                                    |
-        |       if operand bit 23 = 0                           |                                                                    |
-        |                                                       |                                                                    |
-        |               bit 22 is reserved                      |                                                                    |
-        |                                                       |                                                                    |
-        |               bits 21:6 are a 16-bit index of the 1st |                                                                    |
-        |               4K page of the target iframe            |       gate to target iframe:offset                                 |
-        |                                                       |                                                                    |
-        |               bits 5:0 are an entry point vector      |        47          42                                       24     |
-        |               to locations 0..63 of the target iframe |       _________________________________________________________    |
-        |                                                       |       | page high idx|        target instruction offset       |    |
-        |_______________________________________________________|       |______________|________________________________________|<---+
-        | 00 |       pointer to 4K-aligned page   |       vector|       | F 0 |                 iframe Start Page Index         |
-        |____|21__________________________________|5___________0|       |_____|_________________________________________________|
-        |                                                       |              21                                              0
-        |                                                       |
-        |               B0 = operand bits 21..6 >> 6            |		B0 = gate bits 21..0 Start Page Index
-        |               Page High Index = 0                     |		Page High Index = bits 47..42 of gate
-        |               Iframe Name = B0                        |		Iframe Name = B0 OR (Page High Index nonzero) 1 << 23
-        |               B64 = B0                                |		B64 = B0 + Page High Index
-        |               PC = B0 * 4096 + operand 5..0 offset    |		PC = B0 * 4096 + gate bits 41..24 offset
-        |                                                       |
-        |                                                       |
-        |_______________________________________________________|________________________________________________________________
-        |                                                                                                                       |
-        |       on internal stack overflow / underflow [sp < 26 | sp > 128] before operation guard interrupt 95 is raised       |
-        |       operand is the  register or storage word at EA                                                                  |
-        |_______________________________________________________________________________________________________________________|
+                                                                 23                                                    0
+_________________________________________________________       _________________________________________________________
+|                                                       | <a style="color:#00FF00">sp + 1</a>|                       saved offset                    |
+|       Call Iframe                                     |	|_______________________________________________________|
+|                                                       | <a style="color:#00FF00">sp --></a>| F 0 |                 saved Start Page Index          |
+|       Program Counter minus B0 * 4096                 |	|_____|_________________________________________________|
+|       is pushed to internal stack                     |             |21                                              0
+|                                                       |
+|       Iframe Name pushed to Internal Stack            |         0 0 | <- B64 = B0 : Page High Index on return = 0
+|       = B0 -> bits 21:0 Start Page Index              |         1 0 | <- B64 > B0 : Page High Index on return
+|       + iframe size flags -> bits 23:22               |			      = gate bits 47:42 @ iframe + 64
+|                                                       |
+|                                                       |
+|_______________________________________________________|_______________________________________________________________
+|                                                       |
+|                                                       |
+|                                                       |       indirect target operand pointing to gate constant or variable
+|       operand is storage word or register at EA       |
+|                                                       |        23                                                    0
+|                                                       |       _________________________________________________________
+|       if operand bit 23 = 1 --------------------------------> | 1 |               address of gate                     |____
+|       bits 22:0 point to a constant or variable       |       |___|___________________________________________________|    |
+|       containing a 48-bit gate value                  |            22                                                0     |
+|                                                       |                                                                    |
+|       if operand bit 23 = 0                           |                                                                    |
+|                                                       |                                                                    |
+|               bit 22 is reserved                      |                                                                    |
+|                                                       |                                                                    |
+|               bits 21:6 are a 16-bit index of the 1st |                                                                    |
+|               4K page of the target iframe            |       gate to target iframe:offset                                 |
+|                                                       |                                                                    |
+|               bits 5:0 are an entry point vector      |        47          42                                       24     |
+|               to locations 0..63 of the target iframe |       _________________________________________________________    |
+|                                                       |       | page high idx|        target instruction offset       |    |
+|_______________________________________________________|       |______________|________________________________________|<---+
+| 00 |       pointer to 4K-aligned page   |       vector|       | F 0 |                 iframe Start Page Index         |
+|____|21__________________________________|5___________0|       |_____|_________________________________________________|
+|                                                       |              21                                              0
+|                                                       |
+|               B0 = operand bits 21..6 >> 6            |		B0 = gate bits 21..0 Start Page Index
+|               Page High Index = 0                     |		Page High Index = bits 47..42 of gate
+|               Iframe Name = B0                        |		Iframe Name = B0 OR (Page High Index nonzero) 1 << 23
+|               B64 = B0                                |		B64 = B0 + Page High Index
+|               PC = B0 * 4096 + operand 5..0 offset    |		PC = B0 * 4096 + gate bits 41..24 offset
+|                                                       |
+|                                                       |
+|_______________________________________________________|________________________________________________________________
+|                                                                                                                       |
+|       on internal stack overflow / underflow [sp < 26 | sp > 128] before operation guard interrupt 95 is raised       |
+|       operand is the  register or storage word at EA                                                                  |
+|_______________________________________________________________________________________________________________________|
 
 
 	assembler examples	call		target_identifier[, {x|y|a|b|fp|sp}]
@@ -3060,7 +3170,7 @@ again?	jdr	again!
 
 				call		(LOCATION/4096*64++VECTOR_0_63)
 
-				call		LITERALS_TAG(0800000++LITERALS_TAG(page_high_index*/18++offset, start_page_index:d)s)
+				call	[LITERALS_TAG](0800000++LITERALS_TAG(page_high_index*/18++offset, start_page_index:d)s)
 
 						for large and namically loadable iframes see iframe and gate
 
@@ -3069,100 +3179,100 @@ again?	jdr	again!
 
 
 
-	_________________________________________________________________________________________________________________________
-        |       <a href="rta.html#fret">fret</a>	|   00111.101   |  far bank return	|  pop B0: * 4K -> PC += pop offset from internal stack += xi	|
-        |_______________|_______________|_______________________|_______________________________________________________________|
+_________________________________________________________________________________________________________________________
+|       <a href="rta.html#fret" style="color:#00FF00">fret</a>	|   00111.101   |  far iframe return	|  pop B0: * 4K -> PC += pop offset += ea*xi			|
+|_______________|_______________|_______________________|_______________________________________________________________|
 
 
-                                                                                                            internal stack frame
-                                                                         23                                                    0
-        _________________________________________________________       _________________________________________________________
-        |                                                       | <a style="color:#00FF00">sp + 1</a>|                       offset                          |
-        |       Iframe Name is popped from the internal stack   |	|_______________________________________________________|
-        |       and bits 21:0 Start Page Index written to B0    | <a style="color:#00FF00">sp --></a>| F 0 |                 iframe Start Page Index         |
-        |                                                       |	|_____|_________________________________________________|
-        |       return address offset in retrieved instruction  |       |   22|                                                0
-        |       frame is popped from the internal stack         |       |     |
-        |                                                       |       |
-        |       sign extended immediate operand of the return   |       |
-        |       instruction is added to iframe relative offset  |       |
-        |                                                       |       |
-        |       B0 * 4096 is added to iframe relative offset    |       |
-        |                                                       |       | 0 0 | Page High Index = 0 : iframe pages 1
-        |       the resulting absolute address is transferred   |       |     | B64 = B0
-        |       to the program counter                          |       |
-        |                                                       |       | 1 0 | gate descriptor @ target iframe + 64
-        |       if sp = 128 before fret                         |       |     | Page High Index <- gate descriptor bits 47:42
-        |       thread exit interrupt 70 is raised              |       |     | B64 = B0 + Page High Index - 1
-        |                                                       |
-        |       on internal stack overflow / underflow          |
-        |       [sp < 24 | sp > 126 ^ 128] before operation     |
-        |       guard interrupt 95 is raised                    |
-        |_______________________________________________________|
-        |       I/O Port 64 is updated to new highest page for  |
-        |       instruction execution = B0 + Page High Index - 1|
-        |                                                       |
-        |       Page High Index is derived from flag values     |
-        |       { 00 | 10 } in bits  23:22 of new Iframe Name   |
-        |                                                       |
-        |       flags value 00:                                 |
-        |       gives Page High Index 0: iframe size 1 page     |       sample gate @ target iframe + 64
-        |                                                       |
-        |       flags value 10:                                 |        47          42                                       24
-        |       Page High Index is read from bits 47:42 of the  |       _________________________________________________________
-        |       sample gate at location 64 of target the iframe |       | Page High Idx|        offset 0                        |
-        |_______________________________________________________|       |______________|________________________________________|
-        |       DISPLACEMENT is 16-bit sign extended immediate  |       | x 0 |                 iframe Start Page Index         |
-        |_______________________________________________________|       |_____|_________________________________________________|
-                                                                               21                                              0
+                                                                                                    internal stack frame
+                                                                 23                                                    0
+_________________________________________________________       _________________________________________________________
+|                                                       | <a style="color:#00FF00">sp + 1</a>|                       offset                          |
+|       Iframe Name is popped from the internal stack   |	|_______________________________________________________|
+|       and bits 21:0 Start Page Index written to B0    | <a style="color:#00FF00">sp --></a>| F 0 |                 iframe Start Page Index         |
+|                                                       |	|_____|_________________________________________________|
+|       return address offset in retrieved instruction  |       |   22|                                                0
+|       frame is popped from the internal stack         |       |     |
+|                                                       |       |
+|       sign extended immediate operand of the return   |       |
+|       instruction is added to iframe relative offset  |       |
+|                                                       |       |
+|       B0 * 4096 is added to iframe relative offset    |       |
+|                                                       |       | 0 0 | Page High Index = 0 : iframe pages 1
+|       the resulting absolute address is transferred   |       |     | B64 = B0
+|       to the program counter                          |       |
+|                                                       |       | 1 0 | gate descriptor @ target iframe + 64
+|       if sp = 128 before fret                         |       |     | Page High Index <- gate descriptor bits 47:42
+|       thread exit interrupt 70 is raised              |       |     | B64 = B0 + Page High Index - 1
+|                                                       |
+|       on internal stack overflow / underflow          |
+|       [sp < 24 | sp > 126 ^ 128] before operation     |
+|       guard interrupt 95 is raised                    |
+|_______________________________________________________|
+|       I/O Port 64 is updated to new highest page for  |
+|       instruction execution = B0 + Page High Index - 1|
+|                                                       |
+|       Page High Index is derived from flag values     |
+|       { 00 | 10 } in bits  23:22 of new Iframe Name   |
+|                                                       |
+|       flags value 00:                                 |
+|       gives Page High Index 0: iframe size 1 page     |       sample gate @ target iframe + 64
+|                                                       |
+|       flags value 10:                                 |        47          42                                       24
+|       Page High Index is read from bits 47:42 of the  |       _________________________________________________________
+|       sample gate at location 64 of target the iframe |       | Page High Idx|        offset 0                        |
+|_______________________________________________________|       |______________|________________________________________|
+|       DISPLACEMENT is 16-bit sign extended immediate  |       | x 0 |                 iframe Start Page Index         |
+|_______________________________________________________|       |_____|_________________________________________________|
+                                                                       21                                              0
 
 
 
-								_________________________________________________________________
-								| ii and ir operate the interrupt stack. sp_x = register 143	|
-	________________________________________________________|_______________________________________________________________|
-        |       <a href="rta.html#ii">ii</a>	|   11110.101   |  internal interrupt	| push 0.PSR.B0.PC-B0*, xi 23:6 ->B0* -> PC += xi 5:0, PSR b23=1|
-        |_______________|_______________|_______________________|_______________________________________________________________|
+							_________________________________________________________________
+							| ii and ir operate the interrupt stack. sp_x = register 143	|
+________________________________________________________|_______________________________________________________________|
+|       <a href="rta.html#ii" style="color:#00FF00">ii</a>	|   11110.101   |  internal interrupt	| push 0.PSR.B0.PC-B0*, xi 23:6 ->B0* -> PC += xi 5:0, PSR b23=1|
+|_______________|_______________|_______________________|_______________________________________________________________|
 
         <a      name="ii"/>
-        Internal Interrupt      ii                                                              interrupt frame -> internal stack
+        Internal Interrupt      ii                                                      interrupt frame -> internal stack
         __________________      __
 
 
-                                                                         23                                                    0
-        _________________________________________________________       _________________________________________________________
-        |                                                       | <a style="color:#00FF00">sp + 3</a>|                       saved offset                    |
-        |       B0 * 4096 is subtracted from the value of       |	|_______________________________________________________|
-        |       the absolute program counter                    | <a style="color:#00FF00">sp + 2</a>| F 0 |                 saved iframe Start Page Index   |
-        |                                                       |	|_____|_________________________________________________|
-        |       the resulting instruction frame relative value  | <a style="color:#00FF00">sp + 1</a>|   22                  saved PSR                       |
-        |       is pushed on the interrupt internal stack       |	|                       ________________________________|
-        |                                                       | <a style="color:#00FF00">sp --></a>|                       latent parameter                |
-        |       Iframe Name = Start Page Index + size flags     |	|                       ________________________________|
-        |       is pushed on the interrupt internal stack       |       |
-        |                                                       |       |
-        |       PSR is pushed on the interrupt internal stack   |       | 0 0 | B64 = B0 Page High Index on i-return = 0
-        |                                                       |       | 1 0 | B64 > B0 Page High Index on i-return
-        |       latent parameter 0                              |		      = gate bits 47:42 @ iframe + 64
-        |       is pushed on the interrupt internal stack       |
-        |-------------------------------------------------------|
-        |                                                       |
-        |       PSR Flag 23 = 1                                 |
-        |                                                       |
-        |       the high-order 18 bits of the immediate operand |
-        |       designate a VECTOR_BANK                         |
-        |                                                       |
-        |       the low-order 6 bits if the immediate operand   |
-        |       designate a VECTOR_OFFSET                       |
-        |                                                       |
-        |       B0 = VECTOR_BANK                                |
-        |                                                       |
-        |       program counter = VECTOR_BANK*4096+VECTOR_OFFSET|
-        |_______________________________________________________|
-        |       VECTOR_BANK                       |VECTOR_OFFSET|
-        |23______________________________________6|5___________0|
-        |       VECTOR is 16-bit sign extended immediate        |
-        |_______________________________________________________|
+                                                                 23                                                    0
+_________________________________________________________       _________________________________________________________
+|                                                       | <a style="color:#00FF00">sp + 3</a>|                       saved offset                    |
+|       B0 * 4096 is subtracted from the value of       |	|_______________________________________________________|
+|       the absolute program counter                    | <a style="color:#00FF00">sp + 2</a>| F 0 |                 saved iframe Start Page Index   |
+|                                                       |	|_____|_________________________________________________|
+|       the resulting instruction frame relative value  | <a style="color:#00FF00">sp + 1</a>|   22                  saved PSR                       |
+|       is pushed on the interrupt internal stack       |	|                       ________________________________|
+|                                                       | <a style="color:#00FF00">sp --></a>|                       latent parameter                |
+|       Iframe Name = Start Page Index + size flags     |	|                       ________________________________|
+|       is pushed on the interrupt internal stack       |       |
+|                                                       |       |
+|       PSR is pushed on the interrupt internal stack   |       | 0 0 | B64 = B0 Page High Index on i-return = 0
+|                                                       |       | 1 0 | B64 > B0 Page High Index on i-return
+|       latent parameter 0                              |		      = gate bits 47:42 @ iframe + 64
+|       is pushed on the interrupt internal stack       |
+|-------------------------------------------------------|
+|                                                       |
+|       PSR Flag 23 = 1                                 |
+|                                                       |
+|       the high-order 18 bits of the immediate operand |
+|       designate a VECTOR_BANK                         |
+|                                                       |
+|       the low-order 6 bits if the immediate operand   |
+|       designate a VECTOR_OFFSET                       |
+|                                                       |
+|       B0 = VECTOR_BANK                                |
+|                                                       |
+|       program counter = VECTOR_BANK*4096+VECTOR_OFFSET|
+|_______________________________________________________|
+|       VECTOR_BANK                       |VECTOR_OFFSET|
+|23______________________________________6|5___________0|
+|       VECTOR is 16-bit sign extended immediate        |
+|_______________________________________________________|
 
 
         assembler syntax        ii      INTERRUPT_VECTOR
@@ -3173,59 +3283,59 @@ again?	jdr	again!
 
 
 
-	_________________________________________________________________________________________________________________________
-        |       <a href="rta.html#ir">ir</a>	|   11111.101   |  interrupt return	| sp_x++, pop PSR.B0* -> PC += pop offset += xi			|
-        |_______________|_______________|_______________________|_______________________________________________________________|
+_________________________________________________________________________________________________________________________
+|       <a href="rta.html#ir" style="color:#00FF00">ir</a>	|   11111.101   |  interrupt return	| sp_x++, pop PSR.B0* -> PC += pop offset += xi			|
+|_______________|_______________|_______________________|_______________________________________________________________|
 
 
         <a      name="ir"/>
         Interrupt Return        ir
         ________________        __
 
-                                                                                         interrupt / return internal stack frame
+                                                                                 interrupt / return internal stack frame
 
-                                                                         23                                                    0
-        _________________________________________________________       _________________________________________________________
-        |                                                       | <a style="color:#00FF00">sp + 3</a>|                       saved offset                    |
-        |                                                       |	|_______________________________________________________|
-        |       saved PSR is retrieved from                     | <a style="color:#00FF00">sp + 2</a>| F 0 |                 saved iframe Start Page Index   |
-        |       [interrupt internal stack pointer + 1]          |	|_____|_________________________________________________|
-        |                                                       | <a style="color:#00FF00">sp + 1</a>|   22|                 saved PSR                       |
-        |       saved Iframe Name is retrieved from             |	|                       ________________________________|
-        |       [interrupt internal stack pointer + 2]          | <a style="color:#00FF00">sp --></a>|                       latent parameter                |
-        |       and bits 21:0 Start Page Index transferred to B0|	|                       ________________________________|
-        |                                                       |       |
-        |       saved address offset in instruction frame       |       |
-        |       is retrieved from                               |       |
-        |       [interrupt internal stack pointer + 3]          |       | 0 0 | page high index = 0 : iframe pages 1
-        |                                                       |       |     | B64 = B0
-        |       the sign extended immediate operand of the ir   |       |
-        |       instruction is added to iframe relative address |       | 1 0 | gate descriptor @ target iframe + 64
-        |                                                       |       |     | page high index <- gate descriptor bits 47:42
-        |       B0 * 4096 is added to iframe relative address   |       |     | B64 = B0 + Page High Index - 1
-        |                                                       |
-        |       the resulting absolute address is transferred   |
-        |       to the program counter                          |
-        |                                                       |
-        |       interrupt internal stack pointer                |
-        |       is incremented by 4                             |
-        |_______________________________________________________|
-        |       I/O Port 64 is updated to new highest page for  |
-        |       instruction execution = B0 + Page High Index - 1|
-        |                                                       |
-        |       Page High Index is derived from flag values     |
-        |       { 00 | 10 } in bits  23:22 of new Iframe Name   |
-        |                                                       |
-        |       flags value 00:                                 |
-        |       gives Page High Index 0: iframe size 1 page     |       sample gate @ target iframe + 64
-        |                                                       |
-        |       flags value 10:                                 |        47          42                                       24
-        |       Page High Index is read from bits 47:42 of the  |       _________________________________________________________
-        |       sample gate at location 64 of the target iframe |       | Page High Idx|        offset 0                        |
-        |_______________________________________________________|       |______________|________________________________________|
-        |       DISPLACEMENT is 16-bit sign extended immediate  |       | x 0 |                 iframe Start Page Index         |
-        |_______________________________________________________|       |_____|_________________________________________________|
-                                                                               21                                              0
+                                                                 23                                                    0
+_________________________________________________________       _________________________________________________________
+|                                                       | <a style="color:#00FF00">sp + 3</a>|                       saved offset                    |
+|                                                       |	|_______________________________________________________|
+|       saved PSR is retrieved from                     | <a style="color:#00FF00">sp + 2</a>| F 0 |                 saved iframe Start Page Index   |
+|       [interrupt internal stack pointer + 1]          |	|_____|_________________________________________________|
+|                                                       | <a style="color:#00FF00">sp + 1</a>|   22|                 saved PSR                       |
+|       saved Iframe Name is retrieved from             |	|                       ________________________________|
+|       [interrupt internal stack pointer + 2]          | <a style="color:#00FF00">sp --></a>|                       latent parameter                |
+|       and bits 21:0 Start Page Index transferred to B0|	|                       ________________________________|
+|                                                       |       |
+|       saved address offset in instruction frame       |       |
+|       is retrieved from                               |       |
+|       [interrupt internal stack pointer + 3]          |       | 0 0 | page high index = 0 : iframe pages 1
+|                                                       |       |     | B64 = B0
+|       the sign extended immediate operand of the ir   |       |
+|       instruction is added to iframe relative address |       | 1 0 | gate descriptor @ target iframe + 64
+|                                                       |       |     | page high index <- gate descriptor bits 47:42
+|       B0 * 4096 is added to iframe relative address   |       |     | B64 = B0 + Page High Index - 1
+|                                                       |
+|       the resulting absolute address is transferred   |
+|       to the program counter                          |
+|                                                       |
+|       interrupt internal stack pointer                |
+|       is incremented by 4                             |
+|_______________________________________________________|
+|       I/O Port 64 is updated to new highest page for  |
+|       instruction execution = B0 + Page High Index - 1|
+|                                                       |
+|       Page High Index is derived from flag values     |
+|       { 00 | 10 } in bits  23:22 of new Iframe Name   |
+|                                                       |
+|       flags value 00:                                 |
+|       gives Page High Index 0: iframe size 1 page     |       sample gate @ target iframe + 64
+|                                                       |
+|       flags value 10:                                 |        47          42                                       24
+|       Page High Index is read from bits 47:42 of the  |       _________________________________________________________
+|       sample gate at location 64 of the target iframe |       | Page High Idx|        offset 0                        |
+|_______________________________________________________|       |______________|________________________________________|
+|       DISPLACEMENT is 16-bit sign extended immediate  |       | x 0 |                 iframe Start Page Index         |
+|_______________________________________________________|       |_____|_________________________________________________|
+                                                                       21                                              0
 
 
         assembler syntax        ir      SKIP_STEPS
@@ -3234,22 +3344,6 @@ again?	jdr	again!
                                 ir      -1
                                 ir      2
 
-
-
-	Assembly Language Examples
-	__________________________
-
-  :                            430 $(3:03000)
-  :                            431 left		$res	1
-  :                            432 right	$res	1
-  :                            433 
-  :                            434 $(0:64)
-  :                            435 examine<div	style="color:red">
-00:000040 783000              +436 	tp	left 
-00:000041 350000              +437 	lret	0	. return to instruction after lcal
-00:000042 703001              +438 	tz	right
-00:000043 350000              +439 	lret	0	. return to instruction after lcal
-00:000044 350001              +440 	lret	1	. return and skip one instruction</div>
 
 
 </pre>
@@ -3330,7 +3424,7 @@ from the stack
 Inter-bank jumps <a href="rta.html#go">go</a> and <a href="rta.html#call">call</a> read a single word storiage operand of format 
 
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#00AF6F">
 
 	    21		      6      0
 	_______________________________
@@ -3352,7 +3446,7 @@ Inter-bank jumps <a href="rta.html#go">go</a> and <a href="rta.html#call">call</
 
 <a href="rta.html#call">call</a> instruction pushes the program-counter minus B0 * 4096 on the internal stack
 then pushes B0. <a href="rta.html#go">go</a> and <a href="rta.html#call">call</a> update the program counter
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:10pt;color:#00AF6F">
 
 	B0 = (operand bit 22) ? operand[21..3] * 8 : operand[21..6] / 64
 	PC = B0 * 4096 ++ (operand bit 22) ? operand[2..0] : operand[5..0]
@@ -3417,49 +3511,56 @@ freeware/RTA1/rta/fs/fs.txo:$(0) 477 words decimal from hexadecimal 000000 to 00
 
 
 <a	name="crio"/>
-<h3>6.22: Control and I/O Instructions</h3>
+<h3>6.23: Control and I/O Instructions</h3>
 
 
-<pre	style="font-size:12pt;color:#0000FF">
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
         _________________________________________________________________________________________________________________
         |       mnemonic|   fffff.jjj   |                       |               action                                  |
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#on">on</a>	|   00000.101   |   on PSR flags	|  PSR flags 15..0 OR= mask value xi			|
+        |       <a href="rta.html#on" style="color:#00FF00">on</a>	|   00000.101   |   on PSR flags	|  PSR flags 15..0 OR= mask value xi			|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#off">off</a>	|   00001.101   |  off PSR flags	|  PSR flags 15..0 AND= NOT mask value xi		|
+        |       <a href="rta.html#off" style="color:#00FF00">off</a>	|   00001.101   |  off PSR flags	|  PSR flags 15..0 AND= NOT mask value xi		|
 	|_______________|_______________|_______________________|_______________________________________________________|
-	|       <a href="rta.html#inA">inA</a>	|   00000.100   |  I/O port ea in to a 	|							|
+	|       <a href="rta.html#inA" style="color:#00FF00">inA</a>	|   00000.100   |  I/O port ea in to a 	|							|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#inB">inB</a>	|   00001.100   |  I/O port ea in to b 	|  							|
+        |       <a href="rta.html#inB" style="color:#00FF00">inB</a>	|   00001.100   |  I/O port ea in to b 	|  							|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#outA">outA</a>	|   00010.100   |  out a to I/O port ea	|  							|
+        |       <a href="rta.html#outA" style="color:#00FF00">outA</a>	|   00010.100   |  out a to I/O port ea	|  							|
         |_______________|_______________|_______________________|_______________________________________________________|
-	|	<a href="rta.html#outB">outB</a>	|   00011.100	|  out b to I/O port ea |  							|
+	|	<a href="rta.html#outB" style="color:#00FF00">outB</a>	|   00011.100	|  out b to I/O port ea |  							|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |       <a href="rta.html#reload">reload</a>	|   00100.100   |  reload base registers|  2 * bank index @ *a,*(a+1)->io ports[ea, ea+1]. a+=2	|
+        |       <a href="rta.html#reload" style="color:#00FF00">reload</a>	|   00100.100   |  reload base registers|  2 * bank index @ *a,*(a+1)->io ports[ea, ea+1]. a+=2	|
         |_______________|_______________|_______________________|_______________________________________________________|
-        |	<a href="rta.html#sabr">sabr</a>	|   00110.100   |  store a base register|bank pointer[a]->io port[ea=2..63],index[a]->TCB+64+ea	|
+        |	<a href="rta.html#sabr" style="color:#00FF00">sabr</a>	|   00110.100   |  store a base register|bank pointer[a]->io port[ea=2..63],index[a]->TCB+64+ea	|
         |_______________|_______________|_______________________|_______________________________________________________|
 
 
 	Assembly Language Examples
 	__________________________
 
-	<div    style="color:FF0000">
+
 	on	b$streamZR
 	off	carry$
 
 	inA	PORT_240
 	outB	PORT_240
+	<div	style="color:#FF0000">
+	la	transmission:buffer
+	</div>
+	sabr	BSOCKB
+
+	<div	style="color:FF0000">
+	..........
 	</div>
 
-	la	transmission:buffer_bank<div	style="color:FF0000">
-	sabr	BSOCKB</div>
-	<div	style="color:0000FF">
 	on	see$1
-	la, xi	ABT+2</div><div    style="color:FF0000">
-	?	$do	23,	reload	?*2</div>
+	<div	style="color:FF0000">
+	la, xi	ABT+2
+	</div>
+	?	$do	23,	reload	?*2
+
 
 </pre>
 <b>sabr</b> instruction copies the storage block identity to 
@@ -4585,30 +4686,30 @@ Up to eight structures nest
 Macro code accesses the attribute definitions of bit structures to retrieve and store data fields
 
 <a	name="directives"/>
-<h2>11: masmx Directive and Automatic Functions</h2>
+<h2>11: masmx Directives and Automatic Functions</h2>
 
 <a href="http://timmilescox.github.io/masmx/masmx.html#directives">directives</a> and
 <a href="http://timmilescox.github.io/masmx/masmx.html#internalf">automatic functions</a>
 are explained in the <a href="http://timmilescox.github.io/masmx/masmx.html">masmx.7r3 Reference Manual</a>
 
 <p>
-Directives
-<a	href="#form">$form</a>
-<a	href="#do">$do</a>
-<a	href="#proc">$proc</a>
-<a	href="#func">$func</a>
-<a	href="http://timmilescox.github.io/masmx/masmx.html#end">$end</a>
-<a	href="#algors">$xqt_i</a>
-<a	href="#algors">$xqt_fp</a>
-<a	href="http://timmilescox.github.io/masmx/masmx.html#equ">$equ</a>
-<a	href="http://timmilescox.github.io/masmx/masmx.html#equf">$equf</a>
-<a	href="http://timmilescox.github.io/masmx/masmx.html#set">$set</a>
-<a	href="#text">$text</a> shown in this document are explained in
-
-<a href="http://timmilescox.github.io/masmx/masmx.html#directives">masmx 7: Directives</a>
-
-<p>
-This void assembly call displays all masmx supplied names
+Following directives mentioned in this manual are also explained in <a href="http://timmilescox.github.io/masmx/masmx.html#directives">masmx.7r3 manual 8: Directives</a>
+<pre	style="font-size:11pt">
+<ul	type="none">
+<li><a	href="#form">$form</a>		<a  href="http://timmilescox.github.io/masmx/masmx.html#form" style="text-decoration:none">[masmx manual reference]-&gt;</li>
+<li><a	href="#do">$do</a>		<a  href="http://timmilescox.github.io/masmx/masmx.html#do" style="text-decoration:none">[masmx manual reference]-&gt;</li>
+<li><a	href="#proc">$proc</a>		<a  href="http://timmilescox.github.io/masmx/masmx.html#proc_call" style="text-decoration:none">[masmx manual reference 1]-&gt;	<a  href="http://timmilescox.github.io/masmx/masmx.html#proc" style="text-decoration:none">[masmx manual reference 2]-&gt;</li>
+<li><a	href="#func">$func</a>		<a  href="http://timmilescox.github.io/masmx/masmx.html#func" style="text-decoration:none">[masmx manual reference]-&gt;</li>
+<li><a	href="http://timmilescox.github.io/masmx/masmx.html#end">$end</a></li>
+<li><a	href="#algors">$xqt_i</a></li>
+<li><a	href="#algors">$xqt_fp</a></li>
+<li><a	href="http://timmilescox.github.io/masmx/masmx.html#equ">$equ</a></li>
+<li><a	href="http://timmilescox.github.io/masmx/masmx.html#equf">$equf</a></li>
+<li><a	href="http://timmilescox.github.io/masmx/masmx.html#set">$set</a></li>
+<li><a	href="#text">$text</a>		<a  href="http://timmilescox.github.io/masmx/masmx.html#text" style="text-decoration:none">[masmx manual reference]-&gt;</a></li>
+</ul>
+</pre>
+This void assembly call displays all masmx supplied names including directives and functions
 <pre	style="font-size:12pt;color:#0000FF">
 
 $ masmx	-kx+y	# displays masmx internal names
@@ -4617,61 +4718,46 @@ $ masmx	-kx+y	# displays masmx internal names
 </pre>
 
 <a      name="linking"/>
-<h2>12: Linking</h2>
+<h2>12: Assembling and Linking for RTA1</h2>
 
-Link steps are masmx assemblies which input and output <a href="#file_formats">text encoded binary</a> files
-
-<p>
-Linking assemblies need a definition file rta/target.rta/def/map1.def
+All assembly and link steps for RTA1 applications are in described in <a href="scripts.html">Application Construction and Build</a>
 
 <p>
-All application builds have a step which links the instruction frame with a micro-filesystem containing its dynamically loadable initial data
-<pre	style="font-size:12pt;color:#0000FF">	
-
-	$include	def/map1.def
-	$include,$void	imports[.txo]		. just names
-
-	$include,$binary application[.txo] $(0)	. just names and local constants
-
-	$res	($+63**-64)-$			. align for a micro-filesystem
-	$include,$binary fs[.txo]		. initial data load strings
-
-</pre>
-<p>
-See also <a href="app.html">The Simplest Iframe</a> and <a href="iframe.html">Large and Loadable Iframes</a>
+The tools and steps described construct all application processes including supplied applications supporting the system
 
 <p>
-Multiple applications sharing one 4096-word instruction frame. iframes are read-only and may contain separate applications without conflict. Application data space is not shared and is assigned in whole pages for each process
+Writing deeply embedded applications which are threads of process ip or writing kernels can only be guided by the source code of supplied kernel and application protocol threads
 
-<p>
-The shared iframe is constructed by linking instruction sections which are assembled as relocatable. The corresponding data spaces are assembled with absolute address 003000
-
-<pre	style="font-size:12pt;color:#0000FF">
-
-	$include	def/rta.def		. the vector jump instructions are not assembled yet
-	$include	def/map1.def
-	$include,$void	imports[.txo]		. just names
-
-$(0::START_PAGE)				. if START_PAGE is not known the output is dynamic loadable
-app1*	$vector	app1_startup
-app2*	$vector	app2_startup
-
-	$do	64-$,	fret	0		. bounce the unused 62 vectors
-
-	$include,$binary application1[.txo] $(0) . just instructions
-	$include,$binary application2[.txo] $(0)
-
-	$do	$<256,$(0:256)			. place local constants at higher address than registers 
-	$include,$binary application1[.txo] $(4)	. just local constants
-	$include,$binary application2[.txo] $(4)
-
-	$res	($+63**-64)-$			. align for a micro-filesystem
-	$include,$binary fs[.txo]		. initial data load strings
-	
-</pre>
-
-<a      name="file_formats"/>
+<a	name="file_formats"/>
 <h2>Appendix A: File Formats</h2>
+
+Three binary formats support RTA1 application development
+<ul	type="none">
+
+	<li>Text Encoded Binary is masmx assembly output and may be relocatable or absolute</li>
+	<li><a href="#lstring">lstring</a> is an absolute load string format which may contain outstanding external name requests</li>
+	<li><a href="#slab">slab</a> which is ROM image and contains no metadata</li>
+
+</ul>
+
+Linking is a masmx assembly and linked output is Text Encoded Binary
+
+<p>
+Applications may be written in absolute code but a link step in all builds embeds a file system image containing initial data and run parameters
+
+<p>
+Applications may be as small as a few dozen instructions. Small applications are usually developed relocatable and linked into application group loads
+
+<p>
+All RTA1 code is developed as far as <a href="#lstring">lstring</a> format
+
+<p>
+ROM system images are converted to <a href="#slab">slab</a> format
+
+<p>
+Loadable applications stay at lstring format. Their load address is resolved at load
+
+
 
 <a	name="txo"/>
 <h3>Text Encoded Binary (.txo) Format</h3>
@@ -4680,7 +4766,10 @@ masmx outputs text encoded binary files. They have the default suffix
 <b>.txo</b> and they can be viewed in a text editor or a shell
 
 <p>
-Here is a sample assembly and output file
+Text encoded binary is explained in all topics including link request clauses in <a href="http://timmilescox.github.io/masmx/masmx.html#file_formats">masmx manual File Formats, Relocation, Linking</a>
+
+<p>
+Here is a simple assembly with .txo output file explained
 <pre>
 
 	$ masmx assembly assembly -lnke
@@ -4741,372 +4830,51 @@ the floating point literal 1.75 is at address 256 or $00:000100 because operand 
 <a href="#lstring">lstring</a> utility constructs dynamically loadable files from txo files
 
 <p>
-A load string file may contain its absolute load address and is then not dynamically loadable but convertible to ROM format for catenation into a load image
+masmx output assembly.txo is converted to lstring format and displayed
+<pre>
+
+	$ lstring -b assembly.txo assembly
+	$ fds24 assembly
+	000000000000: <a style="color:#FF0000">000001 49ffbe 000000 000000</a>  "   I        "
+	000000000004: b60040 <a style="color:#FF0000">000002 4bfebd 000000</a>  "  @   K     "
+	000000000008: <a style="color:#FF0000">000040</a> 770100 3d0000 <a style="color:#FF0000">000004</a>  "  @w  =     "
+	00000000000c: <a style="color:#FF0000">dffef9 000000 000100</a> 400001  "         @  "
+	000000000010: e00000 000000 000000         "         "
+
+</pre>
+Load string descriptors <a style="color:#FF0000">{ words, checksum, address<sub>48 bits</sub> } </a> show one jump instruction at address zero, two instructions at address 64 and a four-word constant at address 256
+
+<p>
+A load string file may either know its own Start Page Index[es] or have no need to reference them. It is then convertible to ROM format
 
 <a	name="rom"/>
 <h3>slab Format</h3>
 
-<a href="#slab">slab</a> utility constructs ROM image from an lstring output which contains no outstanding relocation requests
+<a href="#slab">slab</a> utility constructs ROM image from an lstring output which contains no outstanding address references
+
+<p>
+Load string file assembly could be ROM-formatted and catenated at a page address in a ROM image or read as a dynamic load to an available  page start
+
+<p>
+Assembly assembly.msm is similar to a library and has no need to know its own address but anything calling it would need its Start Page Index
+<pre>
+
+	$ slab assembly assembly.rom 
+	$ fds24 assembly.rom
+	000000000000: b60040 000000 000000 000000  "  @         "64
+	000000000040: 770100 3d0000 000000 000000  "w  =        "256
+	000000000100: 400001 e00000 000000 000000  "@           ".
+
+</pre>
+<p>
+Routines containing few instructions frequently share pages with other routines
 
 <p>
 Supplied builds apply the suffix <a href="#rom">.rom</a> to ROM image
 
-<a      name="locators"/>
-<h2>Appendix B: Application Memory Map</h2>
-
-<h3>Application Memory, Location Counters and Dynamic Data Segment Load</h3>
-
-<a href="scripts.html#application_group">Applications</a> are written in absolute code, as if each application occupies a computer
-
-<p>
-This is because RTA1 machine translates addresses using 72 I/O ports as relocation pointers
-
-<p>
-A suite of applications may be linked from <a href="scripts.html#singlemu">relocatable code</a> in an absolute load image to optimise instruction code storage
-
-<p>
-Program sections are declared with <a href="language.html#application_structure">location counter command</a> $(.. in column 1
-
-<p>
-Instruction Frame is in $(0). See <a href="app.html">Simplest Application Structure</a>
-and <a href="iframe.html">Large and Loadable Instruction Frames</a>
-
-<p>
-Multiple small applications can be packed in one 4096-word iframe. See <a href="#linking">Linking</a>
-
-<p>
-iframe shares its first page @ addresses 256..4095 with operand space but may have more pages of instructions from address 4096 outside operand space
-
-<pre    style="font-size:12pt;color:#0000FF">
-
-$(0::LOAD_SPACE_TAG/$0)         . iframe @ logical address zero
-iframe_name     $application
-
-$(1:01000)                      . private data + variable indirection pointers @ logical address 001000 hex
-
-$(3:03000/$3)                   . static data @ logical address 003000 hex
-
-</pre>
-
-Program or static date occupies as many windows 3..31 as required at addresses 003000..01FFFF / 0C0000..7FFFFF
-
-<p>
-An application starts by placing assigned data memory in windows 3.. with
-<a      href="language.html#base_d">$base_d</a> macro
-
-and calling kernel routine <a href="language.html#seg_load">seg$load</a> to unpack initial data values from ROM image.
-All RTA1 instruction code is shared code
-
-<p>
-Vector list which every application needs to run is preconstructed by the kernel in window 2 at addresses 002000..002FFF
-
-<p>
-Instruction memory begins at address zero in the current instruction frame
-
-<p>
-Words 0..255 of operand space are registers
-
-<h3>Location Counters</h3>
-
-Location counters correspond to program sections. masmx has 72 location counters
-
-<p>
-Applications running on the actual kernel have this memory map
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-
-	_________________________________________________________________________________________________
-        |   $(locator)	|       address window			|	    purpose / address range	|
-        |_______________|_______________________________________|_______________________________________|________________________
-        <a style="background-color:#000080">|$(0) [ + $(4) ]|       instruction frame B0            |               [dspace] 000100..000FFF / [ispace] 0..007FFF	|</a>
-        <a style="background-color:#000080">|_______________|_______execute_+_read__________________|________________________________________			|</a> 
-        |   $(1:01000)	|       private stack frame B1		| application data space 001000..001FFF	|<a style="background-color:#000080">			|</a>
-        |_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">			|</a>
-        <a style="background-color:#000080">|   $(2)	|       vector list B2 read-only	|      data memory space 002000..002FFF	|			|</a>
-        <a style="background-color:#000080">|_______________|_______________________________________|_______________________________________|			|</a>
-        |   $(3:03000)	|       data windows  B3..B31		| application data space 003000..01FFFF	|<a style="background-color:#000080">			|</a>
-        |_______________|_______________________________________|_____________________or_0C0000..7FFFFF_|<a style="background-color:#000080">_______________________|</a>
-        <a style="background-color:#0000FF">|		|       data windows B32..B47		|     application / kernel interface	|			|</a>
-	<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|	    accessed by	|</a>
-        <a style="background-color:#0000FF">|		|       data windows B48..B63           |      kernel default socket buffers	|	kernel routines	|</a>
-	<a style="background-color:#0000FF">|_______________|_______________________________________|_______________________________________|_______________________|</a>
-        |   $(66::,x)	|       pointer in index register x	|
-        |_______________|_______________________________________|
-        |   $(67::,y)	|       pointer in index register y	|
-        |_______________|_______________________________________|
-        |   $(68::,a)	|       pointer in arithmetic register a|
-        |_______________|_______________________________________|
-        |   $(69::,b)	|       pointer in arithmetic register b|
-        |_______________|_______________________________________|
-        |   $(70::,fp)	|       frame at external stack pointer |
-        |_______________|_______________________________________|
-        |   $(71::,sp)  |       frame at internal stack pointer |
-        |_______________|_______________________________________|
-
-
-</pre>
-$(0) : window B0 is the current instruction frame and contains locally accessed constants
-
-<p>
-See also <a href="app.html">The Simplest Application Structure</a> and <a href="iframe.html">Large and Loadable Instruction Frames</a>
-
-<p>
-Program visible addresses start at zero
-
-<p>
-The third field of the $(0::) declaration contains a load address
-which may be known at buîld or known at load
-
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$(0::IFRAME_LOAD_ADDRESS)
-
-
-</pre>
-<p>
-If the application contains multiple instruction frames, successive load addresses are larger relative to the first
-
-<h3>7.3: Data Sections $(1) and $(3)</h3>
-
-<p>
-$(1) contains private data in bank B1 starting at program-visible address 4096
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$(1:01000)
-
-</pre>
-
-<p>
-The kernel constructs the vector list window $(2) and places the containing page in address space 002000..002FFF
-
-<p>
-The vector list  is defined in including target.rta/def/vector.def and is shared by all threads of the process.
-
-<p>
-File and socket handles are in the vector list and are common to all threads of the process
-
-<p>
-The kernel places initial B1 frame pointer in I/O port 1
-
-<p>
-Application static data buffer is in the vector list. Macro $base_d reads this value and places
-pages in address windows $(3) from address 003000
-
-<p>
-A simple application example might be
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-	$include	def/rta.def		. registers and instruction set
-	$include	def/vector.def		. this defines the vector list
-						. in address window 02000
-
-$(0::INSTRUCTIONS_LOAD_ADDRESS)
-$(1:01000)					. private RAM
-	+	variables
-$(3:03000)					. application RAM
-	+	data
-
-$(0)
-callname* $vector get_going
-	$do	64-$,	fret	0
-
-get_going	<a	name="base_d"/>
-	$base_d	APPLICATION_DATA_SIZE [EXTERNAL_STACK_SIZE]
-						. macro base_d reads VECTOR_D static 1st page index
-						. and bases enough windows for application data in B3..B31
-						. and points external stack pointer fp
-						. to the high end of APPLICATION_DATA_SIZE + EXTERNAL_STACK_SIZE
-						. and open-file-descriptor heap pointer
-						. to the high end of APPLICATION_DATA_SIZE
-
-	<a	name="seg_load"/>
-	c	(seg$load)	CORE_FS,,xi	;	. this call copies initialised
-				(my_data_segments:d),,long  . variables to process RAM space
-
-	.
-	.
-
-	fret	0
-
-</pre>
-
-<p>
-The second argument of $base_d EXTERNAL_STACK_SIZE is needed
-
-<blockquote>
- 
-	if the application uses any external stack for
-	<blockquote>
-		loading dynamic data sections<br><br>
-		paging internal stack with $zero_stack flag<br><br>
-		xframe dynamic variables
-	</blockquote>
-	for fprintf or printf because formatting takes a 1024-word frame<br><br>
-	for open data file descriptors but not for network sockets
-
-</blockquote>
-Data file open descriptors are in a heap from the end of static data mounting towards external stack top
-and are common to threads as their handles in the vector list are common to threads
-
-<p>
-External stack must be large enough for all threads which use any
-
-
-<h3>seg$load Realtime RAM Initialisation</h3>
-Application code is reentrant shared code and each process instance of the application
-loads initial data to B1 and $(3) spaces with kernel call seg$load
-
-
-<p>
-seg$load unpacks initial values from the micro-filesystem embedded in the application image
-
-<p>
-BANK_INDEX_OF_CORE_FS_START is usually zero to mean <i>this iframe Start Page Index</i>
-
-The 48-bit file pointer <i>my_ram_loadup_filename</i> is exported from the link of the
-micro-filesystem into the application image and is known not searched
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-	$base_d MY_APPLICATION_DATA_SIZE EXTERNAL_STACK_SIZE	. base the memory space
-
-	c	(seg$load)	BANK_INDEX_OF_CORE_FS_START,,xi	;
-				(my_ram_loadup_filename:d),,long	
-
-</pre>
-
-
-<h3>Void Sections and Structure by Pointer</h3>
-
-A program section may have no addresses but instead a pointer.
-
-<p>
-The pointer is a register capable of indexing [ x y a b fp sp ] and reference may override which register that is 
-
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$(66::,x)
-label	$res	4
-label2	structure
-
-$(70::,fp)
-descriptor acw
-
-</pre>
-If address and load address are both declared zero then the program section number is reusable
-for different pointer-based structures
-
-<p>
-Locator numbers are not fixed to any pointer register, but as specific purposes have been assigned
-to [ $(0) $(1) $(2) $(3) $(4) ] supplied code keeps a convention of assigning to index registers 
-[ $(66) $(67) $(68) $(69) $(70) $(71) ]
-
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$(66::,x)
-$(67::,y)
-$(68::,a)
-$(69::,b)
-$(70::,fp)
-$(71::,sp)
-
-</pre>
-
-The indentifiers inside these sections are base + displacement tuples.
-masmx calls these names $equf labels. In the example
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-	$include	dq.def
-
-$(70::,fp)
-descriptor	acw
-
-	la	descriptor:bytes
-
-</pre>
-is the same as
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-	la	descriptor:bytes, fp
-
-</pre>
-The base register assigned at the section head can be overriden on reference
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$(70::,fp)
-descriptor      acw
-
-$(67::,y)
-dgram           datagram
-
-$(0)
-
-        ly      descriptor:dgram
-        dl      dgram:ipsource
-
-
-	lx	descriptor:next
-	lr	descriptor:bytes, x
-
-</pre>
-
-
-No data is generated inside void sections.
-macros which generate data do not generate any data in a void section
-
-<h3>Data-Tables with Base +  Displacement View</h3>
-
-It is also possible to have data tables at high addresses accessed by base register plus displacement
-
-<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
-
-$ masmx oreilly -lnke oreilly
-MASMX 7r3A Build 8
-3/oreilly.msm
-*EOF*
-  :                            1: 	$include	..//def/rta.def
-  :                            2 
-  :                            3 TABLE1	$equ	79*1024
-  :                            4 
-  :                            5 $(20:TABLE1,x)
-14:000000  400001 C00000 000000 000000
-                              +6 one	+	1.5
-14:000004  400001 D00000 000000 000000
-                              +7 two	+	1.625
-14:000008  400001 E00000 000000 000000
-                              +8 three	+	1.75
-14:00000C  400001 F00000 000000 000000
-                              +9 "O'Leary" +	1.875
-  :                            10 
-  :                            11 $(0:64)
-00:000040  500100              +12 	lx	(TABLE1)
-00:000041  77A000              +13 	fm	one
-00:000042  67A004              +14 	fa	two
-00:000043  6FA008              +15 	fan	three
-00:000044  7FA00C              +16 	fd	"O'Leary"
-  :                            17 
-  :                            18 	$do	$<256,$(0:256)	. force literal table above register addresses
-*EOF*
-00:000100+013C00
-:$(00):000040:000101 :$(14):013C00:013C10 
-
-$ cat oreilly.txo
-
-$14:013C00
-400001C00000000000000000 400001D00000000000000000
-400001E00000000000000000 400001F00000000000000000
-$00:000040
-500100 77A000 67A004 6FA008 7FA00C
-$00:000100
-013C00
-
-:$00*000000:000040:000101
-:$14*000000:013C00:013C10
-
-</pre>
-
 
 <a	name="i_bench"/>
-<h2>Appendix C: Constructing Integer Algorithm Benchmarks</h2>
+<h2>Appendix B: Constructing Integer Algorithm Benchmarks</h2>
 
 A set of benchmarked integer algorithmic expressions is in loadable test application rta/target.rta/ctests.app/ctests
 
@@ -5229,12 +4997,16 @@ If the first filename is missing, masmx reads source from stdin and constructs a
 <pre	style="font-size:12pt;color:#0000FF">
 
 	-a	allow automatic literals. Already set in rta.def
-	-c	C-Language number and alpha string syntax. By default leading 0 is hex, string escapes are "text":value:value:"text"
+
+	-c	C-Language number and string syntax
+		without -cleading 0 is hex, string escapes are "text":value:value:"text"
+		-c changes string pad from space to zero. So does -z but -zc changes sting pad to space
+
 	-d	list load addresses not program-visible addresses in breakpointed sections
 	-e	list generated code word-space-word
 	-fg	<a href="http://timmilescox.github.io/masmx/masmx.html#clopts">label handling, 1st / 2nd pass decisions</a>
 	-h	stop after 1st assembly pass
-	-i	with -xi display macro text in label tabel
+	-i	with -xi[p][q] display macro text in label tabel
 	-k	labels case-significant
 	-l	list [ down to include depth set by <b>$list <i>depth</i></b> directive ] default assembly main file
 	-n	list relocation information when -l
@@ -5242,7 +5014,9 @@ If the first filename is missing, masmx reads source from stdin and constructs a
 	-q	list <b>$func</b> macro text + actual arguments where <b>$plist</b> value &gt; macro nesting depth
 	-r	list <b>$proc</b> and <b>$func</b> macro text + actual arguments
 		on first assembly pass where <b>$plist</b> value &gt; macro nesting depth
-	-s	generate source updated with inclusions / text translations on 1st assembly pass and read updated source on 2nd assembly pass
+
+	-s	generate source updated with inclusions / text translations on 1st assembly pass
+		and read updated source on 2nd assembly pass
 	-u	mark assembly in error if labels are unresolved: final assembly or link
 	-w	silent assembly
 	-x	list labels

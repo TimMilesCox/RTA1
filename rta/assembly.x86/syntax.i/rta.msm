@@ -51,7 +51,7 @@ _z:	cmp	cl, I
 	jz	_sabr
 	cmp	cl, XI
 	jz	_lret
-	mov	ebx, 0
+	xor	ebx, ebx
 	jmp	_operand_write
 
 _pop:	cmp	cl, I
@@ -237,6 +237,13 @@ _qpush: call	stack4
 	mov	dword ptr [ebp+S_P], ebx	; updated sp written after burst read
 	ret
 
+_dpop:	push	eax
+	call	stack_read2
+	pop	eax
+	call	_burst_write2
+	mov	ebp, dword ptr [_register_set]	; stack op had register set of all registers
+	ret
+
 _dpush:	call	_burst_read2
 	push	ebx
 	call	stack2
@@ -252,6 +259,14 @@ _mta:	call	_operand_read
 	jnz	_mta_
 	add	edx, 4		; k AND (a XOR operand) = 0, skip 1 instruction
 _mta_:	ret
+
+_dte:	call	_burst_read2
+	xor	eax, dword ptr [ebp+A]
+	jnz	_dte_
+	xor	ebx, dword ptr [ebp+B]
+	jnz	_dte_
+	add	edx, 4
+_dte_:	ret	
 
 _sc:	mov	ebx, dword ptr [_psr]
 	and	ebx, 1		; store carry 
@@ -338,39 +353,47 @@ _go2_4k_frame:
 	xor	ebx, ebx	; frame high page index
 
 _go2_frame:
-	test	byte ptr [_psr+2], 128
-	jnz	_go2_low		; may branch into interrupt code
+	test	byte ptr [_psr+2], 128	; already in interrupt code?
+	jnz	_go2_base_frame	; 	; may branch into interrupt code
 					; because he is interrupt code
 	mov	ecx, eax
 	and	ecx, 03FFFFFh
 	sub	ecx, dword ptr [_base+72*4]	; applications lower limit
-	jl	_go_barred
+	jnl	_go2_base_frame
 
-_go2_low:
-	add	ebx, eax		; calulate frame limit page
-	and	ebx, 03FFFFFh		; ensure no bits from here are 0C00000
-	mov	ecx, dword ptr [_base+128*4]
-
-	sub	ecx, ebx
-	test	ecx, 0400000h		; negative within 23 bits?
-	jz	_go2_base_frame
-
-_go_barred:
 	mov	edx, dword ptr [_apc]
 	mov	esi, LP_AUTHORITY
 	jmp	guard_ii_escape
 
 _go2_base_frame:
-
+	mov	dword ptr [__register+280*4], eax
+	mov	dword ptr [__register+281*4], edx
 	mov	dword ptr [_b0_name], eax	; with flags
 	and	eax, 003FFFFFh			; base page index only
+	add	ebx, eax
 	mov	dword ptr [_base+64*4], ebx
 
+	%if	1
+	mov	ecx, dword ptr [_base+128*4]	; memory page high index
+	and	ecx, 003FFFFFh			; strip memory type bits
+	sub	ecx, ebx			; iframe high page may be = not >
+	jns	_go2_frame_in_range
+
+	mov	esi, LP_ADDRESS
+	mov	edx, dword ptr [_apc]
+	jmp	guard_ii_escape
+
+_go2_frame_in_range:
+
+	%else
 	mov	ecx, dword ptr [_base+128*4]	; have we the highest frame page?
 	and	ecx, 003FFFFFh			; read highest page index
 	mov	esi, LP_ADDRESS			; trim off flags
 	sub	ecx, ebx			; compare
+	xchg	edx, dword ptr [_apc]
 	js	guard_ii_escape			; if negative that should catch it
+	xchg	edx, dword ptr [_apc]
+	%endif
 
 	shl	ebx, 12
 	lea	ebx, [_memory+ebx*4+4095*4]	; last instruction word in iframe
