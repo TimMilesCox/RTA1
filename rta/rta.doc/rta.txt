@@ -7829,7 +7829,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		<a href="#A2_4" style="text-decoration:none;color:0000FF">A2.4	Loading / Storing the Internal Stack with with Datafile Read and Write</a>
 		<a href="#A2_5" style="text-decoration:none;color:0000FF">A2.5	Assembly Language Examples of Instruction Repeat</a>
 			<a href="#A2_5_1" style="text-decoration:none;color:0000FF">A2.5.1	Table Searches with Repeat Test and Skip Instructions</a>
-		<a href="#A2_6" style="text-decoration:none;color:0000FF">A2.6	SIMD_TARGET: Single Operation on Selected Internal Stack Register</a>
+		<a href="#A2_6" style="text-decoration:none;color:0000FF">A2.6	SIMD_TARGET: Single Object Accumulator Vector Operation at Selected Internal Stack Register offset</a>
+
+		<a href="#A2_7" style="text-decoration:none;color:0000FF">A2.7	SIMD_TARGET: Multiple Object Accumulator Vector Operation</a>
 
 	</div>
 	<a	name="A1"/>
@@ -8121,6 +8123,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	Macro SIMD_CONTROL takes a quadword argument
 
+	The frame defined by SIMD_CONTROL is the <a href="#A2_7">default accumulator vector</a> starting internal stack top with length REPEATS objects
+
 		<a style="color:#00AF6F">SIMD_CONTROL	(-1, DEST_REGISTERS_INCREMENT, REPEATS-1, SOURCE2_OPERAND_INCREMENT:q)</a>
 
 	where -1 causes destination register cursor initialisation and running count restart
@@ -8152,10 +8156,24 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	which have the effect that subsequent instructions executed by rex (<i>instruction</i>)
 	operate singly on the stack top without intervening reconfiguration 
 
+	The <a href="#A2_7">default accumulator vector</a> starts at internal stack top and contains RESTART_COUNT objects
+
+		SIMD_CONTROL	(-1, REGISTERS_INCREMENT, RESTART_COUNT-1, EA_INCREMENT:q)
+
 	In the case operation[s] are required starting other than at the stack top,
-	a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> points destination cursor q to the required register stack offset <a href="#watch_it" style="color:#FF0000">**</a>
+	a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> points destination cursor q to the required accumulator vector at register stack offset <a href="#watch_it" style="color:#FF0000">**</a>
 	and suppresses automatic initialisation to the stack top
-	by writing running count zero = one operation to RDATAC
+	by writing running count zero = one operation, or ARGUMENT_2 = operations minus one, to RDATAC
+
+	The accumulator vector may start at any internal stack register offset and may contain all available registers.
+	Second argument HOW_MANY-1 is operations minus 1 default zero = one operation
+
+		<a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a>	single_dynamic_object_name			. no 2nd argument needed
+
+		<a href="#A2_7" style="text-decoration:none">SIMD_TARGET<a>	first_dynamic_object_name	HOW_MANY-1	. 2nd argument = objects - 1
+
+	A accumulator vector of multiple objects set by <a href="#A2_7" style="text-decoration:none">SIMD_TARGET</a> inherits register cursor and ea increment parameters from SIMD_CONTROL
+
 
 	<a	name="A2"/>
 	<a      style="font-size:12.75pt;color:0000FF">A2	Examples</a>
@@ -8298,20 +8316,28 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 
 	<a	name="A2_6"/>
-	<a	style="font-size:12.75pt;color:0000FF">A2.6	SIMD_TARGET: Single Operation on Selected Internal Stack Register</a>
+	<a	style="font-size:12.75pt;color:0000FF">A2.6	SIMD_TARGET: Single Object Accumulator Vector Operation at Selected Internal Stack Register offset</a>
 
-        Register cursor q selects the internal stack accumulator per Execute Repetition
+	The default SIMD accumulator vector starts at the internal stack top and contains RESTART_COUNT objects.
+	SIMD_CONTROL third field is RESTART_COUNT-1
+
+		SIMD_CONTROL	(-1, REGISTERS_INCREMENT, RESTART_COUNT-1, EA_INCREMENT:q)
+
+	SIMD_TARGET with one argument sets a accumulator vector of one object at any internal stack register offset
+
+		SIMD_TARGET	single_target_name
 
 	Repeat Execute operations auto-initialise register cursor q to the internal stack top
 
-	macro SIMD_TARGET cleats register cursor q to any register in the internal stack for a single operation
+	macro SIMD_TARGET initialises register cursor q to a accumulator vector start
+	at any register offset in the internal stack for a single operation
 
 	Subsequent operations auto-initialise to accumulator[s] at internal stack top [+] for [restart count] objects
 
 	Objects called <a style="color:#00AF6F">params</a> and <a style="color:#00AF6F">scalars</a> are in the internal stack.
 	In this example object <a style="color:#00AF6F">one_off</a> is on the stack top
 
-	Macro <a style="color:#FF0000">SIMD_TARGET</a> points register cursor q example to an object
+	Macro <a style="color:#FF0000">SIMD_TARGET</a> points register cursor q to an object
 	<a style="color:#FF0000">another1</a> at internal stack top + one float displacement for a single operation 
 
 	<div	style="color:#00AF6F">
@@ -8346,6 +8372,75 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 00:000025  350000              +51 	lret	0				. regular accumulators [ 4..7 ] also contain a result
 
 	</div>
+
+
+	<a	name="A2_7"/>
+	<a	style="font-size:12.75pt;color:0000FF">A2.7	SIMD_TARGET: Multiple Object Accumulator Vector Operation</a>
+
+	The default SIMD accumulator vector starts at the internal stack top and contains RESTART_COUNT objects.
+	SIMD_CONTROL third field is RESTART_COUNT-1
+
+                SIMD_CONTROL    (-1, REGISTERS_INCREMENT, RESTART_COUNT-1, EA_INCREMENT:q)
+
+	macro SIMD_TARGET with first argument a dynamic object name sets a accumulator vector at any internal stack register offset
+	Second argument OBJECTS-1 sets a accumulator vector length of  OBJECTS
+
+		SIMD_TARGET	first_object_name	OBJECTS-1
+
+	REGISTERS_INCREMENT and EA_INCREMENT must if needed be set previously in SIMD_CONTROL
+
+        Repeat Execute operations auto-initialise register cursor q to the internal stack top
+
+        macro SIMD_TARGET initialises register cursor q to a accumulator vector start
+	at any register offset in the internal stack for a ARGUMENT_2 + 1 operations
+
+        Subsequent operations auto-initialise to accumulator[s] at internal stack top [+] for [restart count] objects
+
+        Objects called <a style="color:#00AF6F">params</a> and <a style="color:#00AF6F">scalars</a> are in the internal stack.
+        In this example object <a style="color:#00AF6F">sum(1)</a> is on the stack top
+
+        Macro <a style="color:#00AF6F">SIMD_TARGET</a> points register cursor q to an object
+        <a style="color:#00AF6F">sum(3)</a> at internal stack top + two floats displacement for a six operations
+
+
+	<div	style="color:#00AF6F">
+
+
+rex_accumulator vector	$head_near	scalars(sum(8),	float,	1.0
+					sum(7),	float,	2.0
+					sum(6),	float,	3.0
+					sum(5),	float,	4.0
+					sum(4),	float,	5.0
+					sum(3),	float,	6.0
+					sum(2),	float,	7.0
+					sum(1),	float,	8.0	)
+
+00:0004FC  8F074D              +825 	SIMD_CONTROL	(-1, 4, 8-1, 4q)	. default accumulator vector is frame of 8 floats
+00:0004FD  870014              +825 
+  :                            826 						. register cursor increment, ea increment are 1 float
+  :                            827 						. six floats in storage to add
+00:0004FE  550751              +828 	lx	(zlist	20.0, 21.0, 22.0, 23.0, 24.0, 25.0),,xi
+00:0004FF  FCF008              +829 	SIMD_TARGET	sum(3)	6-1		. accumulator vector is 6 floats at frame + 8 words (2 floats)
+00:000500  38000D              +829 
+00:000501  FD0005              +829 
+00:000502  380014              +829 
+00:000503  740769              +830 	rex	(fa	0, x)
+00:000504  8FF008              +831 	$do	6,	print1off
+
+	display rex_accumulator vector
+	+2.600e+1
+	+2.600e+1
+	+2.600e+1
+	+2.600e+1
+	+2.600e+1
+	+2.600e+1
+
+	</div>
+
+	If default SIMD configuration is required again it must be set again
+
+		SIMD_CONTROL	(-1, 0, 0, 0q)
+
 
 <i>
 
