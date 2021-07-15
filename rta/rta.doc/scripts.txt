@@ -40,6 +40,14 @@
 	<li><a href="#load_app">Appendix A: load Application</a></li>
         <li><a href="#iframe_examples">Appendix B: iframe Examples</a></li>
 	<li><a href="#locators">Appendix C: Application Memory Map</a></li>
+	<ul	type="none">
+		<li><a href="#C_1">C.1 Application Memory, Location Counters and Dynamic Data Segment Load</a></li>
+		<li><a href="#C_2">C.2 Location Counters</a></li>
+		<li><a href="#C_3">C.3 Data Sections $(1) $(2) $(3)</a></li>
+		<li><a href="#C_4">C.4 seg$load Application Data Initialisation</a></li>
+		<li><a href="#C_5">C.5 Void Sections and Structure by Pointer</a></li>
+		<li><a href="#C_6">C.6 Data-Tables with Base +  Displacement View</a></li>
+	</ul>
 	<li><a href="#auto">Appendix D: Scripts and Automatic Start</a></li>
 </ul>
 
@@ -96,7 +104,8 @@ An application or group of applications is realised in a subdirectory of
 
 <pre	style="font-size:12pt;color:#0000FF">
 
-	[ <a href="#make_rel">make_rel</a> ]		optionally a one-line text command naming multiple applications for constructing as a group
+	[ <a href="#make_rel">make_rel</a> ]		optional text command file
+				naming multiple applications for constructing as a group
 
 
 	my_application[s].msm	<a href="#source"/>source file[s].msm</a>
@@ -104,14 +113,14 @@ An application or group of applications is realised in a subdirectory of
 
 
 	<a href="#loadfs">loadfs</a>			a text file of 4+ lines
-				generates a file system in the application binary image to bind
+				generates a file system in the application binary image
 
-					lookup by name
+				to bind	lookup by name
 
 					launch parameters
 
 					program data sections load
-					per application process instance
+
 
 </pre>
 
@@ -306,12 +315,12 @@ Applications in NVRAM
 	$ cd rta/target.rta/def.app
 
 	$ cat iframes.def
-	APPLICATION(1)	$equ	00B000		. unless kernel and libraries get larger
-	APPLICATION(2)	$equ			. depends how many pages APPLICATION(1) takes
-						. and if any fixed library pages intervene
+	APPLICATION(1)	$equ	00B000	. unless kernel and libraries get larger
+	APPLICATION(2)	$equ		. depends how many pages APPLICATION(1) takes
+					. and if any fixed library pages intervene
 	.
 	.
-	APPLICATION(5)	$equ	02A000		. for example
+	APPLICATION(5)	$equ	02A000	. for example
 
 	$ ./nvlist	# construct <a style="color:#FF0000">def.app/nvframes.rom</a>
 
@@ -1119,9 +1128,10 @@ Applications may be loaded and started programmatically using
 <div	style="font-size:14pt">
 
 <a      name="locators"/>
-<h2>Appendix C: Application Memory Map</h2>
+<h3>Appendix C: Application Memory Map</h3>
 
-<h3>Application Memory, Location Counters and Dynamic Data Segment Load</h3>
+<a      name="C_1"/>
+<h4>C.1: Application Memory, Location Counters and Dynamic Data Segment Load</h4>
 
 <a href="scripts.html#application_group">Applications</a> are written in absolute code, as if each application occupies a computer
 
@@ -1175,7 +1185,8 @@ Instruction memory begins at address zero in the current instruction frame
 <p>
 Words 0..255 of operand space are registers
 
-<h3>Location Counters</h3>
+<a      name="C_2"/>
+<h4>C.2: Location Counters</h4>
 
 Location counters correspond to program sections. masmx has 72 location counters
 
@@ -1194,7 +1205,7 @@ ________________________________________________________________________________
 <a style="background-color:#000080">|   $(2)	|       vector list B2 read-only	|      data memory space 002000..002FFF	|			|</a>
 <a style="background-color:#000080">|_______________|_______________________________________|_______________________________________|			|</a>
 |   $(3:03000)	|       data windows  B3..B31		| application data space 003000..01FFFF	|<a style="background-color:#000080">			|</a>
-|									      or C00000..7FFFFF |<a style="background-color:#000080">			|</a>	
+|									      or C00000..7FFFFF |<a style="background-color:#000080">			|</a>
 |												|<a style="background-color:#000080">			|</a>
 |												|<a style="background-color:#000080">			|</a>
 |												|<a style="background-color:#000080">			|</a>
@@ -1240,26 +1251,37 @@ The second field of the $(0:__BASE/$0) ist __BASE which is the Start Page Index 
 
 __BASE	$equ	LOAD_PAGE_THIS_APP	. stays unknown until load time
 
-. __BASE $equ	APPLICATION(5)/*12	. for example: absolute page address defined in rta/target.rta/def.app/iframes.def 
-					. generated for lookup list in kernel vectors by running rta/target.rta/def.app/nvlist
-					. included in File System 1 for read on startup by running rta/mrand
+. __BASE $equ	APPLICATION(5)/*12	. for example: absolute page address defined in
+					. rta/target.rta/def.app/iframes.def 
+					. generated for lookup list in kernel vectors by running
+					. rta/target.rta/def.app/nvlist
+					. included in File System 1 by running rta/mrand
+					. for read on startup
 
-$(0::__BASE/$0)				. These /$0 /$3 etc clauses on program section headers are literal table flags
-					. and it's sometimes good to have followed that naming convention for them
+$(0::__BASE/$0)				. /$0 /$3 etc on section headers are  literal pool tags
+					. a naming convention used in some supplied code
 
 </pre>
 <p>
-If the application contains multiple instruction frames, successive load addresses are larger relative to the first
 
-<h3>7.3: Data Sections $(1) and $(3)</h3>
+<a      name="C_3"/>
+<h4>C.3: Data Sections $(1) $(2) $(3)</h3>
 
 <p>
-$(1) contains private data in bank B1 starting at program-visible address 4096
+$(1) contains private data in bank B1 at locations 4096..8191 of application address space
+
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-$(1:01000)
+$(1:01000)	. 01000<sub>16</sub>
 
 </pre>
+B1 typically contains variable data to support services called by other applications
+
+<p>
+B1 may also contain variable pointers
+
+<p>
+Applications may have many B1 pages organised as a linear or a random stack
 
 <p>
 The kernel constructs the vector list window $(2) and places the containing page in address space 002000..002FFF
@@ -1271,14 +1293,8 @@ The vector list  is defined in including target.rta/def/vector.def and is shared
 File and socket handles are in the vector list and are common to all threads of the process
 
 <p>
-The kernel places initial B1 frame pointer in I/O port 1
+Macro $base_d reads from vectors $(2) the Start Page Index of static data RAM and places pages in address windows $(3)+ starting address 003000<sub>16</sub>
 
-<p>
-Application static data buffer is in the vector list. Macro $base_d reads this value and places
-pages in address windows $(3) from address 003000
-
-<p>
-A simple application example might be
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
 	$include	def/rta.def		. registers and instruction set
@@ -1296,7 +1312,8 @@ callname* $vector get_going
 	$do	64-$,	fret	0
 
 get_going	<a	name="base_d"/>
-	$base_d	APPLICATION_DATA_SIZE [EXTERNAL_STACK_SIZE]
+	$base_d	APPLICATION_DATA_SIZE	[EXTERNAL_STACK_SIZE_INITIAL_THREAD]
+
 						. macro base_d reads VECTOR_D static 1st page index
 						. and bases enough windows for application data in B3..B31
 						. and points external stack pointer fp
@@ -1316,30 +1333,143 @@ get_going	<a	name="base_d"/>
 </pre>
 
 <p>
-The second argument of $base_d EXTERNAL_STACK_SIZE is needed
 
-<blockquote>
- 
-	if the application uses any external stack for
-	<blockquote>
-		loading dynamic data sections<br><br>
-		paging internal stack with $zero_stack flag<br><br>
-		xframe dynamic variables
-	</blockquote>
-	for fprintf or printf because formatting takes a 1024-word frame<br><br>
-	for open data file descriptors but not for network sockets
-
-</blockquote>
-Data file open descriptors are in a heap from the end of static data mounting towards external stack top
-and are common to threads as their handles in the vector list are common to threads
+$base_d takes in addition to a first argument static data $(3) size, an external stack size argument for each thread which needs external stack
 
 <p>
-External stack must be large enough for all threads which use any
+EXTERNAL_STACK_SIZE_INITIAL_THREAD is if present the last parameter of $base_d. Intermediate parameters are external stack sizes of additional threads
 
+<p>
+The root of initial thread stack is 003000<sub>16</sub> plus containing pages of static plus all thread external stacks
 
-<h3>seg$load Realtime RAM Initialisation</h3>
+<p>
+This storage limit address has two names, THREAD_FP(1) and ITHREAD_FP
+
+<p>
+$base_d macro writes ITHREAD_FP to external stack pointer fp of the initial thread
+
+<p>
+If the initial thread does not need an external stack it can assign THREAD_FP(1) to another thread which does
+
+<p>
+If no thread needs an external stack then macro $base_d needs only the first argument $(3) size
+
+<p>
+Threads need an external stack if they contain
+
+<ul	type="square">
+
+	<li>printf / fprintf, 1024 words needed</li><br>
+
+	<li>dynamic data section load based on external stack pointer fp</li><br>
+
+	<li>xframe dynamic variables</li><br>
+
+	<li>$zero_stack paging from internal stack to external stack</li>
+
+</ul>
+
+<p>
+If more external stack sizes for threads appear between APPLICATION_DATA_SIZE and EXTERNAL_STACK_SIZE_INITIAL_THREAD their stack root addresses have the names THREAD_FP(2)...
+
+<p>
+A thread launching a new thread supplies a stack root address on the <a href="kernel.html#thread_ii">THREAD$</a> system call
+
+<p>
+External stack root addresses THREAD_FP(1) THREAD_FP(2) THREAD_FP(3) are listed at the end of this assembly
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	$ masmx -lnke tread -x
+	MASMX 7r3A Build 12
+	3/tread.msm
+	*EOF*
+	  :                            7 	$list
+	  :                            8 
+	  :                            9 $(3:03000/$3)
+	  :                            10 data	$res	3072
+	  :                            11 
+	  :                            12 $(0:0/$0)
+	  :                            13 $(0:64)
+	00:000040  60207F              +14 	$base_d	$zenith(3)-03000	1024	1024	1024
+	00:000041  340003              +14 
+	00:000042  64C001              +14 
+	00:000043  340004              +14 
+	00:000044  600100              +14 
+	[+0001]10
+	00:000045  750000              +14 
+	00:000046  655000              +14 
+	00:000047  20000E              +14 
+	00:000048  9F0101              +15 	c	(seg$load)	0,,xi	(dataload:d),,long
+	00:000049  FD0000              +15 
+	00:00004A  FCF003              +15 
+	00:00004B  FF0103              +15 
+	00:00004C  38000F              +15 
+	00:00004D  4F0104              +16 	ql	(thread1, 5, 0, THREAD_FP(2)q)
+	[+0004]10
+	00:00004E  750000              +17 	ii	THREAD$
+	00:00004F  FF0108              +18 	call	(somewhere)
+	00:000050  3D0000              +19 	fret	0
+	  :                            20 
+	00:000051  FF0109              +21 thread1	call	(somewhere_else)
+	00:000052  350000              +22 	lret	0
+	  :                            23 	$do	$<256,$(0:256)
+	*EOF*
+	00:000100+[0000]18:000000
+	00:000101+[0002]30:000000000000
+	00:000103+[0003]18:000000
+	00:000104+000051000005000000004C00
+	00:000108+[0005]18:000000
+	00:000109+[0006]18:000000
+	$3=$03:000007
+	data=$03:003000
+	$0=$00:000007
+	ALL_EXTERNAL_STACKS+=000C00
+	THREAD_FP(1)=005000
+	THREAD_FP(2)=004C00
+	THREAD_FP(3)=004800
+	ITHREAD_FP+=$03:005000
+	thread1=$00:000051
+	SUMMIT$3
+	FO$HEAP
+	dataload
+	seg$load
+	somewhere
+	somewhere_else
+	..//language/stack.def=1<000005
+	..//def/vector.def=1<000005
+	..//def/rta.def=1<000005
+	tread.msm=0<000003
+	:$(00):000000:00010A :$(02):002000:003000 :$(03):003000:003C00 
+
+</pre>
+Open data files have, in addition to handles common to all threads in vector list $(2), file open states in a heap from the end of static data $(3)
+
+<p>
+
+File open states are for local files 12 words in size and for remote files 66 words in size.
+
+<p>
+A large number of data files simultaneously open could cause a conflict diagnosis between files open state heap and THREAD_FP(LOWEST) - size
+
+<p>
+The diagnosed problem can be lifted by tuning the size of $(3) static or adding a dummy external stack parameter to $base_d macro call
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	$base_d	$zenith(3)-03000+66*REMOTE_DATA_FILES+12*FS24_DATA_FILES     EXTERNAL_STACK_SIZE_INITIAL_THREAD
+.				^
+.				| APPLICATION_DATA_SIZE enlarged for file blocks
+<hr/>
+	$base_d	$zenith(3)-03000   66*REMOTE_DATA_FILES+12*FS24_DATA_FILES   EXTERNAL_STACK_SIZE_INITIAL_THREAD
+.				   ^
+. 				   | extra dummy external stack for file blocks
+</pre>
+
+<a      name="C_4"/>
+<h4>C.4 : seg$load Application Data Initialisation</h4>
 Application code is reentrant shared code and each process instance of the application
-loads initial data to B1 and $(3) spaces with kernel call seg$load
+loads initial data to $(1) and $(3) spaces with kernel call seg$load
 
 
 <p>
@@ -1355,12 +1485,13 @@ micro-filesystem into the application image and is known not searched
 	$base_d MY_APPLICATION_DATA_SIZE EXTERNAL_STACK_SIZE	. base the memory space
 
 	c	(seg$load)	START_PAGE_INDEX_OF_CORE_FS,,xi	;
-				(my_ram_loadup_filename:d),,long	
+				(my_ram_loadup_filename:d),,long
 
 </pre>
 
 
-<h3>Void Sections and Structure by Pointer</h3>
+<a      name="C_5"/>
+<h4>C-5: Void Sections and Structure by Pointer</h4>
 
 A program section may have no addresses but instead a pointer.
 
@@ -1369,30 +1500,30 @@ The pointer is a register capable of indexing [ x y a b fp sp ] and reference ma
 
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-$(66::,x)
-label	$res	4
-label2	structure
+	$(66::,x)
+	label	$res	4
+	label2	structure
 
-$(70::,fp)
-descriptor acw
+	$(70::,fp)
+	descriptor acw
 
 </pre>
-If address and load address are both declared zero then the program section number is reusable
+If address and load address are both declared zero (two colons $(n::, x) ) then the program section number is reusable
 for different pointer-based structures
 
 <p>
-Locator numbers are not fixed to any pointer register, but as specific purposes have been assigned
-to [ $(0) $(1) $(2) $(3) $(4) ] supplied code keeps a convention of assigning to index registers 
-[ $(66) $(67) $(68) $(69) $(70) $(71) ]
+Locator numbers are not fixed to any pointer register, but 
+ supplied code conventionally of assigns locators
+[ $(66) $(67) $(68) $(69) $(70) $(71) ] to index register [ x y a b fp sp ]
 
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-$(66::,x)
-$(67::,y)
-$(68::,a)
-$(69::,b)
-$(70::,fp)
-$(71::,sp)
+	$(66::,x)
+	$(67::,y)
+	$(68::,a)
+	$(69::,b)
+	$(70::,fp)
+	$(71::,sp)
 
 </pre>
 
@@ -1400,37 +1531,37 @@ The indentifiers inside these sections are base + displacement tuples.
 masmx calls these names $equf labels. In the example
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-	$include	dq.def
+		$include	dq.def
 
 $(70::,fp)
 descriptor	acw
 
-	la	descriptor:bytes
+		la	descriptor:bytes
 
 </pre>
 is the same as
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-	la	descriptor:bytes, fp
+		la	descriptor:bytes, fp
 
 </pre>
 The base register assigned at the section head can be overriden on reference
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-$(70::,fp)
-descriptor      acw
+	$(70::,fp)
+	descriptor      acw
 
-$(67::,y)
-dgram           datagram
+	$(67::,y)
+	dgram           datagram
 
-$(0)
+	$(0)
 
-        ly      descriptor:dgram
-        dl      dgram:ipsource
+        	ly      descriptor:dgram
+	        dl      dgram:ipsource
 
 
-	lx	descriptor:next
-	lr	descriptor:bytes, x
+		lx	descriptor:next
+		lr	descriptor:bytes, x
 
 </pre>
 
@@ -1438,54 +1569,109 @@ $(0)
 No data is generated inside void sections.
 macros which generate data do not generate any data in a void section
 
-<h3>Data-Tables with Base +  Displacement View</h3>
+<a      name="C_6"/>
+<h4>C.6: Data-Tables with Base +  Displacement View</h4>
 
-It is also possible to have data tables at high addresses accessed by base register plus displacement
+This example shows data at high addresses accessed by loading a pointer
+
+<p>
+The application is constructing system-common data for placing in a window separated from program data
+
+<p>
+Other processes retrieving the data request its Start Page Index from kernel vectors
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+	lx	SYSTEM_SHARE_VECTOR,,xi
+	ii	READ_XVECTOR$		. request Start Page Index from kernel vectors
+	jza	not_really
+	sabr	WINDOW			. requesting application now accesses the data 
+	lx	(WINDOW*/12)		. at address 01F000<sub>16</sub>
+					
+</pre>
+This application uses the same address window to construct the data, allthough it contains no self-referencing pointers
+
+<p>
+System call ASSIGN_XVECTOR$ requests memory to be granted and tabled in kernel vectors, not in the calling application's memory estate
+
+<p>
+ASSIGN_XVECTOR$ is called before seg$load because most of the shared data is assembly time data
+
+<p>
+WINDOW and location counter are the same number here, $(31)
+
+<p>
+Locator 31 has been included in application segment load file lsegment which will become <a style="color:#0000FF">all_my_data</a>
 
 <pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
 
-$ masmx oreilly -lnke oreilly
-MASMX 7r3A Build 8
-3/oreilly.msm
+	 lstring -bL oleary.abs lsegment '(1,3,31)'
+
+</pre>
+
+Very few code entities are cleared to call ASSIGN_XVECTOR$ because kernel vector SYSTEM_SHARE_VECTOR cannot be selected randomly
+
+<p>
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx -lnke oleary oleary.abs
+MASMX 7r3A Build 12
+3/oleary.msm
 *EOF*
-  :                            1: 	$include	..//def/rta.def
-  :                            2 
-  :                            3 TABLE1	$equ	79*1024
-  :                            4 
-  :                            5 $(20:TABLE1,x)
-14:000000  400001 C00000 000000 000000
-                              +6 one	+	1.5
-14:000004  400001 D00000 000000 000000
-                              +7 two	+	1.625
-14:000008  400001 E00000 000000 000000
-                              +8 three	+	1.75
-14:00000C  400001 F00000 000000 000000
-                              +9 "O'Leary" +	1.875
-  :                            10 
-  :                            11 $(0:64)
-00:000040  500100              +12 	lx	(TABLE1)
-00:000041  77A000              +13 	fm	one
-00:000042  67A004              +14 	fa	two
-00:000043  6FA008              +15 	fan	three
-00:000044  7FA00C              +16 	fd	"O'Leary"
-  :                            17 
-  :                            18 	$do	$<256,$(0:256)	. force literal table above register addresses
+  :                            8 	$list
+  :                            9 
+  :                            10 WINDOW	$equ	31
+  :                            11 TABLE1	$equ	WINDOW*4096
+  :                            12 
+  :                            13 $(3:03000/$3)
+  :                            14 
+  :                            15 $(WINDOW:TABLE1,x)
+1F:000000  400001 C00000 000000 000000
+                              +16 one	+	1.5
+1F:000004  400001 D00000 000000 000000
+                              +17 two	+	1.625
+1F:000008  400001 E00000 000000 000000
+                              +18 three	+	1.75
+1F:00000C  400001 F00000 000000 000000
+                              +19 "O'Leary" +	1.875
+  :                            20 
+  :                            21 $(0:64)
+00:000040  60207F              +22 	$base_d	$zenith(3)-03000
+00:000041  340003              +22 
+00:000042  600100              +22 
+Note: oleary.msm Line 22: add 2nd $base_d argument if printf is required
+Note: oleary.msm Line 22: space for automatic file-open frames not guaranteed add external stack argument
+00:000043  75007A              +22 
+00:000044  653000              +22 
+00:000045  20000E              +22 
+00:000046  650064              +23 	la	100,,xi			. words storage requested
+[+0001]10
+00:000047  550000              +24 	lx	SYSTEM_SHARE_VECTOR,,xi	. kernel vector suggested
+[+0002]10
+00:000048  750000              +25 	ii	ASSIGN_XVECTOR$		. ask
+00:000049  C60056              +26 	jza	"can't"
+00:00004A  34001F              +27 	sabr	WINDOW			. address shared data higher than program data
+  :                            28 
+00:00004B  9F0101              +29 	c	(seg$load)	0,,xi	(all_my_data:L),,long
+00:00004C  FD0000              +29 
+00:00004D  FCF003              +29 
+00:00004E  FF0103              +29 
+00:00004F  38000F              +29 
+  :                            30 	
+00:000050  500104              +31 	lx	(TABLE1)
+00:000051  4FA000              +32 	ql	one
+00:000052  67A004              +33 	fa	two
+00:000053  6FA008              +34 	fan	three
+00:000054  7FA00C              +35 	fd	"O'Leary"
+00:000055  47A010              +36 	qs	"O'Leary"+4
+00:000056  3D0000              +37 "can't"	fret	0
+  :                            38 
+  :                            39 	$do	$<256,$(0:256)	. literal table must > register addresses
 *EOF*
-00:000100+013C00
-:$(00):000040:000101 :$(14):013C00:013C10 
-
-$ cat oreilly.txo
-
-$14:013C00
-400001C00000000000000000 400001D00000000000000000
-400001E00000000000000000 400001F00000000000000000
-$00:000040
-500100 77A000 67A004 6FA008 7FA00C
-$00:000100
-013C00
-
-:$00*000000:000040:000101
-:$14*000000:013C00:013C10
+00:000100+[0000]18:000000
+00:000101+[0003]30:000000000000
+00:000103+0001CD
+00:000104+01F000
+:$(00):000040:000105 :$(02):002000:003000 :$(03):003000:003000 :$(1F):01F000:01F010 
 
 </pre>
 </div>
