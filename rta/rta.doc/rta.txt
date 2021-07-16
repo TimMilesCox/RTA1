@@ -6673,7 +6673,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	assembler_example
 
-		?		do	STRUCTURES_IN_TABLE,	dpop	table+STRUCTURE_SIZE*?-STRUCTURE_SIZE+OFFSET_IN_STRUCTURE
+		?		do	STRUCTURES_IN_TABLE,	dpop	table+CONTAINER_SIZE*?-CONTAINER_SIZE+OFFSET_IN_CONTAINER
 
 
 
@@ -7873,14 +7873,14 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		in order to be available whether whether any parallel hardware is present or not
 
-		and because not all source-2 operands are necessarily within the internal stack
+		and because not all Data Point 2 operands are necessarily within the internal stack
 		or even near each other in memory, which would be a minimal requirement for simultaneous operations
 
-		The repeat execute model allows source-2 operands to be gathered from dispersed locations
+		The repeat execute model allows Data Point 2 operands to be gathered from dispersed locations
 		typically as structure members
 
 	Instruction repeat model also has the effect of making the registers at the stack top available
-	as an <a href="rta.html#A2_2">alternative accumulators</a>
+	as <a href="rta.html#A2_2">alternative accumulators</a>
 
 	Instruction repeat is only available in application mode and not in interrupt mode
 
@@ -8004,7 +8004,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		the arrays of accumulators and Data Point 2 operands are traversed
 		without extra instructions to count or to advance indexing
 
-	Each repeated instruction generates a new effective address for the source2 operand on each repeat
+	Each repeated instruction generates a new effective address for the Data Point 2 operand on each repeat
 	if an index component of the effective address has been incremented
 
 	The automatic index register increment may be widely spaced either forward or back so that
@@ -8012,7 +8012,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	operation would not always be possible. Parallel ALUs and FPUs per one core exist in many machines but are
 	mostly not linked to multiple memory buses per core for simultaneous access to dispersed memory locations
 
-	Source-1 operands are loaded to internal stack accumulators and results stored
+	Data Point 1 operands are loaded to internal stack accumulators and results stored
 
 		<a href="#A2_1" style="text-decoration:none">by unrolled single, double or quadword push and pop instructions
 		source and store addresses may be very dispersed</a>
@@ -8022,8 +8022,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		<a href="#A2_4" style="text-decoration:none">by datafile pipe or stream read to and write from the internal stack</a>
  
-	Source-1 data points are therefore concentrated on acquisition and results are distributed on storage
-	Source-2 data points need never be concentrated at all
+	Data Points 1 are therefore concentrated on acquisition and results are distributed on storage
+	Data Points 2 need never be concentrated at all
 
 	Repeat operations traversing the register stack generally increment the accumulator cursor by
 
@@ -8135,9 +8135,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		counter restart value in register 22 WDATAC is copied to final count RDATAC
 
 		register 15 internal stack pointer is copied to
-		destination/source-1 accumulator cursor q
+		destination / Data Point 1 accumulator cursor q
 
-	Initial source-2 effective address is generated from
+	Initial Data Point 2 effective address is generated from
 	the address fields of the acquired instruction
 
 	X. The acquired instruction is executed using as accumulator[s]
@@ -8184,7 +8184,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		<a style="color:#00AF6F">SIMD_CONTROL	(-1, 0, 0, 0q)</a>
 
-	If accummulator cursor q designates any register outside the range 24..127	<a name="watch_it" style="color:#FF0000">**</a>
+	If accumulator cursor q designates any register outside the range 24..127	<a name="watch_it" style="color:#FF0000">**</a>
 	the thread faults with interrupt GUARD$ latent parameter permission
 
 	Macro SIMD_CONTROL takes a quadword argument
@@ -8206,8 +8206,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		the repeated operation is <a href="#A2_5_1">test / skip</a> and does not use internal stack accumulators
 
- 	RESTART_COUNT-1 is the final count restart value, and takes effect without reprogramming
-	if control registers remain unchanged between repeat sequences
+ 	RESTART_COUNT-1 restarts final count when <a href="#sim_d2">rex</a> instruction starts with final count = -1 = EXPIRED
 
 	RESTART_COUNT-1 is one less than iterations, which stop when final count RDATAC reaches -1 = EXPIRED
 
@@ -8222,18 +8221,18 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	which have the effect that subsequent instructions executed by rex (<i>instruction</i>)
 	operate singly on the stack top without intervening reconfiguration 
 	<a	name="simd_target"/>
-	The <a href="#A2_7">default Accumulator Vector</a> is identical to <a href="#simd_frame">SIMD Frame</a>
+	The <a href="#simd_frame">default Accumulator Vector</a> is identical to <a href="#simd_frame">SIMD Frame</a>
 
 		SIMD_CONTROL	(-1, ACCUMULATORS_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)
 
 	In the case operation[s] are required starting other than at the stack top,
 	a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> updates accumulator cursor q to Accumulator Vector [1st argument]<a href="#watch_it" style="color:#FF0000">**</a>
 	and suppresses automatic initialisation to the stack top
-	by writing RESTART_COUNT-1 of zero+ to final count register RDATAC
+	by writing <a href="#A2_7">RESTART_COUNT-1</a> of <a href="#A2_6">zero+</a> to final count register RDATAC
 
 	Accumulator Vector may start at any internal stack register offset and may contain all available registers.
-	Argument to SIMD target is a base_displacement name or expression in the internal stack.
-	Second argument HOW_MANY-1 is operations minus 1 default zero = one operation
+	Argument to SIMD_TARGET is a base_displacement name or expression addressing the internal stack.
+	Second argument HOW_MANY-1 is operations minus 1, default zero = one operation
 
 		<a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a>	single_dynamic_object_name			. no 2nd argument needed
 
@@ -8250,9 +8249,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	LANES	$equ	25				. use 100 registers
 
-		<a href="#rex_regs" style="color:00AF6F;text-decoration:none">SIMD_CONTROL	(-1, 4, LANES-1, 12q)</a>	. floating dest = 4-word blocks, source-2 index increment 12 words
+		<a href="#rex_regs" style="color:00AF6F;text-decoration:none">SIMD_CONTROL	(-1, 4, LANES-1, 12q)</a>	. floating dest = 4-word blocks, Data Point 2 index increment 12 words
 
-	?	$do	LANES,	qpush	source_table(1)+LANES*12-?*12+8	. load multiple source-1 to multiple dest
+	?	$do	LANES,	qpush	source_table(1)+LANES*12-?*12+8	. load multiple Data Point 1 to multiple dest
 									. from last 4 words of 12-word structures
 		lx	source_table(2),,xi
 		rex	(fm	8, x)					. 25 multiplications
@@ -8287,28 +8286,28 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Loads and stores may be repeat-executed instead of coding <a href="#A2_1">multiple unrolled push and pop</a> instructions
 
 	Repeated loads and stores process all in the same direction as repeated calculations and may operate with the same
-	SIMD_CONTROL parameters if the storage density of source1 datapoints and source2 datapoints is identical
+	SIMD_CONTROL parameters if the storage density of Data Points 1 and Data Points 2 is identical
 
 	Registers used as table pointers increment seamlessly through input and store tables however many SIMD passes are needed
 	<div	style="color:#00AF6F">
 
-		SIMD_CONTROL	(-1, REGISTERS2, LANES-1, CONTAINING_STRUCTURE_SIZE:q)
+		SIMD_CONTROL	(-1, REGISTERS2, LANES-1, CONTAINER_SIZE:q)
 		lx	source1_table,,xi
 		ly	source2_table,,xi
 		la	output_table,,xi
 		lr	TABLE_SIZE//LANES-1,,xi
 
 	keep_going
-		rex	(dl	OFFSET_IN_STRUCTURE, x)		. LANES * load
-		rex	(da	OFFSET_IN_STRUCTURE, y)		. LANES * update
-		rex	(ds	OFFSET_IN_STRUCTURE, a)		. LANES * store
+		rex	(dl	OFFSET_IN_CONTAINER, x)		. LANES * load
+		rex	(da	OFFSET_IN_CONTAINER, y)		. LANES * update
+		rex	(ds	OFFSET_IN_CONTAINER, a)		. LANES * store
 		jdr	keep_going
 
 	</div>
 	<a	name="A2_4"/>
 	<a	style="font-size:12.75pt;color:0000FF">A2.4	Loading / Storing the Internal Stack with Datafile Reads and Writes</a>
 
-	Loading and storing the internal stack with pipes or datafiles maintains arrays of densely packed source1 and output datapoints
+	Loading and storing the internal stack with pipes or datafiles maintains arrays of densely packed Data Point 1 and output datapoints
 	on fixed storage. Source2 datapoints may be packed or scattered
 	<div	style="color:#00AF6F">
 	routine	$head_near	 params(input1_fd,	int		;
@@ -8317,7 +8316,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 									;
 				scalars(array,	LANES*4			)
 
-		SIMD_CONTROL	(-1, REGISTERS4, LANES-1, CONTAINING_STRUCTURE_SIZE:q)
+		SIMD_CONTROL	(-1, REGISTERS4, LANES-1, CONTAINER_SIZE:q)
 
 	keep_going
 		c	(read)	input1_fd	array,,i	LANES*4,,xi	. length in data words
@@ -8325,7 +8324,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		jza	end_of
 
 		lx	datapoints2p
-		rex	(fm	OFFSET_IN_STRUCTURE, x)
+		rex	(fm	OFFSET_IN_CONTAINER, x)
 		sx	datapoints2p
 
 		c	(write)	output_fd	array,,i	LANES*4,,xi	. length in data words
@@ -8347,17 +8346,17 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 <a	name="rex_tz"/>
 	tz repeat execution
-	assembler example	SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, STRUCTURE_SIZE:q)
+	assembler example	SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, CONTAINER_SIZE:q)
 				lx	table,,xi
-				rex	(tz	OFFSET_IN_STRUCTURE, x[, {t1|t2|t3}|{h1|h2}])
+				rex	(tz	OFFSET_IN_CONTAINER, x[, {t1|t2|t3}|{h1|h2}])
 				j	zero_not_found
 				j	zero_slot_found
 
 <a	name="rex_tp"/>
 	tp repeat execution
-	assembler example	SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, STRUCTURE_SIZE:q)
+	assembler example	SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, CONTAINER_SIZE:q)
 				lx	table,,xi
-				rex	(tp	OFFSET_IN_STRUCTURE, x[, {t1|t2|t3}|{h1|h2}])	. bytes are sign extended
+				rex	(tp	OFFSET_IN_CONTAINER, x[, {t1|t2|t3}|{h1|h2}])	. bytes are sign extended
 				j	all_slots_marked_negative
 				j	positive_slot_found
 
@@ -8366,18 +8365,18 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	mta repeat execution
 	assembler example	lk	MASK
 				la	search_value
-				SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, STRUCTURE_SIZE:q)
+				SIMD_CONTROL	(-1, 0, STRUCTURES_IN_SEARCH-1, CONTAINER_SIZE:q)
 				lx	table,,xi
-				rex	(mta	OFFSET_IN_STRUCTURE, x)
+				rex	(mta	OFFSET_IN_CONTAINER, x)
 				j	not_present
 				j	found
 
 <a	name="rex_dte"/>
         dte repeat execution
         assembler example       dl      search_key
-                                SIMD_CONTROL    (-1, 0, STRUCTURES_IN_SEARCH-1, STRUCTURE_SIZE:q)
+                                SIMD_CONTROL    (-1, 0, STRUCTURES_IN_SEARCH-1, CONTAINER_SIZE:q)
                                 lx      table,,xi
-                                rex     (dte    OFFSET_IN_STRUCTURE, x)
+                                rex     (dte    OFFSET_IN_CONTAINER, x)
                                 j       not_in_table
                                 j       hit
 
