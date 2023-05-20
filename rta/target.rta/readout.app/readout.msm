@@ -1,0 +1,178 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def.sys/io.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	lib/ascii.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+	$lit	4
+$(4:*1)
+
+$(1:01000)
+
+start_of_ram	03FFFFF
+ram_high_index	31
+
+$(3:03000/$3)
+
+page	0
+cursor	0
+left	$res	1
+right	$res	1
+
+zone	04000
+mask	0FFF
+ozone	05000
+flag	0
+
+buffer	$res	8
+
+$(0:*1/$0)
+	$base_d	$zenith(3)-003000	1024
+	c	(seg$load)	0,,xi	(readout_data:d),,long
+
+	inB	device$flags			. RAM highest page
+	andB	(03FFFFF)			. minus memory type flag
+	inA	ram$threshold			. RAM 1st page
+	ds	start_of_ram			. after NVRAM / ROM
+
+ask	printf	$3("h / Page Index>":0),,xi
+	fgets	buffer,,xi	8*3	stdin
+	jza	end_of				. broken pipe
+	jna	error				. or something
+	la	buffer,,t1
+	jna	end_of				. stdin closed remotely 
+	aa	-'.',,xi
+	jza	end_of				. operator wants out
+	aa	'.'-'h',,xi
+	jnza	listen
+.	z	buffer
+	lcal	help1				. operator wants help
+	j	ask
+
+listen	sscanf	buffer,,xi	$3("%i":0),,xi	page,,xi
+	jna	error				. whatever
+	jza	ask				. no number field
+
+	la	page
+	lcal	allowed?
+	j	ask
+
+start	sabr	4				. open the window
+	and	(0400000)			. big pointer flag
+	sa	flag
+	ql	(004000, 000FFF, 005000, 0q)	. 4096-word block?
+	tz	flag
+	ql	(004000*/6, 03FFFF, 005000*/6, 0400000q)	. no, 262144
+	qs	zone				. set storage block geometry
+
+	lb	cursor				. mask to page / bank size
+	andB	mask
+	or	b				. zone to window used here
+	sa	cursor
+
+	la	04000				. and this will break
+	ana	("TCB")
+	jnza	readout
+	printf	$3("TCB":LF:0),,xi		. announce it seems to be a TCB
+	j	readout
+
+line	fgets	buffer,,xi	3*8,,xi	stdin
+	jna	error
+	jza	readout				. scroll on
+	la	buffer,,t1
+	jza	readout				. scroll on
+	jna	end_of				. stdin remote close
+
+	aa	-'.',,xi
+	jza	end_of				. operator wants out
+
+	aa	'.'-'h',,xi
+	jnza	input
+.	z	buffer
+	lcal	help2				. operator wants syntax help
+	j	line
+
+input	sscanf	buffer,,xi	$3("%i:%x":0),,xi	left,,xi	right,,xi
+	jna	error
+	jza	readout
+						. the only things left
+	anu	2,,xi				. are scroll or 
+	jnzb	one?				. [ change_page: ] change_cursor
+	dl	left
+	lcal	allowed?
+	j	line
+	ds	page				. write page and cursor
+	j	start
+
+one?	la	left
+	and	mask
+	or	zone
+	sa	cursor				. just write cursor
+
+readout	lx	cursor				. display within limits
+	ly	8,x,i
+	lr	ozone				. storage block limit
+	jyl	read_words
+	ly	ozone
+
+read_words
+	lr	y
+	la	x
+	and	mask
+	printf	$3("%x:%x ":0),,xi	page	a
+
+read_word
+	jxge	eoline
+	printf	$3("%x ":0),,xi	0, x		. space after last output clause
+	ax	1,,xi				. to make keyins feel friendlier
+	j	read_word
+
+eoline	sx	cursor
+	j	line				. scroll loop
+
+error	printf	$3("error %d":LF:0),,xi	a
+end_of	fret	0
+
+
+.	mostly to stop attempts to base ISR space which faults at instruction level
+.	but extended to stop ROM reading out over networks
+
+allowed?
+	lr	start_of_ram			. request must be as high as this
+	lx	a
+	jxge	threshold_allowed
+	printf	$3("ROM region max not be displayed":10:0),,xi
+	lret	0				. check
+
+threshold_allowed
+	lr	x				. request becomes limit comparand
+	lx	ram_high_index			. this must be as high as request
+	lk	(0400000)			. but has the request big-bank flag?
+	mta	(0)				. is request in a bit 0400000 on?
+	ax	(0400000)			. yes it is, so compare for that
+	jxge	allowed!
+	printf	$3("requested page beyond RAM":10:0),,xi
+	lret	0				. check
+
+allowed!
+	lret	1				. pass
+	
+help1	printf	$3("Start Page Index is decimal or leading zero for hex":LF:0),,xi
+	printf	$3("large page flag 04xxxxx to scan a block of 262144 words":LF:0),,xi
+	printf	$3("key . to quit instead":LF:0),,xi
+	printf	$3("key h at any point for running help":LF:0),,xi
+	lret	0
+
+help2	printf	$3("key return for next line. Key . to quit":LF:0),,xi
+	printf	$3("input lines are PAGE:OFFSET or just OFFSET":LF:0),,xi
+	printf	$3("first[:] token is decimal for small intuitive numbers, leading zero for hex":LF:0),,xi
+	printf	$3("OFFSET after : in PAGE:OFFSET is always hex":LF:0),,xi
+	printf	$3("large page flag 04xxxxx:OFFSET to scan a block of 262144 words":LF:0),,xi
+	lret	0
+	

@@ -1,0 +1,144 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/catalog.def
+	$include	language/stack.def
+	$include	array.app/array.def
+	$include	image.app/imports.def
+	$include	stream/stream.def
+	$path
+	$list
+
+$(1:01000/$1)
+
+device_index	128+63
+
+$(3:03000/$3)
+patterns
+	$list	0
+?	$do	64,	+?-1
+	$list
+
+device	63
+devices	1
+banks	8
+
+text	$res	48//3
+
+__BASE	$equ	__VASTP
+
+$(0:0/$0)
+	
+	catalog
+ 
+	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(vastd:L),,long
+
+request	la	device_index
+	and	63,,xi		. strip device port numbers bias
+	sa	device
+
+	printf	$3("devices[%d] banks[%d] device[%d]>":0),,xi	devices	banks device
+	fflush	stdout
+
+	fgets	text,,xi	48,,xi	stdin
+	la	text,,t1
+	aa	-'.',,xi
+	jza	no_request
+
+	sscanf	text,,xi	$3("%d %d %d":0),,xi	devices,,xi	banks,,xi	device,,xi
+
+	la	device
+	or	128,,xi		. add device port numbers bias
+	sa	device_index
+
+	SIMD_CONTROL	(-1, 4, 16-1, 4q)
+
+next_device
+	tp	devices
+	j	request
+
+	inA	*device_index
+	lk	(0c00000s)
+	mta	(0800000s)
+	j	not_sysmem
+
+	and	(03FFFFF)
+	aa	1,,xi
+	sar	6
+
+	tz	banks
+	tp	banks
+	j	automatic
+
+	anu	banks
+	jc	proceed
+
+automatic
+	sa	banks
+	lb	device_index
+	andB	63,,xi
+
+	printf	$3("device %d has %x memory banks":10:0),,xi	b	a
+	j	proceed
+
+not_sysmem
+	lb	device_index
+	andB	63,,xi
+
+	printf	$3("device %d type %x is not a system memory type":10:0),,xi	;
+		b	a
+						
+	j	request
+
+proceed	la	device_index
+	and	63,,xi
+	or	(0400000)
+
+	lc	imprint	a	banks	
+
+	dec	device_index
+	dec	devices
+
+	tz	devices
+	j	next_device
+
+	j	request
+
+no_request
+	fret	0
+
+imprint	$head_near	 params(bdescriptor,	int		;
+				outcount,	int	)	;
+								;
+			scalars(data,		64,	patterns)
+
+	la	bdescriptor
+
+next_bank
+	sabr	31
+	aa	64,,xi
+
+	lx	(31*/18)
+
+	lr	262144/64-1,,xi
+
+next_row
+	rex	(qs	0, x)
+	rex	(da	(64, 64d))
+
+	SIMD_TARGET	data+2	16-1
+	rex	(da     (64, 64d))
+
+	jdr	next_row
+
+	dec	outcount
+	tz	outcount
+	j	next_bank
+
+?	$do	16, qpop	patterns+?*4-4
+
+	lret	0
+
+	$do	$<256,$(0:256)

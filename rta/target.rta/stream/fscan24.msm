@@ -1,0 +1,154 @@
+
+fscan24	$tree
+
+FSCAN_LWINDOW	$equ	1024
+
+	$if	FSCAN_LWINDOW
+	$head_far	 params(file_openp,	int			;
+				formap,		int		)	;
+									;
+			scalars(data_sampled,	long			;
+				fields,		int			;
+				share,		int			;
+				stream_registers,  float, RDATAC)	;
+									;
+			 xframe(text,		FSCAN_LWINDOW		)
+
+	la	(B_FS2*/12)
+	lk	(63*/12)
+	mta	file_openp
+	j	noshare
+	call	(fileshare_space_open)
+	n	share
+noshare
+
+	. the extent is in memory word addressable filestore or otherwise cached
+	. extent size is known to the file system
+	. only words split across read requests are accessed twice
+
+	c	(fs24_advance)	file_openp	(0L),,long	. describe current extent
+	jna	break
+	jdz	away			. a is just as zero as b is. Nothing more to read
+	
+sample			. ds	data_sampled	. that's only what's in extent
+
+	.	fs24_window is zero-copy read on part of a file extent
+	.	at seek location per open / previous reads / fs24_advance
+
+	c	(fs24_snoop)	file_openp	text,,i	FSCAN_LWINDOW,,xi
+	jna	break
+	jza	away
+							
+	dsr	24
+	ds	data_sampled
+
+	$else
+
+	$head_far	 params(file_openp,	int		;
+				formap,		int	)	;
+			scalars(data_sampled,	long		;
+				fields,		int		;
+				share,		int		;
+				text,		8		;
+				stream_registers,  float, RDATAC)
+
+	la	(B_FS2*/12)
+	lk	(63*/12)
+	mta	file_openp
+	j	noshare
+	call	(sharefile_space_open)
+	n	share
+
+noshare
+
+	. the objective of a sample cached read is to straddle extents transparently
+	. this method is more portable if filestore is not memory word addressable
+	. and if extents are not buffered in memory
+
+	. 1 get a format command or stop
+	. 
+	. 1 buffer some data
+
+sample	c	(fs24_snoop)	file_openp	text,,i		8,,xi
+
+	jza	break		. there isn't any data
+	jna	break
+
+	jna	away
+	jza	away
+	dsr	24
+	ds	data_sampled
+	$endif
+					. b = words remaining in extent
+	mf	$word/$byte,,xi		. from actual position. Translate for bytes
+
+	lx	file_openp
+	ly	fspaxq:o:column
+	anb	y
+	sb	BYTES
+	la	fspaxq:o:flags
+	sa	LAST_BYTE_READ
+	on	b$streamZR
+	off	b$stream16r++half$w
+	z	RDATAC			. that's compensated with o:column
+
+	lb	text,,i
+	sb	q
+
+.	lr	LAST_BYTE_READ
+.	call	(rstream_starta)
+.	sr	LAST_BYTE_READ
+
+	ex	fgets24:realign, y
+
+	c	(rstream_scana)		file_openp-1	formap,,i
+	sa	fields
+
+	la	LAST_BYTE_READ
+	lx	file_openp
+	sa	fspaxq:o:flags
+
+eoline	lcal	fgets24:pointerise
+	lx	file_openp
+	sa	fspaxq:o:column
+
+	la	q
+	ana	text,,i			. pointerise already rounded q
+	and	(262143)		. remove window tag
+
+	dsr	24			. data words advance
+
+	c	(fs24_advance)	file_openp	 a,,long
+
+away	la	fields
+break	tp	share
+	call	(fileshare_space_close)
+.	USTREAM				. defaults -> b$stream / SIMD registers
+	qpop	RDATAC			. stream register need to be nonvolatile
+"$$frame" $set	$$frame-4
+	$ret				. return whatever result has been placed in a
+
+	$if	0
+
+.	include this file in the same iframe as stream/fgets
+.	these routines are locally addressed as
+.
+.		fgets24:pointerise
+.		fgets24:realign
+
+pointerise
+	la	RDATAC
+	jza	pointerised
+	la	24,,xi
+	ana	RDATAC
+	sar	3
+	dec	q			. read partially consumed word again
+pointerised
+	lret	0	
+
+realign
+?	$do	$word/$byte,	rsr	?*$byte-$byte
+
+	$endif
+
+	$root

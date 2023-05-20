@@ -1,0 +1,100 @@
+_leloup:
+	push	rbp
+	push	rsi
+	push	rdi
+
+	push	rax
+	push	rbx
+	push	rcx
+	push	rdx
+
+	mov	rdx, qword ptr [_apc]
+	mov	rbp, qword ptr [_register_set]
+
+loup:	cmp	rdx, qword ptr [_apcz]
+	ja	off_limits
+
+	movbe	rax, qword ptr [edx]
+;	bswap	eax
+	add	rdx, 4
+	call	_execute
+
+	%if	RATIO
+	%else
+	%if	METRIC
+	inc	dword ptr [_metric]
+	%endif
+	%endif
+
+	%if	TSLICE
+	test	dword ptr [_psr], 00870000h	; not while ISR or interrupt mask
+	jnz	louping
+	test	dword ptr [__register+RT_CLOCK], 00FFFFFFh
+	jz	louping
+
+	dec	dword ptr [__register+RT_CLOCK]
+	jnz	louping
+
+	mov	eax, II_YIELD
+	mov	esi, LP_TIMESLICE
+	call	_ii
+	%endif
+
+	jmp	louping
+
+off_limits:
+	mov	eax, II_GUARD
+	call	_ii
+
+louping:
+	%if	DRANG & 1
+	dec	dword ptr [__register+282*4]
+	jnz	loup_adrang
+	or	word ptr [_indication], LOCKSTEP
+loup_adrang
+	%endif
+
+	%if	DRANG & 2
+	mov	rax, qword ptr [_breakpoint]
+	xor	rax, rdx
+	jz	indicated
+	%endif
+
+	%if	RATIO
+	dec	dword ptr [__register+283*4]
+	jnz	loup_away
+	or	word ptr [_indication], TIME_UPDATE
+loup_away:
+	%endif
+
+	mov	ax, word ptr [_indication]
+	mov	cl, byte ptr [_psr+2]
+	and	cl, 7				; highest interrupt mask?
+	xor	cl, 7
+	jz	internal_indications?		; maskable interrupts are masked
+
+        test	ax, INDICATIONS|EXTERNAL_INDICATIONS
+	jz	loup
+	test	ax, EXTERNAL_INDICATIONS
+	jz	indicated
+	call	_xi
+	jmp	louping				; keep going intil pending flags are off
+
+internal_indications?:
+	test	word ptr [_indication], INDICATIONS
+	jz	loup
+
+indicated:
+	mov	qword ptr [_register_set], rbp
+	mov	qword ptr [_apc], rdx
+
+	pop	rdx
+	pop	rcx
+	pop	rbx
+	pop	rax
+
+	pop	rdi
+	pop	rsi
+	pop	rbp
+	ret
+

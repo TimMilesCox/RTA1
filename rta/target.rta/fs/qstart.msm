@@ -1,0 +1,64 @@
+
+qstart_name	$head_far	 params(qstart_fsid,		int	;
+	 				qstart_doffset,		long	;
+					qstart_words,		int	;
+					qstart_namep,		int)	;
+									;
+				scalars(qstart_pax,		6	;
+					qstart_buffer,		8	)
+
+
+
+		c	(fsrom_find)	qstart_pax,,i		;
+					qstart_fsid		;
+					qstart_doffset,,long	;
+					0,,xi			;	. = wildcard on object type
+					qstart_words		;
+					qstart_namep
+
+		jdz	qstart_nane
+
+		la	0, y		. object header
+		lk	(-1*/$word-$byte)
+		mta	(FILE$*/$word-$byte)
+		j	read_launch_gate?
+		sy	qstart_pax+3		. file descriptor -> open block
+
+		c	(fsrom_read)	qstart_pax,,i		;
+					qstart_buffer,,i	;
+					8,,xi
+
+		j	read_launch_gate
+
+read_launch_gate?
+		lk	(-1*/$word-$byte*2)
+		mta	(LINK$*/$word-$byte++GATE$)
+		j	qstart_nane
+
+		lx	1, y			. offset in granule
+		la	qstart_fsid		. start page index file system
+		sabr	32			. place in general I/O window
+		ax	b			. granule * 64
+		ax	(32*/12)		. window tag
+		ql	0, x			. guaranteed in first page of FS
+		qs	qstart_buffer
+		ql	4, x
+		qs	qstart_buffer+4
+
+read_launch_gate
+		ql	qstart_buffer
+		jpa	qstart_launch	. vector is simple
+
+		la	qstart_buffer+6,,i
+		or	(0800000s)	. vector is gate in template file
+		
+qstart_launch	ii	SPAWN$
+
+		jza	qstart_nane
+		lb	qstart_namep
+		ii	TAG$		. add name to thread control block
+		j	qstart_go
+
+qstart_nane	la	0,,xi		. whataver was found was not useful
+qstart_go	$ret
+

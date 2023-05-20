@@ -1,0 +1,73 @@
+_inA:	mov	ebx, dword ptr [esi+IO_PORT+eax*4]
+	mov	dword ptr [ebp+A], ebx
+_inA_:	ret
+
+_inB:	mov	ebx, dword ptr [esi+IO_PORT+eax*4]
+	mov	dword ptr [ebp+B], ebx
+_inB_:	ret
+
+_outA:	mov	ebx, dword ptr [ebp+A]
+	jmp	oport
+
+_outB:	mov	ebx, dword ptr [ebp+B]
+	jmp	oport
+
+
+ISR_ONLY equ	8
+MEMTYPE	equ	1
+MEMZERONLY equ	2
+EXTERNAL_IO equ	4
+BROADCAST equ	16
+
+B_1	equ	MEMTYPE
+B_TCB	equ	MEMTYPE+ISR_ONLY
+B_KERN	equ	MEMTYPE+ISR_ONLY
+A_THREP	equ	MEMZERONLY+ISR_ONLY
+I_PORT	equ	EXTERNAL_IO
+O_PORT	equ	EXTERNAL_IO
+O_INDICA equ	EXTERNAL_IO
+O_CHILL	equ	EXTERNAL_IO
+I_TZONE	equ	EXTERNAL_IO
+RAM_THRESH equ	ISR_ONLY+MEMZERONLY
+XI_ACK	equ	ISR_ONLY+EXTERNAL_IO
+O_LEDS	equ	EXTERNAL_IO
+O_INC	equ	ISR_ONLY+EXTERNAL_IO
+O_MCAST	equ	ISR_ONLY+BROADCAST
+
+
+mask_port_outAB:
+	db	0, B_1, 0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+	db	0,  B_TCB,B_KERN,B_KERN,B_KERN,B_KERN,B_KERN,B_KERN
+	db	A_THREP, 0, 0, XI_ACK,  O_INC, 0,0, O_MCAST
+
+	db	I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT
+	db	O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT
+
+	db	0,0,0,0, 0, I_TZONE, O_INDICA, O_CHILL
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  RAM_THRESH, 0,0, O_LEDS
+
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+					; outA|B rules flags per I/O port
+
+_reload:
+	push	rax
+	mov	eax, dword ptr [rbp+A]
+	add	dword ptr [rbp+A], 2
+	call	_burst_read2
+	pop	rdi
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	mov	dword ptr [rsi+IO_PORT+rdi*4], eax
+	mov	dword ptr [rsi+IO_PORT+rdi*4+4], ebx
+	ret

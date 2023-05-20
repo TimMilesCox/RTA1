@@ -1,0 +1,139 @@
+.	support routines when expression language
+.	moves up to integers larger than 2 words in size
+.	mostly inline macro code has already done 2 words of the operation
+.	and mostly the extra data represents the high order part of the value
+.	and is in registers [ 6 7 ]
+
+
+
+and_HI	$head_far	 params(and_sumU,	long)		;
+								;
+			scalars(targetL,	long,	a	)
+
+	dl	and_sumU
+	and	6
+	andB	7
+	ds	6
+	pop	a
+	pop	b
+	fret	0
+
+
+.	shift operations to > 2 words
+.	may need to sign-fill / zero-fill some complete words
+
+.	lookaside registers [ 8 9 ] are borrowed
+.	data in [ a b ] is leapfrogged to mage one big number in [ 6 7 8 9 ]
+
+.	effective 72-bit algebraic shift
+
+q_sa	$head_far	 params(countR,		int		)
+								;
+			scalars(caller_89,	long,	8	;
+				caller_xy,	long,	x	)
+
+	ly	3,,xi
+	lx	countR
+	ds	8			. borrow part of the lookaside area
+	la	mantissa2		. this should be a word of signs
+	saa	24
+
+sa_again
+	ax	-24,,xi			. roll down adding leading signs
+	tp	x			. until shift distance <= 1 data word
+	j	sa_round
+	
+	dpush	7
+	pop	8
+	pop	9			. until the stack comes back up
+	sa	7			. add 1 word signs in front
+
+	ay	-1,,xi
+	tz	y
+	j	sa_again
+
+	dsr	48			. shift count out of range
+	ds	6			. 2s complement integer
+	j	sa_return		. so all - signs is not zero
+
+sa_round
+	ax	24,,xi
+	sa	6			. signs -> high order shift word. It is anyway
+
+	tz	x			. save some work if no net bit offset
+	lcal	sa_pushdown_store	. shift overlapping word pairs right
+					. by shift distance /// word size
+	dl	8			. get manipulated data bits 47..0
+					. back into accumulators
+sa_return
+	pop	x
+	pop	y
+	pop	8
+	pop	9
+	fret	0
+
+sa_pushdown_store
+	ly	4,,xii
+
+sa_align
+	ay	-1,,xi			. count / index down - 1
+	dl	5, y			. read words
+	dsr	0, x			. 2-word shift
+	sb	6, y			. write low-order word back
+	tz	y			. reached zero index / count ?
+	j	sa_align		. no
+	lret	0			. yes
+
+
+.	effective 72-bit left shift
+
+q_sl	$head_near	 params(countL,	int	)	;
+							;
+			scalars(usr89,	long,	8	;
+				usrxy,	long,	x	)
+
+	ly	3,,xi
+	lx	countL
+	ds	8			. copy acculumators to data LS positions
+
+sl_again
+	ax	-24,,xi			. any completely jumped data words?
+	tp	x
+	j	sl_round
+
+	dpush	8
+	pop	7
+	pop	8
+	z	9
+
+	tz	y
+	j	sl_again
+
+	dsr	48			. no registers in scope of shift
+	ds	6			. 2s complement integer
+	j	sl_return		. remove anything like signs
+
+sl_round
+	ax	24,,xi
+	tz	x
+	lcal	sl_pullup_store
+	dl	8
+
+sl_return
+	pop	x
+	pop	y
+	pop	8
+	pop	9
+	fret	0
+
+sl_pullup_store
+	ly	4,,xi			. apply the bit offset
+	
+sl_align
+	ay	-1,,xi
+	dl	5, y
+	dsl	0, x
+	sb	6, y
+	tz	y
+	j	sl_align
+	lret	0

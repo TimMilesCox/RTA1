@@ -1,0 +1,139 @@
+
+	extern	_ultra
+	extern	_ultra1
+	extern	_ultra2
+	extern	_ultra3
+	extern	_ultra4
+	extern	_ultra5
+	extern	_ultra6
+	extern	_ultra7
+	extern	_core
+
+_save_ebp	equ	0
+_save_return	equ	4
+_1st_param	equ	8
+
+_leloup:
+	push	ebp
+	push	esi
+	push	edi
+
+	%if	0
+	add	esp, -8
+	movq	qword ptr [esp], mm7
+	%endif
+
+	%if	0			; cdecl
+	push	eax
+	push	ecx
+	push	edx
+	%endif
+
+	push	ebx
+
+	mov	esi, dword ptr [ebp+8]	; structure smp ->
+	push	esi			; balanced on stack top
+	movd	mm7, esi		; refresh from mmx during instruction
+
+	mov	edx, dword ptr [esi+APC]
+	mov	ebp, dword ptr [esi+REGISTER_SET]
+
+loup:	cmp	edx, dword ptr [esi+APCZ]
+	ja	off_limits
+
+	mov	eax, dword ptr [edx]
+	bswap	eax
+	add	edx, 4
+
+	call	_execute
+
+	mov	esi, dword ptr [esp] 	; core pointer needed all the way round
+
+	%if	TSLICE
+	test	dword ptr [esi+PSR], 00870000h	; not while ISR or interrupt mask
+	jnz	louping
+	test	dword ptr [esi+RT_CLOCK], 00FFFFFFh
+	jz	louping
+
+	dec	dword ptr [esi+RT_CLOCK]
+	jnz	louping
+
+	mov	eax, II_YIELD
+
+	mov	ecx, LP_TIMESLICE
+	call	_ii
+
+	%endif
+
+	jmp	louping
+
+off_limits:
+	mov	eax, II_GUARD
+	call	_ii
+
+louping:
+	mov	cl, byte ptr [_general_indication]
+	test	cl, BREAKPOINT
+	jz	loup_count
+	mov	eax, dword ptr [_breakpoint]
+	xor	eax, edx
+	jnz	loup_count
+	or	byte ptr [_general_indication], LOCKSTEP
+	or	byte ptr [esi+INDICATION], LOCKSTEP
+	or	byte ptr [_flag+'s'-'a'], 1
+	jmp	indicated
+
+loup_count:
+	dec	dword ptr [esi+283*4]
+	jns	loup_away
+	or	word ptr [esi+INDICATION], TIME_UPDATE
+loup_away:
+
+	mov	ax, word ptr [esi+INDICATION]
+	mov	cl, byte ptr [esi+PSR+2]
+	and	cl, 7				; highest interrupt mask?
+	xor	cl, 7
+
+	jz	internal_indications?		; maskable interrupts are masked
+
+        test	ax, INDICATIONS|EXTERNAL_INDICATIONS	; 1 or both of internal++external
+	jz	loup					; indications? No?
+	test	ax, EXTERNAL_INDICATIONS	; external indications among the yes?
+
+	jz	indicated			; external indications there are not
+						; therefore internal indications there are
+;	push	esi	; already on stack top	; therefore raise their interrupts
+	call	_xi
+	mov	esi, dword ptr [esp]
+
+	and	byte ptr [esi+INDICATION], 127
+	jmp	louping				; keep going intil pending flags are off
+
+internal_indications?:
+	test	ax, INDICATIONS			; just read from esi->INDICATION
+	jz	loup
+
+indicated:
+	and	byte ptr [esi+INDICATION], LOCKSTEP^255
+	mov	dword ptr [esi+REGISTER_SET], ebp
+	mov	dword ptr [esi+APC], edx
+
+	pop	ebx				; core  pointer
+	pop	ebx				; caller values
+
+	%if	0				; cdecl
+	pop	edx
+	pop	ecx
+	pop	eax
+	%endif
+
+	%if	0
+	movq	mm7, qword ptr [esp]
+	add	esp, 8
+	%endif
+
+	pop	edi
+	pop	esi
+	pop	ebp
+	ret
+

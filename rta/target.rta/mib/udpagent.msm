@@ -1,0 +1,177 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(1)
+
+mib_uneto	mobjet		0	1	SNMP_NETWORKADDRESS	4	;
+				1	0	0		mib_uneta
+
+mib_uporto	mobjet	mib_uneto	2	SNMP_INT		2	;
+				1	0	0		mib_uneta+1
+
+mib_uneta	$netp		0,161
+
+
+$(0)
+
+udpagent_net	$head_far	 params(nuseq,		int	;
+					nuflags,	int	;
+					nuroutine,	int)
+
+	la	nuroutine
+	ana, xi	SNMP_GETREQ
+	lb	nuseq
+	jnza	udpagent_netagain
+	lcal	udpagent_direct
+	jzb	udpagent_nohit
+	ds	mib_uneta
+	j	udpagent_netresult
+
+udpagent_netagain
+	lcal	udpagent_search_forward
+	jzb	udpagent_nohit
+
+	ds	mib_uneta
+	andB	(65535)
+	la	nuseq
+	sb	9, a
+
+udpagent_netresult
+	lb, xi	mib_uneto
+	fret	0
+
+udpagent_nohit
+	fret	0
+
+udpagent_port	$head_far	 params(useq,		int	;
+					uflags, 	int	;
+					uroutine	int)
+
+	lb	useq
+	lcal	udpagent_direct
+	jzb	udpagent_nohitp
+	
+	andB	(65535)
+	ds	mib_uneta
+	lb, xi	mib_uporto
+
+udpagent_nohitp
+	fret	0
+
+
+udpagent_direct
+	la	9, b
+	dsr	9
+	and, xi	127
+	aa, xi	usockb(1)
+	la	0, a
+	jza	udpagent_nodirect
+	sabr	BSOCKET
+	sbr	15
+	orB, xi	BSOCKET*/9
+	sbl	3
+	dl	0, b
+	lret	0
+
+udpagent_nodirect
+	la, xi	SNMP_NOSUCHNAME
+	lb, xi	0
+	lret	0
+
+
+udpagent_search_forward
+	la	1, b
+
+	aa, xi	-8
+	jnc	udpagent_start_tree
+
+	aa, xi	-1
+	jnc	udpagent_search_equal
+
+	la	9, b
+	aa, xi	1
+	j	udpagent_locate
+
+udpagent_search_equal
+	la	9, b
+
+udpagent_locate
+	dsr	9
+	sbr	15
+	orB, xi	BSOCKET*/9
+	sbl	3
+	aa, xi	usockb(1)
+	j	udpagent_start_search
+
+udpagent_start_tree
+	la, xi  usockb(1)
+	lb      (BSOCKET*/12)
+
+udpagent_start_search
+	push	x
+	lx	b
+	lr	(BSOCKET+1*/12))
+	push	a
+
+udpagent_search_on
+	la, xi	-usockb(128)-1
+	aa	0, sp
+	jc	udpagent_nofind
+	la	0, sp
+	la	0, a
+	jza	udpagent_next_bank
+	sabr	BSOCKET
+udpagent_next_port
+	dl	0, x
+	jnzb	udpagent_eosearch
+	ax, xi	8
+	jxge	udpagent_next_bank
+	j	udpagent_next_port
+udpagent_next_bank
+	inc	0, sp 
+	lx	(BSOCKET*/12)
+	j	udpagent_search_on
+
+udpagent_nofind
+	lb, xi	0
+	la, xi	SNMP_NOSUCHNAME
+udpagent_eosearch
+	pop	x
+	pop	x
+	lret	0

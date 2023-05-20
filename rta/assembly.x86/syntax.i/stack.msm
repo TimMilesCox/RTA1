@@ -1,0 +1,162 @@
+;	stack operations call these to add or subract stack
+;	limits are checked here
+;	these routines always leave epb -> all registers 0..255
+;	because both  interrupt internal stack pointer register 128 + 15
+;		and application internal stack pointer register 15
+
+;	are absolute pointers to the entire register stack
+
+;	therefore instructions calling here must afterwards
+
+;		mov	ebp, dword ptr [_register_set]
+
+;	to get ebp back to application registers 0..127
+;			or interrupt registers 128..255
+
+;	ebp governs which r k x y a b mantissa2 mantissa3 fp sp is implied in the instruction opcode
+;	registers addressed as operand are always absolute in the range 0..255
+
+;	these don't move any data but leave [ebp+ebx*4] pointing to the required stack frame
+;	and update the stack pointer
+
+;	although applications can and must read interrupt registers with load instructions
+;	they can't read interrupt registers with runaway pop instructions
+;	because the problem is easier to find with an interrupt as soon as 128+ gets popped
+
+
+stack1:	mov	ebx, dword ptr [ebp+S_P]
+	test	byte ptr [_psr+2], 128
+	jz	stack1_a
+	cmp	ebx, 256
+	ja	near guard_stack
+	dec	ebx
+	js	near guard_stack
+	cmp	ebx, 128+24
+	jnb	stack1_j			; in range
+	cmp	ebx, 128-1			; new sp value
+	ja	near guard_stack		; in working registers page
+stack1_j:
+	mov	dword ptr [ebp+S_P], ebx
+	mov	ebp, __register
+	ret
+
+stack1_a:
+	cmp	ebx, 128			; application push high limit 128,  ISR 256
+	ja	near guard_stack
+	dec	ebx
+	cmp	ebx, 24
+	jb	near guard_stack		; stack top limit zero ISR and application
+	mov	dword ptr [ebp+S_P], ebx
+	mov	ebp, __register
+	ret
+
+stack2:	mov	ebx, dword ptr [ebp+S_P]
+	test	byte ptr [_psr+2], 128
+	jz	stack2_a
+	cmp	ebx, 256
+	ja	near guard_stack
+	add	ebx, -2
+	js	near guard_stack
+	cmp	ebx, 128+24
+	jnb	stack2_j
+	cmp	ebx, 128-2
+	ja	near guard_stack
+
+stack2_j:
+	mov	dword ptr [ebp+S_P], ebx
+	mov	ebp, __register
+	ret
+
+stack2_a:
+	cmp	ebx, 128			; application push high limit 128,  ISR 256
+	ja	guard_stack
+	add	ebx, -2
+	cmp	ebx, 24
+	jb	guard_stack			; stack top limit zero ISR and application
+	mov	dword ptr [ebp+S_P], ebx
+	mov	ebp, __register
+	ret
+
+stack4:	mov	ebx, dword ptr [ebp+S_P]
+	test	byte ptr [_psr+2], 128		; read psr interrupt bit
+	jz	stack4_a			; stack is registers 24..127
+	cmp	ebx, 256			; stack is registers  0..255
+	ja	guard_stack
+	add	ebx, -4				; proposed frame
+	js	guard_stack			; not lower than register zero
+	cmp	ebx, 128+24
+	jnb	stack4_j
+	cmp	ebx, 128-4			; in working registers page
+	ja	guard_stack
+
+stack4_j:
+	mov	ebp, __register			; registers means all of them
+	ret					; both sp are absolute pointers
+
+stack4_a:
+	cmp	ebx, 128			; don't push into a higher register than 127
+	ja	guard_stack
+	add	ebx, -4
+	cmp	ebx, 24				; dont push lower than 24
+	jb	guard_stack
+
+	mov	ebp, __register			; registers means all of them
+	ret					; both sp are absolute pointers
+
+guard_stack:
+stack_underflow:
+	mov	ebp, dword ptr [_register_set]	; application or interrupt register set
+	test	dword ptr [_psr], 00800000h
+	jz	guard_ii_authority		; sideline the application
+	mov	dword ptr [ebp+S_P], 256	; restart the interrupt stack
+	mov	eax, 1				; so the interrupt can be interrupted
+	test	byte ptr [_uflag+'Z'-'A'], 1
+	jz	gsago
+	or	byte ptr [_indication], LOCKSTEP
+gsago:	jmp	_ii_escape
+
+stack_read4:
+	mov	ebx, 4
+	add	ebx, dword ptr [ebp+S_P]
+	cmp	ebx, 128			; you can have stack locations up to here
+	jna	stack_r4			; whoever you are
+	test	byte ptr [_psr+2], 128		; any higher you have to be an ISR
+	jz	stack_underflow
+	cmp	ebx, 256			; and then not any higher than this
+	ja	stack_underflow
+
+stack_r4:
+	xchg	ebx, dword ptr [ebp+S_P]
+	mov	ebp, __register
+	ret
+
+stack_read2:
+	mov	ebx, 2
+	add	ebx, dword ptr [ebp+S_P]
+	cmp	ebx, 128			; you can have stack locations up to here
+	jna	stack_r2			; whoever you are
+	test	byte ptr [_psr+2], 128		; any higher you have to be an ISR
+	jz	stack_underflow
+	cmp	ebx, 256			; and then not any higher than this
+	ja	stack_underflow
+
+stack_r2:
+	xchg	ebx, dword ptr [ebp+S_P]
+	mov	ebp, __register
+	ret
+
+stack_read1:
+	mov	ebx, 1
+	add	ebx, dword ptr [ebp+S_P]
+	cmp	ebx, 128			; you can have stack locations up to here
+	jna	stack_r1			; whoever you are
+	test	byte ptr [_psr+2], 128		; any higher you have to be an ISR
+	jz	stack_underflow
+	cmp	ebx, 256			; and then not any higher than this
+	ja	stack_underflow
+
+stack_r1:
+	xchg	ebx, dword ptr [ebp+S_P]	; already updated
+	mov	ebp, __register
+	ret
+

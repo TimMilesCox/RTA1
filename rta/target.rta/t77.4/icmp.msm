@@ -1,0 +1,231 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(66::,x)
+ping	icmp_echo
+
+$(1)
+
+icmpq	dq
+
+$(0)
+
+. icmp
+.	lret	0
+
+icmp_buy_msg
+	lb, xi	04500
+icmp_buy_msg_optional
+	push	a
+	lcal	ip_buy_datagram
+	pop	b
+	jza	icmp_noreply
+	sb	descriptor:bytes, a
+	lb, xi	IP_DEFAULT_TTL++IPPROTO_ICMP
+	lx	TX_DATAGRAM
+	sb	dgram:ttl_protocol, x
+	lret	1
+icmp_noreply
+	lret	0
+
+icmp_buy_response
+	la	descriptor:bytes
+	lcal	icmp_buy_msg
+	j	icmp_noresponse
+
+	lx	descriptor:dgram
+	dpush	dgram:ipsource, x
+	dpush	dgram:ipdest, x
+
+	lx	descriptor:dgram, a
+	qpop	dgram:ipsource, x
+
+	ly	descriptor:uproto
+	lx	descriptor:uproto, a
+	sx	descriptor:apdata, a
+
+	push	a
+	la	descriptor:bytes, a
+	z	6
+	z	7
+	lcal	rx_payload
+	pop	x
+	ly	descriptor:apdata, x
+	sb	ping:h:checksum, y
+	lret	1
+icmp_noresponse
+	lret	0
+
+
+	$if	IPV4_OVERHAUL
+
+icmp_rxq			.	TP_HEADER is in x
+				. put tests for categories here
+	la	dgram:bytes
+	z	6		. icmp does not sum
+	z	7		. network addresses / protocol / length
+	lk	ping:h:checksum
+	z	ping:h:checksum
+	anu	IPV4_OVERHAUL,,xi
+
+	jza	icmp_exact
+	jc	icmp_rxqlong	. >= IPV4_OVERHAUL octets
+icmp_exact
+	lcal	check_part1s
+	lcal	check_complete
+	xorB	k		. b = recalculated checksum, k = received checksum
+	jnzb	ipv4_rxz	. there is no buffer yet
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz	. no buffer available
+
+	lx	descriptor:dgram
+	lb	dgram:bytes
+	ab	-1,,xi
+	jnc	ipv4_drop	. might as well be ridiculous
+	sbr	3		. # blocks of 4 byte pairs less 1
+	lr	b
+
+icmp_iquick
+	qpop	0, x
+	ax	4,,xi
+	jdr	icmp_iquick
+
+	j	icmp_rxqq	. already checksumed at this point
+
+icmp_rxqlong
+	lcal	check_part1
+
+	la	dgram:bytes
+	lx	rx_buffers
+
+	lcal	ibuffer
+	jza	ipv4_rxz
+
+	la	dgram:bytes	. obtain the datagram second part length
+				. while the header is in the internal stack
+	lx	descriptor:dgram
+?	$do	IPV4_OVERHAUL/8,	qpop	?*4-4, x
+
+	aa	-IPV4_OVERHAUL,,xi
+	ax	IPV4_OVERHAUL/2,,xi
+	ay	IPV4_OVERHAUL/2,,xi
+
+	lcal	rx_payload
+	xorB	k
+	jnzb	ipv4_drop	. now there is a buffer to return
+
+icmp_rxqq
+
+	MIB_ICOUNT48	icmpInMsgs:i
+
+	la	fp
+	ly	icmpq,,xi
+	lcal	q2
+	j	ipv4_rxz
+
+
+	$else	.	OVERHAUL
+
+	$endif		. OVERHAUL
+
+icmp	la	icmpq.head
+	jza	icmpx
+	sa	fp
+	ly	descriptor:uproto, a
+	
+	la	ping:h:type_code, y
+	anu, xi	0800
+	jnzb	icmp_rx_routinfo?
+
+	MIB_ICOUNT48	icmpInEchos:i
+	z	ping:h:type_code, y	. the value of echo response
+	lcal	icmp_buy_response
+	j	icmp_drop		. no output buffer
+
+	MIB_ICOUNT48	icmpInEchoReps:i
+
+	ly	descriptor:dgram, x
+	ql	dgram:ipsource, y
+
+	MIB_ICOUNT48	icmpOutMsgs:i
+
+	call	(ipsend)
+	j	icmp_drop
+
+icmp_rx_routinfo?
+			. for receiving redirects
+icmp_drop
+	ly	icmpq,,xi
+	lcal	readq
+	lx	rx_buffers
+	lcal	sell1
+
+icmpx	lret	0
+
+icmp_du_port
+icmp_noproto		. jumped at from ipv4_rx
+			. should queue the problem
+			. into icmpq, and then...
+	j	ipv4_rxz	. no buffer shall have been assigned
+				. or memory will trap
+
+
+icmp_nosocket		. called from udp
+			. should send DU[PORT]
+	lret	0	. must return
+
+
+
+	$if	RX_FRAGMENTS
+
+icmp_rx_rasm
+	lx	descriptor:uproto
+	push	ping:h:checksum
+	lcal	rasm77_gcheck
+	xorB	0, sp
+	pop	ping:h:checksum
+	la	fp
+	jnzb	net_free_chain
+	lx, i	icmpq
+	j	net_add_chain
+	
+	$endif

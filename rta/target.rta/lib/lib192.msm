@@ -1,0 +1,179 @@
+
+$(0)
+fp192	$tree
+fscan	qpush	(0.0)
+		qpush	0, sp
+
+major		$equf	0, sp
+mantissa	$equf	major+2
+minor		$equf	major+4
+
+		. READ_START is in read_stream_start
+
+fscans	lcal	advance
+	
+	z	SIGNS
+	z	SCALE
+	z	SCALE_TRIPPED
+
+	anu	'-',,xi
+	jnzb	plus?
+	n	SIGNS
+	j	read_number_string
+
+plus?	anu	'+',,xi
+	jnzb	first_digit
+
+read_number_string
+	READ_BYTE
+
+first_digit		. first of possible 43 digits read
+
+	aa, xi	-'0'-10
+	jc	adjust_nothing
+	aa, xi	10
+	jnc	adjust_nothing
+
+	sa	mantissa+5
+			. there may now be 7 * 6 more digits
+
+	lr	6,,xi
+
+	lcal	read6
+	jxge	scale_mantissa
+	tz	x
+	lcal	diminish6
+	sb	7
+	lb	mantissa+5
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	ab	7)
+	sb	mantissa+5	. 10 million fits in there
+	tz	x
+	j	scale_mantissa
+
+	lcal	read6
+	jxge	scale_mantissa
+	tz	x
+	lcal	diminish6
+	sb	7
+	z	6
+	lb	mantissa+5
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	da	6
+	ds	mantissa+4	. now more than 16 million
+	tz	x
+	j	scale_mantissa
+
+	lcal	read6
+	jxge	scale_mantissa
+	tz	x
+	lcal	diminish6
+	c	(madd144)	(1000000, 100000, 10000, 1000, 100, 10h), x	;
+		mantissa+3,,i	;
+		mantissa+5,,i
+	tz	x
+	j	scale_mantissa
+
+        lcal    read6
+        jxge    scale_mantissa
+        tz      x
+        lcal    diminish6
+        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                mantissa+2,,i      ;
+                mantissa+5,,i
+        tz      x
+        j       scale_mantissa
+
+        lcal    read6
+        jxge    scale_mantissa
+        tz      x
+        lcal    diminish6
+        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                mantissa+1,,i      ;
+                mantissa+5,,i
+        tz      x
+        j       scale_mantissa
+
+        lcal    read6
+        jxge    scale_mantissa
+        tz      x
+        lcal    diminish6
+        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                mantissa,,i        ;
+                mantissa+5,,i
+        tz      x
+        j       scale_mantissa
+
+        lcal    read6
+        jxge    scale_mantissa
+        tz      x
+        lcal    diminish6
+        c       (madd144) (1000000, 100000, 10000, 1000, 100, 10h), x        ;
+                mantissa,,i        ;
+                mantissa+5,,i
+	tz	x
+	j	scale_mantissa
+	lcal	skate
+
+scale_mantissa
+	la	mantissa
+	sa	TRIPLE
+	dl	mantissa+1
+	ds	TRIPLE+1
+	call	(u72tofloat)
+	lcal	a72magnitude
+	sa	QUAD
+	ql	QUAD
+	qs	major
+
+	la	mantissa+3
+	sa	TRIPLE
+	dl	mantissa+4
+	ds	TRIPLE+1
+	call	(u72tofloat)
+	sa	QUAD
+	ql	QUAD
+
+	on	fp$r
+	fa	major		. get as much as possible into major
+	qs	major
+	ql	QUAD
+	qs	minor
+
+        la      LAST_BYTE_READ
+
+        $if     'e'^='E'
+        anu, xi 'e'
+        jzb     e_string_scan
+        $endif
+
+        anu, xi 'E'
+        jzb     e_string_scan
+
+        lb, xi  0
+        j       e_string_noscan
+
+e_string_scan
+        lcal    e_string
+e_string_noscan
+        ab      SCALE
+        tp      SCALE           . it's 1s complement
+        ab, xi  1               . because it's shared with SCALE_TRIPPED
+
+        jzb     noscale
+        call    (floating_scale192)
+
+adjust_nothing
+noscale	qpop	a
+	qpop	8
+	fret	0
+
+a72magnitude
+	jna	a72negativemagnitude
+	aa	72,,xi
+	lret	0
+a72negativemagnitude
+	aa	-72,,xi
+	lret	0
+
+	$root

@@ -1,0 +1,791 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.	$include	../fs/fs.def
+
+$(66::,x)
+lookfor_app	filep
+
+$(3)
+thandle	+	0
+tnetbound -	1
+tlsoc_va  -	1:d
+telnet_tpaside	0
+
+tn_help		"commands are":HT:"h":HT:"help":LF:;
+		HT:HT:"e":HT:"echo":LF:;
+		HT:HT:"w":HT:"webhost threads":LF:;
+		HT:HT:"m":HT:"memory free":LF:;
+		HT:HT:"stay":HT:"no timeout":LF:;
+		HT:HT:"t":HT:"threads active":LF:;
+		HT:HT:"a":HT:"applications and shells":LF:;
+		HT:HT:"r":HT:"run ":ESC:"[91mname":ESC:"[0m":LF:
+
+tn_help_bytes  $equ    $bits/$byte
+
+tn_editline	$res	24
+telnet_istring
+telnet_run_name	$res	160//3
+telnet_repeats	$res	1
+telnet_start_time $res	2
+telnet_name_words $res	1
+
+$(0)
+telnet_i
+
+	lcal	span_mounts
+
+	$if	TELNET_THREADED
+	ql	(telnet_start,,,THREAD_FP(1):q)
+	ii	THREAD$
+	jza	telnet_zstart
+	lb	$3("*telnet":0),,xi
+	ii	TAG$
+telnet_zstart
+	fret	0
+
+telnet_start
+	$endif
+
+	tz	thandle
+	j	telnet_tstate?
+
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	telnet_z
+	sa	thandle
+
+	c	(bind) a (23d),,long
+
+	sa	tnetbound
+	jna	telnet_z
+	dl	10
+	ds	tlsoc_va
+	
+telnet_tstate?
+	tp	tnetbound	
+	j	telnet_z
+
+
+	dl	tlsoc_va
+	sabr	BSOCKET
+	lx	(BSOCKET*/12)
+	la	s:tcp:tbase, b
+	sabr	BSOCKET
+
+        $if	0
+	c	(fsrom_find)	applookupp,,xi			;
+			 	APPLICATION_BASE/*12,,xi	;
+				(0:d),,long			;
+				(TREE$*/16)			;
+				2,,xi				;
+				$3("lookup"),,xi
+	$endif
+
+	$if	0
+
+telnet_span_mounts
+	lx	*apps_fsp
+	inc	apps_fsp
+
+	tp	x
+	j	telnet_mounts_spanned
+	tnz	x
+	j	telnet_span_mounts
+
+	la	lookfor_app:bank
+	sabr	32
+	ql	*(32*/12++68)
+	xor	(MOUNT$,,3)
+	jnza	telnet_span_mounts
+	c	(fsrom_da)	x	lookfor_app:bank	6,,long
+
+	j	telnet_span_mounts
+
+telnet_mounts_spanned
+
+	$endif
+
+.	lcal	$autorun:autorun
+
+telnet_walk_on
+	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(23))
+
+telnet_walk
+	la	transmission:next
+	jza	telnet_x
+	lx	a
+	lk	(00FFFF)
+	la, xi	23
+	mta	transmission:socket_address+1
+	j	telnet_walk
+
+	la	transmission:state
+	and, xi	63
+	anu, xi	TCP_ESTABLISHED
+	jzb	telnet_traffic?
+	anu, xi	TCP_SYNRECEIVED
+	jnzb	telnet_state?
+
+	call	(xaccept)
+	jna	telnet_walk	. could not accept
+
+	j	telnet_walk
+
+telnet_state?
+	anu, xi	TCP_CLOSEWAIT
+	jnzb	telnet_walk
+	call	(xdisco)
+	j	telnet_walk_on
+
+telnet_traffic?
+	la	transmission:receiveq:head
+	jza	telnet_walk
+	call	(subagent?)
+	j	telnet_walk
+	lcal	telnet_console
+	j	telnet_walk
+
+telnet_x
+	ii	YIELD$
+	j	telnet_walk_on
+telnet_z
+	fret	0
+
+telnet_console
+	lcal	telnet_command
+	call	(tcp_release_rxline)
+	lret	0
+
+telnet_command
+	sx	telnet_tpaside
+	ly	transmission:receiveq:head
+
+	la	descriptor:bytes, y
+	lb	descriptor:apdata, y
+	call	(rstream_start_net)
+
+	la	*q		. check text or something else
+	and	(00F000)	. a configuration sequence?
+	xor	(00F000)
+
+	jza	telnet_configure
+
+telnet_text_command
+	la, xi	6		. input a command text word
+	lb, xi	10		. max 2 registers in size
+	call	(token_net)
+
+	dl	10
+
+	anu	('t'*/16:s)
+	jzb	telnet_threads
+	anu	('h'*/16:s)
+	jzb	telnet_help
+
+	anu	('m'*/16:s)
+	jzb	telnet_memory
+
+	anu	('w'*/16:s)
+	jzb	webhost_threads
+
+	anu	('e'*/16:s)
+	jzb	telnet_echo
+
+	anu	('u'*/16:s)
+	jzb	telnet_library_speedtest
+
+	anu	('q'*/16s)
+	jzb	telnet_quicktimeout	. a test
+
+	anu	('r'*/16s)
+	jzb	telnet_run)
+
+	anu	('z'*/16s)
+	jzb	telnet_thread_term
+
+	anu	('iq'*/8s)
+	jzb	telnet_ilist
+
+
+	anu	("smp")
+	jzb	telnet_smp
+
+	dl	10
+	
+	dan	("stay")
+	jdz	telnet_zero_timer1
+
+	dl	10
+	dan	("time")
+	jdz	telnet_print_dayclock
+
+	dl	10
+	dan	("ifsync")
+	jdz	telnet_align_trunk
+
+	dl	10
+	dan	("ifswap")
+	jdz	telnet_mirror_trunk
+
+	j	telnet_prompt
+
+telnet_threads
+	lb, xi	$3("console threads display":10)
+	la	$bits/$byte,,xi
+	push	x
+	lcal	telnet_respond
+	lcal	telnet_threadlist
+	pop	x
+	lret	0
+
+telnet_help
+	la, xi	tn_help_bytes
+	lb, xi	tn_help
+	j	telnet_respond
+
+telnet_prompt
+	lb, xi	$3("key h for command list":10)
+	la	$bits/$byte,,xi
+	j	telnet_respond
+
+telnet_zero_timer1
+	z	transmission:timer(1)
+	lb, xi	$3("no timeout":10)	
+	la	$bits/$byte,,xi
+	j	telnet_respond
+
+telnet_print_dayclock
+
+	$if	0
+
+	c	(date_timef1)	0,,xi	tn_editline,,xi
+	la	(10*/16)
+	sa	tn_editline+7
+	la	3*7+1,,xi
+	lb	tn_editline,,xi
+
+
+	$elseif	0
+
+	c	(date_timef2)	0,,xi	tn_editline,,xi
+	la	(10*/16)
+	sa	tn_editline+8
+	la	3*8+1,,xi
+	lb	tn_editline,,xi
+
+
+	$elseif	1
+
+	c	(date_timef3)	0,,xi	tn_editline,,xi
+	la	(10*/16)
+	sa	tn_editline+8
+	la	 3*8+1,,xi
+	lb	tn_editline,,xi
+
+	$else
+
+	call	(dayclock_ydsm_gmt)
+	c	(__sprintf)	tn_editline,,xi			;
+				$3("%d.%d:%d.%d":10:0),,xi	;
+				8 9 10 11
+
+	lx	telnet_tpaside
+	lb	tn_editline,,xi
+	la	BYTES
+	$endif
+
+	j	telnet_respond
+
+telnet_library_speedtest
+
+	call	(iscan)
+	sb	telnet_repeats
+
+	dl	DAYCLOCK$U
+	ds	telnet_start_time
+
+telnet_test_repeat
+	lc	telnet_atest	telnet_istring,,xi
+	dec	telnet_repeats
+	tz	telnet_repeats
+	j	telnet_test_repeat
+
+	dl	DAYCLOCK$U
+	dan	telnet_start_time
+
+	c	(__sprintf)	tn_editline,,xi	$3("%ld mS %s":10:0),,xi    a,,long	telnet_istring,,xi
+	lb	tn_editline,,xi
+	la	BYTES
+	lx	telnet_tpaside
+	j	telnet_respond
+
+telnet_quicktimeout
+
+	$if	1
+	n	transmission:state
+	$else
+
+	la	DAYCLOCK$
+	or	1,,xi		. elminate zero = timeout never
+
+telnet_nonzero
+
+	sa	transmission:timer(1)
+	$endif
+
+	lb, xi	$3("zero timeout":LF)
+	la, xi	$bits/$byte
+	j	telnet_respond
+
+telnet_echo
+	la	descriptor:bytes, y
+	lb	descriptor:apdata, y
+	push	'E ',,xi
+	pop	0, b	
+	j	telnet_stream16_respond
+
+telnet_memory
+	ii	TOTAL$FREE
+	push,xi	tn_editline
+	pop	p
+	z	BYTES
+	call	(iedit48ua)
+	wsr	16
+	la	BYTES
+	lb, xi	tn_editline
+	lcal	telnet_insert
+	lb,xi	$3(" words free":10)
+
+	la,xi	$bits/$byte
+	
+	j	telnet_respond
+
+webhost_threads
+	la	http_threads
+	push	tn_editline,,xi
+	pop	p
+	z	BYTES
+	call	(ieditua)
+	wsr	16
+	la	BYTES
+	lb	tn_editline,,xi
+	lcal	telnet_insert
+	lb, xi	$3(" webhost threads":10)
+	la, xi	$bits/$byte
+	j	telnet_respond
+
+telnet_run
+	la	160,,xi
+	lb	telnet_run_name,,xi
+	call	(token_net)
+
+	sa	telnet_name_words
+
+	la	telnet_run_name
+	lk	(255*/$word-$byte:s)
+	mta	('/'*/$word-$byte:s)	. a script name?
+	j	telnet_run_binary	. no
+	c	(run_start)	telnet_run_name,,xi
+	lx	telnet_tpaside		. recover the connection pointer
+	lret	0
+
+telnet_run_binary
+	la	telnet_name_words
+	lx	telnet_tpaside		. pick up the connection
+	lx	transmission:receiveq.head
+	inc	descriptor:apdata, x	. drop 2 input bytes [ r SP ]
+	push	-2,,xi
+	popA	descriptor:bytes, x
+
+	c	(online_xqt)	a	telnet_run_name,,xi
+	lx	telnet_tpaside
+	jza	telnet_norun
+
+	call	(tnet_callstring)
+	lx	telnet_tpaside
+
+        lcal	telnet_run_report
+	ii	NET2SYM$
+	call	(subagent)
+
+	lret	0			. stdin line -> call line in TCB	
+					. input consumed, can drop
+telnet_norun
+	lcal	telnet_run_report
+	lret	0
+
+telnet_run_report
+	lx	telnet_tpaside
+	push	a
+	lcal	telnet_display_quartets
+
+	la	1,,xi
+	lb	$3("":10),,xi
+
+	lcal	telnet_respond
+	pop	a
+	lret	0
+
+telnet_align_trunk
+	lx	5,,xi
+	call	(__ift2_align)
+	j	telnet_zout
+
+telnet_mirror_trunk
+	lx	5,,xi
+	call	(__ift2_mirror)
+	j	telnet_zout
+
+telnet_smp
+	call	(scanhex)
+	and	-2,,xi
+	lk	a
+	ii	$SMP
+	j	telnet_zout
+
+telnet_thread_term
+	call	(scanhex)
+	ii	$ZETA
+
+telnet_zout
+	lx	telnet_tpaside
+	la	1,,xi
+	lb	$3(">":0:0),,xi
+	j	telnet_respond
+
+telnet_ilist
+	call	(scanhex)
+	jza	telnet_thread_not_active
+	ii	THREAD$STATE
+	j	telnet_thread_not_active
+
+	sabr	31
+	lb	(31*/12++XINTT-01000)
+
+telnet_uireqs
+	lx	xitable:rcursor		. read cursor
+	push	b
+	push	x
+
+telnet_uirnext
+	ax	b			. x += working address window
+	dl	0, x			. read table entry
+
+	jza	telnet_uireqx		. entry used or not yet written
+
+	push	b
+	call	(display_quartets)
+	ds	tn_editline
+	pop	a
+	call	(display_quartets)
+	ds	tn_editline+2
+
+	lx	telnet_tpaside
+	la	12,,xi
+	lb	tn_editline,,xi
+	lcal	telnet_insert
+
+	la	1,,xi
+	lb	$3("":10:0),,xi
+	lcal	telnet_respond
+
+	lx	0, sp			. retrieve table relative read cursor
+	lb	1, sp			. retrieve table
+
+	lr	xitable:limit		. read table size
+	ax	2,,xi			. advance read cursor
+	sx	0, sp
+	jxge	telnet_ufirst		. jump to wrap
+	
+telnet_ulast?
+	la	x
+	xor	xitable:wcursor		. lapped the write pointer?
+	jza	telnet_uireqx		. yes
+	j	telnet_uirnext		. no
+
+telnet_ufirst
+	lx	4,,xi			. table relative 1st entry
+	j	telnet_ulast?
+
+telnet_uireqx
+	pop	0, sp
+	pop	0, sp
+	lx	telnet_tpaside
+	lret	0
+
+telnet_thread_not_active
+	lb	$3("thread not active":10),,xi
+	la	$bits/$byte,,xi
+	j	telnet_respond
+
+telnet_configure
+		. something received clearly not keyed text
+		. it should include line mode
+		. nothing much will happen if not
+		. for the moment just lay the welcome mat
+
+	lcal	telnet_configuration
+
+.	fall	thru	
+
+telnet_respond
+.	sb	q
+.	push,xi	05000++TCP_ACK++TCP_PSH
+.	pop	SOCKET_CALL_FLAGS
+
+	lk	05000++TCP_ACK++TCP_PSH,,xi
+	call	(tcp_tx)
+	lret	0
+
+telnet_stream16_respond
+.	sb	q
+	z	RDATAC
+	on	b$stream16r
+.	push	05000++TCP_ACK++TCP_PSH
+.	pop	SOCKET_CALL_FLAGS
+
+	lk	05000++TCP_ACK++TCP_PSH,,xi
+	call	(tcp_addx)
+	lret	0
+
+telnet_insert
+.	sb	q
+.	push,xi 05000++TCP_ACK
+.	pop	SOCKET_CALL_FLAGS
+
+	lk	05000++TCP_ACK,,xi
+	call	(tcp_tx)
+	lret	0
+
+telnet_configuration
+		. for the moment no analysis. just encourage
+
+	lb, xi	$3("RTA1 smaragd7 OS shared console":10)
+	la, xi	$bits/$byte
+	lret	0
+
+
+
+telnet_threadlist
+.	la	(' '*/$word-$byte)
+.	sa	tn_editline+2
+	on	+(see$7*/MANAGER_BANKS)-see$7
+	lr	tdescriptor_high_index
+	ly	next_tdescriptor_sp
+	
+telnet_thread1
+	jyge	telnet_threadx
+	lcal	telnet_thread_display
+	ay	TDESCRIPTOR_WORDS,,xi
+	j	telnet_thread1
+telnet_threadx	
+	off	+(see$7*/MANAGER_BANKS)-see$7
+	lret	0
+
+telnet_pop2hex* $proc
+	pop	a
+	lcal	telnet_display_quartets
+	$end
+
+telnet_display_quartets
+	call	(display_quartets)
+	ds	tn_editline
+	la	7,,xi
+	lb	tn_editline,,xi
+	lcal	telnet_insert
+	lret	0
+
+telnet_thread_name
+	push	x			. connection
+	tp	a
+	n	a
+	sabr	32			. place thread control block
+	lx	(32*/12++TAG-4096)	. in file access space a moment
+
+	la	*(32*/12++TDESCRIPTOR-01000)
+	xor	y			. is TCB connected to descriptor?
+	jza	telnet_thread_name_clear	. yes fine
+
+	la	*(32*/12++TCB-TCB)	. is its information overwritten yet?
+	xor	('TCB')
+	jza	telnet_thread_name_clear
+	lx	$3("[reused]":0:0:0:0),,xi	. nothing readable likely
+
+telnet_thread_name_clear
+	lr	36, x, i
+	lk	255,,xi
+	lb	tn_editline,,xi
+
+telnet_name_display
+	jxge	telnet_name_z
+	la	0, x
+	sa	0, b
+	lb	1, b, i
+	ax	1,,xi
+	mta	(0)			. trailing zero in this name?
+	j	telnet_name_display
+
+telnet_name_z
+	anb	tn_editline,,xi		. words in this part
+	lr	-3,,xi			. maximum zero bytes last word
+
+telnet_count
+	ral	$byte
+	mtane	(0)
+	j	telnet_counted_name
+	inc	r
+	j	telnet_count
+
+telnet_counted_name
+
+	la	b
+	aa	r
+	sbl	1
+	aa	b			. 3 * words + bytes
+	lb	tn_editline,,xi
+	pop	x
+	lcal	telnet_insert
+	lret	0
+
+telnet_thread_display
+
+	push	y
+	push	r
+	lx	4, sp
+	on	+(see$7*/MANAGER_BANKS)-see$7		. see kernel storage
+
+	$do	TDESCRIPTOR_WORDS**1,		push	TDESCRIPTOR_WORDS**-2, y
+	$do	TDESCRIPTOR_WORDS**2^=0,	dpush	TDESCRIPTOR_WORDS**-4, y
+?	$do	TDESCRIPTOR_WORDS/4,		qpush	+(TDESCRIPTOR_WORDS**-4)-?*4, y
+
+	off	+(see$7*/MANAGER_BANKS)-see$7		. see application storage
+
+	la	(' '*/$word-$byte)
+	sa	tn_editline+2
+
+	$do	TDESCRIPTOR_WORDS,	telnet_pop2hex
+	
+	on	+(see$7*/MANAGER_BANKS)-see$7
+	ly	1, sp					. snoop in the
+	la	3, y					. thread control block
+	off	+(see$7*/MANAGER_BANKS)-see$7
+	lcal	telnet_thread_name
+
+	lb	$3("":LF),,xi
+	la, xi	$bits/$byte
+	lcal	telnet_respond
+	pop	r
+	pop	y
+	lret	0
+
+telnet_atest $head_near	 params(tn_ostringp,	int	)	;
+								;
+			scalars(save_BYTES,	int,	BYTES	;
+				save_q,		int,	q	;
+				save_RDATACD,	long,	RDATAC	;
+				tn_left,	float		;
+				tn_right,	float		;
+				tn_tight_repeat,int		;
+				tn_operation,	int		)
+
+	call	(floating_scan)
+	qs	tn_left
+	call	(symbol_scan)
+	sa	tn_operation
+	call	(floating_scan)
+	qs	tn_right
+
+	la	LAST_BYTE_READ
+	aa	-',',,xi
+	jnza	tn_operate
+	call	(iscan)
+	jzb	$+2
+	ab	-1,,xi
+	sb	tn_tight_repeat
+	
+tn_operate
+	lr	tn_tight_repeat
+	la	tn_operation
+	aa	-'+',,xi
+	jza	tn_add
+	aa	'+'-'-',,xi
+	jza	tn_negadd
+	aa	'-'-'*',,xi
+	jza	tn_mul
+	aa	'*'-'/',,xi
+	jza	tn_div
+	ql	tn_left
+	j	tn_edit
+
+tn_add	ql	tn_left
+	fa	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_negadd
+	ql	tn_left
+	fan	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_mul	ql	tn_left
+	fm	tn_right
+	jdr	$-1
+	j	tn_edit
+
+tn_div	ql	tn_left
+	fd	tn_right
+	jdr	$-1
+
+tn_edit	lx	tn_ostringp
+	call	(wstream_starta)
+	call	(fedita)
+	la	0,,xi
+	wsr	24
+
+	push	save_RDATACD,,i
+	pop	sp
+
+	dpop	RDATAC
+
+	pop	q
+	pop	BYTES
+	lret	0
+

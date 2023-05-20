@@ -1,0 +1,930 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$do	$t(__RADIX)=0,__RADIX	$set	96
+
+i$aside(1)	$equ	8
+i$aside(2)	$equ	10
+i$aside(3)	$equ	d$save
+i$aside(4)	$equ	d$save2
+i$aside(5)	$equ	24
+i$aside(6)	$equ	26
+i$aside(7)	$equ	28
+i$aside(8)	$equ	30
+
+"$$significands" $set	0
+"$ASIDE"	$set	1
+
+?	$do	8,tag$aside(?)	$set	24
+
+
+f		$func
+"$indirect_or_identifier"* $name
+		$do	f(1, *1),	$return	1
+		$do	$r(f(1, 1)),	$return	1
+		$do	$t(f(1, 1))=127,	$return	1
+		$do	$t(f(1, 1))=$equf,	$return	1
+		$return	0
+		$end
+
+f		$func
+"$steamout"*	$name
+		$return	f(1, 1)
+		$end
+
+f		$func
+"$steamout2"*	$name
+		$return	f(1, 2)
+		$end
+
+f		$func
+"$1w"*		$name
+		$do	f(1)<3,		$return	0
+		$do	f(1, 3)<0,	$return	0
+		$do	f(1, 3)>5,	$return	0
+		$return	1
+		$end
+
+f		$func
+S*		$name	24
+L*		$name	48
+U*		$name	-24
+T*		$name	72
+		$return	f(0, 0)
+		$end
+
+p		$proc
+"$$i_compare"*	$name
+		$i_subtract     p(1)
+		$if	$$significands>48
+		or	6
+                orB	7
+		$endif
+"$$significands"****	$set	24
+"$msize"**	$set		24
+		$end
+
+p		$proc
+"$$i_retrieve_compare"* $name
+		$i_retrieve_subtract
+		$if	$$significands>48
+		or	6
+		orB	7
+		$endif
+"$$significands"****	$set	24
+"$msize"**	$set		24
+		$end
+
+p		$proc
+
+"$i_testequal"* $name
+		$$i_compare	p(1)
+		jdz	$+3
+		la	0,,xi
+		lb	1,,xi
+		xorB	1,,xi
+                $return
+
+"$i_testunequal"* $name
+		$$i_compare	p(1)
+                jdz     $+3
+                la, xi  0
+                lb, xi  1
+                $return
+
+"$i_testgreater"* $name
+		$$i_compare	p(1)
+                jdz     $+5		. = = not >
+		lb	1,,xi		. say > for a moment
+                jpa     $+2
+		lb	0,,xi		. unsay +
+                la	0,,xi		. conceptually 24 bits
+                $return			. represented as 48
+
+"$i_test_noless"* $name
+		$$i_compare	p(1)
+		jdz	$+3		. = = jump to + 1
+		lb	0,,xi		. say < for a moment
+		jna	$+2		
+		lb	1,,xi		. unsay it if +
+		la	0,,xi		. represent the 24 bit object
+		$return			. in a 48-bit field
+
+"$i_testless"* $name
+		$$i_compare	p(1)
+                jdz     $+5		. not a bit less
+		lb	0,,xi		. say no less for a moment
+                jpa     $+2
+                lb	1,,xi		. unsay it. <
+                la	0,,xi
+                $return
+
+"$i_test_nogreater"* $name
+		$$i_compare	p(1)
+		jdz	$+3		. yes it isn't greater
+		lb	0,,xi		. say it's > for now
+		jpa	$+2
+		lb	1,,xi		. yes it isn't
+		la	0,,xi
+		$return
+
+"$i_shift"*	$name
+
+p	$proc
+"$SL"*	$name
+	$if     $$significands>48
+	c	(x72_sl)	p(1)
+	$else
+	dsl	p(1)
+	$endif
+	$end
+
+
+		$if	$indirect_or_identifier(p(1, 1:1))
+
+size	$set	24
+		
+		$if	0
+		$aax	p(1)
+		$else
+		$if	p(1, 1:2)>24
+loffset	$set	p(1, 1:2)/24-1
+		$aax	p(1, 1:1)+loffset, p(1, 2), p(1, 3)
+		$elseif	p(1, 5)>24
+loffset	$set	p(1, 5)//24-1
+		$aax	loffset+p(1)
+		$else
+		$aax	p(1)
+		$endif
+		$endif
+
+		$if	$o('C')++$o('K')
+
+		$if	p(1, *1)
+		$nop		c-language style: pointer->identifier containing shift count
+		$nop		double indirect
+		$if	$$significands>48
+		$SL	$aaa
+		$else
+		lr	$aaa	
+		$SL	*r
+		$endif
+		$else
+		$nop		no asterisk in source but shift by stored value not by ea
+		$if	$$significands>48
+		$SL	$aaa
+		$else
+		$if	(p(1, 2)=0)**(p(1, 1:1)<8192)
+		$SL	*$aaa
+		$else
+		lr	$aaa
+		$SL	*r
+		$endif
+		$endif
+		$endif
+
+		$else
+
+		$nop		masmx mode. Shift by what $aax said
+		$if	p(1, *1)
+		$SL	$aaa
+		$else
+		$note		shift count <- contents of storage location not EA
+		$if	$$significands>48
+		$SL	$aaa
+		$else
+		$if	(p(1, 2)=0)**(p(1, 1:1)<8192)
+		$SL	*$aaa
+		$else
+		lr	$aaa
+		$SL	*r
+		$endif
+		$endif
+		$endif
+		$endif
+
+		$else
+
+		$nop	not identifier, number with optional index
+		$SL	$steamout\p(1), $steamout2\p(1), i
+		$endif
+		$return
+
+"$i_shift_right"* $name
+
+p	$proc
+"$SA"*	$name
+	$if	$$significands>48
+	c	(x72_sa)	p(1)
+	$else
+	dsa	p(1)
+	$endif
+	$end
+
+		$if	$indirect_or_identifier(p(1, 1:1))
+
+		$if	0
+size	$set	24
+		$aax	p(1)
+		$else
+
+		$if	p(1, 1,:2)>24
+roffset	$set	p(1, 1:2)/24-1
+		$aax	p(1, 1:1)+roffset, p(1, 2), p(1, 3)
+		$elseif	p(1, 5)>24
+roffset	$set	p(1, 5)//24-1
+		$aax	roffset+p(1)
+		$else
+		$aax	p(1)
+		$endif
+		$endif
+
+		$if	$o('C')++$o('K')
+
+		$if	p(1, *1)
+		$nop		c-language style: pointer->identfier containing shift count
+		$if	$$significands>48
+		$SA	$aaa
+		$else
+		lr	$aaa
+		$SA	*r
+		$endif
+
+		$else
+
+		$nop		no asterisk in source but shift by stored value not by ea
+		$if	$$significands>48
+		$SA	$aaa
+		$else
+		$if	(p(1, 2)=0)**(p(1, 1:1)<8192)
+		$SA	*$aaa
+		$else
+		lr	$aaa
+		$SA	*r
+		$endif
+		$endif
+		$endif
+
+		$else
+
+		$nop		masmx mode. Shift by what $aax said
+		$if	p(1, *1)
+		$SA	$aaa
+		$else
+		$note		shift count <- contents of storage not EA
+		$if	$$significands>48
+		$SA	$aaa
+		$else
+		$if	(p(1, 2)=0)**(p(1, 1:1)<8192)
+		$SA	*$aaa
+		$else
+		lr	$aaa
+		$SA	*r
+		$endif
+		$endif
+		$endif
+		$endif
+
+		$else
+		$nop	not identifier, number with optional index
+		$SA	$steamout\p(1), $steamout2\p(1), i
+		$endif
+                $return
+
+"$i_or"*	$name
+size	$set	48
+"$iiw"	$set	0
+
+		$aax,y	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		or	i$aside($ASIDE)
+		orB	i$aside($ASIDE)+1
+		$else			. long booleans are 2 parallel
+                or      $aaa+size/24-2	. 1-word operations
+                orB     $aaa+size/24-1
+		$endif
+
+		$do	size>$$significands,"$$significands"***		$set	size//24*24
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+		$do	$$significands>48,	c	(x72_orU)	$aaa,,long	96-size,,xi
+
+                $return
+
+"$i_xor"*	$name
+size	$set	48
+"$iiw"	$set	0
+
+		$aax,y	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		xor	i$aside($ASIDE)
+		xorB	i$aside($ASIDE)+1
+		$else
+                $do	$$significands>24,	xor     $aaa+size/24-2
+                xorB    $aaa+size/24-1
+		$endif
+
+
+		$do	size>$$significands,"$$significands"***		$set	size//24*24
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+		$do	$$significands>48,	c	(x72_xorU)	$aaa,,long	96-size,,xi
+
+		$return
+
+"$i_and"*	$name
+size	$set	48
+"$iiw"	$set	0
+
+
+		. ? tell it you prefer long literals
+
+"$iii"		$set	'Willy Wombat'			. notional name
+							. function $iii is not exported to here
+
+		$if	($t(p(1, 1:1))=$set)**(p(1, 1:1)="$iii")
+
+overrule	$set	imeasure_if\p(1)
+		$sterm	':'
+		$do	o('C'),	$sterm	'.'
+
+		$if	overrule
+"$$significands"***	$set overrule
+		$endif
+		$endif
+
+		$aax,y	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+
+		$if	$iiw^=0
+size	$set	$iiw
+		$do	size<72,	z	6
+		$do	size<72,	z	7
+		$do	size<48,	la	0,,xi
+		$endif
+
+		$if	(size<25)**($$significands>24)
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		and	i$aside($ASIDE)
+		andB	i$aside($ASIDE)+1
+		$else
+                $do	$$significands>24,	and     $aaa+size/24-2
+                andB    $aaa+size/24-1
+		$endif
+
+		$do	size>$$significands,"$$significands"***		$set	size//24*24
+		$do	$$significands>__RADIX,"$$significands"***		$set	__RADIX
+		$do	$$significands>48,	c	(x72_andU)	$aaa,,long	96-size,,xi
+
+                $return
+
+"$i_add"*	$name
+"$iiw"	$set	0
+size	$set	48
+.		$do	$$significands<49,"$$significands"***	$set	48
+
+		$aax	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		da	i$aside($ASIDE)
+		$else
+		da	$aaa+size/24-2		. add / subtract are double
+		$endif
+
+		$do	size>$$significands,"$$significands"***		$set	size//24*24
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+		$do	$$significands>48,	c	(x72_aU)	$aaa,,long	96-size,,xi
+
+		$return
+
+"$i_subtract"*	$name
+"$iiw"	$set	0
+size	$set	48
+.		$do	$$significands<49,"$$significands"***	$set	48
+
+		$aax	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la, xi	0
+		ana	$aaa
+		dsa	24
+		da	i$aside($ASIDE)
+		$else
+		dan	$aaa+size/24-2
+		$endif
+
+		$do	size>$$significands,"$$significands"***		$set	size//24*24
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+		$do	$$significands>48,	c	(x72_anU)	$aaa,,long	96-size,,xi
+		$return
+
+"$i_multiply"*	$name
+"$iiw"	$set	0
+size	$set	24
+"$$significands"***	$set	24
+
+"$iii"		$set	'anaconda'
+
+		$if	1
+		$aax	p(1)
+		$else
+
+		$if	($t(p(1, 1:1))=$set)**(p(1, 1:1)="$iii")
+push_radix	$set	$$significands
+"$$significands"***	$set	24
+		$aax	p(1)
+"$$significands"***	$set	push_radix
+		$sterm	':'
+		$do	$o('C'),	$sterm	'.'
+		$else
+		$aax	p(1)
+		$endif
+		$endif
+
+		$do	$1w(p(1)),size	$set	24	. partial word casting?
+		$do	$iiw^=0,size	$set	$iiw	. cast to size of literal=
+
+		$if	size>48
+		  $if		$msize<25
+		  sb		i$aside($ASIDE)+1
+		  la		$aaa
+		  dsa		24
+		  ds		6
+		  dl		$aaa+1
+		  c	(x72_m72_24)	i$aside($ASIDE)+1	
+                  $else
+		  $do	$$significands<49,	call	(x72_xtend)
+		  c	(x72_m72_72)	$aaa,,i
+		  $endif
+		$elseif	size>24
+		  $if		$msize>48
+		  c	(x72_m72_48)	$aaa,,long
+		  $elseif	$msize>24
+		  c	(x72_m48_48)	$aaa,,long
+		  $else
+		  sb	i$aside($ASIDE)+1
+		  dl	$aaa
+		  c	(x72_m48_24)	i$aside($ASIDE)+1
+		  $endif
+		$else
+                  $if		$msize<25
+		  m	$aaa
+		  $elseif	$msize<49
+		  c	(x72_m48_24)	$aaa	. default assumption
+		  $else
+		  c	(x72_m72_24)	$aaa
+		  $endif
+		$endif
+"$$significands"***	$set	($msize+size)//24*24
+	$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+"$msize"*		$set	$$significands
+		$return
+
+"$i_divide"*	$name
+"$iiw"	$set	0
+size	$set	24
+
+. "$$significands"***	$set	24
+
+"$iii"	$set	'Buffalo Bill'
+
+		$if	($t(p(1, 1:1))=$set)**(p(1, 1:1)="$iii")
+push_radix	$set	$$significands
+"$$significands"***	$set	24
+		$aax	p(1)
+"$$significands"***	$set	push_radix
+		$sterm	':'
+		$do	$o('C'),	$sterm  '.'
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+                  $if	$$significands<49
+		  d	$aaa
+		  sb	7	. save the remainder
+		  lb	a
+		  la	6
+		  $else
+		  c	(x72_d72_24)	$aaa	0,,xi
+		  $endif
+		$elseif	size<49	
+                  $if		$$significands>48
+		  $nop		dividend 72 divisor 48
+                  c	(x72_d72_48)	$aaa,,long
+		  $else
+		  $nop		dividend 48 divisor 48
+		  c	(x72_d48_48)	$aaa,,long
+                  $endif
+		$else
+		  $nop		dividend (72 -? 48) divisor 72
+		  $do	$$significands<49,	call	(x72_xtend)
+		  c	(x72_d72_72)	$aaa,,i
+		$endif
+		$return
+
+
+"$i_covered_qotient"* $name
+		$flag	covered quotient may only be a constant
+		$return
+
+"$i_remainder"*	$name
+		$aax	p(1)
+		d	$aaa
+		sa	7	. save the quotient. MSW is already in 6
+		la	b
+		dsa	24
+		$return
+
+"$i_load"*	$name
+"$iiw"	$set	0
+size	$set	48
+"$$significands"*****	$set	48
+"$$cast"		$set	0
+"$iii"	$set	'bandicoot serenade'
+
+		$if	($t(p(1, 1:1))=$set)**(p(1, 1:1)="$iii")
+		$do	imeasure\p(1)>48,"$$significands"***	$set	imeasure\p(1)
+		$sterm	':'
+		$do	$o('C'),	$sterm	'.'
+		$endif
+
+		$aax	p(1)
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size>48
+
+		la	$aaa
+		dsa	24
+		ds	6
+		dl	$aaa+1	
+		$elseif	size<25
+
+		la	$aaa
+		dsa	24
+		$else
+
+		dl	$aaa
+		$endif
+		$if	$$cast
+		$do	(size<49)**($$cast>48)**(__RADIX>48),	call	(x72_xtend)
+size	$set	$$cast
+"$msize"* $set	$$cast
+		$endif
+		$do	size>$$significands,"$$significands"***		$set	size
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+"$msize"*	$set	size
+		$return
+
+"$i_load_negative"* $name
+size	$set	48
+"$iiw"	$set	0
+. "$$significands"***	$set	48
+
+
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		ds	i$aside($ASIDE)
+		dsr	48
+		dan	i$aside($ASIDE)
+		$else
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+
+		$if	(size>48)**(__RADIX>48)
+
+		dsr	48
+		dan	$aaa+1
+		z	6
+		z	7
+		c	(x72_anu)	$aaa
+		$elseif	size<25
+
+		la, xi	0
+		ana	$aaa
+		dsa	24
+		$else
+
+		dsr	48
+		dan	$aaa
+		$endif
+.		$do	size>24,
+
+"$$significands"***	$set	size
+		$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+"$msize"*	$set	$$significands
+		$endif
+		$return
+
+"$i_reserve"*	$name			. lookaside is always double
+		$ipush
+. "$$significands"***	$set	48
+		$return
+
+"$i_reverse"*	$name
+		ds	i$aside($ASIDE)
+		dsr	48
+		dan	i$aside($ASIDE)
+		$do	$$significands>48,	call	(xanuz)	6,,long	96-$$significands
+		$return
+
+		$nop	$ipush saves lookaside values
+		$nop	on a conceptual stack with no physical pointer
+		$nop	the pointer value is in macro language at assembly time
+		$nop	the saves are physical
+		$nop	but the retrieves are just an address moving in macro language
+		$nop	the stack has no need to be contiguous
+
+"$ipush"*	$name
+	$do	$ASIDE>4,	$note	borrowing internal stack registers: this can halt the thread
+		$if	$$significands<49
+		ds	i$aside($ASIDE)
+tag$aside($ASIDE)***	$set	$$significands
+"$ASIDE"***	$set	$ASIDE+1
+		$else
+
+		$if	$ASIDE**1=0		. relative-1 so an even pair is odd
+tag$aside($ASIDE)***	$set	-1		. mark it bypass on the way down
+"$ASIDE"***	$set	$ASIDE+1	. no use getting more clever than that
+		$endif				. you want to save in a single instruction
+
+tag$aside($ASIDE)***	$set	$$significands
+tag$aside($ASIDE+1)***	$set	$$significands
+		qs	i$aside($ASIDE)
+"$ASIDE"***	$set	$ASIDE+2
+		$endif
+		$return
+
+
+		$nop	$ipop does not move data or change registers
+		$nop	it just directs macro language what lookaside address to read
+
+"$ipop"*	$name
+"$ASIDE"***	$set	$ASIDE-1
+	$do	tag$aside($ASIDE)<0,"$ASIDE"***		$set	$ASIDE-1 . bypass
+. "$$significands"***	$set	tag$aside($ASIDE)
+	$do	tag$aside($ASIDE)>48,"$ASIDE"***	$set	$ASIDE-1 . large
+	$do	$ASIDE<1,	$flag	lookaside underrun
+		$return
+
+
+"$i_retrieve_testequal"* $name
+		$$i_retrieve_compare
+		jdz	$+3		. up 1 bit	
+		dsr	48
+		j	$+2
+		lb, xi	1
+                $return
+
+"$i_retrieve_testunequal"* $name
+		$$i_retrieve_compare	. not even up 1 bit
+                jdz     $+3
+                la, xi  0
+		lb, xi	1
+                $return
+
+"$i_retrieve_testgreater"* $name
+		$$i_retrieve_compare
+                jdz     $+5		. it already isn't >
+		lb	1,,xi		. it's different so is it + ?		
+		jpa	$+2		. yes
+		lb	0,,xi		. no
+		la	0,,xi		. finally
+                $return
+
+"$i_retrieve_test_noless"* $name
+		$$i_retrieve_compare
+		jdz	$+3		. = ^= <
+		lb	0,,xi
+		jpa	$+2		. yes it's lower
+		lb	1,,xi		. notso
+		la	0,,xi
+		$return	
+
+"$i_retrieve_testless"* $name
+		$$i_retrieve_compare
+		jdz	$+5		. no contest
+		lb	0,,xi
+                jpa	$+4		. yes it isn't
+		lb	1,,xi		. no it is
+                la	0,,xi
+                $return
+
+"$i_retrieve_test_nogreater"* $name
+		$$i_retrieve_compare
+		jdz	$+3		. yes no higher
+		lb	0,,xi		. not no greater
+		jpa	$+2		. + and not =
+		lb	1,,xi		. 
+		la	0,,xi
+		$return
+
+
+"$i_retrieve_shift"* $name		. setaside shift count is LS word
+		$ipop			. and is indirect
+		dsl	*i$aside($ASIDE)+1
+		$return
+
+"$i_retrieve_shift_right"* $name
+		$ipop
+		dsa	*i$aside($ASIDE)+1
+		$return
+
+"$i_retrieve_or"* $name
+		$ipop	
+		or	i$aside($ASIDE)
+		orB	i$aside($ASIDE)+1
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
+		$if	$$significands>48
+		$do	tag$aside($ASIDE)>48,	c	(x72_orU)	i$aside($ASIDE+1),,long	0,,xi
+		$endif
+		$return
+
+"$i_retrieve_xor"* $name
+		$ipop
+                xor     i$aside($ASIDE)
+                xorB    i$aside($ASIDE)+1
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
+		$if	$$significands>48
+		$do	tag$aside($ASIDE)>48,	c	(x72_xorX)	i$aside($ASIDE+1),,long	0,,xi
+		$endif
+                $return
+		
+"$i_retrieve_and"* $name
+		$ipop
+                and     i$aside($ASIDE)
+                andB    i$aside($ASIDE)+1
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
+		$if	$$significands>48
+		$do	tag$aside($ASIDE)>48,	c	(x72_andU)	i$aside($ASIDE+1),,long	0,,xi
+		$endif
+                $return
+
+"$i_retrieve_add"*	$name
+		$ipop
+		$do	$$significands<49,	$do	tag$aside($ASIDE)>48,	call	(x72_xtend)
+		da	i$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
+		$do	$$significands>48,	c	(x72_aU)	i$aside($ASIDE+1),,long	0,,xi
+		$return
+
+"$i_retrieve_subtract"*	$name
+		$ipop
+		$do	$$significands<49,	$do	tag$aside($ASIDE)>48,	call	(x72_xtend)
+		dan	i$aside($ASIDE)
+		$do	tag$aside($ASIDE)>$$significands,"$$significands"***	$set	tag$aside($ASIDE)
+		$do	$$significands>48,	c	(x72_anU)	i$aside($ASIDE+1),,long	0,,xi
+		$return
+
+"$i_retrieve_multiply"*	$name
+		$ipop
+		$if	tag$aside($ASIDE)>48
+		$if	$msize<25
+		sb	i$aside($ASIDE+2)+1
+		$do	$ASIDE>4,	$note	borrowing internal stack registers: this can halt the thread
+		ql	i$aside($ASIDE)
+		c	(x72_m72_24)	i$aside($ASIDE+2)+1
+		$else
+		c	(x72_m72_72)	i$aside($ASIDE),,xi
+		$endif
+		$elseif	tag$aside($ASIDE)>24
+		$if	$msize>48
+		c	(x72_m72_48)	i$aside($ASIDE),,long
+		$elseif	$msize>24
+		c	(x72_m48_48)	i$aside($ASIDE),,long
+		$else
+		sb	i$aside($ASIDE+1)+1
+		dl	tag$aside($ASIDE)
+		m	(x72_m48_24)	i$aside($ASIDE+1)+1
+		$endif
+		$else
+		$if	$msize>48
+		c	(x72_m72_24)	i$aside($ASIDE)+1
+		$elseif	$msize>24
+		c	(x72_m48_24)	i$aside($ASIDE)+1
+		$else
+		m	i$aside($ASIDE)+1
+		$endif
+		$endif
+
+"$$significands"***	$set	($msize+tag$aside($ASIDE)//24*24
+	$do	$$significands>__RADIX,"$$significands"***	$set	__RADIX
+"$msize"*	$set	$$significands
+		$return
+
+"$i_retrieve_divide"*	$name
+		$ipop
+
+		$if	tag$aside($ASIDE)>48
+				$do	$$significands<49,	call	(x72_xtend)
+				dpush	i$aside($ASIDE)
+				dpush	i$aside($ASIDE+1)
+				c	(x72_d72_72)	1, sp, i
+				qpop	0, sp
+		$elseif	tag$aside($ASIDE)>24
+			$if	$$significands>48
+				c	(x72_d72_48)	i$aside($ASIDE),,long	
+			$else
+				c	(x72_d48_48)	i$aside($ASIDE),,long	
+			$endif
+		$else
+			$if	$$significands>48
+				c	(x72_d72_24)	i$aside($ASIDE)+1	0,,xi
+			$else
+				d	i$aside($ASIDE)+1
+				sb	7
+				lb	a
+				la	6
+			$endif
+		$endif
+
+		$return
+
+"$i_retrieve_covered_quotient"*	$name
+		$flag	covered quotient may only be a constant
+		$return
+
+"$i_retrieve_remainder"*	$name
+		$ipop
+                d       i$aside($ASIDE)+1
+		sa	7	. save the quotient. MSW is already in 6
+		la	b
+		dsa	24
+
+		$end
+

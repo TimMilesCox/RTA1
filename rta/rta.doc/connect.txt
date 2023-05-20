@@ -1,0 +1,2206 @@
+<html>
+<div    style="font-size:14pt">
+
+<center>
+
+<h1>Running and Talking to the Emulated RTA1</h1>
+
+<i>
+Copyright Tim Cox, 2012<br>
+This document is part of the RTA1 Processor Programmable Architecture Specification<br>
+The RTA1 Architecture is freeware licensed with the GNU General Public Licence Version 3<br>
+The same licence encompasses all accompanying software and documentation <br>
+The full licence text is included with these materials<br>
+See also the licensing notice at the foot of this document
+
+</i>
+
+</center>
+
+<ol>
+	<li><a href="#outline">Outline</a></li>
+        <li><a href="#acquire">Acquisition</a></li>
+	<ol>
+		<li><a href="#acquire">Downloads</a></li>
+		<li><a href="#needed_u">Required Utilities and Path Setup</a></li>
+		<li><a href="#emus_by">SMP Emulators by Platform</a></li>
+	</ol>
+	<li><a href="#topol">Network Topology</a></li>
+	<li><a href="#route_from">Routing from RTA1</a></li>
+	<li><a href="#route">Routing to RTA1</a></li>
+        <li><a href="#run">Starting the Emulator</a></li>
+	<ol>
+		<li><a href="#run">Network Trunk and Emulator Processes</a></li>
+		<li><a href="#trunk">Network Trunk Process by Platform</a></li>
+		<li><a href="#emu">RTA1 Emulators and Run Flags</a></li>
+		<li><a href="#ORZ">Emulator Additional Run Flags</a></li>
+		<li><a href="#_dev_">Emulator Additional Device Arguments</a></li>
+		<li><a href="#client">Routing initialised at Client Console</a></li>
+	</ol>
+        <li><a href="#debug">Debug Console</a></li>
+        <li><a href="#apps">Applications in the Download RTA1 Target System Image</a></li>
+	<ol>
+		<li><a href="#apps">What Applications are Present?</a></li>
+		<li><a href="#routapp">Routing to RTA1 Applications and Server Wake-Up</a></li>
+		<li><a href="#webhost">WebHost and Adding your Enterprise Web Pages</a></li>
+		<li><a href="#fponline">fponline Algorithm Engine and Math Library</a></li>
+		<li><a href="#binary">Simple Calculators</a></li>
+		<ol>
+			<li><a href="#binary">Binary Calculators fp and i Client Command Line Interface</a></li>
+			<li><a href="#fp96">96-Bit Floating Point Calculator</a></li>
+			<li><a href="#fp192">192-Bit Floating Point Calculator</a></li>
+			<li><a href="#bench">Floating, Integer, Library and 192-Bit Trigonometry Benchmarks</a></li>
+		</ol>		
+		<li><a href="#snmp">SNMP Agent</a></li>
+		<li><a href="#telnet">Telnet Server</a></li>
+		<li><a href="#loader">ROM and Loadable Applications</a></li>
+	</ol>
+</ol>
+<ul	style="list-style-type:none">
+        <li><a href="#suse">Appendix A: Installing openSUSE Linux</a></li>
+        <li><a href="#autoconf">Appendix B: Autoconf and Multihomed Routes</a></li>
+        <li><a href="#alltests">Appendix C: Benchmark Suite alltests</a></li>
+	<li><a href="#readout">Appendix D: Readout Utility and Hot Debug</a></li>
+		<ul	type="none">
+		<li><a href="#readout">D.1: General Application of readout Utility</a></li>
+		<li><a href="#hot_d">D.2: Walking a Faulted Application with readout Utility</a></li>
+		</ul>
+	<li><a href="#emu_trad">Appendix E: Available Previous Emulators</a></li>
+	<li><a href="#deconta">Appendix Y: Clearing Download Restrictions</a></li>
+        <li><a href="#licence">Appendix Z: GNU General Public Licence Version 3</a></li>
+</ul>
+
+<a	name="outline"/>
+<h3>1: Outline</h3>
+RTA1 emulated machine is available for two POSIX platforms
+
+	<blockquote>
+	all OSX PowerPC and macOS Intel platforms<br><br>
+	any Intel PC on which you have installed <a href="#suse">openSUSE Linux</a> or another Linux
+        </blockquote>
+
+A network interface process and an emulator process constitute the RTA1 emulated machine
+
+<p>
+RTA1 machine executes a target system image with webserver, snmp agent, telnet server,<br>
+and embedded UDP servers for 96-bit and 192-bit floating arithmetic.<br>
+Client-side UDP floating arithmetic applications are packaged for OSX, Linux and Windows
+<pre	style="font-size:10">
+
+	_________________________________________________________________________________________________________
+	|					POSIX Emulator Host Platform					|
+	|_______________________________________________________________________________________________________|
+	|											|    		|
+	|											|		|
+	|________________________________________________________________			|   platform	|		_________________
+	|RTA1 emulator	| RTA1 machine	|<------------->| BPF interfaces| <---- remote networks	|   kernel	|<--------------|remote client	|
+	|process	| IP protocols	|netframes trunk|  trunk process| <------------------->	|		|-------------->|shells + 	|
+	|_______________|_______________|_______________|_______________| <--- platform loopback|_______________|		|browsers	|
+	|debug console	|		|							|				|_______________|
+	|thread		|		|							|	
+	|_______________|		|________________					|________________
+	|console shell	|		|interfaces	|					|on-platform	|
+	|		|		|viewer shell	|					|client shells +|
+	|		|		|		|					|browsers	|
+	|_______________|		|_______________|					|_______________|									
+</pre>
+
+<a      name="acquire"/>
+<h3>2: Acquisition</h3>
+
+<h4>2.1: Downloads</h4>
+
+RTA1 is downloaded as zip from <a href="http://timmilescox.github.io/RTA/#downloads">http://timmilescox.github.io/RTA/#downloads</a>
+and unpacks for example to
+<pre	style="font-size:11pt;color:#0000FF">
+
+	$HOME/Downloads/rta
+
+</pre>
+masmx meta-assembler is required both for operational just-in-time assemblies and for developing any RTA1 target code.<br>
+zip is in <a href="http://timmilescox.github.io/masmx/">http://timmilescox.github.io/masmx/</a>
+and unpacks for example to
+<pre	style="font-size:11pt;color:#0000FF">
+
+	$HOME/Downloads/masmx.7r3
+
+</pre>
+
+You may wish to copy these downloads to another space. On some platforms that is an opportunity to enable the downloaded binaries
+<p>
+If your platform is OSX Catalina+ see how to clear downloads to run: <a href="#deconta">Appendix Y: Clearing Download Restrictions</a>
+
+<a	name="needed_u"/>
+<h4>2.2: Required Utilities and Path Setup</h4>
+<p>
+
+RTA1 emulators are in rta/binary.smp
+
+<p>
+RTA1 utilities are in rta/binary.rta and are frequently required
+
+<p>
+Subdirectories in emulators and utilities paths are [ suse.x64 suse.x32 osx.x64 osx.x32 osx.ppc ]
+
+<p>
+Platform depending rta1 operation requires paths in $PATH for RTA1 emulators and utilities
+
+<p>
+Environmental names [ RTA_BINARY RTA_BIN_64 RTA_BIN_SMP ] are referenced in some shell scripts and optionally in $PATH
+
+<p>
+RTA1 uses many just-in-time assemblies and does not run without separate product masmx7r3A
+
+<p>
+RTA1 requires masmx7r3 Build 12 or later
+
+<p>
+masmx7r3A Build 12 and Build 12-64 currently download from http://timmilescox.github.io/masmx/
+
+<p>
+masmx/masmx.7r3/masmx.7r3/hosts contains binaries in [ suse.x64 suse.x86 osx.x64 osx.x86 osx.ppc ]
+
+<p>
+Whichever runs on the platform is required in $PATH and sometimes its path has the variable name $MASMX
+
+<p>
+Components and utilities of RTA1 emulator and masmx are present for
+
+<ul	style="line-height:18pt;list-style-type:none">
+
+	<li>32-Bit Intel OSX</li>
+	<li>64-Bit Intel OSX</li>
+	<li>32-Bit PowerPC OSX</li>
+	<li>32-Bit Intel Linux</li>
+	<li>64-Bit Intel Linux</li>
+
+</ul>
+Directories in environment and in $PATH may be
+
+<ul	style="line-height:24pt;list-style-type:none">
+	<li><a style="color:#0000FF">$RTA_BIN_SMP</a> may be in your environment and $PATH resolving <a style="color:#0000FF">rta/binary.smp/{ osx.ppc | osx.x86 | osx.x64 | suse.x32 | suse.x64 }</a></li>
+        <li><a style="color:#0000FF">$RTA_BIN_64</a> or <a style="color:#0000FF">$RTA_BINARY</a> may be in your environment and $PATH resolving <a style="color:#0000FF">rta/binary.rta/{  suse.x64 | suse.x32 | osx.x64 | osx.x32 | osx.ppc }</a></li>
+	<li><a style="color:#0000FF">$MASMX</a> may be  in your environment and $PATH resolving <a style="color:#0000FF">masmx.7r3/hosts/{ osx.ppc | osx.x86 | osx.x64 | suse.x32 | suse.x64 }</a></li>
+</ul>
+
+masmx is necessary to run RTA1 at all. To generate RTA1 target applications this directory of scripts is additionally needed in $PATH
+<ul	style="line-height:24pt;list-style-type:none">
+
+	<li><a style="color:#0000FF">$RTA_BINARY/../../target.rta/image.app</a>
+
+</ul>
+Some 64-bit Linux distros need extra runtine library download to execute 32-bit binaries
+
+<p>
+What goes in .bash_profile or .bashrc is like this
+
+<pre	style="font-size:10pt">
+
+	<a style="color:#FF0000">OSX x86-64</a>									<a style="color:#FF0000">Linux x86-64</a>
+	__________									____________
+
+	export	RTA_BIN_SMP=$HOME/rta/binary.smp/osx.x64				export	RTA_BIN_SMP=$HOME/rta/binary.smp/suse.x64
+	export	RTA_BIN_64=$HOME/rta/binary.rta/osx.64					export	RTA_BIN_64=$HOME/rta/binary.rta/suse.x64
+	export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/osx.x64				export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/suse.x64
+	export	PATH=$PATH:$MASMX:$RTA_BIN_SMP:$RTA_BIN_64				export	PATH=$PATH:$MASMX:$RTA_BIN_SMP:$RTA_BIN_64
+	export	RTA_MBANKS=8	# default executable space 8 banks			export	RTA_MBANKS=8	# default executable space 8 banks
+				# [ 1..65536 ] * 262144 words							# [ 1 2 4 8 32 64 256 1024 2048 4096 8192 ]
+				# up to 16 gigawords								# * 262144 words
+
+
+	<a style="color:#FF0000">OSX x86</a>										<a style="color:#FF0000">Linux x86</a>
+	_______										_________
+
+	export	RTA_BIN_SMP=$HOME/rta/binary.smp/osx.x86				export	RTA_BIN_SMP=$HOME/rta/binary.smp/suse.x86
+	export	RTA_BINARY=$HOME/rta/binary.rta/osx.x86					export	RTA_BINARY=$HOME/rta/binary.rta/
+	export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/osx.x86				export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/suse.x86
+	export	PATH=$PATH:$MASMX:$RTA_BIN_SMP:$RTA_BINARY				export	PATH=$PATH:$MASMX:$RTA_BIN_SMP:$RTA_BINARY
+	export	RTA_MBANKS=8	# default executable space 8 banks			export	RTA_MBANKS=8	# default executable space 8 banks
+				# [ 1 2 4 8 32 64 256 1024 2048 ]						# [ 1 2 4 8 32 64 256 1024 ]
+				# * 262144 words								# * 262144 words
+
+
+	
+
+	<a style="color:#FF0000">OSX PowerPC</a>
+	___________
+
+	export  RTA_BIN_SMP=$HOME/rta/binary.smp/osx.ppc
+	export	RTA_BINARY=$HOME/rta/binary.rta/osx.ppc
+	export  MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/osx.ppc
+	export  PATH=$PATH:$MASMX:$RTA_BIN_SMP:$RTA_BINARY
+	export  RTA_MBANKS=8	# default executable space 8 banks
+				# [ 1..1024 ] * 262144 words
+	
+
+
+
+
+	<a style="color:#00C000">Additions to %PATH% in Windows environment variables</a>
+	____________________________________________________
+
+	for windows users of network client programs fp and i
+
+	c:\%HOME%\rta\binary.rta\win32\;c:\%HOME%\masmx.7r3\masmx.7r3\hosts\win32\;c:\%HOME%\util\win32
+
+
+</pre>
+
+<a	name="emus_by"/>
+<h4>2.3: SMP Emulators by Platform</h4>
+
+RTA1 emulators Stepping 14.02.2023 [ USA 02.14.2023 ] are newly constructed for higher performance and Symmetric Multicore
+
+<p>
+New SMP emulators use available core threads of the emulator platform and are supplied in variants of [ <a style="color:#FF0000">1 2 4 8</a> ] cores
+
+<p>
+Previous emulators with identical performance to SMP * 1-core are in the download and identified in <a href="#emu_trad">Appendex E: Available Previous Emulators</a>
+
+<p>
+Supplied emulators are mostly for Intel 64-bit and 32-bit platforms running Linux and macOS
+
+<p>
+The only RTA1 emulator supplied for macOS PowerPC is a completely new SMP * 1-core emulator. Project RTA1 will release SMP emulator variants [ <a style="color:#FF0000">2 4 8</a> ] for PowerPC subject to resourcing machine-code upgrades
+
+<p>
+Four RTA1 emulators for 64-bit Intel macOS RTA1 are supplied. Environment variable $RTA_SMP = [ <a style="color:#FF0000">1 2 4 8</a> ] selects [ <a style="color:#0000FF">rta1_1 rta1_2 rta1_4 rta1_8</a> ] for execution
+
+<p>
+These and macOS 32-bit PowerPC [ <a style="color:#0000FF">rta1_1</a> ] acquire storage per $RTA_MBANKS (262144-word blocks of RTA1 executable space) at startup
+
+<p>
+There is a difference between macOS releases whether sudo command in runscript ./r needs -E option to transfer environment variables to the emulator. In macOS for PowerPC this option may be unknown and not needed
+
+<p>
+RTA emulators for Linux 64-bit Intel and for Linux and macOS 32-bit Intel are supplied in multiple cores * storage size variants and selected at runtime. Emulator is selected for execution using variables $RTA_SMP and $RTA_MBANKS
+
+<p>
+Depending on platform available emulators are
+<pre	style="font-size:11pt">
+
+	$RTA_BINARY/rta1_[ <a style="color:#FF0000">1 2 4 8</a> ].[ <a style="color:#0000FF">1 2 4 8 32 64 256 1024 2048</a> ]
+	32-bit Intel macOS and Linux	run as script rta/tgen.smp/ra	[-[R][Z][s]] rta1_<a style="color:#FF0000">1|2|4|8</a>.<a style="color:#0000FF">2048</a> are macOS only
+
+	$RTA_BIN_64/rta1_[ <a style="color:#FF0000">1 2 4 8</a> ].[ <a style="color:#0000FF">1 2 4 8 32 64 256 1024 2048 4096 8192</a> ]
+	64-bit Intel Linux		run as script rta/tgen.smp/xra	[-[R][Z][s]]
+
+	$RTA_BIN_64/rta1_[ <a style="color:#FF0000">1 2 4 8</a> ]
+	64-bit Intel macOS		run as script rta/tgen.smp/r	[-[R][Z][s]]
+
+	$RTA_BINARY/rta1_1
+	32-bit PowerPC OSX		run as script rta/tgen.smp/rap	[-[R][Z][s]]
+
+</pre>
+
+<p>
+64-bit Intel macOS emulators can be run with RTA_MBANKS=65536 (RTA1 executable space 16 Gigawords) but swap requirements may make demands on platform volume
+
+<p>
+64-bit Intel macOS emulators and 32-bit PowerPC OSX emulator have variants [ <a style="color:#FF0000">rta1_1A rta1_2A rta1_4A rta1_8A</a> ] which include the touchpoint trace feature (a memory-write equivalent of breakpoint). touchpoint feature is included in all 32-bit Intel emulators and Linux 64-bit Intel emulators. [ <a style="color:#FF0000">rta1_1A rta1_2A rta1_4A rta1_8A</a> ] contain less Intel-specific source code than [ <a style="color:#FF0000">rta1_1 rta1_2 rta1_4 rta1_8</a> ] and are the code base of emulations for platforms not similar to Intel
+
+<a	name="topol"/>
+<h3>3: Network Topology</h3>
+Script .rta_net must be copied from { linux.net | linuxnet.x64 | portal | portal.x64 } to $HOME
+
+<p>
+Adjust values in $HOME/.rta_net RTA_ENET and RTA_WIFI if you need different addresses from 172.29.7.8 and 172.29.7.66
+
+<p>
+This becomes necessary if more than one RTA1 is on the local net
+
+<p>
+Supplied routes have addresses 172.29.7.8 .. 172.29.7.62 in wired Ethernet and addresses 172.29.7.66 .. 172.31.255.254 in WiFi
+
+<p>
+These routes may need to be changed in <a href="#route_from">$HOME/.rta_net</a> for traffic from RTA1 and for traffic from platforms to RTA1 in <a href="#route">rta/client/rundum</a>
+
+<p>
+Interface names are different in Linux
+
+
+<pre	style="font-size:11pt;color:0000FF">
+	OSX									<a style="color:#FF0000">Linux</a>
+	___									<a style="color:#FF0000">_____</a>
+
+	$ cd rta/portal								<a style="color:#FF0000">:~> cd rta/linux.net</a>
+	$ cp .rta_net $HOME							<a style="color:#FF0000">cp .rta_net $HOME</a>
+	$ cat $HOME/.rta_net							<a style="color:#FF0000">cat $HOME/.rta_net</a>
+	export RTA_ENET=172.29.7.8/26						<a style="color:#FF0000">export RTA_ENET=172.29.7.8/26</a>
+	export RTA_WIFI=172.29.7.66/12						<a style="color:#FF0000">RTA_WIFI=172.29.7.66/12</a>
+	export SLOOP=lo0							<a style="color:#FF0000">export SLOOP=lo</a>
+	export ENET=en0		# in absence of any RJ45 socket			<a style="color:#FF0000">export ENET=eth0</a>
+	export WIFI=en1		# en0 may be WIFI. Consult ifconfig		<a style="color:#FF0000">export WIFI=wlan0</a>
+	$									<a style="color:#FF0000">:~></a>
+
+</pre>
+
+If Ethernet and Wifi controllers are not both active, ENET and WIFI may both equal the name of one active interface
+
+<p>
+Values in $HOME/.rta_net are used at network frame trunk startup to initialise RTA1 IP addresses and routes
+
+<p>
+Variables $RTA_ENET and $RTA_WIFI attach multiple IP addresses to external interfaces, and attach routes which RTA1 IP uses on transmission
+
+Here RTA1 host 172.29.7.12 with Wifi address 172.29.7.72 is configured and has some extra IP addresses and routes
+
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	export RTA_ENET=172.29.7.12/26<a style="background-color:#00FF00">+172.29.7.14/26</a>@192.168.1.0/24<a style="background-color:#00FF00">+10.0.0.5/8</a>@172.29.7.0/26
+	export RTA_WIFI=172.29.7.72/12@0.0.0.0/0*192.168.1.254@192.168.0.0/16@172.16.0.0/12
+	export SLOOP=lo0
+	export ENET=en0
+	export WIFI=en1
+
+</pre>
+
+<a style="background-color:#00FF00">+ signals an additional IP address on the interface</a>
+
+<p>
+Here host 172.29.7.12 is interrogated with <a href="http://www.net-snmp.org">NET-SNMP</a>
+
+<pre	style="font-size:11pt;color:0000FF">
+
+
+	$ snmpwalk -v 1 -c public -Ir -Os 172.29.7.12 ipAddrTable
+	ipAdEntAddr.10.0.0.5 = IpAddress: 10.0.0.5
+	ipAdEntAddr.127.0.0.1 = IpAddress: 127.0.0.1
+	ipAdEntAddr.172.29.7.7 = IpAddress: 172.29.7.7
+	ipAdEntAddr.172.29.7.12 = IpAddress: 172.29.7.12
+	ipAdEntAddr.172.29.7.14 = IpAddress: 172.29.7.14
+	ipAdEntAddr.172.29.7.72 = IpAddress: 172.29.7.72
+	ipAdEntIfIndex.10.0.0.5 = INTEGER: 3
+	ipAdEntIfIndex.127.0.0.1 = INTEGER: 1
+	ipAdEntIfIndex.172.29.7.7 = INTEGER: 2
+	ipAdEntIfIndex.172.29.7.12 = INTEGER: 3
+	ipAdEntIfIndex.172.29.7.14 = INTEGER: 3
+	ipAdEntIfIndex.172.29.7.72 = INTEGER: 4
+	ipAdEntNetMask.10.0.0.5 = IpAddress: 255.0.0.0
+	ipAdEntNetMask.127.0.0.1 = IpAddress: 255.0.0.0
+	ipAdEntNetMask.172.29.7.7 = IpAddress: 255.255.255.255
+	ipAdEntNetMask.172.29.7.12 = IpAddress: 255.255.255.192
+	ipAdEntNetMask.172.29.7.14 = IpAddress: 255.255.255.192
+	ipAdEntNetMask.172.29.7.72 = IpAddress: 255.240.0.0
+
+</pre>
+
+<a      name="route_from"/>
+<h3>4: Routing from RTA1</h3>
+
+$HOME/.rta_net also configures routes which RTA1 uses for outgoing traffic
+
+<p>
+<a style="color:#FF0000">@ signals a route on the interface</a>
+
+<p>
+* introduces the <a style="color:#FFFFFF;background-color:#000000">gateway</a> of an indirect route
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	export RTA_ENET=172.29.7.12/26+172.29.7.14/26<a style="color:#FF0000">@192.168.1.0/24</a>+10.0.0.5/8<a style="color:#FF0000">@172.29.7.0/26</a>
+	export RTA_WIFI=172.29.7.72/12<a style="color:#FF0000">@0.0.0.0/0</a><a style="color:#FFFFFF;background-color:#000000">*192.168.1.254</a><a style="color:#FF0000">@192.168.0.0/16@172.16.0.0/12</a>
+	export SLOOP=lo0
+	export ENET=en0
+	export WIFI=en0
+
+
+	$ snmpwalk -v 1 -c public -Ir -Os -m+RFC1213-MIB 172.29.7.7 ipRouteTable
+	ipRouteDest.0.0.0.0 = IpAddress: 0.0.0.0
+	ipRouteDest.127.0.0.0 = IpAddress: 127.0.0.0
+	ipRouteDest.169.254.0.0 = IpAddress: 169.254.0.0
+	ipRouteDest.172.16.0.0 = IpAddress: 172.16.0.0
+	ipRouteDest.172.29.7.0 = IpAddress: 172.29.7.0
+	ipRouteDest.172.29.7.6 = IpAddress: 172.29.7.6
+	ipRouteDest.192.168.0.0 = IpAddress: 192.168.0.0
+	ipRouteDest.192.168.1.0 = IpAddress: 192.168.1.0
+	ipRouteIfIndex.0.0.0.0 = INTEGER: 4
+	ipRouteIfIndex.127.0.0.0 = INTEGER: 1
+	ipRouteIfIndex.169.254.0.0 = INTEGER: 0
+	ipRouteIfIndex.172.16.0.0 = INTEGER: 4
+	ipRouteIfIndex.172.29.7.0 = INTEGER: 3
+	ipRouteIfIndex.172.29.7.6 = INTEGER: 2
+	ipRouteIfIndex.192.168.0.0 = INTEGER: 4
+	ipRouteIfIndex.192.168.1.0 = INTEGER: 3
+	ipRouteNextHop.0.0.0.0 = IpAddress: 192.168.1.254
+	ipRouteNextHop.127.0.0.0 = IpAddress: 127.0.0.1
+	ipRouteNextHop.169.254.0.0 = IpAddress: 169.254.0.0
+	ipRouteNextHop.172.16.0.0 = IpAddress: 172.29.7.72
+	ipRouteNextHop.172.29.7.0 = IpAddress: 172.29.7.12
+	ipRouteNextHop.172.29.7.6 = IpAddress: 172.29.7.7
+	ipRouteNextHop.192.168.0.0 = IpAddress: 172.29.7.72
+	ipRouteNextHop.192.168.1.0 = IpAddress: 172.29.7.12
+	ipRouteType.0.0.0.0 = INTEGER: indirect(4)
+	ipRouteType.127.0.0.0 = INTEGER: direct(3)
+	ipRouteType.169.254.0.0 = INTEGER: direct(3)
+	ipRouteType.172.16.0.0 = INTEGER: direct(3)
+	ipRouteType.172.29.7.0 = INTEGER: direct(3)
+	ipRouteType.172.29.7.6 = INTEGER: direct(3)
+	ipRouteType.192.168.0.0 = INTEGER: direct(3)
+	ipRouteType.192.168.1.0 = INTEGER: direct(3)
+	ipRouteMask.0.0.0.0 = IpAddress: 0.0.0.0
+	ipRouteMask.127.0.0.0 = IpAddress: 255.0.0.0
+	ipRouteMask.169.254.0.0 = IpAddress: 255.255.0.0
+	ipRouteMask.172.16.0.0 = IpAddress: 255.240.0.0
+	ipRouteMask.172.29.7.0 = IpAddress: 255.255.255.192
+	ipRouteMask.172.29.7.6 = IpAddress: 255.255.255.255
+	ipRouteMask.192.168.0.0 = IpAddress: 255.255.0.0
+	ipRouteMask.192.168.1.0 = IpAddress: 255.255.255.0
+
+</pre>
+
+Note that the interface(2) has an address 172.29.7.7 and a host route to 172.29.7.6
+
+<p>
+This is a point to point network between platform LoopBack and RTA1
+
+<p>
+RTA1 is 172.29.7.7 and emulator platform is 172.29.7.6
+
+<p>
+The default route table in RTA1 executable load image routes to PC and gateway addresses on network 192.168.0.0.<br>
+These .rta_net settings show how to change the RTA1 outgoing routes to a PC network 192.168.1.0 
+
+<p>
+Note RTA1 always marks principle gateway as the interface named $WIFI, even if that is not a wireless adaptor.<br>
+This interface is always interface(4) in SNMP readout
+
+<p>
+There is a more modern display command for routes
+
+<p>
+It prints prints network addresses in hex which is intuitive for other protocols than IPv4
+
+<p>
+It prints zero next hop for direct routes where the real next hop is the destination<br>
+as distinct from the traditional display of the primary address of the interface as next hop 
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ snmpwalk -v 1 -c public -Ir -Os -m+IP-FORWARD-MIB 172.29.7.7 inetCidrRouteTable
+	inetCidrRouteDestType.ipv4.6.0.0.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.127.0.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.169.254.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.172.16.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.172.29.7.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.172.29.7.6 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.192.168.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteDestType.ipv4.6.192.168.1.0 = INTEGER: ipv4(1)
+	inetCidrRouteDest.ipv4.6.0.0.0.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteDest.ipv4.6.127.0.0.0 = Hex-STRING: 7F 00 00 00 
+	inetCidrRouteDest.ipv4.6.169.254.0.0 = Hex-STRING: A9 FE 00 00 
+	inetCidrRouteDest.ipv4.6.172.16.0.0 = Hex-STRING: AC 10 00 00 
+	inetCidrRouteDest.ipv4.6.172.29.7.0 = Hex-STRING: AC 1D 07 00 
+	inetCidrRouteDest.ipv4.6.172.29.7.6 = Hex-STRING: AC 1D 07 06 
+	inetCidrRouteDest.ipv4.6.192.168.0.0 = Hex-STRING: C0 A8 00 00 
+	inetCidrRouteDest.ipv4.6.192.168.1.0 = Hex-STRING: C0 A8 01 00 
+	inetCidrRoutePfxLen.ipv4.6.0.0.0.0 = Gauge32: 0
+	inetCidrRoutePfxLen.ipv4.6.127.0.0.0 = Gauge32: 8
+	inetCidrRoutePfxLen.ipv4.6.169.254.0.0 = Gauge32: 16
+	inetCidrRoutePfxLen.ipv4.6.172.16.0.0 = Gauge32: 12
+	inetCidrRoutePfxLen.ipv4.6.172.29.7.0 = Gauge32: 26
+	inetCidrRoutePfxLen.ipv4.6.172.29.7.6 = Gauge32: 32
+	inetCidrRoutePfxLen.ipv4.6.192.168.0.0 = Gauge32: 16
+	inetCidrRoutePfxLen.ipv4.6.192.168.1.0 = Gauge32: 24
+	inetCidrRouteNextHopType.ipv4.6.0.0.0.0 = INTEGER: ipv4(1)
+	inetCidrRouteNextHopType.ipv4.6.127.0.0.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.169.254.0.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.172.16.0.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.172.29.7.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.172.29.7.6 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.192.168.0.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHopType.ipv4.6.192.168.1.0 = INTEGER: unknown(0)
+	inetCidrRouteNextHop.ipv4.6.0.0.0.0 = Hex-STRING: C0 A8 01 FE 
+	inetCidrRouteNextHop.ipv4.6.127.0.0.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.169.254.0.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.172.16.0.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.172.29.7.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.172.29.7.6 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.192.168.0.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteNextHop.ipv4.6.192.168.1.0 = Hex-STRING: 00 00 00 00 
+	inetCidrRouteIfIndex.ipv4.6.0.0.0.0 = INTEGER: 4
+	inetCidrRouteIfIndex.ipv4.6.127.0.0.0 = INTEGER: 1
+	inetCidrRouteIfIndex.ipv4.6.169.254.0.0 = INTEGER: 0
+	inetCidrRouteIfIndex.ipv4.6.172.16.0.0 = INTEGER: 4
+	inetCidrRouteIfIndex.ipv4.6.172.29.7.0 = INTEGER: 3
+	inetCidrRouteIfIndex.ipv4.6.172.29.7.6 = INTEGER: 2
+	inetCidrRouteIfIndex.ipv4.6.192.168.0.0 = INTEGER: 4
+	inetCidrRouteIfIndex.ipv4.6.192.168.1.0 = INTEGER: 3
+	inetCidrRouteType.ipv4.6.0.0.0.0 = INTEGER: remote(4)
+	inetCidrRouteType.ipv4.6.127.0.0.0 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.169.254.0.0 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.172.16.0.0 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.172.29.7.0 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.172.29.7.6 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.192.168.0.0 = INTEGER: local(3)
+	inetCidrRouteType.ipv4.6.192.168.1.0 = INTEGER: local(3)
+
+</pre>
+
+<a	name="route"/>
+<h3>5: Routing to RTA1</h3>
+
+A host communicating with RTA1 emulated on a different host must set direct routes onto Ethernet and / or Wifi<br>
+Script rta/client/rundum does this
+
+<pre    style="font-size:11pt;color:0000FF">
+
+	$ cat rundum
+	export	PLATFORM=`uname`
+	source	$HOME/.rta_net
+
+	echo	platform $PLATFORM
+	if	[ "$PLATFORM" == "Linux" ]
+	then
+	<a style="color:FF0000">GW=dev		# Linux</a>
+	else
+	GW=-iface	# OSX
+	fi
+
+	sudo route -nv add -net 172.29.7.0/26	$GW $ENET
+	sudo route -nv add -net 172.29.7.64/26	$GW $WIFI
+
+	$
+
+</pre>
+
+If you prefer to add host routes it's done like this
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	OSX								Linux
+	___								_____
+
+	sudo route -nv add -host 172.29.7.8 192.168.0.20		sudo route -nv add -host 172.29.7.8 gw 192.168.0.20
+	sudo route -nv add -host 172.29.7.66 192.168.0.21		sudo route -nv add -host 172.29.7.66 gw 192.168.0.21
+
+</pre>
+
+<p>
+ifconfig is on Windows ipconfig.<br>
+Host routes on Windows 10 are assigned via an administrator command prompt (a different program from plain command prompt)
+<pre	style="font-size:11pt;color:00C040">
+
+	route add [-p] 172.29.7.8/32 192.168.0.20	# -p means more persistent than system runlife
+	route add [-p] 172.29.7.66/32 192.168.0.21
+
+</pre>
+
+You can check a route with these commands
+<pre	style="font-size:11pt">
+
+	<a style="color:0000FF">OSX				<a style="color:FF0000">Linux				<a style="color:00C040">Windows 10
+	<a style="color:0000FF">___				<a style="color:FF0000">_____				<a style="color:00C040">__________
+
+	<a style="color:0000FF">route get 172.29.7.67		<a style="color:FF0000">route				<a style="color:00C040">route print
+
+</pre>
+
+<p>
+See also <a href="#autoconf">Appendix B: Autoconf and Multihomed Routes</a>
+
+<p>
+Script <a style="color:0000FF">(OSX)rta/{ portal | portal.x64 }/runL</a> or <a style="color:FF0000">rta/{ linux.net | linuxnet.x64 }/runL</a> can now start network service for RTA1
+
+<p>
+runL must start before RTA1 emulator
+
+<p>
+If RTA1 emulator is restarted with option -R an inband request causes runL to resynchronise the network frames trunk
+
+<p>
+runL is stopped with an input starting period . followed by another input starting period in confirmation
+
+<a      name="run"/>
+<h3>6: Starting the Emulator</h3>
+<h4>6.1: Network Trunk and Emulator Processes</h4>
+
+RTA1 emulator is run with two processes in two platform shells
+
+<p>
+Client routing to RTA1 and some client applications run from a third platform shell
+
+<p>
+These three actions are 
+<pre	style="font-size:11pt">
+<div	style="right:0pt;width:250pt;position:absolute;font-size:11pt">
+
+<div	style="right:0pt;width:250pt;font-size:10pt;border-radius:5pt;color:#00FF00;background-color:#000000C0">
+
+
+$ cd rta/linuxnet.x64   <a style="color:#FF0000">rta/portal[.x64]</a>
+$ ./runL                <a style="color:#FF0000">-ozx</a>
+</div>
+<div    style="right:0pt;width:250pt;font-size:10pt;border-radius:5pt;color:#00FF00;background-color:#000000C0">
+
+
+$ cd rta/tgen.smp        <a style="color:#FF0000">rta/tgen.smp</a>
+$ ./ra <a style="color:#FF0000"> [-R]</a>		<a style="color:#FF0000">./r -[-R]</a>
+</div>
+<div    style="right:0pt;width:250pt;font-size:10pt;border-radius:5pt;color:#00FF00;background-color:#000000C0">
+
+
+$ cd rta/client
+$ ./prun
+</div>
+<div    style="right:0pt;width:250pt;font-size:10pt;border-radius:5pt;color:#00FF00;background-color:#000000C0">
+		<a style="color:#FF0000" href="scripts.html#auto">background processes</a>
+		<a style="color:#FF0000">broadcast console</a>
+
+$ sudo oconsole
+</div></div>
+  _______________________________________________________________________________________
+  |											|	
+  |  1st shell: network trunk:	$ cd rta/{ linux.net | linuxnet.x64 | portal[.x64] }	|
+  |				$ ./runL [-[zx][vu]] # script to run network frame trunk|
+  |						     # linuxnet or (OSX) osserv		|
+  |_____________________________________________________________________________________|
+  |											|
+  |  2nd shell: RTA1 emulator:	$ cd rta/tgen.smp					|
+  |  32-bit Linux / macOS :	$ ./ra  [-[R][Z][s]]	# emulator rta1_<a style="color:#FF0000">1|2|4|8</a>.<a style="color:#0000FF">memory</a>	|
+  |  64-bit Linux Intel	  :	$ ./xra [-[R][Z][s]] # emulator rta1_<a style="color:#FF0000">1|2|4|8</a>.<a style="color:#0000FF">memory</a>	|
+  |  64-bit macOS Intel	  :	$ ./r   [-[R][Z][s]]	# emulator rta1_<a style="color:#FF0000">1|2|4|8</a>		|
+  |  32-bit OSX PowerPC	  :	$ ./rap [-[R][Z][s]]	# emulator rta1_<a style="color:#FF0000">1</a>		|
+  |_____________________________________________________________________________________|
+  |											|
+  |  3rd shell:routing setup	$ cd rta/client						|
+  |				$ ./prun	# set up routing to RTA1		|
+  |_____________________________________________________________________________________|
+
+</pre>
+
+A broadcast output console for <a href="scripts.html#auto">background processes</a> may be run in a fourth shell
+
+<p>
+Network trunk process run flags
+<ul	type="none">
+
+	<li>./runL -v	 display received frame contents plus:</li>
+
+	<li><a style="color:A0A0A0">./runL</a> -u	transmitted frame contents</li>
+	<li><a style="color:A0A0A0">./runL</a> -W	transmitted frame timestamps</li>
+
+	<li><a style="color:A0A0A0">./runL</a> -V	display BPF metadata anomalies on receive</li>
+
+	<li><a style="color:A0A0A0">./runL</a> -z	verify and correct checksums received over platform loopback</li>
+	<li><a style="color:A0A0A0">./runL</a> -Z	verify and correct checksums received on all interfaces</li>
+	<li><a style="color:A0A0A0">./runL</a> -x	correct instead of zeroing wrong UDP checksums received</li>
+
+	<li><a style="color:A0A0A0">./runL</a> -h	display this information and exit</li>
+
+	<li><a style="color:A0A0A0">./runL</a> -o	forward <a href="scripts.html#auto">background processes</a> stdout to loopback of emulator platform</li>
+
+</ul>
+runL flags can be reversed on the fly by typing them in during operation, for example
+<pre	style="font-size:11pt;color:0000FF">
+
+	./runL
+	-vu		# watch the traffic
+	-zx		# switch on platform loopback checksum correction
+	-vu		# stop watching the traffic
+
+</pre>
+
+<a	name="trunk"/>
+<h4>6.2: Network Trunk Process by Platform</h4>
+
+The network trunk process is a Berkeley Packet Filter application connecting RTA1 emulator to networks
+
+<pre	style="font-size:11pt;color:0000FF">
+	OSX						<a style="color:FF0000">Linux</a>
+	___						<a style="color:FF0000">_____</a>
+
+	cd rta/portal[.x64]				<a style="color:FF0000">cd rta/linux.net</a>
+	./runL [-[zx][vu]]				<a style="color:FF0000">./runL [-[zx][vu]
+	# can be stopped with command .</a><a style="background-color:#00FF00">CR</a>		<a style="color:FF0000"># can be stopped with command .</a><a style="background-color:#00FF00">CR</a>
+	# entered twice					<a style="color:FF0000"># entered twice</a>
+
+
+
+							<a style="color:FF0000">64-Bit Linux</a>
+							<a style="color:FF0000">____________</a>
+							<a style="color:FF0000">cd rta/linuxnet.x64</a>
+							<a style="color:FF0000">./runL [-[zx][vu]]
+							<a style="color:FF0000"># can be stopped with command .</a><a style="background-color:#00FF00">CR</a>
+							<a style="color:FF0000"># entered twice</a>
+</pre>
+
+<a	name="emu"/>
+<h4>6.3: RTA1 Emulators and Run Flags</h4>
+<pre	style="font-size:11pt;color:0000FF">
+
+	OSX x86 <a style="color:FF0000">and Linux x86</a>		<a style="color:FF0000">Linux x86-64</a>				macOS x86-64
+	________________		____________				____________________
+
+	cd rta/tgen.smp			cd rta/tgen.smp				cd rta/tgen.smp
+	./ra [-[R][Z][s]]		./xra ./r [-[R][Z][s]]		./r [-[R][Z][s]]
+
+
+	<a style="color:FF0000">OSX PowerPC</a>
+	___________
+
+	cd rta/tgen.smp
+	./rap [-[R][Z][s]]
+
+</pre>
+
+On the first RTA1 emulator launch in platform uptime, a third shell must run <a href="#client">client/prun</a> to route communication with RTA1
+
+<p>
+See also <a href="#ORZ">./ra -ORZs</a> emulator run flags and <a href="#_dev_"> additional /device/ arguments</a>
+
+<a name="ORZ"/>
+<h4>6.4: Emulator Additional Run Flags</h4>
+
+Additional run flags for the emulator command line may be passed from the emulator script call ./r[a] -[O]RZ
+<pre	style="font-size:11pt;color:0000FF">
+
+	-s	start in <a href="#debug">debug</a> single step, for example to set a breakpoint
+
+	-O	allows RTA1 emulator to organise its own powersave
+		by itself deciding when to yield to platform scheduling
+
+		-O should only be opted with an abundance of available platform core threads
+		and is otherwise no advantage and may degrade emulator and platform performance
+
+	-R	in-band resynchronise request to runL to reinititalise the network trunk
+		saves an operational stop and start of {linux.net|linuxnet.x64|portal[.x64]}/runL
+
+		use -R if restarting RTA1 after exit command <a style="color:#000000"> ..</a>
+
+					rta/tgen.smp $ <a style="color:#000000">{ra|xra|r|rap} -R[Zs]</a> 
+
+	-Z	enter debug single step when thread faults
+		before thread is sidelined with status 100000<sub>16</sub>
+
+		on ISR fault without application cause: -Z flag switches single step before load image restart
+
+		Here -Z is not opted:
+		an application thread tal calls an unallowed iframe
+		and is withdrawn from scheduling automatically
+
+		<a	style="color:#000000">telnet is run from another shell 
+
+			$ telnet 172.29.7.7
+			Trying 172.29.7.7...
+			Connected to 172.29.7.7.
+			Escape character is '^]'.
+			RTA1 smaragd7 OS shared console
+			r load /util/tal
+
+			00002b
+			loader: r load /util/tal
+			000031 tal
+			test call 0:C00
+			t
+			console threads display
+			000000 000007 <a style="color:#FF0000">100000</a> 000031 000000 000000 tal
+			000000 000007 200000 00002b 000000 000000 load
+			003ff6 000000 000000 000027 000000 000000 iserver
+			003fde 000000 000000 000026 000000 000000 fponline
+			003fe4 000000 000000 000025 000000 000000 telnet
+			003064 000000 000000 000024 000000 000000 http
+			003ff0 000000 000000 00000e 000000 000000 ip
+		</a>
+
+		tal faults and is withdrawn from scheduling and flagged <a style="color:#FF0000">100000</a>
+
+                The crashout can be examined by pausing operation and walking the thread control block of tal
+
+		s command forces single step and the thread control block is 000031
+
+		TCB words 60..63 (3c..3f<sub>16</sub>) are the fault interrupt frame 000001 000041 00002F 000180
+		and the following words are the interrupted thread's address space pointers
+
+			>s
+			>m31:3c
+			000001 000041 00002F 000180 000000 000030 000032 000033
+
+		interrupt latent parameter 000001 is unallowed operation
+		the next word is the thread PSR at interrupt and the next two words iframe and offset 00002F 000180
+		TCB words 41<sub>16</sub>+ are B1 frame 000030, vector list 000032 1st static data page 000033
+
+		TCB words 41..7F<sub>16</sub> are the address space windows 1..63 followed by 128 saved application registers
+
+		tal can be dismissed from telnet first leaving single step then operating telnet from another shell
+
+			>g
+
+		<a	style="color:#000000">
+		$ telnet 172.29.7.7
+                        Trying 172.29.7.7...
+                        Connected to 172.29.7.7.
+                        Escape character is '^]'.
+                        RTA1 smaragd7 OS shared console
+			z 31
+		</a>
+		
+		______________________________________________________________________________________________
+
+		Here -Z is opted and any thread that faults switches the RTA1 system to single step
+
+		Application tal attempts an illegal jump
+		<a	style="color:#000000">
+			r load /util/tal
+			00002b 
+			loader: r load /util/tal
+
+			000035 tal
+			test go 1:E80
+		</a>
+		the action is then at the debug console, where it's seen that
+		tal instruction frame was loaded at Start Page Index <a style="color:#000000">00002f</a> and went wrong at offset <a style="color:#000000">00016c</a>
+
+		interrupt latent parameter = <a style="color:#FF0000">000001</a> means tal did something specifically not authorised
+		000041 is tal's PSR
+
+			:[000001:00001e]b60548	j	0548
+			800041 00000000101f
+			[000001:00001f]b6046d	j	046d
+			[000001:000020]b6046e	j	046e
+			[000001:000021]b60471	j	0471
+			[000001:000022]b60474	j	0474
+			[000001:000023]b60477	j	0477
+			[000001:000024]b6047a	j	047a
+			80: 0000fc 0000ff 003fea 003007 c00001 000081 000007 0006e2
+			88: 000000 000000 000000 000000 000000 000000 0000fc 0000fc
+			90: 000034 000000 000000 c00000 0137df 000007 01709b 0d812b
+			[0000fc]-> <a style="color:#FF0000">000001</a> 000041 <a style="color:#000000">00002f 00016c</a>
+			>
+
+		an interrupt is now happening so the display only shows some interrupt registers,
+		but tal's registers can be shown
+
+			>r0
+			00: 0000a0 0000ff 000002 03000a 000000 000000 000000 000000
+			08: 000004 000000 000000 000000 000000 00301e 004000 000080
+			10: 000000 000000 000000 000000 000000 000000 000000 00000a.
+			>
+
+		see section <a href="connect.html#debug">7: Debug Console</a> for everything that can be displayed
+		command g lets the system continue to sideline the faulting thread
+
+		application tal is for testing instruction behaviour and library code
+
+		memory pages reserved for ISRs may only be called
+
+			by interrupt including <a href="rta.html#ii">service call internal interrupt instruction ii</a>. Applications
+			may make <a href="rta.html#ii">ii</a> service calls although some ISrs are not available to all applications
+
+			or from ISRs using <a href="rta.html#go">go</a> and <a href="rta.html#call">call</a> instructions to reach common blocks of interrupt code
+			ISRs also make <a href="rta.html#ii">ii</a> service calls to gated ISRs not directly available to applications
+
+		applications are not permitted to <a href="rta.html#go">go</a> to or <a href="rta.html#call">call</a> a lower page than <a href="rta.html#thresho">APPLICATION_THRESHOLD</a>
+
+</pre>
+Emulator option flags can be reversed in single step with \ command
+<pre>
+
+		s
+		>\Z
+		>g
+
+</pre>
+Flags can also be added to the emulator command line inside the script <a style="color:#0000FF">tgen.smp/{ra|r|xra|rap}</a>.
+The emulator name is <a style="color:#0000FF">rta1_</a><a style="color:FF0000">1|2|4|8</a>[<a style="color:#0000FF">.memory_size</a>]
+
+<a	name="_dev_"/>
+
+<h4>6.5: Emulator Additional Device Arguments</h4>
+
+There is by default a network trunk and a file system in the supplied configuration
+
+<p>
+Up to 61 more devices can be added on the emulator command line inside the start script
+
+<p>
+Device arguments can be added to the script call <a style="color:#0000FF">tgen.smp/{ra|r|xra|rap}</a>. The number of possible arguments depends on the shell
+
+
+<pre	style="font-size:11pt;color:#0000FF">
+
+	./ra	/3/+banks		\	# add memory array device 3 with Start Page Name 400003<sub>16</sub>
+		/33/ file_system_path	\	# load file system device 33 with Start Page Name 400021<sub>16</sub>
+		/63/#network_trunk_key		# add network trunk device 63 with Start Page Name 40003F<sub>16</sub>
+
+</pre>
+
+<p>
+Device numbers /3/+n /33/ /63/ are input in decimal
+
+<p>
+The network trunk key is a 32-bit shared memory identifier stated in hex. If its value is 60000000+ hex the trunk is created by the corresponding network trunk process and RTA1 emulator binds to it
+
+<p>
+If the key value is less than 6000000 hex then RTA1 emulator creates the trunk and the corresponding network trunk process binds to it
+
+<p>
+Additional network trunks bind with additional <a href="#trunk">network trunk application processes</a>
+
+<p>
+File systems are constructed offline with binary utility <a href="masmx7r3.html#fsformat">fsformat</a>
+
+<p>
+Array devices are assigned in banks of 262144 words. The largest possible on a 64-bit platform is 65536 banks and the largest possible on a 32-bit platform is 1024 banks
+
+<p>
+Devices [ 0 1 2 ] are executable memory, default file system and default network trunk. These are always present
+
+<p>
+It is possible to state extra devices directly on the command line inside script the script <a style="color:#0000FF">tgen.smp/{ra|r|xra|rap}</a>
+
+<p>
+The emulator command line inside the script is of this form
+<pre	style="font-size:11pt;color:#0000FF">
+
+	sudo $RTA_BINARY/rta1_$RTA_SMP[.$RTA_MBANKS] -li $RTA_IMAGE $RTA_FSIMAGE $1 $2 $3 $4 $5 $6 $7 $8 $9
+
+</pre>
+or of this form
+<pre	style="font-size:11pt;color:#0000FF">
+
+	sudo $RTA_ENGINE -li $RTA_IMAGE $RTA_FSIMAGE $1 $2 $3 $4 $5 $6 $7 $8 $9
+
+</pre>
+Shells restrict the number of arguments that can pass from the script call to the command line typically to the approximate number shown
+
+<p>
+There are 61 optional devices numbered 3..63
+
+<p>
+The emulator is
+<pre	style="font-size:11pt;color:000000">
+
+	rta1_<a style="color:#FF0000">1|2|4|8</a>.<a style="color:#0000FF">$RTA_MBANKS</a>
+
+	or (macOS x86_64 and PowerPC) rta1_<a style="color:#FF0000">1|2|4|8</a>
+
+</pre>
+
+$RTA_IMAGE is the load image in RTA1 instruction code
+
+<p>
+
+$RTA_FSIMAGE is the file system in device 1
+		
+<a	name="client"/>
+<h4>6.6: Routing initialised at Client Console</h4>
+
+<p>
+A shell on the emulator platform sets routes to RTA1 on the platform and other platforms and hosts client applications which bind to RTA1 servers
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	cd rta/client
+	./prun
+
+</pre>
+Application servers in RTA1 target system image can now be called over emulator platform software loopback using RTA1 address 172.29.7.7<br>
+or from other hosts over WiFi or Ethernet.
+See <a href="#apps">7: Applications in the Download RTA1 Target System Image</a>
+
+
+<a      name="debug"/>
+<h3>7: Debug Console</h3>
+
+Entering letter s plus return while the emulator is running or starting the emulator with -s flag produces the single step debug console
+
+<p>
+Here -s opts to start in the debug console
+
+<pre	style="font-size:11pt;color:0000FF">
+ 
+	$ ./ra -s
+	rta engine ../binary.smp/osx.x86/rta1_2.8
+	target system image ../target.rta/initial.app/sysimage.rom
+	file system image ../fsimages/rand7
+	RTA1 32-bit emulation stepping 01.01.2022
+	rom image 49152 target words read
+	netbank 65536
+	netbase 0x300000
+	loading file system image ../fsimages/rand7
+	remington 2 storage banks
+	fs 1 4603 granules loaded
+	async thread ID 0xb0428000
+	key g[break:point] to run
+
+	emulation start
+	[000000:00003f]000000	sr	0000
+	800000 000000000040
+	[000000:000040]5500fc	lx,xi	00fc
+	[000000:000041]10008f	sx	008f
+	[000000:000042]10008e	sx	008e
+	[000000:000043]04007c	inA	007c
+	[000000:000044]200087	sa	0087
+	[000000:000045]680084	lb	0084
+	80: 000000 000000 000000 000000 000000 000000 000000 000000
+	88: 000000 000000 000000 000000 000000 000000 000000 000000
+	90: 000000 000000 000000 000000 000000 000000 000000 000000
+	[000000]-&gt; 000000 000000 000000 000000 000000 000000 000000
+	    000000 000000 000000 000000 000000 000000 000000 000000
+	    000000 000000 000000 000000 000000 000000 000000 000000
+        &gt;
+
+</pre>
+This output shows startup. RTA1 has jumped from restart zero to location 64. Locations 1..63 are reserved for variations on restart<br>
+Interrupt registers at 128+ are displayed because restart is in interrupt mode
+
+<p>
+Single step is advanced by return key. Two instructions later RTA1 has initialised the interrupt internal stack pointer
+<pre    style="font-size:11pt;color:0000FF">
+ 
+
+        &gt;
+        [000000:000041]10008f   sx      008f
+        800000 00000042
+        [000000:000042]10008e   sx      008e
+        [000000:000043]04007c   inA     007c
+        [000000:000044]200087   sa      0087
+        [000000:000045]680084   lb      0084
+        [000000:000046]dd0001   anb,xi  0001
+        [000000:000047]de0049   jnzb    0049
+        80: 000000 000000 0000fc 000000 000000 000000 000000 000000
+        88: 000000 000000 000000 000000 000000 000000 000000 <a style="color:FF0000">0000fc</a>
+        90: 000000 000000 000000 000000 000000 000000 000000 000000
+        [<a style="color:FF0000">0000fc</a>]-&gt; 000000 000000 000000 000000
+
+        &gt;g
+        :
+
+</pre>
+Command <a style="color:0000FF">g</a> sets RTA1 running free and the prompt changes from <a style="color:0000FF">&gt;</a> to <a style="color:0000FF">:</a>
+
+<p>
+Command
+<pre    style="font-size:11pt;color:0000FF">
+ 
+	g[page:]offset
+
+</pre>
+sets a breakpoint. If the breakpoint is reached or command <a style="color:0000FF">s</a> is entered single-step returns<br>
+There is only one breakpoint at one time. It may be changed in single step. Otherwise <a style="color:0000FF">g</a> runs to the existing breakpoint if any
+<pre	style="font-size:11pt;color:FF0000">
+
+	Note on Using Breakpoints
+	_________________________
+
+
+	Do not leave breakpoints active in normal running of RTA emulators
+
+	An active breakpoint increases demand on the platform
+
+	As soon as further breakpoints are not needed clear the oustanding breakpoint
+
+	either	by ending :<a style="color:#000000">..</a>  and restarting the emulator
+
+	or	by [ entering single step :<a style="color:#000000">s</a>  and ] setting zero breakpoint &gt;<a style="color:#000000">g0:0</a>
+
+
+</pre>
+All single-step outputs and most input parameters are in hex
+
+<p>
+Cursor return prompts eight more words of register / memory / device display, enter period to escape
+
+<pre    style="font-size:11pt;color:0000FF">
+
+	s			# enter single step
+
+	<a style="background-color:#00FF00">CR</a>			# advance an instruction
+
+	m8400			# display whatever is in address window 8 offset 1024
+	mc:010			# display executable space absolute 4K-page 12 offset 16
+
+	r 0			# walk the application registers. The parameter is decimal
+	r 128			# walk the interrupt registers. The parameter is decimal
+	+			# walk more internal stack registers than the 23 shown
+	0<a style="background-color:#00FF00">..</a>			# walk registers. The parameter is hex
+
+	.			# exit display of registers or memory or device
+
+	b			# display relocation bases and all I/O ports
+
+	d1::800			# display device array 1 block 0 location 2048
+
+	g			# leave single step, run [to breakpoint]
+	g[page:]offset		# leave single step, run to new breakpoint
+	g0:0			# cancel breakpoint and leave single step, run
+
+				# Linux all emulators macOS IA32 all emulators. macOS x86_64 / OSX PowerPC emulators rta1_<a style="color:#FF0000">1|2|4|8</a><a style="color:#000000">A</a>
+	p[absolute_page:]offset[/words][,device]	# place TOUCHPOINT (breakpoint on write) on memory range
+
+				# add or subtract /device/ number in decimal 3..63 
+	/device/+banks		# system memory banks in decimal
+	/device/ fs_image_path	# load a file system image
+	/device/#hex_key_banks	# accept externally assigned network trunk key >= 61000000 hex
+				# assign network trunk key < 61yyXXXX size XXXX hex banks * 262144 words
+	/device/-		# remove system memory or file system space, free to platform
+
+	\<a style="background-color:#00FF00">optiOnFLaGs</a>		# reverse run options
+
+	h			display help
+
+	..			# exit the emulator
+
+
+</pre>
+
+<a	name="apps"/>
+<h3>8: Applications in the Download RTA1 Target System Image</h3>
+<h4>8:1 What Applications are Present?</h4>
+
+<a	name="basics"/>
+<pre	style="font-size:11pt;color:#0000FF">
+<div	style="right:20pt;width:700pt;height:300pt;position:absolute;font-size:11pt">
+<div	style="top:0pt;right:50pt;width:1pt;position:absolute;height:240pt;background-color:#00FF0080"></div>
+<div	style="top:0pt;right:170pt;width:1pt;position:absolute;height:240pt;background-color:#00FF0080"></div>
+<div	style="top:0pt;right:290pt;position:absolute;width:1pt;height:240pt;background-color:#00FF0080"></div>
+<div	style="top:0pt;right:410pt;position:absolute;width:1pt;height:240pt;background-color:#00FF0080"></div>
+<div	style="top:0pt;right:530pt;position:absolute;width:1pt;height:240pt;background-color:#00FF0080"></div>
+<div	style="top:0pt;right:650pt;position:absolute;width:1pt;height:240pt;background-color:#00FF0080"></div>
+<a	href="#telnet">
+<div	style="top:0;right:0pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+          RTA1
+ telnet server</div></a>
+
+<div	style="top:240pt;right:0pt;;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#00FF00;background-color:#070707">
+      platform
+ telnet client</div>
+
+<a	href="#snmp">
+<div	style="top:0pt;right:120pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+         RTA1
+   SNMP agent
+</div></a>
+
+<a	href="http://www.net-snmp.org/wiki/">
+<div    style="top:240pt;right:120pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#00FF00;background-color:#070707">
+     net-SNMP
+       client
+</div></a>
+
+<a	href="#i72">
+<div	style="top:0pt;right:240pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+   RTA1 72-bit
+integer server
+</div></a>
+
+<a	href="#binary">
+<div	style="top:240pt;right:240pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+   PC client
+           i
+</div></a>
+
+<a	href="#fp192">
+<div	style="top:0pt;right:360pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+            RTA1
+floating servers
+	  96-bit
+         192-bit
+</div></a>
+
+<a	href="#fp192">
+<div	style="top:240pt;right:360pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+   PC client
+          fp
+</div></a>
+
+<a	href="fponline.html">
+<div	style="top:0pt;right:480pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+   RTA1 fponline
+algorithm server
+</div></a>
+
+<a	href="fponline.html">
+<div	style="top:240pt;right:480pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+      PC client
+       fponline
+</div></a>
+
+<a	href="#webhost">
+<div    style="top:0pt;right:600pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#FFFFFF;background-color:#0000FF">
+
+ RTA1 webhost
+</div></a>
+
+<div    style="top:240pt;right:600pt;width:100pt;height:60pt;position:absolute;border-radius:5pt;color:#00FF00;background-color:#070707">
+     platform
+      browser
+</div>
+
+
+<div	style="right:740pt;top:360pt;position:absolute;background-color:#00FF00;color:#000000;width:100pt;height:60pt;border-radius:5px">
+
+ deeply embedded
+    applications
+</div>
+
+<a	href="#webhost">
+<div	style="right:600pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+   RTA1 web host
+
+  add enterprise
+	   pages
+</div></a>
+
+<a	href="fponline.html">
+<div	style="right:480pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+192-bit floating
+algorithm engine
+</div></a>
+
+<a	href="#fp192">
+<div	style="right:360pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+  floating point
+     calculators
+	  96-bit
+	 192-bit
+</div></a>
+
+<a	href="#binary">
+<div	style="right:240pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+ 72-bit integer
+     calculator
+</div></a>
+
+<a	href="#snmp">
+<div	style="right:120pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+    snmp agent
+</div></a>
+
+<a	href="#telnet">
+<div	style="right:0pt;top:360pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+ telnet server
+</div></a>
+
+<a	href="#loader">
+<div	style="right:600pt;top:480pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+  load & launch
+    application
+
+</div></a>
+
+<a	href="program.html#programs1">
+<div	style="right:480pt;top:480pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+
+    file viewer
+    application
+
+</div></a>
+
+<a      href="scripts.html#iframe_examples">
+<div    style="right:120pt;top:480pt;position:absolute;background-color:#00FF00;color:#000000;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+       loadable
+      utilities
+   and examples
+
+</div></a>
+
+<a      href="scripts.html#iframe_examples">
+<div    style="right:0pt;top:480pt;position:absolute;background-color:#00FF00;color:#000000;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
+       embedded
+      utilities
+   and examples
+
+</div></a>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</pre>
+
+<a      name="routapp"/>
+<h4>8.2: Routing to RTA1 Applications and Server Wake-Up</h4>
+<pre	style="font-size:11pt;color:#0000FF">
+
+	on-platform RTA1 address is always 172.29.7.7
+	you needed to run ./prun in rta/client
+	to reach 172.29.7.7 and to reach other RTA1s in your network
+	using network-unique addresses in space 172.x.x.x
+	configured in <a href="connect.html#topol">$HOME/.rta_net</a> per platform and interface
+
+</pre>
+
+The calling platform must route to available emulator platforms when calling RTA1 over networks.
+See <a href="#topol">3: Network Topology</a> and <a href="#route">4: Routing</a>
+
+<p>
+If emulated RTA is on your client platform its adress is 172.29.7.7 made available by script client/prun
+<pre	style="font-size:11pt;color:#0000FF">
+
+	cd client
+	./prun
+
+</pre>
+To call an RTA1 server application an another platform in your network, RTA1 server addresses 172.29.7.x are made
+available by script client/rundum
+<pre	style="font-size:11pt;color:#0000FF">
+
+	cd client
+	./rundum
+
+</pre>
+client/prun calls client/rundum. prun | rundum need be called once after platform boot
+
+<p>
+If BIOS or OSX equivalent is set to wake on network traffic, RTA1 is a 24/7 webserver, SNMP agent,
+telnet server and floating point server
+
+<a	name="webhost"/>
+<h4>8.3: WebHost and Adding your Enterprise Web Pages</h4>
+RTA1 WebHost is at
+<pre	style="font-size:11pt;color:0000FF">
+
+	http://172.29.7.7
+
+</pre>
+from the emulator platform itself
+
+<p>
+or over local networks at the addresses in $HOME/.rta_net of the emulator platform, for example
+<pre	style="font-size:11pt;color:0000FF">
+
+	http://172.29.7.8
+
+	http://172.29.7.66
+
+</pre>
+
+<p>
+RTA1 WebHost displays these pages about RTA1
+
+<p>
+RTA1 can be a 24/7 server for your enterprise web pages<br>
+
+<p>
+Add your enterprise web pages to $HOME/enterprise.rta/web in your home directory
+
+<p>
+The tuples in $HOME/enterprise.rta/web are the online filename[.html ] then the path of a file containing html text
+
+<pre	style="font-size:11pt;color:#0000FF">
+
+file <a href="enterprise.html">enterprise.html</a> rta.doc/sample.txt
+
+</pre>
+<div	style="border-radius:5pt;color:#FFFFFF;background-color:#FF0000;width:100pt;height:60pt;text-align:right">
+<br>
+include updated web pages
+</div>
+
+<p>
+The lines in your file $HOME/enterprise.rta/web might for example read
+<pre	style="font-size:11pt;color:#0000FF">
+
+file products.html /home/YOU/enterprise.rta/products.txt
+file service.html /home/YOU/enterprise.rta/service.txt
+
+</pre>
+/home/YOU is Linux. If your platform is OSX that is /Users/YOU/
+
+<p>
+<a	name="build_online"/>
+<div	style="border-radius:5pt;color:#FFFFFF;background-color:#FF0000;width:100pt;height:60pt;text-align:right">
+<br>
+construct online file system
+</div>
+<pre	style="font-size:11pt;color:#0000FF">
+
+	cd	rta
+	./mrand7
+
+</pre>
+If you have added much data you may need to change the size of the online file system from the default
+two blocks of 768K octets to a larger number
+
+<p>
+For example for 3 * 768K octets add the argument 3
+<pre	style="font-size:11pt;color:#0000FF">
+
+	./mrand7 3
+
+</pre>
+fsformat states how many file granules 64 of RTA1 words (192 octets) are loaded
+<pre	style="font-size:11pt;color:#0000FF">
+
+	$ ./mrand7
+	.
+	.
+
+	slot1 172 banks 0 last granules 0 total 172
+	gnu_gpl.html loading 172 granules
+	slot1 161 banks 0 last granules 0 total 161
+	UNetbootin_screenshot.jpg loading 161 granules
+	slot1 1 banks 0 last granules 0 total 1
+	sample.html loading 1 granules
+	3994 granules written, 102 free
+	file system 1 blocks of 768K octets
+
+	$
+
+</pre>
+
+<p>
+<a	name="simple"/>
+
+<a	name="fponline"/>
+<h4>8.4: fponline Algorithm Engine</h4>
+<a	href="fponline.html">fponline algorithm engine</a> must be called from rta/client because it starts process scripts stored there
+
+<p>
+The caller can move between servers without dropping intermediate results
+
+
+<a	name="binary"/>
+<h4>8.5: Simple Calculators</h4>
+
+<h4>8.5.1: Binary Calculators fp and i Client Command Line Interface</h4>
+
+Three four-function calculators are termed binary because each input line is
+<pre	style="font-size:11pt;color:#0000FF">
+
+	<a style="color:#FF0000"><i>number</i></a> { [<a style="color:#FF0000"> + - * / </a>] } <a style="color:#FF0000"><i>number</i></a>[,<a style="color:#FF0000"><i>how_many_times</i></a>]
+
+</pre>
+
+Option flags common to floating client fp and 72-bit integer client i are -pvxQR
+<pre    style="font-size:11pt;color:#0000FF">
+
+
+        -p      display input requests
+                -p can be opted when scripted inputs are piped into fp or i
+
+        -v      report status verbosely
+
+        -x      display RTA1 responses in hex for diagnostic use
+                Not widely used because RTA1 responses are text. So are request messages from fp and i clients to RTA1 server
+
+        -Q      suppress display of send and receive status
+
+        -R      attempt a number of resends on no response
+
+
+	$ cd rta/client
+	$ i [-fLaGs] [server] [-FlAgS]  # Default server 172.29.7.7 = this platform
+
+	<a style="color:#FF0000"><i>number</i></a> { [<a style="color:#FF0000"> + - * / </a>] } <a style="color:#FF0000"><i>number</i></a>[,<a style="color:#FF0000"><i>how_many_times</i></a>]
+	<a style="color:#FF0000"><i>number</i></a> { [<a style="color:#FF0000"> + - * / </a>] } <a style="color:#FF0000"><i>number</i></a>...
+	.
+	$
+
+</pre>
+i and fp clients terminate with an input period . in column 1 
+
+<p>
+Server address defaults to this platform = 172.29.7.7 if client fp or i is operated in working directory rta/client
+
+<p>
+Two floating servers generate floating values from input decimal strings with or without decimal point and unary  e&plusmn;
+
+<p>
+Client fp calls a floating server for 96-bit or for 192-bit calculation depending option -U
+
+
+<a	name="fp96"/>
+<h4>8.5.2: 96-bit Floating Point</h4>
+
+See also <a href="fponline.html">fponline algorithm engine</a>
+
+<p>
+Floating point servers are called from bash shell or Windows Command Prompt. Client configurations are stored in rta/client
+
+<p>
+The 96-bit floating server is called with no arguments to reach RTA address 172.29.7.7 over loopback
+or with the target platform's configured Ethernet or WiFi address over a network
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ cd rta/client
+	$ fp	[server]	# Default server 172.29.7.7 = this platform
+	<a style="color:#FF0000">236800000700000600000e1000000 * 2e250000</a>
+	+4.736000014000012000014e+1250020
+
+
+
+	<a style="color:#FF0000">111222333443.555666777 + 1</a>
+	+111222333444.555666777
+	.
+	$
+
+</pre>
+<a	name="fp192"/>
+<h4>8.5.3: 192-bit floating point</h4>
+
+See also <a href="fponline.html">fponline algorithm engine</a>
+
+<p>
+The 192-bit floating server is called with flag -U
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ cd rta/client
+	$ fp -U	[server]	# Default server 172.29.7.7 = this platform
+	<a style="color:#FF0000">3.666666999999333333666666999999333333666666e1100000 / 3e-150000</a>
+	+1.222222333333111111222222333333111111222222e+1250000
+
+
+
+	<a style="color:#FF0000">7777777777777777777777777777777777777777 + 7777777777777777777777777777777777777777, 999</a>
+	+7.777777777777777777777777777777777777777e+42
+	.
+	$
+</pre>
+
+<a	name="bench"/>
+<h4>8.5.4: Floating, Integer, Library and 192-Bit Trigonometry Benchmarks</h4>
+
+Benchmark tests for 96-bit and 192-bit floating servers and for fponline algorithm engine use data in rta/client and rta/fp_bench.mk<br>
+These tests are also included within multiple benchmark suite <a href="#alltests">alltests</a>
+
+<p>
+Default RTA1 server is 172.29.7.7 on <i>this</i> platform. An address can be given for another RTA1 server in the network
+
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ cd rta/client
+	$ ./alltests	[server]	# Default server is 172.29.7.7 = this platform
+
+</pre>
+
+<a	name="snmp"/>
+<h4>8.6: SNMP Agent</h4>
+netsnmp is used from any directory because it requires no client-local configuration
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ snmpwalk -v 1 -c public -Ir -Os 172.29.7.7 tcp
+	tcpRtoAlgorithm = INTEGER: 0
+	tcpRtoMin = INTEGER: 0 milliseconds
+	tcpRtoMax = INTEGER: 0 milliseconds
+	tcpMaxConn = INTEGER: 7500000
+	tcpActiveOpens = Counter32: 0
+	tcpPassiveOpens = Counter32: 2
+	tcpAttemptFails = Counter32: 0
+	tcpEstabResets = Counter32: 0
+	tcpCurrEstab = Gauge32: 0
+	tcpInSegs = Counter32: 0
+	tcpOutSegs = Counter32: 27
+	tcpRetransSegs = Counter32: 0
+	tcpConnTable.172.29.7.7.80.172.29.7.6.50039.1 = INTEGER: 5
+	tcpConnTable.172.29.7.7.80.172.29.7.6.50039.2 = IpAddress: 172.29.7.7
+	tcpConnTable.172.29.7.7.80.172.29.7.6.50039.3 = INTEGER: 80
+	tcpConnTable.172.29.7.7.80.172.29.7.6.50039.4 = IpAddress: 172.29.7.6
+	tcpConnTable.172.29.7.7.80.172.29.7.6.50039.5 = INTEGER: 50039
+	tcpInErrs = Counter32: 0
+	tcpOutRsts = Counter32: 0
+
+</pre>
+
+<a	name="telnet"/>
+<h4>8.7: Telnet Server</h4>
+
+RTA1 Telnet Server currently hosts a system enquiry console which is intended as base
+of a future application launcher and shell starter
+<pre	style="font-size:11pt;color:#0000FF">
+
+	$ telnet 172.29.7.7
+	Trying 172.29.7.7...
+	Connected to 172.29.7.7.
+	Escape character is '^]'.
+	RTA1 smaragd7 OS shared console
+	h
+	commands are	h	help
+			e	echo
+			w	webhost threads
+			m	memory free
+			stay	no timeout
+			t	threads active
+			r	load <a style="color:#FF0000">load_application_path</a>
+			r	view <a style="color:#FF0000">data_file_path</a>
+			r	<a style="color:#FF0000">embedded_application_name</a>
+			r	<a style="color:#FF0000">script_file_path</a>
+	t
+	console threads display
+	003fe7 000000 000000 000017 000000 000000 000000 *iserver
+	003fc4 000007 000000 000016 000000 000000 000000 *snmp_agent
+	003fcb 000000 000000 000015 000000 000000 000000 *fponline
+	003fd2 000000 000000 000014 000000 000000 000000 *telnet
+	003084 000000 000000 000013 000000 000000 000000 *http
+	003fe0 000000 000000 00000d 000000 000000 000000 *ip
+
+</pre>
+2nd word in threads display is priority [ 0..7 ]. Zero is high. 4th word is TCB Page Index. Thread name starting * cannot be deleted
+
+<p>
+3rd display word is status
+
+<pre	style="font-size:11pt;color:#0000FF">
+	bit 23	800000<sub>16</sub>	TIME_WAIT	wait until dayclock millisecond in 5th:6th words
+
+	bit 21	200000<sub>16</sub>	EXIT		thread ended
+
+	bit 20	100000<sub>16</sub>	TRAP		thread faulted, interrupt stack frame at TCB words 60..63
+
+	bit  0	000001<sub>16</sub>	XINT		awaiting pre-emptive schedule on event
+</pre>
+7th thread display word is core affinity bit mask
+
+
+<a	name="loader"/>
+<h4>8.8: ROM and Loadable Applications</h4>
+
+Telnet command <a style="color:#0000FF">r</a> runs applications by name. They are catalogued for lookup in file systems discrete to their storage block or iframe
+
+<p>
+Application <a style="color:#FF0000">load</a> loads other applications, for example the test utility tal. Like all applications load may have unlimited process instances executing its single ROM image. load is positioned like a shell and finds loadable applications in certified parts of attached file systems
+<pre    style="font-size:11pt;color:#0000FF">
+
+	r <a style="color:#FF0000">load</a> /util/tal 
+
+</pre>
+See also <a href="program.html">Constructing Applications: Embedded System Model / Loadable Applications</a>
+
+<a	name="suse"/>
+<h3>Appendix A: Installing openSUSE Linux</h3>
+
+<p>
+You can have emulated RTA1 on the lowest cost PC in the store if you put Linux on that PC
+
+<p>
+RTA1 emulators are available on Mac and Linux
+
+<p>
+These notes are intended to help install openSUSE Linux as an alternative boot on a Windows PC
+
+<p>
+Follow carefully all instructions from the 3rd-party Linux supplier
+
+<p>
+RTA1 publisher accepts no liability for mishaps leading to damage or loss
+
+<p>
+Access this list of download mirrors
+<pre	style="font-size:11pt;color:#0000FF">
+
+	<a href="https://download.opensuse.org/distribution/leap/15.0/iso/openSUSE-Leap-15.0-NET-x86_64.iso?mirrorlist">https://download.opensuse.org/distribution/leap/15.0/iso/openSUSE-Leap-15.0-NET-x86_64.iso?mirrorlist</a>
+
+</pre>
+Click on a URL which has this iso
+<pre	style="font-size:11pt;color:#0000FF">
+
+	openSUSE-Leap-15.0-NET-x86_64.iso
+
+</pre>
+Download a USB boot stick writer from here
+<pre	style="font-size:11pt;color:#0000FF">
+
+	<a href="https://unetbootin.github.io">https://unetbootin.github.io</a>
+
+</pre>
+Click on unetbootin.dmg then click on unetbootin app<br><br>
+
+<center>
+<img	src="UNetbootin_screenshot.jpg">
+</center>
+
+<br><br>
+<p>
+Click UNetbootin button DiskImage and Select ISO. Select type USB Drive
+
+<p>
+Click the path hint ... to select downloaded ISO
+
+<p>
+If you select a path shortcut on the sidelist, for example Downloads, UNetbootin may not access it succesfully (doesn't seem to see any files in it)<br>
+If that starts happening, select your home directory and you'll find your subdirectories and their contents
+
+<p>
+Insert a USB stick 8 GigaBytes or less and erase it format FAT32
+
+<p>
+Click UNebootin OK. It sometimes refuses and then starts working
+
+<p>
+If you have Windows on your target platform and you want to keep Windows, you may wish to make a partition of the disk area you intend Linux to have,<br>
+using Windows drive device management.<br>
+The openSUSE installer will propose scrapping that partition and placing Linux partitions in its space. You can agree
+
+<p>
+Insert the USB stick in the platform where you want openSUSE
+
+<p>
+Start or restart the platform holding down F2. If F2 doesn't get BIOS, web search the model number of your platform to find how you get BIOS
+
+<p>
+ensure that USB FDD is boot priority 1 and boot mode is UEFI
+
+<p>
+Start the network install. You should have a cable network connection.<br>
+If network access is ragged, installation may go wrong several times before it completes
+
+<p>
+It is not easy to tell when installation is complete beacause there are platform restarts during installation and immediately after.<br>
+If the platform restarts and begins the installation preliminary questions again, force a reboot and remove the installation stick.<br>
+openSUSE is installed
+
+<p>
+There are a number of possible file system types. EXT2 is a workable type without journaling overheads<br>
+(and without journaling. If you think you want that, it's EXT3 or EXT4).
+
+
+<a	name="autoconf"/>
+<h3>Appendix B: Autoconf and Multihomed Routes</h3>
+
+
+        routes in the route table of RTA1 target image
+        are typed homed (bound to an interface) or
+        not homed
+
+        <p>
+        routes not homed may replicate remote network addresses
+        in separate attached networks
+
+        <p>
+        routing picks a next hop for datagrams, and if the route
+        is homed IP uses the indicated outgoing interface
+
+        <p>
+        if the route is not homed the outgoing interface is chosen
+        according to datagram source network address, which should
+        not be duplicated in any way on one host
+
+        <p>
+        RTA1 IPv4 can consequently exchange datagrams with remote sockets
+        which MAY replicate addresses on separate attached networks
+
+        <p>
+        ZeroConf is a procedure which may negotiate identical addresses
+        within separate attached networks, but is not the only method
+        of so doing. Manual configuration and DHCP might do the same
+        so long as the networks remain separate and are directly attached
+
+        <p>
+        Addresses which potentially replicate in different attached
+        networks are not routable. Routes which could reach replicated
+        addresses are known to RTA1 IPv4 because their interface
+        attribute in the routing table has the wildcard value ANYNET
+
+        <p>
+        This allows a single routing table entry to route to an autoconf
+        address however many attached networks replicate that address
+
+        <p>
+        Routes of this kind only apply to locally attached networks
+        and are always direct. The next-hop is the the destination
+
+        <p>
+        ARP caches each protocol address separately for each attached
+        network where it appears
+
+        <p>
+        ARP resolution requires a hit on protocol address plus interface index
+
+<a	name="alltests"/>
+<h3>Appendix C: Benchmark Suite alltests</h3>
+RTA1 online servers which have shell-based clients may all be benchmark tested at once from the emulator platform
+or from another platform in the network<br>
+
+<p>
+Routing initialiser script rta/client/prun should have been run once since platform boot.<br>
+If fponline has not been run since client platform boot, running it before benchmark script alltests will avoid capturing
+outputs from RAM file system initialisation in the benchmark outputs.
+<pre	style="font-size:11pt;color:#0000FF">
+
+	cd	client
+	./prun
+	./fponline
+	.
+	./alltests
+
+</pre>
+
+<a	name="readout"/>
+<h3>Appendix D: readout Utility and Hot Debug</h3>
+<h4>D.1: General Application of readout Utility</h4>
+
+readout utility allows selective walk and display of RTA1 system memory pages of 4096 or 262144 words
+
+<p>
+readout does not display NVRAM or filestore arrays
+
+<p>
+I / O Port 124 <a href="rta.html#iomem">ram$boundary</a> contains the lowest RAM Page Index which is also the lower limit of readout in Device Zero (executable space)
+
+<p>
+NVRAM in the pages lower than ram$boundary may contain information which should not be scanned online
+
+<p>
+Peripheral arrays can be accessed if they are of system memory type but an attempt to access a network trunk array or a filestore array will automatically halt readout. readout can then be run again to <a href="#hot_d">diagnose</a> the halt. The cause is that only ISRs can base filestore arrays and network trunks in address windows. Applications can freely call ISRs which do that, but readout executes online and as a matter of policy network users may not do raw scans of filestore devices. readout does not check device types but allows itself to be crashed on illegal access
+
+<p>
+readout is dynamically loadable and is mostly run online but is script capable. It has very few commands. Help is available at all points
+
+<pre	style="font-size:11pt;color:#00FF00;background-color:#000000C0;border-radius:5px">
+
+	$ <a style="color:#FFFFFF">telnet 172.29.7.7</a>
+	Trying 172.29.7.7...
+	Connected to 172.29.7.7.
+	Escape character is '^]'.
+	RTA1 smaragd7 OS shared console
+	<a style="color:#FFFFFF">stay</a>
+	no timeout
+	<a style="color:#FFFFFF">r load /util/readout</a>
+	00001d
+	loader: load /util/readout
+
+	[000050000018:0010000030ce]
+	000022 readout
+	h / Page Index><a style="color:#FFFFFF">h</a>
+	Start Page Index is decimal or leading zero for hex
+	large page flag 04xxxxx to scan a block of 262144 words
+	key . to quit instead
+	key h at any point for running help
+	h / Page Index><a style="color:#FFFFFF">016</a>
+	TCB
+	000016:000000 544342 003fcb 00000d 000000 003094 002079 000000 000015 <a style="color:#FFFFFF">320</a>
+	000016:000140 2a736e 6d705f 616765 6e7400 000000 000000 000000 000000 <a style="color:#FFFFFF">h</a>
+	key return for next line. Key . to quit
+	input lines are PAGE:OFFSET or just OFFSET
+	first[:] token is decimal for small intuitive numbers, leading zero for hex
+	OFFSET after : in PAGE:OFFSET is always hex
+	large page flag 04xxxxx:OFFSET to scan a block of 262144 words
+	<a style="color:#FFFFFF">0400180:3FFFE0</a>
+	400180:03ffe0 000000 c00160 000002 000000 c00160 c0016a c00174 000000 
+	400180:03ffe8 000000 c00140 000002 000000 c00140 c0014a c00154 000000 
+	400180:03fff0 000000 c00120 000002 000002 c00120 c0012a c00134 000002 
+
+</pre>
+
+If a device is over four gigawords in size <a style="color:#00FF00;background-color:#000000C0">&nbsp;large page flag 04xxxxx&nbsp;</a> may look like [ 05xxxxx .. 07xxxxx ], potentially 400000<sub>16</sub> <a style="color:#FFFFFF;background-color:#000000">OR</a> 3FFFC0<sub>16</sub> <a style="color:#FFFFFF;background-color:#000000">OR</a> [device]
+
+<p>
+When 400000<sub>16</sub> is applied bits bits 21..6 are the 16-bit index of a 262144-word page ("bank") and bits 5..0 are a device index
+
+<p>
+When 400000<sub>16</sub> is not applied, device is zero = executable space and highest possible index of a 4096-word page is  3FFFFF<sub>16</sub>
+
+<p>
+All devices are addressable up to 16 gigawords
+
+<a	name="hot_d"/>
+<h4>D.2: Walking a Faulted Application with readout Utility</h4>
+
+General purpose memory readout utility is used to diagnose faulted applications without stopping the system. It runs over telnet from the platform or local net
+
+<p>
+An application fault becomes apparent if an application returns to a launch interface without completing
+
+<p>
+In the example below a request to application <a style="color:#FFFFFF;background-color:#000000C0">&nbsp;tal&nbsp;</a> went directly to loader prompt <a style="color:#00FF00;background-color:#000000C0">&nbsp;load&gt;&nbsp;</a>
+
+<p>
+loader interface is left with <a style="color:#FFFFFF;background-color:#000000C0">&nbsp;@eof&nbsp;</a> command. Console command <a style="color:#FFFFFF;background-color:#000000C0">&nbsp;t&nbsp;</a> lists active threads and one halted thread named <a style="color:#00FF00;background-color:#000000C0">&nbsp;tal&nbsp;</a>
+
+<p>
+Status bit 20 <a style="color:#FF0000;background-color:#000000"><b>&nbsp;100000&nbsp;</b></a> in <a href="#telnet">console threads display</a> shows the thread is sidelined from scheduling after interrupt GUARD$
+
+<p>
+Multiple shells on the platform or network can run telnet to one RTA1. if an application breaks in one shell it can be examined from another
+
+<p>
+Application tal is expected to break. It is a utility for testing the legality and working of system features. Application tal issues a call to 000001:000C40
+
+<p>
+Page Index 1 is in ISR space below Application Threshold. Applications may not call ISR space. System call ISRs are called with Internal Interrupt instruction
+
+<p>
+Application tal halts and <a style="color:#00FF00;background-color:#000000C0">&nbsp;load&gt;&nbsp;</a>  prompt appears
+
+<p>
+The Thread Control Block of application tal has Page Index <a style="color:#00FF00;background-color:#000000C0">&nbsp;000022&nbsp;</a>
+
+<p>
+The first 260 words of the TCB contain all or most information necessary for diagnosing faulted applications
+
+<pre	style="font-size:11pt;color:#00FF00;background-color:#000000C0;border-radius:5px">
+
+	$ <a style="color:#FFFFFF">telnet 172.29.7.7</a>
+	Trying 172.29.7.7...
+	Connected to 172.29.7.7.
+	Escape character is '^]'.
+	RTA1 smaragd7 OS shared console
+	<a style="color:#FFFFFF">r load /util/tal</a>
+	00001d
+	loader: load /util/tal
+
+	[000050000018:001000003235]
+	000022 tal
+	<a style="color:#FFFFFF">test call 1:c40</a>
+	load><a style="color:#FFFFFF">@eof</a>
+	<a style="color:#FFFFFF">t</a>
+	console threads display
+	003fd2 000002 <a style="color:#FF0000">100000</a> 000022 000000 000000 000000 tal
+	000000 000007 200000 00001d 000000 000000 000000 load
+	003fe7 000000 000000 000017 000000 000000 000000 *iserver
+	003fc4 000007 000000 000016 000000 000000 000000 *snmp_agent
+	003fcb 000000 000000 000015 000000 000000 000000 *fponline
+	003fd2 000000 000000 000014 000000 000000 000000 *telnet
+	003084 000000 000000 000013 000000 000000 000000 *http
+	003fe0 000000 000000 00000d 000000 000000 000000 *ip
+	<a style="color:#FFFFFF">r load /util/readout</a>
+	00001d 
+	loader: load /util/readout
+
+	[000050000025:0010000030ce]
+	000026 readout
+	h / Page Index><a style="color:#FFFFFF">022</a>
+	TCB
+	000022:000000 544342 003fb6 000000 000000 0030a2 002079 000000 000000 <a style="color:#FFFFFF">56</a>
+	000022:000038 000000 000000 000000 c00000 <a style="color:#FF0000">000001 000041 000018 0001a3 </a>
+	000022:000040 000000 000021 000023 <a style="color:#FF0000">000024</a> c00001 c00001 c00001 c00001 <a style="color:#FFFFFF">080</a>
+	000022:000080 0000a0 0000ff <a style="color:#FF0000">000003</a> c0000a 000000 000000 000000 000004 
+	000022:000088 000004 000000 000000 000000 00301e 00301e 004000 00007e 
+	000022:000090 000000 000000 000000 000000 ffffff 000000 000000 000000 <a style="color:#FFFFFF">320</a>
+	000022:000140 <a style="color:#FF0000">74616c</a> 000000 000000 000000 000000 000000 000000 000000 <a style="color:#FFFFFF">024:58</a>
+	000024:000058 <a style="color:#FF0000">000c40 000001</a> 000001 000c40 000000 000000 000003 000001
+
+</pre>
+Operator <a style="color:#FFFFFF;background-color:#000000C0">keyins</a> walking the TCB requested:
+<pre	style="font-size:11pt">
+	words from TCB + <a style="color:#FFFFFF;background-color:#000000C0">&nbsp;56&nbsp;</a> or 000038<sub>16</sub> to be displayed:
+	00003C..00003F<sub>16</sub> of the TCB are the <a href="rta.html#is_frame">interrupt stack frame</a> / scheduler transfer frame <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000001 000041 000018 0001a3&nbsp;</b></a>
+	The problem is already diagnosed. The instruction at iframe offset <a style="color:#FF0000;background-color:#000000"><b>&nbsp;0001a3&nbsp;</b></a> minus 1 was not permitted
+	(latent parameter <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000001&nbsp;</b></a>). loader announced iframe name <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000018&nbsp;</b></a> when tal was loaded
+
+	words from TCB + 41<sub>16</sub> are relocation base pointers save area. Start Page Index of static data $(3) is <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000024<sub>16</sub>&nbsp;</b></a>
+
+	application registers saved at TCB <a style="color:#FFFFFF;background-color:#000000">&nbsp;000080<sub>16</sub>&nbsp;</a>: index register x contains <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000003<sub>16</sub>&nbsp;</b></a>
+
+	the application name <a style="color:#FF0000;background-color:#000000"><b>&nbsp;74616c&nbsp;</b></a> at TCB + <a style="color:#FFFFFF;background-color:#000000">320</a>
+
+	a far routine call gate at location <a style="color:#FFFFFF;background-color:#000000">&nbsp;000024:000058<sub>16</sub>&nbsp;</a> (<a style="color:#FFFFFF;background-color:#000000">&nbsp;3058<sub>16</sub>&nbsp;</a>) in application static data : <a style="color:#FF0000;background-color:#000000"><b>&nbsp;000c40 000001&nbsp;</b></a>
+	this is a correct call gate to an illegal destination
+
+</pre>
+
+<p>
+Index register x = 3. Execute instruction at offset offset 0001A2<sub>16</sub> executes the call instruction at 1A7<sub>16</sub>
+
+<pre	style="font-size:11pt;color:#00FF00;background-color:#000000C0;border-radius:5px">
+
+	00:0001A2  97A1A4              +203 dothat	ex	doso, x
+	00:0001A3  B6005B              +204 	j	input
+	  :                            205 
+	00:0001A4  6085DF              +206 doso	la	*(31*/18)
+	00:0001A5  B685DF              +207 	j	*(31*/18)
+	00:0001A6  F705E0              +208 	go	(1*/23++gate:s)
+	00:0001A7  FF05E0              +209 	call	(1*/23++gate:s)
+
+	00:0005e0+803058
+
+</pre>
+
+The call operand constant at 0005e0<sub>16</sub> is indirect pointer 803058<sub>16</sub> to a gate at location 003058<sub>16</sub> : 000c40 000001
+
+<a	name="emu_trad">
+<h3>Appendix E: Available Previous Emulators</h3>
+
+RTA1 emulators Stepping 14.02.2023 [ USA 02.14.2023] are reconstructed for symmetric multicore
+
+<p>
+Earlier RTA1 emulators for Linux and macOS 32-bit and 64-bit platforms are still distributed and perform as fast as SMP 1 * core new emulators
+
+<p>
+RTA1 emulator for OSX PowerPC is only distributed newly constructed as SMP 1 * core
+
+<p>
+Directories are needed in environment and in $PATH for running earlier emulators
+
+<ul	style="line-height:24pt;list-style-type:none">
+	<li><a style="color:#0000FF">$RTA_BINARY</a> is in your environment and $PATH and is <a style="color:#0000FF">rta/binary.rta/{ osx.x86 | osx.x64 | suse.x32 | suse.x64 }</a></li>
+
+	<li><a style="color:#0000FF">$RTA_BIN_64</a> may in your environment and $PATH and is <a style="color:#0000FF">rta/binary.rta/{ osx.x64 |  suse.x64 }</a></li>
+
+	<li><a style="color:#0000FF">$MASMX</a> is in your environment and $PATH and is <a style="color:#0000FF">masmx.7r3/hosts/{ osx.ppc | osx.x86 | osx.x64 | suse.x32 | suse.x64 }</a></li>
+</ul>
+
+masmx is necessary to run RTA1 at all. To generate RTA1 target applications this directory of scripts is additionally needed in $PATH
+<ul	style="line-height:24pt;list-style-type:none">
+
+	<li><a style="color:#0000FF">$RTA_BINARY/../../target.rta/image.app</a>
+
+</ul>
+Some 64-bit Linux distros need extra runtine library download to execute 32-bit binaries
+
+<p>
+What goes in .bash_profile or .bashrc is like this
+
+<pre	style="font-size:10pt">
+
+	<a style="color:#FF0000">OSX x86-64</a>									<a style="color:#FF0000">Linux x86-64</a>
+	__________									____________
+
+	export	RTA_BINARY=$HOME/rta/binary.rta/osx.x64					export	RTA_BINARY=$HOME/rta/binary.rta/suse.x64
+	export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/osx.x64				export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/suse.x64
+	export	PATH=$PATH:$MASMX:$RTA_BINARY						export	PATH=$PATH:$MASMX:$RTA_BINARY
+	export	RTA_MBANKS=8	# default executable space 8 banks			export	RTA_MBANKS=8	# default executable space 8 banks
+				# [ 1..65536 ] * 262144 words							# [ 1 2 4 8 32 64 256 1024 2048 4096 8192 ]
+				# up to 16 Gigawords								# * 262144 words
+
+
+	<a style="color:#FF0000">OSX x86</a>										<a style="color:#FF0000">Linux</a>
+	_______										_____
+
+	export	RTA_BINARY=$HOME/rta/binary.rta/osx.x86					export	RTA_BINARY=$HOME/rta/binary.rta/suse.x86
+	export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/osx.x86				export	MASMX=$HOME/masmx.7r3/masmx.7r3/hosts/suse.x86
+	export	PATH=$PATH:$MASMX:$RTA_BINARY						export	PATH=$PATH:$MASMX:$RTA_BINARY
+	export	RTA_MBANKS=8	# default executable space 8 banks			export	RTA_MBANKS=8	# default executable space 8 banks
+				# [ 1 2 4 8 32 64 256 1024 2048 ]						# [ 1 2 4 8 32 64 256 1024 ]
+				# * 262144 words								# * 262144 words
+
+</pre>
+
+Emulator for load / execute is selected according to environmental variable $RTA_MBANKS
+
+<p>
+Depending on platform available emulators are
+<pre	style="font-size:11pt">
+
+	$RTA_BINARY/tipa[ <a style="color:#0000FF">1 2 4 8 32 64 256 1024 2048</a> ]						tipa<a style="color:#0000FF">2048</a> is macOS only
+	# 32-bit Intel OSX and Linux	run as script rta/rta.run/ra	[-[R][Z][s]]
+
+	$RTA_BIN_64/tipc[ <a style="color:#0000FF">1 2 4 8 32 64 256 1024 2048 4096 8192 32768 65536</a> ]			tipc[ <a style="color:#0000FF">32768 65536</a> ] are macOS only
+	# 64-bit Intel OSX and Linux	run as script rta/tgen.x64/r	[-[R][Z][s]]
+
+</pre>
+
+<p>
+
+
+<a	name="deconta"/>
+<h3>Appendix Y: Clearing Download Restrictions</h3>
+
+OSX Catalina+ challenges downloads which did not come from Apple Computer
+
+<p>
+A simple way to remove blocking and challenges by prompt is to copy the file trees in a way which drops restrictions
+
+<p>
+Downloads can be directed to $HOME/Downloads and copied minus restrictions for example to $HOME/my_runspace
+
+<p>
+cp -r copies a  directory structure. Option -X removes attribute extensions
+<pre>
+
+	cp -r -X Downloads/rta my_runspace
+	cp -r -X Downloads/masmx.7r3 my_runspace
+
+</pre>
+If you have more than one download with the same name in Downloads, the newest one will have some modified name like rta-1
+
+<p>
+Depending load medium and method, scripts copied to linux platforms may need the execute permission restored with chmod command
+
+<p>
+If this is the case the shell will say the commands are unknown until all scripts have execute permission restored
+
+
+<hr/>
+<a      name="licence"/>
+<h3>Appendix Z: GNU General Public Licence Version 3</h3>
+
+<i>
+<pre	style="font-size:11pt">
+
+
+LICENCE NOTE
+
+    Copyright Tim Cox, 2012
+    TimMilesCox@gmx.ch
+
+    This document is part of the RTA1 Processor Programmable Architecture.
+
+    RTA1 is a free processor architecture specification. It is licensed
+    under the GNU General Public Licence Version 3
+
+    The executable emulation of RTA1 is free software.
+
+    Instruction code for the target RTA1 architecture is free software
+    if it is delivered with this software
+
+    Software programs delivered with this software to connect the
+    emulated RTA1 with real network interfaces in the emulator host
+    are free software
+
+    Scripts and programs delivered with this software for running
+    on other computers and interacting with the RTA1 are free software
+
+    Scripts and utility programs for constructing RTA1 target
+    executable software are free software
+
+    You can redistribute it and/or modify RTA1
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    RTA1 is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with RTA1.  If not, see &lt;http://www.gnu.org/licenses/&gt;.
+
+
+
+</pre>
+</i>
+
+
+</div>
+</html>

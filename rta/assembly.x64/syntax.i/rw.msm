@@ -1,0 +1,1059 @@
+
+
+;	include	rta_x86.h
+;	.model	large
+;	.code
+
+;	this is the operand reader / writer
+;	for emulated RTA1 on x86
+
+;	layout is
+
+;	RTA1 24-bit registers are modeled in an array of
+;	platform-endian integers. In x86 these are 32-bit
+;	little-endian integers
+
+;	platform-endian doesn't affect registers
+;	because endianness is not at the CPU
+;	side of the bus, but at the memory side
+
+;	when Intel circuitry in the x86 CPU staticises the value
+;	of an emulated register, that value is big endian
+
+;	the stored integers where emulated registers are modeled
+;	are platform-endian, with identical effect on big and
+;	little endian emulator platforms
+
+;	RTA1 24-bit executable space storage words are modeled in
+;	another array of platform-endian 32-bit integers. Emulation
+;	on x86 swaps the byte order of storage words on read and
+;	before write to conform with RTA1 canonical storage order
+
+;       RTA1 architecture has registers in the first 256 locations
+;       of address space and access differentiates registers from
+;       from memory according to effective address
+
+;	location of registers and storage are handed to read / write
+;	routines as RTA1 word linear effective addresses
+
+;	These routines maintain the RTA1 linear addresses passed
+;	in x86 registers and apply them with shifted scale plus
+;	displacement, for example
+
+;		mov	eax, dword ptr [edi+esi*4+_memory]
+;		bswap	eax
+;		mov	dword_ptr [ebp+ebx*4], eax
+
+;	RTA1 register addresses are already absolute in terms of
+;	the emulated RTA1 machine
+
+;	ebp points at the context register frame. There are two
+;	register frames, application and interrupt. Registers
+;	addressed as storage operand are in a single list
+
+;		mov	eax, dword ptr [esi*4+__register]
+
+;	RTA1 storage addresses are translated by RTA1 relocation
+;	architecture before application. The updated linear addresses
+;	of the emulated machine are in esi
+
+;	The operand routines in this file point edi to the x86 platform
+;	storage array start of the storage device, most often emulated
+;	RTA1 executable space
+
+;	instructions call these operand routines with RTA1 effective 
+;	address in eax
+
+;	instructions receive load operand values in eax and ebx, or in
+;	a list of RTA1 emulated register locations pointed by ebp+ebx
+
+;	store instructions submit a value in ebx, or values in list of
+;	RTA1 emulated register locations pointed by ebp+ebx
+
+;	to preserve linear address consistency, application instruction
+;	work areas, where needed in addition to x86 registers, are
+;	implemented as sub-architectural extra RTA1 registers at the end
+;	of the 256-longword register stack. x86 register ebp+ebx*4 identify
+;	these locations by linear RTA1 word quantum as "registers"
+
+;	RTA1 registers and storage alike are in 24-bit word address quantum space
+
+;	emulated instructions loading or storing multiple hidden extra work
+;	registers should unconditionally set ebp to the start or application
+;	frame of the emulated register array, so that [ebp+ebx*4] accesses the
+;	correct locations at register occurence 256+
+
+;               _floating_operand2 equ  256+12
+
+;		push	ebp
+;		mov	ebp, __register	; point to application register frame[0]
+;		mov	ebx, 256+_floating_operand2
+;		call	_burst_read4
+
+;		pop	ebp		; return to previous register frame[0] application
+					;                          or frame[1] interrupt
+
+;	Both internal stack pointers are also absolute, so for stack operations
+;	ebp should be momentarily forced to the lower-addressed (application) stack
+;	frame after being used to point the stack location of reference
+
+;		mov	ebx, dword ptr [ebp+S_P]	; read one of the two stack pointers
+;		cmp	ebx, ebp+STACK_LOWER_LIMIT	; 24*4 within context of either stack
+;		jl	II_GUARD
+;		add	ebx, -1				; new stack top
+;		mov	dword ptr [ebp+S_P], ebx
+;		push	ebp				; which ever stack pointer it is, it points
+;		mov	ebp,__register			; relative to all the register stack
+;		call	_operand_read			; for I am the single-word push instruction
+;		pop	ebp				;
+
+;	register identities supplied from emulated instructions to these routines
+;	are their lowercase names equated to RTA1 word addresses
+
+;	There exist also uppercase spellings which instruction routines may
+;	access internally. The uppercase names are four times in value the
+;	equivalent lowercase ordinal names to give x86 platform offset values
+
+;       Assembly language equate is like parentheses! What's in a label
+;       is not an expression but its value. Nothing like C preprocessor.
+;       Just in case you're developing enhancements in assembly using
+;       preprocessor and #define
+
+;		_floating_operand2 equ	256+12
+;		FLOATING_OPERAND2 equ	_floating_operand2*4
+
+
+;		a	equ	4
+;		b	equ	5
+;		mantissa2 equ	6
+
+;		A	equ	a*4
+;		B	equ	b*4
+;		MANTISSA2 equ	mantissa2*4
+
+;		mov	ebx, dword ptr [bp+MANTISSA2]	; the very same!
+;		mov	ebx, dword ptr [bp+mantissa2*4]	; the very same
+
+;	but to identify an instruction-implied register to these operand routines
+
+;		mov	ebx, mantissa2		; bp already says which register set
+
+;	instruction evaluation supplies right-hand side operand EA in eax
+;	Instruction implementation needs not examine EA. Call _operand_read
+;	or _operand_write. eax must be as supplied to the instruction routine
+;	on on operand retrieve and store
+
+;	simple instructions receive operand mode in cl from instruction
+;	evaluation
+
+;	shifts and jumps use the ea which is already indexed or indirected
+;	if necessary and make no operand call
+
+;	instructions call _burst_read2 or _burst_write2 for two-word operand cycles
+;	instructions call _burst_read4 or _burst_write4 for four-word operand cycles
+
+;	operand reads of 1 or 2 words return values in eax:ebx
+
+;		call	_burst_read2
+;		mov	dword ptr [ebp+A], eax
+;		mov	dword ptr [ebp+B], ebx
+
+;	to store one operand word place it in ebx
+
+;	_sc	mov	ebx, dword ptr[_psr]	; I am the store carry instruction sc
+;		and	ebx, 1			; CARRY
+;		call	_operand_write
+
+;	to store two or four words or to load four words, point bx to register
+
+;	_qpop	mov	ebx, dword ptr [ebp+S_P] ; internal stack pointer
+;						; either application sp or interrupt sp
+;
+;		add	dword ptr [ebp+S_P], 4	; internal stack+= 4
+;		push	ebp			;
+;		mov	ebp, __register		; in case context is interrupt registers
+;		call	_burst_write4		; both internal stack pointers are absolute
+;		pop	ebp			; point epb back to application registers
+;						;                or interrupt registers
+
+;	more complex instructions do something to the registers after
+;	acquiring operands
+
+;		call	_operand_read
+;		add	eax, dword ptr [ebp+A]
+;		rol	eax
+;		and	al, CARRY		; 1
+;		or	byte ptr [_psr], al	; low-order byte of longword _psr
+;		shr	eax, 8
+;		mov	dword ptr [ebp+A], eax
+
+;	emulated RTA1 instructions which both read and write (modify)
+;	storage use the address in [edi+esi*4] to rewrite. edi is
+;	NULL if it's not a suitable memory for a modify operation
+
+;	modify instructions which may have a register operand (not TS)
+;	call _operand_write to rewrite a register. This guards aganst
+;	applications writing interrupt registers.
+ 
+;	the effect of storage buses characteristically different
+;	from RTA1 executable space is emulated in the routines
+;	device_read and device_write
+
+;	Peripheral bus types implemented are
+
+;		filestore containing extents of up to 768K octets
+;		accessible to RTA1 as up to 256K words in each extent.
+;		The 3-octet words are in canonical order and packed
+
+;		network interface buffer store shared with the emulator
+;		platform and reading out to RTA1 at 16 data bits per word
+;		with eight high-order zero bits. RTA writes 16 data bits
+;		to these locations from register low-order bit positions.
+;		Storage byte order is canonical. These buffers are normal
+;		and contiguous byte arrays of the emulator platform.
+;		To RTA1 they are an attached device array of 16-bit words
+
+;	Device array types are
+
+;		executable space
+;		24-bit filestore array
+;		16-bit network interface array
+
+;	devices are identified in RTA1 memory relocation pointers and
+;	tagged with device type. Executable space is device zero
+
+_burst_read2:
+	mov	cx, 6
+	test	eax, 00FFFF00h
+	jz	read2_registers
+	jmp	_bus_read
+
+read2_registers:				; load registers from registers
+	mov	ebx, dword ptr [eax*4+__register+4]
+	mov	eax, dword ptr [eax*4+__register]
+	ret
+	
+_burst_read4:				; buffered read
+	mov	cx, 7			; that will help the caller
+	test	eax, 00FFFF00h		; ebp+ebx contains a register number
+	jz	read4_registers		; may also identify extra
+	jmp	_bus_read
+					; workspace registers
+read4_registers:			; at register stack tail
+	mov	esi, eax
+	mov	eax, dword ptr [esi*4+__register+12]
+	mov	dword ptr [ebp+ebx*4+12], eax
+	mov	eax, dword ptr [esi*4+__register+8]
+	mov	dword ptr [ebp+ebx*4+8], eax
+	mov	eax, dword ptr [esi*4+__register+4]
+	mov	dword ptr [ebp+ebx*4+4], eax
+	mov	eax, dword ptr [esi*4+__register]
+	mov	dword ptr [ebp+ebx*4], eax
+	ret
+
+_operand_read:			; call here with designator coded in cx
+	and	cl, 7		; and ea in eax
+	cmp	cl, 4
+	je	immediate	; EA is operand
+	cmp	cl, 5
+	je	immediate_xi	; EA is operand
+
+	test	eax, 00FFFF00h
+	jnz	_bus_read	; ea does not point to registers
+	mov	eax, dword ptr [eax*4+__register]
+
+immediate:
+immediate_xi:
+	ret 
+
+_bus_read:			; readout any memory
+
+
+	call	base_read_pointer
+
+	test	eax, 00400000h		; big block?
+	je	memory_read_4k_block
+
+	cmp	cl, 6			; multiword operation?
+	jb	_bus_read_256k_block
+
+	cmp	esi, 03FFFCh		; near the edge?
+	jna	_bus_read_256k_block	; no
+
+	call	read_straddle_18b?
+
+_bus_read_256k_block:
+	test	al, 63
+	jz	memory_read_page
+
+	jmp	device_read
+
+memory_read_4k_block:
+	test	esi, 0003F000h		; inside 4k block?
+	jz	memory_read_thru
+
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape	; no
+
+memory_read_thru:
+	cmp	cl, 6
+	jb	memory_read_page
+
+	cmp	esi, 0FFCh		; near the edge?
+	jna	memory_read_page	; no
+
+	call	read_straddle_12b?
+
+memory_read_page:
+	shl	eax, 12		; multiply by page and lose bit 00400000
+	add	esi, eax
+
+	mov	edi, _memory	; byte address
+
+
+memory_read_on:
+
+	movzx	eax, cl
+	mov	eax, dword ptr [read_action+eax*4]
+	jmp	eax
+read_action:
+	dd	memory_read_w0
+	dd	memory_t1
+	dd	memory_t2	; or h1
+	dd	memory_t3	; or h2
+	dd	immediate	; don't get here
+	dd	immediate_xi	; don't get here
+	dd	memory_read2
+	dd	memory_read4
+
+memory_read_w0:			; readout system memory 1 word
+;	mov	dword ptr [__register+154*4], edi
+;	mov	dword ptr [__register+155*4], esi
+	mov	eax, dword ptr [edi+esi*4]
+	mov	al, 0
+	bswap	eax
+; immediate:
+; immediate_xi:
+ 	ret
+
+memory_read2:			; readout system memory 2 words
+	mov	ebx, dword ptr [edi+esi*4+4]
+	mov	eax, dword ptr [edi+esi*4]
+
+	mov	al, 0
+	mov	bl, 0
+	bswap	eax
+	bswap	ebx
+	ret
+				; readout system memory 4 words
+memory_read4:			; store by pointer
+				; this will be useful to the caller
+
+	mov	eax, dword ptr [edi+esi*4]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebp+ebx*4], eax
+	mov	eax, dword ptr [edi+esi*4+4]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebp+ebx*4+4], eax
+	mov	eax, dword ptr [edi+esi*4+8]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebp+ebx*4+8], eax
+	mov	eax, dword ptr [edi+esi*4+12]
+	mov	al, 0
+	bswap	eax
+	mov	dword ptr [ebp+ebx*4+12], eax
+	ret
+
+memory_t1:
+	mov	eax, dword ptr [edi+esi*4]
+	shl	eax, 16		; t1 = 3.2.THIS.zero
+	jmp	memory_tw
+
+memory_t2:
+	mov	eax, dword ptr [edi+esi*4]
+	test	byte ptr[_psr], HALF_W
+	jnz	memory_h1
+	shl	eax, 8		; t2 = 3.THIS.1.zero
+	jmp	memory_tw
+
+memory_t3:
+	mov	eax, dword ptr [edi+esi*4]
+	test	byte ptr[_psr], HALF_W
+	jnz	memory_h2
+memory_tw:
+	sar	eax, 16		; t3 = THIS.2.1.zero
+	shr	eax, 8
+	ret
+
+memory_h1:
+	bswap	eax		; already loaded but not swapped
+	shl	eax, 8		; h1 = zero.HERE.2.3
+	jmp	memory_hw
+
+memory_h2:
+	bswap	eax		; already loaded but not swapped
+	shl	eax, 8+12
+memory_hw:
+	sar	eax, 12
+	shr	eax, 8
+	ret
+
+				; store system memory
+_burst_write4:
+	mov	cx, 7
+	test	eax, 00FFFF00h
+	jnz	NEAR bus_write
+
+	; store emulated registers to emulated registers
+
+	test	dword ptr [_psr], 0800000h	; ISR ?
+	jnz	write4_registers	; ISRs may write some spare registers
+	cmp	eax, 124
+	jna	write4_registers
+	jmp	guard_ii_authority	; but applications may not write
+					; any interrupt registers
+
+write4_registers:
+	mov	edi, eax		; eax can be freed
+
+	mov	eax, dword ptr [ebp+ebx*4]	; data for store
+					; ebp+ebx is a register number
+					; which can be extra register locations
+					; serving as workspace at the tail of
+					; the register stack
+
+	mov	dword ptr [edi*4+__register], eax
+	mov	eax, dword ptr [ebp+ebx*4+4]
+	mov	dword ptr [edi*4+__register+4], eax
+
+	mov	eax, dword ptr [ebp+ebx*4+8]
+	mov	dword ptr [edi*4+__register+8], eax
+	mov	eax, dword ptr [ebp+ebx*4+12]
+	mov	dword ptr [edi*4+__register+12], eax
+	ret
+
+_burst_write2:
+	mov	cx, 6
+	test	eax, 00FFFF00h
+	jnz	bus_write
+
+	; store to emulated registers
+
+	test	dword ptr [_psr], 0800000h	; ISR ?
+	jnz	write2_registers	; there are spare registers at the end
+	cmp	eax, 126		; but applications may not write
+	jna	write2_registers	; any interrupt registers
+	jmp	guard_ii_authority
+
+write2_registers:
+	mov	edi, eax			; time to free eax
+	mov	eax, dword ptr [ebp+ebx*4]
+	mov	ebx, dword ptr [ebp+ebx*4+4]
+	mov	dword ptr [edi*4+__register], eax
+	mov	dword ptr [edi*4+__register+4], ebx
+	ret
+
+_operand_write:
+	test	eax, 00FFFF00h
+	jnz	bus_write
+
+_operand_write_register:
+	test	eax, 80h		; in the interrupt registers?
+	jz	write1_register
+	test	dword ptr [_psr], 0800000h
+	jnz	write1_register
+	jmp	guard_ii_authority
+
+write1_register:
+	mov	dword ptr [eax*4+__register], ebx
+	ret
+
+bus_write:				; write any memory
+
+	call	base_write_pointer
+
+	test	eax, 00400000h		; big block?
+	jz	memory_write_4k_block	; no
+	cmp	cl, 6			; multiword operation?
+	jb	bus_write_256k_block	; no
+
+	cmp	esi, 03FFFCh		; near the edge?
+	jna	bus_write_256k_block	; no
+
+	call	write_straddle_18b?
+
+bus_write_256k_block:
+	test	eax, 63			; a device array?
+	jz	memory_write_page	; no. scaling shift will scrub bit 400000
+	jmp	_device_write		; yes a device array
+
+memory_write_4k_block:
+	test	esi, 0003F000h		; inside a 4k page?
+	jz	memory_write_thru
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape		; no
+
+memory_write_thru:
+	cmp	cl, 6			; multiword operation?
+	jb	memory_write_page	; no
+
+	cmp	esi, 0FFCh		; near the edge?
+	jna	memory_write_page	; no
+
+	call	write_straddle_12b?
+
+memory_write_page:
+	cmp	eax, dword ptr [_base+124*4]
+	jb	near guard_ii_authority	; guard the NVRAM whether real or emulated
+
+	shl	eax, 12			; multiply by page and lose bit 00400000
+	add	esi, eax		; add offset
+
+	mov	edi, _memory
+
+memory_write_on:
+	movzx	eax, cl
+	mov	eax, dword ptr [write_action+eax*4]
+	jmp	eax
+
+write_action:
+	dd	memory_write
+	dd	write_t1
+	dd	write_t2	; or h1
+	dd	write_t3	; or h2
+	dd	just_dont
+	dd	just_dont
+	dd	memory_write2
+	dd	memory_write4
+
+memory_write:					; store system memory 1 word
+	bswap	ebx
+	mov	dword ptr [edi+esi*4], ebx
+just_dont:
+	ret
+
+write_t1:
+	mov	byte ptr [edi+esi*4+1], bl
+	ret
+
+write_t2:
+	test	dword ptr [_psr], HALF_W
+	jnz	write_h1
+	mov	byte ptr [edi+esi*4+2], bl
+	ret
+
+write_t3:
+	test	dword ptr [_psr], HALF_W
+	jnz	write_h2
+	mov	byte ptr [edi+esi*4+3], bl
+	ret
+
+write_h1:
+	mov	eax, dword ptr [edi+esi*4]
+	bswap	eax
+	and	ebx, 4095
+	shl	ebx, 12
+	and	eax, 4095
+	or	eax, ebx
+	jmp	write_hw
+
+write_h2:
+	mov	eax, dword ptr [edi+esi*4]
+	bswap	eax
+	shr	eax, 12
+	shl	eax, 12
+	and	ebx, 4095
+	or	eax, ebx
+
+write_hw:
+	bswap	eax
+	mov	dword ptr [edi+esi*4], eax
+	ret
+					; store system memory 2 words
+memory_write2:				; eax is already free
+	mov	eax, dword ptr [ebp+ebx*4]
+	bswap	eax
+	mov	dword ptr [edi+esi*4], eax
+
+	mov	eax, dword ptr [ebp+ebx*4+4]
+	bswap	eax
+	mov	dword ptr [edi+esi*4+4], eax
+	ret
+
+memory_write4:					; store system memory 4 words
+	mov	eax, dword ptr [ebp+ebx*4]	; bx is a register number and may
+						; identify extra workspace registers
+						; at register stack tail
+	bswap	eax
+	mov	dword ptr [edi+esi*4], eax
+	mov	eax, dword ptr [ebp+ebx*4+4]
+	bswap	eax
+	mov	dword ptr [edi+esi*4+4], eax
+	mov	eax, dword ptr [ebp+ebx*4+8]
+	bswap	eax
+	mov	dword ptr [edi+esi*4+8], eax
+	mov	eax, dword ptr [ebp+ebx*4+12]
+	bswap	eax
+	mov	dword ptr [edi+esi*4+12], eax
+	ret
+
+memoreg_writeback:
+	test	ebx, -256			; save EA is ?
+	jnz	memory_direct			; a memory device
+	xchg	eax, ebx			; a register
+	and	ebx, 00FFFFFFh
+	jmp	_operand_write_register
+
+memory_direct:
+	bswap	eax
+	xor	al, al
+	mov	[edi+esi*4], eax
+	ret
+
+memoreg:					; read-modify-write registers
+	mov	ebx, eax			; or system-type memory
+	test	eax, -256			; but nothing marked as a peripheral bus
+	jnz	memory_read_lock
+	mov	eax, dword ptr [eax*4+__register]
+	ret
+
+;	RAM boundary in port 124 defines the upper page limit
+;	of a real or emulated NVRAM containing the fixed system image
+
+;	fixed system image may be kernel + loader in a dozen pages
+;	or it may be the entire application
+
+;	emulated machine applies the update limit
+;	whether NVRAM is emulated or real
+
+memory_read_lock:				; read for update
+						; barred below RAM boundary as write is
+
+	call	base_write_pointer		; resolve device:block:offset from EA
+	test	eax, 00400000h			; update block name is a big bank ?
+	jz	memory_read_lock_page		; no
+	test	eax, 63				; a device outside executable space ?
+	jnz	_yspace_read			; yes
+	and	eax, 003FFFFFh			; bit 0400000 is gets stripped later anyway
+	cmp	eax, dword ptr [_base+124*4]	; below RAM boundary?
+	jnb	_xspace_read			; no, go ahead
+	jmp	guard_ii_authority
+
+memory_read_lock_page:
+	cmp	eax, dword ptr [_base+124*4]	; below RAM boundary?
+	jnb	_xspace_read4K			; no, go head if offset < 1000 hex
+	jmp	guard_ii_authority
+
+						; for execute and modify instructions
+memory_read:					; read only executable space
+						; and similar memory types
+	call	base_read_pointer
+
+	test	eax, 00400000h
+	jz	_xspace_read4K
+
+	test	eax, 63
+	jz	_xspace_read
+	jmp	_yspace_read			; ie a device either appropriate or not
+
+_xspace_read4K:
+	test	esi, 003F000h
+	jz	_xspace_read
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape
+
+_xspace_read:
+	mov	edi, _memory
+	jmp	_memory_deliver			; device array zero
+
+_yspace_read:
+	test	eax, 00800000h			; a tripsy non-space?
+	jnz	_zspace_read			; not allowed
+
+	mov	edi, eax
+	and	edi, 63
+	mov	edi, dword ptr [_base+128*4+edi*4]
+	test	edi, SYSMEM_FLAG
+	jz	_zspace_read
+	test	edi, DATA16_FLAG
+	jnz	_zspace_read
+
+	shl	eax, 2				; al = 4 * device index
+	movzx	edi, al
+
+	mov	edi, dword ptr [_devices+edi]
+	xor	al, al				; necessary to lose the device bits now
+	shr	eax, 2
+
+_memory_deliver
+	shl	eax, 12		; multiply by page and lose bit 00400000
+	add	esi, eax
+	mov	eax, dword ptr [edi+esi*4]
+	bswap	eax
+	ret
+
+_zspace_read
+	mov	esi, LP_AUTHORITY
+	jmp	guard_ii_escape
+
+
+base_read_pointer:
+	mov	edi, eax	; set aside EA for split operations
+
+	ror	ecx, 16		; save designator
+	ror	eax, 18
+	test	al, 63
+	jz	page_read_pointer
+	mov	cl, al
+	shr	eax, 14
+	jmp	read_pointer
+
+page_read_pointer:
+	rol	eax, 6
+	mov	cl, al
+	shr	eax, 20
+
+read_pointer:
+        mov	esi, eax
+	and	cl, 63
+	jz	direct_pointer	; there is no alternate to B0
+				; ROM constant reads clear from here
+	test	cl, 56
+	jnz	direct_pointer	; shift radix 8-1 might get slipped
+				; high memory writes clear from here
+	mov	eax, dword ptr [_psr]		; now read out _psr
+
+alternate_pointer?:		; only base_write_pointer may jump to here
+	shl	ah, cl		; so long as radix 31 applies to 8-bit shifts
+	shr	ah, 1		; any base-tag > 7 delivers zero
+	and	ah, 64
+	or	cl, ah
+
+direct_pointer:
+	movzx	eax, cl
+	mov	eax, dword ptr [eax*4+_base]
+	ror	ecx, 16		; restore designator
+
+	ret
+
+base_write_pointer:
+	mov	edi, eax	; set aside EA for split write operations
+	ror	ecx, 16		; save designator
+	ror	eax, 18
+	test	al, 63
+	jz	page_write_pointer
+	mov	cl, al
+	shr	eax, 14
+	jmp	write_pointer
+
+page_write_pointer:
+	rol	eax, 6
+	mov	cl, al
+	shr	eax, 20
+
+write_pointer:
+	mov	esi, eax
+
+	and	cl, 63		; even if an ISR has reason to write its iframe
+				; it can base it in a data window
+	jz	NEAR guard_ii_authority	; so on attempted write in B0
+				; application: thread gets withdrawn
+				; ISR: forced to auto-restart the system
+	test	cl, 56
+	jnz	write_allowed	; shift radix 32-1 might get slipped
+				; high memory operand writes clear from here
+				; 386 shift radix on a byte is 7 anyway
+	mov	eax, dword ptr [_psr]	; last of all red out the psr
+	test	eax, 00800000h		; interrupt code?
+	jnz	alternate_pointer?	; ISRs write anything
+					; unless it isn't there
+
+	mov	al, ah		; gate windows [ 0 2 TCB kernel ]
+	or	al, 128+32	; applications may not write them
+	shl	al, cl
+
+	jns	write_allowed
+
+	mov	esi, LP_AUTHORITY
+	jmp	guard_ii_escape	; not allowed
+
+write_allowed:
+	movzx	eax, cl		; allowed
+	mov	eax, dword ptr [eax*4+_base]
+
+	ror	ecx, 16		; restore designator
+	ret
+
+;	sub-architectural measure on sabr and reload instructions
+
+;	check the target memory block is in range and the bus characteristic
+;	of the memory device when selecting blocks of memory, not when
+;	accessing them. Use 8 spare bits in the word containing _base[]
+;	for a quick recall of the emulated bus attribute on reference
+
+;	because this software emulation needs to act differently for
+
+;		executable space	rta1 24-bit words canonical memory
+;					modeled in platform 32-bit words
+
+;		shared network buffers	16-bit words canonical in memory
+;					and zero extend on readout to RTA1
+
+;		24-bit filestore array	3-octet words stored big-endian
+;					in packed array
+
+;	concept RTA1 device arrays with bus behaviour differences are completely
+;	emulated on PC emulations because device arrays are modeled in PC RAM.
+
+;	Various bus behaviours are emulated transparently to RTA1 target software
+;	in anticipation	that different memories for different uses may be attached
+;	on product boards, making core-emulated RTA1s much more efficient for not
+;	needing this part of emulation
+
+;	devices
+
+;	device 0 is always executable space, but there may be more devices
+;	with bus characteristics like device 0. The device descriptors are
+
+;		_________________________________________________________________
+;		| 16 bits flags	| 16 bits banks	|       32 bits pointer		|
+;		|_______________|____high index_|_______________________________|
+
+
+;	[out]	sabr	[go]	[call]	reload instructions call here
+;	go and call can probably check quicker themself
+;	out can be trusted because applications don't out memory _base[] ports
+
+;	a big block in an RTA1 address window is 262144 words.
+;	this checking concerns address windows tagged 2..63
+;	a device is an array up to 65536 big blocks or banks
+
+;	you get here with the relocation handle in ebx
+;	and the target window tag in eax, because that is the EA of a sabr instruction
+
+device_read:				; readout device arrays
+        test    eax, 0800000h           ; the vilainous bank index?
+        jnz     device_read_escape
+
+	shl	eax, 2			;  al = device pointer * 4
+	movzx	edi, al			; edi = device pointer * 4
+	xor	al, al			; eax = memory block * 256
+	shl	eax, 10			; eax = memory block * 262144
+	add	esi, eax		; offset += base
+	mov	eax, edi
+	mov	edi, dword ptr [_devices+eax] ; physical array storage
+_device_read_xpanded:
+	mov	eax, dword ptr [_base+128*4+eax]
+
+	shr	eax, 22			; following conditions use parity
+					; parity only generated from LS octet
+					; how dumb can you get?
+
+	and	al, 3			; what sort of device array?
+
+	jz	device_read_escape	; that's double-checked option 00
+	jpe	device_read_array24	; and option 11 shorten
+	test	al, SYSMEM_FLAG>>22
+	jz	device_read_data16	; and option 01
+	jmp	device_read_sysmem	; and option 10
+	
+device_read_escape
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape
+
+
+device_read_sysmem:			; readout system memory array
+	jmp	memory_read_on		; allow all variations partial word / multiword
+;	ret
+
+device_read_data16:			; readout 16-bit array
+	cmp	cl, 7
+	jz	device_read_data16_4
+	cmp	cl, 6
+	jz	device_read_data16_2
+	jmp	device_read_data16_1
+
+device_read_data16_1:			; readout 1 word of 16-bit array
+	movzx	eax, word ptr [edi+esi*2]
+	xchg	ah, al
+	mov	dword ptr [__register+164*4], eax
+	ret
+
+device_read_data16_2:			; readout 2 words of 16-bit array
+	mov	eax, dword ptr [edi+esi*2]	; 4.3.2.1
+
+	bswap	eax				; 1.2.3.4
+	movzx	ebx, ax				; 0.0.3.4
+	shr	eax, 16				; 0.0.1.2
+	ret
+
+device_read_data16_4:			; readout 4 words of 16-bit array
+	mov	eax, dword ptr [edi+esi*2]
+	bswap	eax				; 1.2.3.4
+	movzx	ecx, ax
+	shr	eax, 16
+	mov	dword ptr [ebp+ebx*4], eax
+	mov	dword ptr [ebp+ebx*4+4], ecx
+
+	mov     eax, dword ptr [edi+esi*2+4]
+	bswap	eax				; 5.6.7.8
+	movzx	ecx, ax
+	shr	eax, 16
+	mov	dword ptr [ebp+ebx*4+8], eax
+	mov	dword ptr [ebp+ebx*4+12], ecx
+	ret
+
+device_read_array24:			; readout from packed 24-bit array
+	call	device_array24_setpointer
+
+	cmp	cl, 7
+	jz	device_read_array24_4
+	cmp	cl, 6
+	jz	device_read_array24_2
+	jmp	device_read_array24_1
+
+device_read_array24_1:			; readout a word of packed 24-bit array
+	movzx	ax, byte ptr [edi+esi]
+	shl	eax, 8
+	mov	al, byte ptr [edi+esi+1]
+	shl	eax, 8
+	mov	al, byte ptr [edi+esi+2]
+	add	esi, 3
+	ret
+
+device_read_array24_1R
+	movzx	bx, byte ptr [edi+esi]
+	shl	ebx, 8
+	mov	bl, byte ptr [edi+esi+1]
+	shl	ebx, 8
+	mov	bl, byte ptr [edi+esi+2]
+	add	esi, 3
+	ret
+
+device_read_array24_2:			; readout 2 words of packed 24-bit array
+	call	device_read_array24_1
+	call	device_read_array24_1R
+	ret
+
+device_read_array24_4:			; readout 4 words of packed 24-bit array
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+4], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+8], eax
+	call	device_read_array24_1
+	mov	dword ptr [ebp+ebx*4+12], eax
+	ret
+
+_device_write:				; store device arrays
+	test	eax, 0800000h		; the vilainous bank index?
+
+	jnz	device_write_escape
+
+	shl	eax, 2			;  al = device ID * 4
+	movzx	edi, al			; edi = device ID * 4
+	xor	al, al			; eax = 256 * block pointer
+	shl	eax, 10			; block pointer *= 262144
+	add	esi, eax
+	mov	eax, edi
+	mov	edi, dword ptr [eax+_devices]	; physical buffer device array
+	mov	eax, dword ptr [eax+_base+128*4] ; descriptor port of device
+
+	shr	eax, 22			; following conditions use parity
+					; which is only generated from LS octet
+
+	and	al, 3			; isolate the device type
+	jz	device_write_escape
+	jpe	device_write_array24
+	test	al, SYSMEM_FLAG>>22
+	jz	device_write_data16
+	jmp	device_write_sysmem
+
+device_write_escape
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape
+
+
+device_write_sysmem:
+	jmp	memory_write_on		; allow all variations partial word / multiword
+
+device_write_data16:
+
+	cmp	cl, 7
+	jz	device_write_data16_4
+	cmp	cl, 6
+	jz	device_write_data16_2
+	jmp	device_write_data16_1
+
+device_write_data16_1:			; store 16-bit array
+	xchg	bh, bl
+	mov	word ptr [edi+esi*2], bx
+	ret
+
+
+device_write_data16_4:			; store 4 words in 16-bit array
+					; low-order half is swapped on bus read
+					; and canonical in eax
+	mov	ax, word ptr [ebp+ebx*4+8]	; get low-order half 3rd register
+	shl	eax, 16				; 5.6.0.0
+	mov	ax, word ptr [ebp+ebx*4+12]	; 5.6.7.8
+	bswap	eax				; it's correct so swap for bus write
+	mov	dword ptr [edi+esi*2+4], eax
+
+
+device_write_data16_2:			; store 2 words in 16-bit array
+					; registers are modeled in storage
+					; so each bus read corrects an octet pair
+
+	mov	ax, word ptr [ebp+ebx*4]	; get low-order half 1st register
+	shl	eax, 16				; 1.2.0.0
+	mov	ax, word ptr [ebp+ebx*4+4]	; 1.2.3.4
+	bswap	eax				; it's correct, so swap for bus write
+	mov	dword ptr [edi+esi*2], eax
+	ret
+
+device_write_array24:			; store 24-bit packed array
+	call	device_array24_setpointer
+
+	cmp	cl, 7
+	jz	device_write_array24_4
+	cmp	cl, 6
+	jz	device_write_array24_2
+	jmp	device_write_array24_1
+
+device_write_array24_1:			; store 1 word in packed 24-bit array
+	mov	eax, ebx
+device_write_array24_x:
+	rol	eax, 16
+	mov	byte ptr [edi+esi], al
+	rol	eax, 8
+	mov	byte ptr [edi+esi+1], al
+	rol	eax, 8
+	mov	byte ptr [edi+esi+2], al
+	add	esi, 3
+	ret
+
+device_write_array24_2:			; store 2 words in packed 24-bit array
+	mov	eax, [ebp+ebx*4]
+	call	device_write_array24_x
+	mov	eax, [ebp+ebx*4+4]
+	call	device_write_array24_x
+;	add	ebx, 2
+	ret
+
+device_write_array24_4:			; store 4 words in packed 24-bit array
+	call	device_write_array24_2
+	add	ebx, 2
+	call	device_write_array24_2
+	ret
+
+device_array24_setpointer:
+	mov	eax, esi			; think of a number
+	shl	eax, 1				; double it
+	add	esi, eax			; add it to the number you first thought of...
+	ret
+

@@ -1,0 +1,435 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+. Interfaces multiplex on two circular buffers of 16-bit words
+. one for receive and one for transmit
+
+. 16-bit device array words read out to RTA1 as 24 bits  with 8 high-order zeros
+. and are written from the low-order 16 bits of RTA1 registers
+
+. These 16-bit buffers are in device array space and consist
+. of an array of uniformly 1024-word (2048 octet) frame buffers 
+
+
+.		_________________________________
+.	>------>|1st receive buffer		|
+.	|	|2nd				|
+.	|	|				|
+.	^
+.	|
+.	<-------|last receive buffer		|
+.		|_______________________________|
+.	>------>|1st transmit buffer		|
+.	|	|2nd				|
+.	|	|				|
+.	^
+.	|
+.	<-------|last transmit buffer		|
+.		|_______________________________|
+
+
+. Five 16-bit words at the start of each frame buffer contain information
+. for RTA1 on receive and for interfaces on transmit
+
+. The five-word preamble is
+
+.	_________________________________________________________________________________
+.	| flag 8000/0000|  frame octets	|link hdr octets|interface index|protocol family|
+.	|_______________|_______________|_______________|_______________|_______________|
+
+
+. The first word flagged 8000 hex to indicated a frame completely received
+. or a frame ready for transmission
+
+. The fixed preamble contains a Link Header length which is usually zero on receive
+
+. Link Layer headers are not usually included in received frames because
+. no protocol layer in RTA1 extracts any information from Link Layer headers
+. The fixed preamble contains a protocol discriminator
+
+. Complex protocol discriminators like SNAP header would make the inclusion of 
+. received Link Layer headers necessary
+
+. Link Layer headers are always constructed by RTA1 for transmission
+
+
+. Notes. Note 1
+
+. To avoid accidental damage, device banks (as distinct from system memory
+. banks) may only be based by interrupt code. This avoids inadvertant
+. traversal of array accesses across all the devices
+
+. At their simplest,
+. the internal interrupts (system calls II 64+32 .. II 64+43) only need
+. to copy the bank handle from user-A register, base it, and return:
+
+.		la	A
+.		sabr	32
+.		ir	0
+
+		.
+		.
+
+.		la	A
+.		sabr	63
+.		ir	0
+
+. these service call ISRs discard calls which do not come from kernel iframes
+
+.	[ IP device_drivers file_systems loader ]
+
+. by using the $ringfest exclusion macro
+
+. credential checking can be added to these ISRs
+
+. Once the storage area is based, the application can access it at will.
+
+. The alternative would be that interrupt code itself must carry out required
+. operations and unbase the storage area before return
+
+
+. Note 2
+
+. the interface handler here will offer each frame to the protocol family
+. (mostly IPv4 or similar), which must decide immediately whether to take
+. the frame and place it in storage visible to the application.
+
+. This means IP will check IP correctness, and call ICMP, UDP or TCP which
+. must checksum as necessary while copying the datagram to socket storage.
+
+. Datagrams are checksummed during transfer from interface buffers (device array space)
+. to socket buffers (protocol space)
+
+. Some network applications which are threads of IP have zero-copy access to socket buffers
+
+. The socket or XDR interface will otherwise format the data when the application
+. subsequently receives it over the socket API.
+
+. on return from the call to the protocol family, the interface buffer is freed
+
+
+
+RX_LL_HL $equ	d$save
+
+
+
+$(1)
+
+.	pointer array to the network interface descriptors
+.	these are numbered starting from one as in MIB-II
+.	interfaces table
+
+.	word zero of this table is a count of the number of
+.	interface descriptors in use
+
+.	the initial value 1 indicates that there is one
+.	interface so far, interface(1) = internal loopback,
+.	and the next to be configured ought to be interface(2)
+
+.	to obtain a descriptor for a new interface, increment
+.	the counter in the first word of the array and select
+.	the pointer at
+
+.	i_f_pointer_array[i_f_pointer_array[0]]
+
+.	for example
+.
+.		lx		i_f_pointer_array
+.		ax, xi		1
+.		sx		i_f_pointer_array
+.		lx		0, x
+
+
+i_f_pointer_array	. who wants to go multiplying subscripts?
+	+	1
+?	$do	INTERFACES,ifxpointer(?)	+	interface(?)
+
+"$if0p"*	$equ	i_f_pointer_array
+"$if2p"*	$equ	ifxpointer(2)		. 1st external interface pointer
+						. exported for self-configuring
+						. device drivers
+"$ifzp"*	$equ	i_f_last
+
+i_f_last +	interface(1)
+
+?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,	;
+						0, $rxtx_lo			;
+										;
+					net_address(2),2048-14-10,platform_relay,	;
+					$initial_ift1, $rxtx_ift1,,,,, 00:012:01c:00:00:5	;
+												;
+					net_address(3), 1500, ethernet_relay, 0, $light_flight	;
+												;
+					net_address(4), 1500, ethernet_relay, 0, $light_flight	;
+												;
+					net_address(5), 2048-10-14, platform_relay2,		;
+					__initial_ift2, __rxtx_ift2
+
+$(66::,x)
+this_if	i_f
+IF_WORDS
+
+$(0)
+
+locate_interfaces
+	lr, xi	interface(INTERFACES)
+	ly, xi	2
+	lx, xi	interface(2)		. interface(1) is software loopback
+	lk	(0C00000s)
+
+locate_interfaces_again
+	inA	128, y
+	mta	(IF16)
+	j	locate_interfaces_next_device
+	sx	i_f_last
+	lcal	locate_primed_interface?
+	j	thats_enough_interfaces		. no
+	call	this_if:initial			. yes
+	sx	i_f_last			 primed logical interfaces trunk traffic
+
+	jxge	thats_enough_interfaces
+	ax, xi	interface(2)-interface(1)
+
+locate_interfaces_next_device
+	ay, xi	1
+	la	y
+	aa, xi	-64
+	jnc	locate_interfaces_again
+
+	$if	0				. can't remember what
+						. these comments mean
+						. but output queue redirection
+						. is now this_if:q2
+						. this_if:flags is used for
+						. something else
+
+	lr	interface(IFGW)+IF_WORDS,,xi	. if there is routing to here
+	jxge	thats_enough_interfaces		. add a logical interface
+	ax	-IF_WORDS,,xi			. to service the traffic
+	push	x
+	lx	interface(IFGW),,xi
+	pop	this_if:flags
+	push	IFGW,,xi
+	pop	i_f_pointer_array
+
+	$endif
+
+thats_enough_interfaces
+	lx	i_f_last
+	push	this_if:id
+	push	0, sp
+	pop	i_f_pointer_array
+	pop	ifNumber:i
+	lret	0
+
+locate_primed_interface?
+	tz	this_if:initial
+	lret	1				. interface is trunk master
+	jxge	located_no_primed_interface
+	ax	interface(2)-interface(1),,xi
+	j	locate_primed_interface?
+located_no_primed_interface
+	lret	0
+	
+
+frames	lx, xi	interface(1)
+test_if	tz	this_if:flags
+	call	this_if:rxtx_interface
+	lr	i_f_last
+	jxge	i_f_leave
+	ax, xi	interface(2)-interface(1)
+	j	test_if
+i_f_leave
+	lret	0
+
+						. i_f should be x->
+						. acw should be a->
+q2ifoq	$if	0
+	lb	x
+	ab	-interface(2),,xi
+	jzb	ok1
+	ab	interface(3)-interface(2),,xi
+	jzb	ok1
+	ab	interface(4)-interface(3),,xi
+	jzb	ok1
+	ab	interface(5)-interface(4),,xi
+	jzb	ok1
+	ii	GUARD$
+ok1
+	$endif
+
+	tnz	this_if:arp_resolve
+	j	q2ifreel			. interface does not use ARP
+
+	la	8				. the descriptor
+	$if	0
+	lb	descriptor:frame, a		. practical measure. set the delivery pointer
+	sb	TX_FRAME			. for the target physical address
+	$elseif	0
+	lb	descriptor:frame, a		. diagnostic: test the delivery pointer
+	xorB	TX_FRAME			. for the target physical address
+	jzb	$+2
+	ii	GUARD$
+	$endif
+
+	call	this_if:arp_resolve		. interface uses ARP
+	jza	q2ifreel			. dropped or pending
+	la	8				. descriptor
+	lret	0
+
+q2ifreel la	8				. recover the descriptor
+q2ifree						. called from ARP a -> acw x -> i_f
+
+	tz	this_if:write_llh		. link layer header to write?
+	call	this_if:write_llh
+
+	push	this_if:id
+
+	$if	1
+	tz	0, sp
+	tp	0, sp
+	ii	GUARD$
+	$endif
+
+	pop	descriptor:i_f, a
+
+	$if	HVSOCKET
+	lk	(63*/18:s)
+	mta	(BSOCKET*/18:s)
+	j	q2ifoq1
+
+	lb	descriptor:dgram, a
+	lb	dgram:vers_ihl_tos, b
+	andB	4,,xi
+	jzb	q2ifoq_low
+	call	(write_ifqlist_head)
+	lret	0	
+
+q2ifoq_low
+	call	(write_ifqlist)
+
+	lret	0
+	$endif
+
+q2ifoq1						. LOCK	this_if:lock_cell_q1
+						. ly, i	this_if:oq
+	call	(write_ifq)
+						. FREE	this_if:lock_cell_q1
+q2ifreex lret	0
+
+frame2p		. vector name is frame_to_protocol
+	lcal	frame2proto
+	fret	0
+
+frame2proto
+	lb	this_if:id
+	sb	I_F_IDX
+	sx	I_F_P
+
+	aa	-IP,,xi			. the most requiring speed
+	jza	ipv4_rx
+	aa	IP-ARP,,xi
+	jza	arp_rx
+	aa	ARP-IFCONFIG,,xi	. the least requiring speed
+	jza	call_ifconfig
+	aa	IFCONFIG-ROUTE_CONFIG,,xi
+	jza	call_route_config
+
+	$if	0		. anu is a 2-instruction macro so a bit slower
+	anu, xi	IP
+	jzb	ipv4_rx		.  ipv4_rx does lret back into frame2p
+	anu, xi	ARP
+	jzb	arp_rx		.   arp_rx does lret back into frame2p
+
+	anu, xi	IFCONFIG
+        jzb	call_ifconfig	. call_ifconfig does lret back into frame2p
+	anu, xi	ROUTE_CONFIG
+	jzb	call_route_config . call_route_config does lret back into frame2p
+	$endif
+
+	MIB_ICOUNT48	this_if:inoproto
+	lret	0
+
+call_ifconfig
+	call	(__ifconfig)
+	lret	0
+
+call_route_config
+	call	(__route_config)
+	lret	0
+
+	$if	0	. moved to ../drivers/queue.msm
+
+if_rq1		. vector name is if_readq1
+	LOCK	this_if:lock_cell_q1
+	ly, i	this_if:oq
+	lcal	readqif
+	FREE	this_if:lock_cell_q1
+	fret	0
+
+	$endif
+
+if_initpool			. vector name far_initpool
+	lcal	init_pool	. called from other iframes wanting
+	fret	0		. a message buffer initialised
+
+
+ifsellmsg	. vector name is if_sell1
+	lcal	sell1
+	fret	0
+
+ifbuy	lcal	buy1	. vector name is if_buy
+	fret	0
+
+ifrq	lcal	readq	. vector name is far_readq
+	fret	0
+
+ifq2	lcal	q2	. vector name is far_q2
+	fret	0
+
+ifq2ifree	. vector name is if_q2ifree
+	lcal	q2ifree
+	fret	0
+
+
+iftx_nocheck	. vector name is if_tx_nocheck
+	lcal	tx_nocheck
+	fret	0
+

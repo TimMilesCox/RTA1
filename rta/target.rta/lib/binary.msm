@@ -1,0 +1,308 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+.	if the acquired mantissa fits in 72 bits use this conversion
+.	because this should be integer accurate if it is correct code
+
+.	the technique of adding together two overlapping numbers
+.	forces a small inaccuracy through hardware rounding. That
+.	can't be accepted if the mantissa was 100% representable
+.	in the first place
+
+	$include	144.def
+
+	$set_option	"E"
+
+u72_float			. vector call name u72tofloat
+	z	6
+	tp	TRIPLE		. 
+	j	unsigned72	. allow 72-bit unsigned range 
+	dlsc	TRIPLE		. otherwise look for a sign change
+	lr, xi	25		. from sign zero
+	lx	6
+	jxge	around		. bit 47 is also zero
+	sa	TRIPLE
+	dl	TRIPLE+1	. working in unsigned at this point
+	dsl	0, x		. rotate up to 24 zeros
+	ds	TRIPLE+1	. into the LS 48 bits
+unsigned72
+	la	(0400048)	. midpoint + 72 - normalising count
+	j	exponent
+around	dlsc	TRIPLE+1	. rotate up to 72 zeros
+	z	TRIPLE+2	. into all of it
+	ds	TRIPLE
+	la	(0400030)	. midpoint + 48 - normalising count
+exponent
+	ana	6		. minus normalising count
+	xor	SIGNS		. now switch to working in signed
+	sa	QUAD
+	jpa	signed
+	n	TRIPLE		. floating architecture is
+	n	TRIPLE+1	. ones complement
+	n	TRIPLE+2
+signed	fret	0
+
+	$list	3
+	$include fraction
+	$include madd144
+	$include align192
+	$include udo
+	$list	2
+
+fraction_3
+        mf, xi  1000
+        sb      11
+        sa      7
+        z       6
+        lb      10
+        mf, xi  1000
+        da      6
+        sb      10
+        sa      7
+        sc      6
+        lb      9
+        mf, xi  1000
+        da      6
+        sb      9
+	fret	0
+
+	$if	1
+
+fraction_6
+	tz	11
+	j	raise3w
+	tz	10
+	j	raise2w
+
+	lb	9
+	mf	(1000000)
+	sa	9
+	fret	0
+
+raise2w	z	6
+	z	7
+	lcal	double_mf
+	push	a
+	z	6
+	z	7
+	lcal	double_mf
+	tz	10
+	sa	10
+	pop	9
+	fret	0
+
+raise3w	lcal	triple_mf
+	push	a
+	lcal	triple_mf
+	push	a
+	lcal	triple_mf
+	tz	8		. 11 before operation
+	sa	11
+	pop	10
+	pop	9
+	fret	0
+
+triple_mf
+        lb      11
+	sb	8		. 11 before operation
+        mf      (1000000)
+	sb	11
+        sa      7
+        z       6
+double_mf
+	lb      10
+        mf      (1000000)
+        da      6
+        sb      10
+        sa      7
+        sc      6
+        lb      9
+        mf      (1000000)
+        da      6
+        sb      9
+	lret	0
+
+	$else
+
+fraction_6
+	lb	11
+	mf	(1000000)
+	sa	7
+	z	6
+	lb	10
+	mf	(1000000)
+	da	6
+	sb	10
+	sa	7
+	sc	6
+	lb	9
+	mf	(1000000)
+	da	6
+	sb	9
+	push	a
+
+
+	lb	10
+	mf	(1000000)
+	sb	10
+	sa	7
+	z	6
+	lb	9
+	mf	(1000000)
+	da	6
+	sa	10
+
+	mf	(1000000)
+	sa	9
+
+	pop	11
+	fret	0
+
+	$endif
+
+	$list	3
+	$include	oscale
+	$list	2
+
+scale_integer_fraction
+	.	if scale < midpoint + 73 pull up integral part
+	.	in b:6:7
+	.	set scale to midpoint and return + 1 instruction
+	.	else return to instruction after call
+
+	.	the number must be represented positive
+
+	lx	8
+	lr	(0400049)
+	jxge	scale_outside_integer
+
+	lr	(0400031)
+	jxge	scale72
+
+	lr	(0400019)
+	jxge	scale48
+
+	lr	(0400001)
+	jxge	scale24
+
+scale_outside_integer
+	fret	0
+
+scale24	ax	(-0400000)
+
+	la, xi	0
+	lb	11
+	dsl	0, x		. displacement sought
+	sb	11		. shifted mantissa3
+	lb	10
+	rar	0, x
+	drl	0, x		. bits shifted out
+	sb	10		. shifted mantissa2
+	lb	9
+	rar	0, x
+	drl	0, x		. bits shifted round
+	sb	9		. to mantissa1 lower
+	sa	7		. ms bits to integer
+	z	6
+	lb, xi	0
+
+	j	scale_in_order
+
+scale48	ax	(-0400018)
+
+	la, xi	0
+	lb	11
+	z	11		. mantissa3 all bits shifted
+	push	9
+	push	10
+	dsl	0, x		. displacement - 24
+	sb	10		. ahifted mantissa2
+	pop	b
+	rar	0, x		. bits shifted up
+	drl	0, x		. to mantissa1 lower
+	sb	9
+
+	pop	b
+	rar	0, x
+	drl	0, x		. ms bits to integer
+	ds	6
+	lb, xi	0
+
+	j	scale_in_order
+
+scale72	ax	(-0400030)
+
+	la, xi	0		. integer bits < 72
+	lb	11
+	z	11
+	dsl	0, x		. shift displacement - 48
+	push	9
+	sb	9
+	lb	10
+	z	10		. mantissa2..3 all bits shifted
+	rar	0, x		. low integer bits in ms positions a
+	drl	0, x		. low integer bits in ls positions b
+	sb	7		. write integer ls word
+	pop	b
+	rar	0, x		. next word ls bits in ms positions a
+	drl	0, x		. next word ls bits in ls positions b
+
+	sb	6		. write integer ms 48 bits
+	dsr	24
+
+scale_in_order
+	la	(0400000)
+	sa	8
+	fret	1
+
+n72_comp2
+	lcal	triverse
+	fret	0
+
+triverse
+	push	b
+	dsr	48
+	dan	6
+	ds	6
+	pop	b
+	sc	a
+	n	b
+	ab	a
+	lret	0

@@ -1,0 +1,81 @@
+$(67::,y)
+roco	route_config_frame
+
+$(0)
+
+route_insert	$tree			. this part is called like configuration protocol
+	ii	KERNEL$B1_1
+	lx	route_lexical		. first are we replacing a route?
+	dl	roco:net
+	ds	6
+	j	route_ahead?
+route_ahead!
+	dl	ro:net
+	dan	6
+	jdz	route_overlay
+	lx	ro:lexical		. next route
+route_ahead?
+	tz	x			. is this a route?
+	j	route_ahead!		. yes, examine
+					. no, fall thru, it's a new route
+	lx	route_free
+	tz	x			. no free slot = no store
+	lcal	insert			. free slot = store
+	ii	B1$
+	fret	0
+
+route_overlay
+	lcal	route_store
+	ii	B1$
+	fret	0
+
+route_store				. switch configuration tuple into route cache
+	la	roco:flag_ifidx		. indirect_flag ++ interface_index
+	la	2, a, i
+	drl	9			. net interface sends indirect flag as bit 15
+	sar	8			. RTA routing prefers it at bit 23
+	drr	1
+	sa	ro:i_f
+	dl	roco:net		. route destination
+	ds	ro:net
+	la	roco:mask_log		. mask width
+	sa	ro:mask_log		. used newer route MIBs
+	lcal	route_configure_log2netmask
+	ds	ro:mask			. to stored mask
+	dl	roco:next_hop
+	ds	ro:next_hop
+	lret	0
+
+.	6-word input y ->
+.		_________________________________________________
+.		| [*]i/f|masklog|  destination	|   next hop	|
+.		|_______|_______|_______|_______|_______|_______|
+
+.	9-word stored route
+.	_________________________________________________________________________
+.	| search| list	| [*]i/f|  destination	|      mask	|   next hop	|
+.	|_chain_|_chain_|_______|_______|_______|_______|_______|_______|_______|
+
+
+insert	lcal	route_store		. switch configuration tuple into route cache
+	ly	ro:next
+	sy	route_free		. free chain updated
+
+	ly	route_list,,xi		. find insert point in  search chain
+
+search_down				. 1st in chain is FFFF FFFF anyway
+	lr	y			. prior <--
+	ly	ro:next, y		. next in chain
+	dl	ro:mask
+	dan	ro:mask, y
+	jnc	search_down		. new route mask is < i.e. less wide
+					. new route mask is >= 
+	sy	ro:next			. forward pointer of new
+	sx	*r			. forward pointer of prior
+
+	lr	route_lexical,,xi
+	dl	ro:net
+	ds	6
+	lcal	configure_lexically
+	lret	0
+	$root

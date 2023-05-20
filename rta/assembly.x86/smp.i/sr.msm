@@ -1,0 +1,113 @@
+
+;	read staging register
+;	read bits from a stream of bits
+
+_rsr:	mov	ecx, dword ptr [esi+RDATAC]
+	mov	ch, cl
+	mov	cl, al
+
+	xor	eax, eax
+	test	dword ptr [esi+PSR], B_STREAMZR
+	jnz	_rsr_zadd
+	mov	eax, dword ptr [ebp+A]
+_rsr_zadd:
+	and	cl, cl
+	jz	_rsr_x
+	mov	ebx, dword ptr [esi+RDATA]
+
+	and	ch, ch			; any data loaded yet?
+	jz	_rsr_read		; if not read first no question 
+	cmp	ch, cl			; otherwise, already enough for request?
+	jnb	_rsr_draw		; if so deliver data
+	sub	cl, ch			; if not trim the oustanding count
+	xchg	cl, ch			
+	call	dsl			; and deliver available data
+	xchg	ch, cl			; before reading some more
+_rsr_read:
+	call	stream_read
+;	mov	esi, dword ptr [ebp+CORE_INDEX1]	; after call to operand_read
+	movd	esi, mm7
+
+	mov	dword ptr [esi+RDATAC], 24
+	test	dword ptr [esi+PSR], B_STREAM16R
+	jz	_rsr_draw
+	mov	dword ptr [esi+RDATAC], 16
+	shl	ebx, 8
+_rsr_draw:
+	push	cx
+	call	dsl
+	pop	cx
+	and	ecx, 255
+	sub	dword ptr [esi+RDATAC], ecx
+	mov	dword ptr [esi+RDATA], ebx
+_rsr_x:
+	mov	dword ptr [ebp+A], eax
+	ret
+
+
+;	write staging register
+;	write bits to a stream of bits
+
+_wsr:	mov	ecx, dword ptr [esi+WDATAC]
+	mov	ch, cl					; accumulated count
+	mov	cl, al					; new request
+
+	mov	eax, dword ptr [esi+WDATA]	; accumulated data
+	mov	ebx, dword ptr [ebp+A]		; source new data
+
+	add	ch, -24				; space for new data expressed negative
+	test	dword ptr [esi+PSR], B_STREAM16W	; 16 bits / word flag
+	jz	_wsr24
+	add	ch, 8
+
+_wsr24:	add	ch, cl			; increment towards zero
+	jz	_wsr_write		; accumulated word exactly full
+	jnc	_wsr_add		; not yet full
+
+	sub	cl, ch			; full + some more
+
+_wsr_write:
+	call	dsl			; fill output word
+	mov	cl, ch			; position outstanding count
+	call	stream_write
+
+;	mov	esi, dword ptr [ebp+CORE_INDEX1]	; after call to operand_write
+	movd	esi, mm7
+
+	mov	eax, 0
+	mov	dword ptr [esi+REGISTER+WDATAC], 0
+
+_wsr_add:
+	push	cx
+	call	dsl			; add to output word
+	pop	cx
+	and	ecx, 255		; format ecx for add to accumulated count 
+	add	dword ptr [esi+REGISTER+WDATAC], ecx
+	mov	dword ptr [esi+REGISTER+WDATA], eax
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+stream_read:
+	push	ecx
+	push	eax
+	mov	eax, dword ptr [ebp+Q]
+	add	dword ptr [ebp+Q], 1
+	xor	cl, cl
+	call	_operand_read
+	mov	ebx, eax
+	pop	eax
+	pop	ecx
+	ret
+
+stream_write:
+	push	ecx
+	push	ebx
+	mov	ebx, eax
+	mov	eax, dword ptr [ebp+P]
+	add	dword ptr [ebp+P], 1
+	xor	cl, cl
+	call	_operand_write
+	pop	ebx
+	pop	ecx
+	ret
+

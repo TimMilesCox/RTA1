@@ -1,0 +1,98 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.	the protocols allowed in here are only IPv4 and IPv6
+.	the discriminator is the 4-bit version at the
+.	start of the datagram
+
+.	until it's decided to have ip6 we'll just assume
+.	software loopback output is ip4
+
+
+rxtx_softwareloopback
+	fret	0
+
+			. x -> interface
+
+	la	this_if:oq:head
+	jza	rxxx_software_loopback
+
+	ly	descriptor:frame, a
+	
+	lb, i	nframe:stack_index, y
+	la	nframe:llh:generic:protocol, y
+	ab	0, b
+
+	ly	1, b
+	lr	0, b	
+
+	push	x
+	call	(frame_to_protocol)
+	pop	x
+
+	lcal	readifq
+
+        MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
+        MIB_ICOUNT48    this_if:outpackets
+	
+	tp	descriptor:bytes, a
+	j	rxtx_softwareloopback
+
+	lx	rx_buffers
+	call	(if_sell1)		. this is just until something wants
+					. to read the datagram
+
+					. The sender must take TCP segments
+					. off the ACK queue when they are ACKED
+					. but leave the receiver to pool them
+
+					. UDPgrams simply pooled by the receiver
+					. after consume
+
+					. might as well turn the retain bit off
+					. at this point so it won't confuse TCP
+					. receive. And to signal the sender not
+					. to pool the buffer on ACK, just to
+					. unlink it from the ACK queue
+
+	j	rxtx_softwareloopback
+
+rxxx_software_loopback
+	fret	0
+

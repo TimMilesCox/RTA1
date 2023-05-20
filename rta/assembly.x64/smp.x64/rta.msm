@@ -1,0 +1,430 @@
+
+_sr:	cmp	cl, I
+	jz	_inA
+	cmp	cl, XI
+	jz	_on
+
+	mov	ebx, dword ptr [rbp+R]
+	jmp	_operand_write
+
+_sk:	cmp	cl, I
+	jz	_inB
+	cmp	cl, XI
+	jz	_off
+
+	mov	ebx, dword ptr [rbp+K]
+	jmp	_operand_write
+
+_sx:	cmp	cl, I
+	jz	_outA
+	cmp	cl, XI
+	jz	_rsr
+
+	mov	ebx, dword ptr [rbp+X]
+	jmp	_operand_write
+
+_sy:	cmp	cl, I
+	jz	_outB
+	cmp	cl, XI
+	jz	_wsr
+
+	mov	ebx, dword ptr [rbp+Y]
+	jmp	_operand_write;
+
+_sa:	cmp	cl, I
+	jz	_reload
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [rbp+A]
+	jmp	_operand_write
+
+_sb:	cmp	cl, I
+	jz	escape
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [rbp+B]
+	jmp	_operand_write
+
+_z:	cmp	cl, I
+	jz	_sabr
+	cmp	cl, XI
+	jz	_lret
+	xor	ebx, ebx
+	jmp	_operand_write
+
+_pop:	cmp	cl, I
+	jz	escape
+	cmp	cl, XI
+	jz	_fret
+
+	call	stack_read1
+	mov	ebx, dword ptr [rsi+rbx*4]
+	jmp	_operand_write
+
+escape	ret
+
+_lr:	call	_operand_read
+	mov	dword ptr [rbp+R], eax
+	ret
+
+_lk:	call	_operand_read
+	mov	dword ptr [rbp+K], eax
+	ret
+_lx:	call	_operand_read
+	mov	dword ptr [rbp+X], eax
+	ret
+
+_ly:	call	_operand_read
+	mov	dword ptr [rbp+Y], eax
+	ret
+
+_la:	call	_operand_read
+	mov	dword ptr [rbp+A], eax
+	ret
+
+_lb:	call	_operand_read
+	mov	dword ptr [rbp+B], eax
+	ret
+
+_tz:	cmp	cl, I
+	jz	near _rex
+	cmp	cl, XI
+	mov	ecx, 0
+	jz	_ii_instruction
+
+	call	_operand_read
+	test	eax, 00FFFFFFh
+	jnz	_tz_
+	add	r12, 4
+_tz_:	ret
+
+_tp:	cmp	cl, I
+	jz	_jdz
+	cmp	cl, XI
+	jz	_ir
+
+	call	_operand_read
+	test	eax, 00800000h
+	jnz	_tp_
+	add	r12, 4
+_tp_:	ret
+
+_push:	call	_operand_read
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	call	stack1
+	mov	dword ptr [rsi+rbx*4], eax
+	ret
+
+_jdz:	mov	ebx, dword ptr [rbp+B]
+	or	ebx, dword ptr [rbp+A]
+	jz	near _j
+	ret
+
+_jdr:	mov	ebx, dword ptr [rbp+R]		; dec r and jump if it passed from zero to -1
+	add	ebx, 00FFFFFFh
+	rol	ebx, 8
+	mov	cl, bl
+	shr	ebx, 8				; write back to registers only 00000000 thru 00FFFFFF
+	mov	dword ptr [rbp+R], ebx
+	test	cl, 1
+	jnz	_j
+	ret
+
+_lcal:	call	stack1
+	mov	rdx, r12
+	sub	rdx, qword ptr [rsi+B0P]
+	shr	rdx, 2
+	mov	dword ptr [rsi+rbx*4], edx
+
+	%if	0
+	shl	rax, 2
+	add	rax, qword ptr [rsi+B0P]
+	mov	r12, rax
+	ret
+	%endif
+
+	jmp	_j				; EA is in eax
+
+_jnc:	test	dword ptr [rsi+PSR], 1
+	jz	_j
+	ret
+
+_jc:	test	dword ptr [rsi+PSR], 1
+	jnz	_j
+	ret
+
+_jao:	test	dword ptr [rbp+A], 1
+	jnz	_j
+	ret
+
+_jpa:	test	dword ptr [rbp+A], 00800000h
+	jz	_j
+	ret
+
+_jpb:	test	dword ptr [rbp+B], 00800000h
+	jz	_j
+	ret
+
+_j:	shl	rax, 2
+	add	rax, qword ptr [rsi+B0P]
+
+;	cmp	rax, r13			; there is a range check on instr fetch but 
+;	ja	_j_check			; if a jump goes wrong the come-from address
+						; is more use in the interrupt frame
+	mov	r12, rax			; than a wild go-to address
+	ret
+
+_j_check:					; apc before is in rdx
+						; restore updated apc
+	mov	ecx, LP_ADDRESS
+	jmp	guard_ii_escape			; for interrupt come-from
+
+_jpo:	call	NEAR _get_parity
+	jpo	_j
+	ret
+
+_jza:	and	dword ptr [rbp+A], 00FFFFFFh
+	jz	_j
+	ret
+
+_jzb:	and	dword ptr [rbp+B], 00FFFFFFh
+	jz	_j
+	ret
+
+_jnza:	and	dword ptr [rbp+A], 00FFFFFFh
+	jnz	_j
+	ret
+
+_jnzb:	and	dword ptr [rbp+B], 00FFFFFFh
+	jnz	_j
+	ret
+
+_jna:	test	dword ptr [rbp+A], 00800000h
+	jnz	_j
+	ret
+
+_jnb:	test	dword ptr [rbp+B], 00800000h
+	jnz	_j
+	ret
+
+_jxge:	mov	ebx, dword ptr [rbp+X]
+	sub	ebx, dword ptr [rbp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  x <  r,    jump
+	ret				; yes: x >= r, no jump
+
+_jyge:	mov	ebx, dword ptr [rbp+Y]
+	sub	ebx, dword ptr [rbp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  y <  r,    jump
+	ret				; yes: y >= r, no jump
+
+_qs:	mov	ebx, a
+	jmp	_burst_write4
+
+_ql:	mov	ebx, a
+	jmp	_burst_read4
+
+_qpop:	call	stack_read4			; places 4 stack registers in the scope of burst write
+	push	rbp
+
+	movq	rbp, mm7
+;	mov	rbp, qword ptr [ebp+CORE_INDEX1] 
+
+	call	_burst_write4
+	pop	rbp
+	ret					; stack pointers are absolute
+
+_qpush:	call	stack4
+	push	rbp
+
+	movq	rbp, mm7
+;	mov	rbp, qword ptr [ebp+CORE_INDEX1]
+	call	_burst_read4
+	pop	rbp
+	mov	dword ptr [ebp+S_P], ebx	; not done in stack4 in case
+	ret					; RTA1 sp is in the pushed frame
+						; then it would pop wrong
+_dpop:	call	stack_read2
+	push	rbp
+
+	movq	rbp, mm7
+;	mov	rbp, qword ptr [ebp+CORE_INDEX1]
+	call	_burst_write2
+	pop	rbp
+	ret
+
+_dpush:	call	_burst_read2			; do this before changing RTA1 sp
+	mov	edx, ebx			; in case that is in pushed pair
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	call	stack2				
+	mov	dword ptr [rsi+rbx*4+4], edx	; stack the data
+	mov	dword ptr [rsi+rbx*4], eax
+	ret
+
+_mta:	call	_operand_read
+	xor	eax, dword ptr [rbp+A]
+	and	eax, dword ptr [rbp+K]
+	jnz	_mta_
+	add	r12, 4		; k AND (a XOR operand) = 0, skip 1 instruction
+_mta_:	ret
+
+_dte:	call	_burst_read2
+	xor	eax, dword ptr [rbp+A]
+	jnz	_dte_
+	xor	ebx, dword ptr [rbp+B]
+	jnz	_dte_
+	add	r12, 4
+_dte_:	ret	
+
+_sc:	mov	ebx, dword ptr [rsi+PSR]
+	and	ebx, 1		; store carry 
+	jmp	_operand_write
+
+_mlb:	call	_operand_read
+	mov	ebx, dword ptr [rbp+K]
+	and	eax, ebx
+	xor	ebx, 00FFFFFFh
+	and	ebx, dword ptr [rbp+B]
+	or	ebx, eax
+	mov	dword ptr [rbp+B], ebx	; b = (b AND (NOT k)) OR (operand AND k)
+	ret
+
+_ds:	mov	ebx, a
+	jmp	_burst_write2
+
+_dl:	call	_burst_read2
+	mov	dword ptr [rbp+B], ebx
+	mov	dword ptr [rbp+A], eax
+	ret
+
+_spare:	ret
+
+_ex:	call	memory_read
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	jmp	_execute
+
+_ts:	call	memory_lock			; edi + rsi -> memory word
+	mov	ax, 08000h
+	xchg	ax, word ptr [rdi+rsi*4]	; swap -> t1 for 080 under lock
+	and	ax, ax
+	js	_ts___				; no action if already locked
+
+	add	r12, 4				; skip if ms bit was clear before
+
+_ts___:	ret
+
+
+_sim:	call	memoreg				; edi -> device		edi <- NULL
+						; rsi -> word	OR	ebx -> register
+	movq	rcx, mm7			; eax <- data
+;	mov	ecx, dword ptr [rbp+CORE_INDEX1]
+
+	shl	ax, 8
+	mov	al, byte ptr [rcx+PSR+2]
+	ror	eax, 3
+	rol	al, 3
+	mov	byte ptr [rcx+PSR+2], al
+	shr	eax, 32-3
+
+	jmp	memoreg_writeback
+
+_call:	mov	rdx, r12				; copy [ pc -> ] in case the jump interrupts
+	call	stack2					; frame
+	sub	rdx, qword ptr [rsi+B0P]		; pc - page address on platform
+	shr	rdx, 2					; / 4 = RTA1 word offset
+	mov	dword ptr [rsi+rbx*4+1*4], edx		; -> stack frame + 1
+	mov	edx, dword ptr [rsi+B0_NAME]		; iframe name
+	mov	dword ptr [rsi+rbx*4], edx		; -> stack frame + 0
+
+_go:	mov	qword ptr [rsi+APC], r12		; write back actual platform value up2 here
+							; of emulated [ program counter -> ]
+	call	_operand_read
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]	; regain core pointer
+
+	mov	edx, eax				; lookaside to calculate the vector
+	test	eax, 00800000h				; gate?			
+	jz	_go2_4k_frame				; one page fixed target iframe 
+
+	and	eax, 007FFFFFh				; read the gate constant / variable
+	call	_burst_read2				; into eax : ebx
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]	; retrieve core pointer
+
+	mov	edx, eax				; page high index ++ word offset 6.18
+	mov	eax, ebx				; iframe name
+	rol	edx, 6+8				; roll down page high index + 2 flag bits
+	mov	ebx, edx				; instruction frame page high index
+	and	ebx, 63					; remove flag bits 
+	jz	_go_gate				; page high index zero -> one page iframe
+	or	eax, 00800000h				; two+ page iframe
+
+_go_gate:
+	shr	edx, 6+8				; net word offset
+
+	jmp	_go2_frame
+	
+_go2_4k_frame:
+	and	edx, 63					; target is in 4k block, 64 vectors
+	shr	eax, 6					; new b0_name
+	and	eax, 0000FFFFh				; bit 22 of GO / CALL word reserved
+	xor	ebx, ebx				; frame high page index
+
+_go2_frame:
+	test	byte ptr [rsi+PSR+2], 128		; already in interrupt code?
+	jnz	_go2_base_frame			 	; may branch into interrupt code
+							; because already interrupt code
+	mov	ecx, eax				; iframe name
+	and	ecx, 03FFFFFh				; minus flag bits
+	sub	ecx, dword ptr [rsi+IO_PORT+_APP_THRESHOLD]	; applications lower limit
+	jnl	_go2_base_frame				; you can
+
+	mov	r12, qword ptr [rsi+APC]		; you can't
+	jmp	guard_ii_authority
+
+_go2_base_frame:
+
+	mov	dword ptr [rsi+B0_NAME], eax		; iframe name with flags
+	and	eax, 003FFFFFh				; start page index without flags
+	add	ebx, eax				; iframe highest page
+	mov	dword ptr [rsi+IO_PORT+_IFRAME_U], ebx	; port 64 <- iframe highest page
+
+	mov	ecx, dword ptr [rsi+IO_PORT+_DEVICE]	; memory page high index
+	and	ecx, 003FFFFFh				; strip memory type bits
+	sub	ecx, ebx				; iframe high page may be = not >
+	jns	_go2_frame_in_range			; you can
+
+	mov	ecx, LP_ADDRESS
+	mov	r12, qword ptr [rsi+APC]		; you can't
+	jmp	guard_ii_escape
+
+_go2_frame_in_range:
+
+	shl	rbx, 12					; multiply highest page by page size
+	lea	r13, [_memory+rbx*4+4095*4]		; last instruction word in iframe
+							; higher = wrong
+	mov	qword ptr [rsi+APCZ], r13		; set execution limit pointer
+
+	mov	dword ptr [rsi+IO_PORT], eax		; write B0 <- iframe start page index
+	shl	rax, 12+2				; 4kword block multiplied by 4 for word
+	add	rax, _memory				; add the platform location of executable space
+	mov	dword ptr [rsi+B0P], eax		; store address in platform of B0 page start
+	shl	edx, 2					; add the vector offset * 4 for word
+	add	rdx, rax				; absolute apc + _memory
+	mov	r12, rdx
+_go_:	ret
+

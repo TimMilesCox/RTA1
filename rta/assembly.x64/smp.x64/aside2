@@ -1,0 +1,33 @@
+resolve_write_tag:
+	and	cl, 63
+	jz	guard_ii_authority	; no-one may write B0
+	test	cl, 56
+	jz	write_window_known
+	mov	ch, 128
+	shr	ch, cl
+	test	byte ptr [esi+PSR+1], ch
+	jz	write_window_known
+	or	cl, 64
+
+write_window_known:
+	push	eax
+	movzx	eax, cl
+	test	byte ptr [eax+write_rule], 128
+	jz	write_window_free
+	test	byte ptr [esi+PSR+2], 128	; ISR ?
+	jz	guard_ii_authority	; the unbalanced push is harmless
+					; stack is reset on faults
+write_window_free:
+	mov	eax, dword ptr [esi+eax*4+IO_PORT]
+	pop	esi
+	ret
+
+base_write_pointer;
+	ror	eax, 18
+	test	cl, 63
+	jnz	write_address18
+	rol	eax, 6
+	mov	cl, al
+	shr	eax, 32-12
+	jmp	resolve_write_tag
+

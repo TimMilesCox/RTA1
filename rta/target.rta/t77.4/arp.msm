@@ -1,0 +1,463 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(3)
+
+arpq	dq
+
+arp_hash
+	$do	arp_store(ARP_STORE),	0
+?	$do	ARP_STORE,arp_line(?)	arp_cache
+
+arp_next	+	arp_line(1)
+arp_free	+	0
+
+
+$(67::,y)
+arp_row	arp_cache
+ARP_CACHE_WORDS	$set	$
+
+$(67::,y)
+arp_msg	arp_dgram
+ARP_MSG_WORDS	$set	$
+
+$(0)
+
+xarp	qpush	r
+xarp_next
+	ly, xi	arpq
+	lcal	readq
+	jza	xarp_timers
+	sa	fp
+	lcal	glean_and_push
+
+	ly	descriptor:dgram
+	dl	arp_msg:spa
+	jdz	xarp_clear		. don't respond to ZeroConf
+	la	arp_msg:oper
+	ana	ARP_REQUEST,,xi
+	jnza	xarp_clear
+	lx	2, sp
+	lcal	search_and_indicate	. is this address here?
+
+xarp_clear
+	la	fp
+	lcal	net_free
+	j	xarp_next
+
+xarp_timers
+	lr	arp_store(ARP_STORE)-1,,xi
+	lx	arp_hash,,xi
+xarp_walk
+	ly	0, x
+	ax	1,,xi
+	j	xarp_walk_chain
+xarp_walk_next
+	lcal	time_test
+	ly	arp_row:next
+xarp_walk_chain
+	tz	y
+	j	xarp_walk_next
+	jdr	xarp_walk
+xarpx	qpop	r
+
+
+	fret	0
+
+arp_rx	dpush	x
+	la	r
+	ana	ARP_MSG_WORDS*2,,xi	. must have this many octets
+	jnc	arp_rxz			. to be complete
+	lx	rx_buffers		. move some of it away from i/f buffers
+	la, xi	ARP_MSG_WORDS+3**-4	. that's how much we'll look at
+	lcal	buy1
+	jza	arp_rxz
+	lx	descriptor:frame, a
+	sx	descriptor:dgram, a
+
+	ly	1, sp
+	lr	ARP_MSG_WORDS//4-1,,xi
+arp_rx_store
+	qpush	0, y
+	qpop	0, x
+	ay	4,,xi
+	ax	4,,xi
+	jdr	arp_rx_store
+
+	ly	arpq,,xi
+	lcal	q2
+
+	lx	0, sp
+	lb	this_if:id
+	sb	descriptor:i_f, a
+
+arp_rxz	pop	x
+	pop	y
+	fret	0
+	
+resolve	qpush	d$save
+	qpush	8
+	la	-1,,xi			. hasn't until it has
+	qpush	a
+	qpush	r
+
+caller_i_f	$equf	2, sp		. still in x as well so far
+NET_ADDR	$set	6
+LL_H		$set	TX_FRAME
+CHAIN_HEAD	$set	10
+BLANK		$set	9		. spare slot pointer
+AXW		$set	8		. it was where we are called from
+
+					. find the hash chain
+	la	TX_FRAME
+	dl	nframe:next_hop, a
+	lr	this_if:id		. the calling xmit routine has the I/F
+	lcal	find_in_cache		. entry point precaches target protocol address
+	tz	y
+	j	consider		. found in ARP cache
+	ly	BLANK
+	tz	y
+	j	construct_request	. found a cache row in same # chain
+	lcal	search_heap
+	tz	y
+	j	insert_construct_request . found a new cache row
+
+	j	return
+
+consider				. remote physa may be requested but not responded
+	dl	arp_row:tha
+?	$do	HLEN//2-2,	;
+	orB	arp_row:tha+2+?-1
+	jdz	return
+	j	deliver
+
+insert_construct_request
+	la	*CHAIN_HEAD		. read address of 1st in chain by pointer
+	sa	arp_row:next		. write next of new 1st
+	sy	*CHAIN_HEAD		. write chain head location by pointer
+
+	la	this_if:id		. this is a necessary identification
+	sa	arp_row:i_f		. otherwise this ARP row is not used
+					. and blows up the timer test
+construct_request
+	z	arp_row:tha
+	z	arp_row:tha+1
+	z	arp_row:tha+2
+
+	dl	NET_ADDR
+	ds	arp_row:tpa
+
+	la	DAYCLOCK$
+	aa	(ARP_REFRESH)
+	sa	arp_row:refresh
+
+	la	TX_DATAGRAM
+
+	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
+				caller_i_f		;
+				0,,xi			;
+				NET_ADDR,,long		;
+				dgram:ipsource,a,long
+
+	j	return
+
+deliver	lx	TX_FRAME, sp
+	wphysa	0, x	arp_row:tha, y
+	z	4, sp	. now it has
+
+return	qpop	r
+	qpop	a
+	qpop	8
+	qpop	d$save
+	fret	0
+
+
+phy_target1	$equf	arp_msg:tha
+phy_target2	$equf	nframe:llh:generic:address, y
+phy_sourcex	$equf	0, x
+
+xmit	$head_far	 params(operation,	int	  ;
+				i_fp,		int	  ;
+				ha_pointer,	int	  ;
+				dnet_addr,	long	  ;
+				snet_addr,	long	) ;
+							  ;
+			scalars(caller_rkxy,	float, r  ;
+				caller_fp,	int,  fp)
+
+	la	ROUTING_HEADER+ARP_MSG_WORDS,,xi
+	lx	tx_buffers
+	lcal	buy1
+	jza	xmitx
+	sa	fp
+
+	ly	descriptor:frame
+	lb	ROUTING_HEADER,y,i
+	sb	descriptor:dgram
+	la	ARP_MSG_WORDS*2,,xi
+	ds	nframe:frame_axw(2), y
+	z	nframe:frame_axw(3), y		. no third buffer needed
+	z	nframe:next_hop			. a value here is irrelevant
+	z	nframe:next_hop+1		. so clear residual value
+
+	lr	y				. save the frame pointer
+	ly	b				. dgram pointer
+
+	dl	(HTYPE, PROTOCOL_SUITE:d)	. hardware space, protocol set
+	ds	arp_msg:htype
+
+	la	(0, HLEN, PLEN)
+	lb	operation
+	ds	arp_msg:hl_pl			. address lengths, type of request
+
+	lx	i_fp
+
+	wphysa	arp_msg:sha this_if:physa
+
+	dl	snet_addr
+	ds	arp_msg:spa
+
+	dl	dnet_addr
+	ds	arp_msg:tpa
+
+
+	lx	ha_pointer			. bespoke physa destination?
+	tnz	x
+	lx	(0o),,xi
+	wphysa	arp_msg:tha phy_sourcex
+						. arp dgram is built
+						. now the link layer header
+
+	ly	r				. recover the frame pointer
+	lx	ha_pointer			. bespoke physa destination?
+	tnz	x
+	lx, xi	(00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF:o)
+						. don't know = broadcast
+						. most i/f use 3 of these 8 words !
+	wphysa	nframe:llh:generic:address,y phy_sourcex
+
+	lb	LINK_PROTOCOL,,xi
+	sb	nframe:llh:generic:protocol, y
+	lx	i_fp
+	la	fp
+	call	this_if:write_llh	. format generic parameters		
+					. to ll header for this i/f
+
+	la	fp
+	lcal	q2ifree
+
+xmitx	pop	fp
+	qpop	r
+	fret	0
+
+find_in_cache
+	ds	NET_ADDR
+find_in_cacheq
+	andB	arp_store(ARP_STORE)-1,,xi
+	ly	arp_hash,,xi
+	ay	b
+	sy	CHAIN_HEAD
+	z	BLANK
+
+	lk	32767,,xi
+	
+forward	la	arp_row:next
+	ly	a
+	jza	miss
+	la	arp_row:i_f		. no use resolving on the wrong network
+	mta	r			. with ideas like autoconf being used
+	j	forward			. and platforms all multihomed
+	dl	arp_row:tpa		
+	jdz	spare
+	dan	NET_ADDR
+	jdz	hit
+	j	forward
+
+spare	tnz	BLANK			. 1st spare in chain is best
+	sy	BLANK
+	j	forward
+miss
+hit	lret	0			. return with or without a hit
+	
+search_heap				. is the heap used up?
+	ly	arp_next
+	lr	arp_line(ARP_STORE)+ARP_CACHE_WORDS,,xi
+	jyge	eoheap
+	lr	ARP_CACHE_WORDS, y, i
+	sr	arp_next
+	lret	0
+eoheap	ly	0,,xi
+	lret	0
+
+glean_and_push
+	lx	descriptor:dgram
+	dl	arp_msg:spa, x
+	jdz	gleanx		. don't process ZeroConf as ARP
+
+	ds	NET_ADDR
+
+	dl	arp_msg:sha, x	. if there is an accidental zero HA
+?	$do	HLEN//2-2,	;
+	orB	arp_msg:sha+2+?-1, x
+	jdz	gleanx		. don't cache it: it can't help you
+
+	lr	descriptor:i_f
+	dl	NET_ADDR
+	lcal	find_in_cacheq	. target protocol address already in 6:7
+	tz	y
+	j	update
+	ly	BLANK		. it's free information if
+				. we have a slot to store it
+	tz	y
+	j	update		. found a spare row same # chain
+	lcal	search_heap
+	tz	y
+	j	insert_update
+
+	j	gleanx		. can't keep this information until
+				. a cache row times out
+
+insert_update
+	la	*CHAIN_HEAD	. read address of 1st in chain by pointer
+	sa	arp_row:next	. make that next of new 1st
+	sy	*CHAIN_HEAD	. write new 1st to chain head by pointer
+
+update	dl	NET_ADDR
+	ds	arp_row:tpa
+	wphysa	arp_row:tha arp_msg:sha, x
+	la	DAYCLOCK$
+	aa	(ARP_REFRESH)
+	sa	arp_row:refresh
+	la	descriptor:i_f
+	sa	arp_row:i_f
+
+gleanx	lret	0
+
+
+	$if	1
+
+search_and_indicate
+	.	some lousey network boxes
+	.	deliver ARP requests on a medium where the sender is not homed
+	.	so respond on the interface where it is
+
+	.	ANYNET replicated addresses aren't replicated in one host
+	.	only among attached autoconf networks
+
+
+	lx	i_f_pointer_array,,xi
+	ax	descriptor:i_f		. requesting i/f id
+	lr	0, x			. requesting interface
+	lx	r
+
+	dl	arp_msg:tpa
+	lcal	ipv4_address_this_if?	. found on the shorter list? most frequent case
+	j	respond_yes		. the interface is already pointed
+	lcal	ipv4_address_this_host?
+	lret	0			. not anywhere on this host
+
+	lx	ifaddr:i_f		. point to the interface where the address is found
+	ax	i_f_pointer_array,,xi
+	lr	0, x
+
+respond_yes
+	c	(ARP_XMIT)	ARP_REPLY,,xi		;
+				r			;
+				arp_msg:sha,,i		;
+				arp_msg:spa,,long	;
+				arp_msg:tpa,,long
+	lret	0
+
+	$else
+
+search_and_indicate		. process a request from outside
+	$head_near	scalars(i_f_of_request,	int)
+
+	lx	descriptor:i_f	. get the interface where the request is
+	ax	i_f_pointer_array,,xi
+	lx	0, x		. even if forwarding, we must answer that way
+	sx	i_f_of_request
+	dl	arp_msg:tpa
+	lcal	ipv4_forus?
+	j	respond_yes	
+	j	respond_no
+respond_yes
+	c	(ARP_XMIT)	ARP_REPLY,,xi		;
+				i_f_of_request		;
+				arp_msg:sha,,i		;
+				arp_msg:spa,,long	;
+				arp_msg:tpa,,long
+respond_no
+	inc	sp
+	lret	0
+
+	$endif
+
+
+time_test			. y -> ARP cache row for time test
+	qpush	r
+	dl	arp_row:tpa	. not in use
+	jdz	time_tex
+	ds	6
+
+	la	arp_row:refresh
+	ana	DAYCLOCK$	. 24 bits is enough for this timer
+	jpa	time_tex
+
+	la	DAYCLOCK$	. restart the refresh timer
+	aa	(ARP_REFRESH)	. before register y gets re-used
+	sa	arp_row:refresh
+
+	lx	arp_row:i_f
+	ax	i_f_pointer_array,,i
+	lx	0, x
+	la	this_if:address_list, x
+
+				. advertise we would like a refresh
+				. and restart the timer
+
+	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
+				x			;
+				0,,xi			;
+				arp_row:tpa,,long	;
+				ifaddr:net,a,long
+time_tex
+	qpop	r
+	lret	0
+

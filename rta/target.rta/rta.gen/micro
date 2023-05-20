@@ -1,0 +1,98 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute and/or modify RTA1 and its materials
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    RTA1 is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+
+rm minimal
+rm minimal.rom
+rm syslabel.txo
+rm *.txo
+rm *.seg
+rm *.abs
+
+#	$1 is for the absolute listing option -d 
+#	which is also the .txo absolute summary option
+#	passed forward in links
+
+masmx image -lnxkzy system $1 > mlist.txt
+
+if [ ! -e "system.txo" ]
+then
+	echo
+	echo	assembly error: system.txo not generated
+	echo	outputs cleaned except sysimage.rom is unchanged
+	exit
+fi
+masmx -wk syslabel syslabel
+pushd ../lib
+./make $1
+cd ../fs
+./make	-d
+cd ../drivers
+./make	$1
+popd
+
+masmx minimal -lnbxk $1 >> mlist.txt
+
+if	[ ! -e "absolute.txo" ]
+then
+	echo
+	echo	assembly error: absolute.txo not generated
+	echo	some outputs cleaned. sysimage.rom stays unchanged
+	exit
+fi
+
+./mcorefs >> mlist.txt
+masmx adcorefs minimal -ulnkxX >> mlist.txt
+lstring -b minimal.txo minimal
+slab -v minimal minimal.rom 40 -k
+
+diff -w --brief system.zak system.txo
+diff -w --brief corefs.zak corefs.txo
+cmp corefsab.zak corefs.abs
+diff -w --brief minimal.zak minimal.txo
+cmp minimals.zak minimal
+cmp minimalr.zak minimal.rom
+
+if	[ "$1" != "-d" ]
+then
+echo	option ./micro -d for optimal view of memory map in mlist.txt
+echo	-d option also writes expected summaries in output binary minimal.txo
+fi
+

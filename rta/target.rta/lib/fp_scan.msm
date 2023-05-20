@@ -1,0 +1,328 @@
+
+$(0)
+fscan			. READ_START in read_stream_start
+fscans	lcal	advance
+
+	z	SIGNS
+	z	SCALE
+	z	SCALE_TRIPPED
+	z	TRIPLE
+	z	TRIPLE+1
+	z	TRIPLE+2
+
+	anu	'-',,xi
+	jnzb	plus?
+	n	SIGNS
+	j	read_number_string
+
+plus?	anu	'+',,xi
+	jnzb	first_digit
+
+read_number_string
+	READ_BYTE
+
+first_digit
+	lb, xi	0
+	lx, xi	6
+	lcal	read5
+
+	lr, xi	6
+	jxge	adjust_scale_no6	. got no digits
+					. result registers are zero
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
+	sb	11
+
+	tz	x
+	j	adjust_scale
+	lcal	read6
+	jxge	adjust_scale_no6	. got no more digits
+					. got 1 to 6 digits
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
+	sb	7
+	z	6
+	lb	11
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
+	mf	(1000000)
+	$endif
+
+	da	6
+	ds	10
+
+	tz	x
+	j	adjust_scale
+	lcal	read6
+	jxge	adjust_scale_no6	. got no more digits
+					. got 1 to 6 digits
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
+	sb	7
+	lb	11
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
+	mf	(1000000)
+	$endif
+
+	da	6
+	sb	11
+	sa	7
+	sc	6
+	lb	10
+
+	$if	$FINESSE
+	mf	(1000000, 100000, 10000, 1000, 100, 10h), x
+	$else
+	mf	(1000000)
+	$endif
+
+	da	6
+	ds	9
+
+	tz	x
+	j	adjust_scale		. last frame < 6 digits
+
+	lx, xi	3
+	lcal	read3
+	lr, xi	3
+	jxge	adjust_scale_no3	. got no more digits
+
+	$if	$FINESSE
+	tz	x
+	lcal	diminish6
+	$endif
+
+	sb	7			. got 1 2 or 3 digits
+	z	6
+
+	lb	11
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
+	mf, xi	1000
+	$endif
+
+	da	6
+	sb	11
+	sa	7
+	sc	6
+	lb	10
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
+	mf, xi	1000
+	$endif
+
+	da	6
+	sb	10
+	sa	7
+	lb	9
+
+	$if	$FINESSE
+	mf	(1000, 100, 10t), x
+	$else
+	mf, xi	1000
+	$endif
+
+	ab	7
+	sb	9
+
+	tz	x
+	j	adjust_scale		. last frame < 3 digits
+
+	la	LAST_BYTE_READ
+	$if	'e'^='E'
+	anu, xi	'e'
+	jzb	adjust_scale		. it was not 3 digits
+	$endif
+	anu, xi	'E'
+	jzb	adjust_scale
+
+
+	lcal	skate		. 21 digit columns is enough
+				. just weigh the rest of them
+
+adjust_scale
+	$if	$FINESSE=0
+	lb	SCALE
+	anb	x
+	sb	SCALE
+	$endif
+
+adjust_scale_no3
+adjust_scale_no6
+	
+	call	(u72tofloat)
+	la	LAST_BYTE_READ
+
+	$if	'e'^='E'
+	anu, xi	'e'
+	jzb	e_string_scan
+	$endif
+
+	anu, xi	'E'
+	jzb	e_string_scan
+
+	lb, xi	0
+	j	e_string_noscan
+
+e_string_scan
+	lcal	e_string
+e_string_noscan
+	ab	SCALE
+	tp	SCALE		. it's 1s complement
+	ab, xi	1		. because it's shared with SCALE_TRIPPED
+
+	jzb	noscale
+	call	(floating_scale)
+	qs	8
+noscale
+
+.	lcal	repoussez	. unconsume the byte
+				. which ended the scan
+.				. should not need this
+	ql	8
+	fret	0
+
+
+read6	lx, xi	6		. start the order of number *100000
+read3	lb, xi	0		. and the sum at zero
+read1	READ_BYTE
+read5	aa, xi	-'0'-10		. > symbol '9' in the data code
+				. of this assembly?
+	jc	over		. if so, it is not a digit
+	aa, xi	10		. if not, is it under '0'?
+	jnc	under		. then it is not a digit either
+	ax, xi	-1		. count down and address the value list
+	ex	table_add, x	. add
+	tp	SCALE_TRIPPED	. if in fraction, reduce scale
+	dec	SCALE		. as order of mantissa increases
+	tz	x		. last column in six?
+	j	read1
+	lret	0
+
+	$if	'.'>'9'		. is point > digits in the data code
+				. of this assembly?
+over
+	aa, xi	'0'+10-'.'	. if so we might have a point
+	jnza	out		. otherwise the number string is concluded
+	n	SCALE_TRIPPED	. switch on fraction
+	j	read1		. carry on
+under
+out	lret	0
+	$endif
+
+	$if	'.'<'0'		. is point < digits in the data code
+under				. of this assembly?
+	aa, xi	'0'-'.'		. if so we might have a point
+	jnza	out		. otherwise conclude the number string
+	n	SCALE_TRIPPED	. switch on fraction
+	j	read1		. carry on
+over
+out	lret	0
+	$endif
+
+				. this routine slides over any
+				. digits in the number string after
+				. the first 21. Integer digits cause
+				. the exponent to go up
+
+skate	READ_BYTE		. read extra digits, increment scale
+				. if this is still the integer part
+
+	anu, xi	'0'+10		. is this byte > '9'
+	jc	skate_over	. it's not a digit in this case
+	anu, xi	'0'		. is it < '0'
+	jnc	skate_under	. then it's not a digit either
+	tp	SCALE_TRIPPED	. it's a digit. Are we integer or fraction?
+	j	skate		. we're in the fraction drop the extra digit
+	inc	SCALE		. we're in the integer, up the decimal scale
+	j	skate		. and then drop the digit
+
+	$if	'.'>'9'		. is point > than the digits
+				. in the data code of this assembly?
+skate_over
+	anu, xi	'.'		. then it might be a decimal point
+	jnzb	skate_away	. but if not the string is concluded
+	n	SCALE_TRIPPED	. turn on the fraction
+	j	skate		. and carry on
+skate_under
+skate_away
+	lret	0
+	$endif
+
+	$if	'.'<'0'		. is point < than the digits in the
+				. data code of this assembly?
+skate_under			
+	anu, xi	'.'		. if so this might be a point
+	jnzb	skate_away	. if not conclude the string
+	n	SCALE_TRIPPED	. switch on fraction
+	j	skate		. and carry on
+skate_over
+skate_away
+.	sa	LAST_BYTE_READ
+	lret	0
+	$endif
+
+e_string
+	READ_BYTE
+	lb, xi	0
+	aa, xi	-'+'
+	jza	free_ip
+	aa, xi	'+'-'-'
+	jza	free_in
+	aa, xi	'-'-'0'-10
+	j	free_iq
+
+free_in
+	lcal	free_ip
+	n	b
+	inc	b
+	lret	0
+
+free_ip	READ_BYTE
+
+	aa, xi	-'0'-10
+free_iq	jc	free_ix
+	aa, xi	10
+free_ia	jnc	free_ix
+	sbl	1
+	aa	b
+	sbl	2
+	ab	a
+	j	free_ip
+free_ix	lret	0
+
+
+symbol		. READ_START in read_stream_start
+	la	LAST_BYTE_READ
+	j	blank_symbol?
+
+next_symbol
+	READ_BYTE
+blank_symbol?
+	anu, xi	' '
+	jzb	next_symbol
+	anu, xi	HORIZONTAL_TAB
+	jzb	next_symbol
+	anu	CR,,xi
+	jzb	next_symbol
+	anu	LF,,xi
+	jzb	next_symbol
+	fret	0

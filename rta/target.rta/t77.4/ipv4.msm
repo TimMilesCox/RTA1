@@ -1,0 +1,655 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+HEADER_LONGWORDS $equ	d$save	. 16 used in receive
+TP_HEADER	$equ	d$save1	. 17 used in receive and transmit
+
+I_F_IDX		$equ	10	.   used in receive
+UPROTOCOL_BYTES	$equ	11	.   used in receive
+
+I_F_P		$equ	8	. used in receive
+FLAGS_FRAGMENT	$equ	8	. used in receive
+
+. TX_AXW		$equ	8	. used in transmit
+. TX_FRAME	$equ	9	. used in receive and transmit
+
+HEADER_BYTES	$equ	d$save	. 16 used in transmit
+. MTU		$equ	d$save1	. 17 used in transmit
+I_F		$equ	d$save2	. 19 used in transmit
+
+TX_FLAG_OFFSET	$equ	10	. used in tranmsit
+. TX_DATAGRAML	$equ	11	. used in transmit = unfragmented datagram
+				. generated in interfaces = xmitted frame
+
+DYNAMIC_IP_HEADER $equ	0
+		. if IP header length cannot be known at socket layer
+		. then make this a multiple of 4 > 20 and < 64
+		. to give a fixed large space for IP to add header
+		. options
+
+		. otherwise IP header size is fixed when the socket
+		. layer acquires a buffer
+
+$(71::,sp)
+dgram	datagram
+
+$(70::,fp)
+descriptor acw
+
+$(66::,x)
+ifaddr  netv4
+
+$(66::, x)
+ro	route
+
+$(66::, x)
+nframe	netframe
+
+$(1)
+
+
+	$include	routes
+	$include	netaddr
+
+$(0)
+
+ipv4
+	$if	IPV4_FRAGMENTED_DGRAMS
+	lcal	ipv4_fragment:timeouts
+	$endif
+
+	lret	0
+
+construct_xdgram
+			. id is obtained
+			. the datagram is as first+final
+			. i.e without regard to the MTU
+			. and it might later get fragmented
+			. on transmission and / or get
+			. IP header options modified
+
+			. so it is not checksummed here
+
+			. in the case of dual-ported
+			. buffer interfaces, checksum
+			. happens as the IP headers
+			. are transferred from interface
+			. queues to device buffers
+
+			. the descriptor is in X
+			. and the datagram is in Y
+
+	dl	ipOutRequests:i
+	da	(1:d)
+	ds	ipOutRequests:i
+	andB	(00FFFF)
+	sb	dgram:id, y
+	lb	dgram:vers_ihl_tos, y
+	sbr	8-2
+	andB,xi	15*/2
+	sb	HEADER_BYTES
+	ab	descriptor:bytes, x
+	la	dgram:flags_fragment, y
+	and, xi	IP_DNF
+	sa	dgram:flags_fragment, y
+	z	dgram:checksum, y
+	lret	0
+
+.	vector name is __iproute
+.	target address is in 6:7
+.	return is a route at x->
+
+
+.	vector name
+
+ip_route_advance		. the target network address is in 6:7
+
+				. this is called if udp sendto does not
+				. have a from-address available, which
+				. would prevent checksum
+	lcal	ip_route
+				. the from-address is the default local
+				. address of the interface of the route
+	fret	0
+
+
+ip_route
+	lx	route_list
+ip_next_route
+	dl	ro:mask
+	and	6
+	andB	7
+	dan	ro:net
+	jdz	ip_route_x
+	lx	ro:next
+	tz	x
+	j	ip_next_route
+	lx, xi	route_(ROUTES)	. this should not happen
+ip_route_x
+	lret	0
+
+.	ip_send is a far call (ipsend) to allow a raw socket interface
+
+
+ip_send				. destination is already in 6:7
+
+				. temporary change to IP task B1
+				. goes here
+
+	la, xi	VECTOR_B1(1)
+	ii	KERNEL$B1
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+	lcal	construct_xdgram
+	sy	TX_DATAGRAM
+
+	sx	8		. the descriptor
+	andB	(03FFFFF)	. reassembled datagram length
+				. i.e first IP header + payload
+
+				. a contains DNF flag or not
+
+	ds	10		. IP_DNF:datagramreassembledlength
+
+	lcal	ip_route
+				. on the emulated machine routing picks
+				. an emulated interface
+				. but does not really choose the
+				. the next hop. It is always as if
+				. the route were direct
+
+	lr	ro:i_f
+
+	dl	6		. direct route = next_hop is destination
+	tp	r
+	dl	ro:next_hop	. indirect route = gateway from route table
+
+
+
+	ly	8		. the descriptor
+	lx	descriptor:frame, y
+				. route table not now visible
+
+	ds	nframe:next_hop, x	. that's used later
+				. when we need to do ARP
+				. network address of next hop
+
+	sx	TX_FRAME
+
+	la	r		. the interface #
+	jnza	ip_homed_route
+	ly	TX_DATAGRAM
+	dl	dgram:ipsource, y
+	lcal	ip_source_ifidx	. the route is not homed
+				. ifidx must be obtained from ip source address
+	jnza	ip_homed_route
+	lb, xi	-NO_PATH	. that didn't work either. Count or bad result in b
+	j	ip_send_x	. should maybe think about
+				. freeing output buffers on send fail
+				. when not TCP
+ip_homed_route
+
+	and, xi	32767
+	aa, xi	i_f_pointer_array
+
+	lx	0, a		. the interface pointer address
+	sx	I_F
+
+	$if	1		. do source fragmentation in advance
+				. at datagram acquisition
+	dl	10		. DNF flag, length
+	push	this_if:mtu
+	pop	MTU
+	jza	ip_send_now
+
+	la	MTU
+	ana	b
+
+	la	8		. the descriptor
+	jc	ip_send_now1
+
+.	lcal	net_free_txbx	. leave it to source fragmentation
+.	lb, xi	-OVERSIZE
+.	j	ip_send_x
+
+	$endif
+
+ip_send_now
+	la	8		. the descriptor
+ip_send_now1
+
+	push	11
+	lcal	ipq_write
+
+	pop	b
+
+ip_send_x
+				. call before return B1$ takes B1
+				. from caller's vector bank
+				. so if you nest calls that both
+				. change to a service B1
+				. you may have to repeat KERNEL$B1
+				. but you are not likely to do this
+
+
+	ii	B1$		. if the caller is a protocol in this task,
+	fret	0		. the IP task, it's the same B1
+				. otherwise it isn't
+
+
+.	ipv4_rx, input driver for a system with fixed dual ported
+.	interface buffers
+
+.	this is an upward call from routine frames
+
+.	copying to socket-visible buffers is combined with
+.	checksumming
+
+.	each word in the interface buffers is read only once
+
+.	ipv4_rx pushes and checks the IP headers in the
+.	internal stack, which is a register array
+
+.	upper protocols obtain a buffer, then pop the IP headers
+.	into it ahead of their own protocol message for
+.	checksumming during transfer
+
+
+ONE_TIME_SAVE1	$equ	x$save1
+
+ipv4_rx
+	$if	1
+	ii	ONETIME_SAVE$
+	$else
+	lx	sp	
+	sx	ONE_TIME_SAVE1
+	$endif
+
+	MIB_ICOUNT48	ipInReceives:i
+	
+	$if	IPV4_OVERHAUL
+
+	la	IPV4_OVERHAUL,,xi
+	ana	r		. calculate internal stack load # words
+
+	jnc	dgram_load(IPV4_OVERHAUL/8)
+	sar	3		. # blocks of 8 octets rounded up
+	j	dgram_load(IPV4_OVERHAUL/8), a
+
+?	$do	IPV4_OVERHAUL/8,dgram_load(IPV4_OVERHAUL/8-?+1)	;
+	qpush	IPV4_OVERHAUL/2-4*?, y
+
+	la	r		. frame large enough for datagram?
+	ana	dgram:bytes
+	jnc	ipv4_rxz
+
+	la	dgram:vers_ihl_tos
+	dsr	12
+	aa	-4,,xi		. is the header IPv4?
+	jnza	ipv4_rxz	. otherwise forget it
+
+	sbr	20
+	sb	HEADER_LONGWORDS
+	ab	-5,,xi		. does it have >= minimal IP header?
+	jnc	ipv4_rxz	. not much use otherwise
+
+	lb	HEADER_LONGWORDS
+	sbl	1
+
+	ab	sp
+	sb	TP_HEADER
+
+	lb	15,,xi		 . maximum IP header words
+	anb	HEADER_LONGWORDS . scratch registers are jerst wonderful
+	lx	b
+
+	lk	dgram:checksum
+	z	dgram:checksum
+	dl	dgram:vers_ihl_tos	. addend the first
+
+	j	ipv4_qcheckin(15-1), x
+
+?	$do	15-1,;
+ipv4_qcheckin(15-?)	da	dgram:vers_ihl_tos+15*2-?*2	. add 2 words[28..2]
+
+	lcal	check_complete
+
+	xorB	k		. is it the same?
+	jnzb	ipv4_rxz
+
+	sk	dgram:checksum	. put the checksum back
+				. in case ICMP fires it all back with a DU
+
+
+	dl	dgram:ipdest
+	lx	I_F_P		. interface structure pointer
+	lcal	ipv4_forus?
+	j	ipv4_yesforus
+	tz	ipForwarding:i
+	lcal	ipv4_forward	. don't come back from that
+	j	ipv4_yesforus	. unless forwarding to local host
+
+	MIB_ICOUNT48	ipInAddrErrors:i
+	j	ipv4_rxz
+
+ipv4_yesforus
+	la	dgram:flags_fragment
+	and	IP_MORE++IP_OFFSET_MASK,,xi
+
+	$if	IPV4_FRAGMENTED_DGRAMS
+	jnza	ipv4_fragment
+	$else
+	jnza	ipv4_rxz
+	$endif
+
+. ipv4_rxbuffer_rq
+
+	lb	dgram:bytes
+	la	HEADER_LONGWORDS
+	sal	2
+	anb	a		. upper protocol byte count
+
+	la	dgram:ttl_protocol
+	and	255,,xi		. checksum seed for upper protocol
+	ds	6		. protocol:segment size for checksum in 6:7
+
+	sb	UPROTOCOL_BYTES
+	la	dgram:bytes
+	ana	IPV4_OVERHAUL,,xi		.
+	jc	ipv4_uprotocol_checksum_addresses
+
+ipv4_round_stack_word		. turn off non-counted octets
+	la	0,,xi		. IP payload octet count is in b
+	drr	2		. now longword count is in b
+	sbl	1		. 2 * longwords - 1 = words - 2
+	sar	22		. and octet remainder in a
+	jza	ipv4_count_check . don't look outside the last longword of dgram
+
+	lx	TP_HEADER
+	ax	b
+	lr	(0, 32, 16, 8q), a
+	dl	0, x
+	dsr	*r		. turn off some octets
+	dsl	*r		. in the last longword in the checksum
+	ds	0, x
+	
+ipv4_count_check
+
+. ipv4_uprotocol_checksum		. checksum all that is in the internal stack
+ipv4_uprotocol_checksum_addresses
+	dl	6		. payload protocol : octet count
+	da	dgram:ipsource
+	da	dgram:ipdest
+
+. ipv4_checksum_udata_next
+
+	ds	6		. there may be more in the interface buffer
+
+ipv4_uproto_rx
+	la	dgram:ttl_protocol
+	and	255,,xi
+	lx	TP_HEADER
+
+	aa	-IPPROTO_UDP,,xi
+	jza	udp_rxq
+	aa	IPPROTO_UDP-IPPROTO_TCP,,xi
+	jza	tcp_rxq
+	aa	IPPROTO_TCP-IPPROTO_ICMP,,xi
+	jza	icmp_rxq
+
+	j	icmp_noproto
+
+	$else			. IPV4_OVERHAUL 
+
+	$endif		. not IPV4_OVERHAUL
+
+ipv4_drop
+	la	fp
+	lx	rx_buffers
+	tz	x
+	lcal	sell1
+
+			. this was acquired to simplify the
+			. task for the upper protocol
+			. but we can give it back now:
+			. the protocol requested is not
+			. on offer
+
+. the upper protocol receive routines can jump here to finish
+. but they need not.
+
+. they do need to restore K and SP in the same way as this
+
+ipv4_rxz
+	lx	ONE_TIME_SAVE1
+	sx	sp
+	lret	0
+
+ip_buy_datagram
+	lx	tx_buffers
+ip_buy_datagram_alternate	. buying in a private bank (large volume TCP)
+	push	b
+	sbr	7	. version / header L / TOS word
+	andB,xi	30	. number of words in header
+	lr	b	. length of IP header in words
+	aa, xi	ROUTING_HEADER*2+1	. routing buffer + rounding
+	sar	1	. number of words in IP payload
+			. + routing header
+	aa	b	. number of words in buffer
+
+.	lx	tx_buffers
+
+	lcal	buy1
+	pop	b
+	jza	ip_no_txbuffer
+
+	lx	descriptor:frame, a
+	z	0, x	. routing buffer
+	z	1, x
+	z	2, x	. default destination
+
+	push,xi IP
+	pop	nframe:llh:generic:protocol
+
+	z	nframe:stack_index
+
+	ax, xi	ROUTING_HEADER
+	sx	descriptor:dgram, a
+	sx	TX_DATAGRAM
+	sb	dgram:vers_ihl_tos, x
+	z	dgram:flags_fragment, x
+	z	dgram:ipsource, x
+	z	dgram:ipsource+1, x
+	z	dgram:ipdest, x
+	z	dgram:ipdest+1, x
+
+	z	descriptor:i_f, a
+
+	ax	r	. length of IP header in words
+	sx	descriptor:uproto, a
+	sx	TP_HEADER
+ip_no_txbuffer
+	lret	0
+
+	$if	0
+net_free_txbx
+	lk	(63*/18:s)
+	lx	(A$TXBUFFB*/18:s)
+	mta	x
+	j	net_free_txb
+	j	sell1
+	$endif
+
+ipv4_forus?
+	lcal	ipv4_address_this_if?
+	lret	0	. yes for us
+	tz	ipForwarding:i
+	lcal	ipv4_address_this_host?
+	lret	1	. not for us
+	lret	0	. yes for is
+		
+
+ipv4_forus!
+	lret	0	. = yesforus
+			. ipForwarding and an address
+			. on our interfaces? 
+			. also queue it inward
+
+ipv4_address_this_if?
+	ds	6
+	lx	this_if:address_list
+ipv4_address_test
+	la	ifaddr:i_f
+	aa, xi	-1
+	jza	ipv4_next	. not an external i/f
+	dl	ifaddr:net
+	dan	6
+	jdz	ipv4_address_hit
+ipv4_next
+	lx	ifaddr:next
+	tz	x
+	j	ipv4_address_test
+	lret	1	. not for us
+ipv4_address_hit
+	lret	0	. yes for us
+
+ipv4_address_this_host?
+	lx	net_alexical
+ipv4_test_in_list
+	la	ifaddr:i_f
+	aa, xi	-1
+	jza	ipv4_nex	. not an external i/f
+	dl	ifaddr:net
+	dan	6
+	jdz	ipv4_list_hit
+ipv4_nex
+	lx	ifaddr:lexical
+	tz	x
+	j	ipv4_test_in_list
+	lret	0	. not for us
+ipv4_list_hit
+	lret	1	. yes for us
+	
+
+
+ipv4_forward		. unpacked destination is in 6:7
+
+	lcal	ip_route
+	dl	ro:next_hop
+	jdz	ipv4_zforward	. special case
+	
+
+			. we only get here if it's not
+			. an address anywhere on this host
+			. and ipForwarding is on
+
+                        . first route the destination
+                        . don't route anything out 
+                        . on the interface it came in
+                        . that behaviour is loopy
+
+			. also do not forward stuff
+			. to your own loopback address
+			. or any alias which it has
+
+			. fine we haven't assigned it
+			. to input space
+
+			. assign it to output space
+			. instead
+
+.	la	dgram:bytes
+.	aa, xi	1	. # octets to # octet pairs
+.	sar	1
+.	lx	tx_buffers
+.	lcal	buy1
+.	jza	ipv4_xforward
+
+ipv4_xforward		. abandon the dgram
+	lret	1
+
+ipv4_zforward		. special case
+	lret	0	. local destination is any address in subnet
+			. accept on interface of arrival
+
+ip_source_ifidx
+	dpush	a
+	la	net_alexical		. this chain may be lexically ordered
+ip_source_next				. anyway it contains all of them
+	jza	ip_source_no
+	ly	a
+	dl	0, sp
+	dan	ifaddr:net, y
+	jdz	ip_source_yes
+	la	ifaddr:lexical, y
+	j	ip_source_next
+ip_source_yes
+	la	ifaddr:i_f, y
+ip_source_no
+	sa	0, sp
+	dpop	a
+	lret	0
+
+
+.	vector name ipv4_4us?
+
+ipv44us?
+	lcal	ipv4_forus?
+	fret	0
+	fret	1
+
+.	vector name ipv4_this_if?
+
+ipv4thisif?
+	lcal	ipv4_address_this_if?
+	fret	0
+	fret	1
+
+.	vector_name ipv4_this_host?
+
+ipv4thishost?
+	lcal	ipv4_address_this_host?
+	fret	0
+	fret	1

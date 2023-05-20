@@ -1,0 +1,58 @@
+.	diagnostic call to see if parts of an IP header
+.	heve got overwritten
+
+.	if it goes to GUARD$ interrupt
+.	8 caller registers [ r k x y a b 6 7 ]
+.	are on the application internal stack
+.	otherwise no registers are changed
+
+.	$do	1,	c	(__recheck)	address[,,i]
+
+
+recheck	$tree
+	$head_far	 params(datagram_p,	int)		;
+								;
+			scalars(caller_ab67,	float,	a	;
+				caller_rkxy,	float,	r	)
+
+	lx	datagram_p		. pointer
+	la	0, x
+	dsr	8
+	lk	-16,,xi
+	mta	(000040)		. 1st quartet 4 ?
+	j	recheck_reject
+	and	15,,xi
+	aa	-5+2-1,,xi		. enough longwords
+	jnc	recheck_reject		. to be an IP header?
+	lr	a
+	
+	dl	0, x			. version_hl_tos : size
+	da	2, x			. dgram_id : dnf+ 
+
+addons	da	6, x			. word pairs
+	ax	2,,xi			. starting addresses
+	jdr	addons			. + up to 10 more pairs
+
+	lx	datagram_p		. reload pointer
+	aa	4, x			. include  ttl_protocol
+
+addaround
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	addaround
+
+	xorB	(00FFFF)
+	xorB	5, x
+
+	jnzb	recheck_reject
+
+	qpop	r
+	qpop	a
+	fret	0
+
+recheck_reject
+	ii	GUARD$
+
+	$root
+

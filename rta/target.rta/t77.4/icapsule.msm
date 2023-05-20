@@ -1,0 +1,109 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+ACTIVITY_SPACE		$equ	1		. milliseconds to keep looking for more work
+REST_GRANULE		$equ	1000000/2000	. microseconds to rest while no work
+						. repeated until some work
+$(3)
+
+akt	+	ACTIVITY_SPACE:d		. for plugitinisation
+takt	+	CHILLDOWN, REST_GRANULE:d	. from the console
+
+activity_revision +	0L
+
+	$if		DRIVERS_BANK1
+$(67::, y)
+networkframe	delivery
+	$endif
+
+$(0)
+
+iattend	lr	i_f_last		. find trunk-master interfaces
+	lx	interface(1),,xi	. from (2) to i_f_last
+
+iattendu
+	ax	interface(2)-interface(1),,xi
+	la	this_if:flags
+	jza	iattended		. next i / f otherwise
+	tz	this_if:oq.head		. simple general TX queue?
+	lret	0			. yes, keep running
+	dl	this_if:ift1:base_rx
+	ii	XBASE$32
+	tz	networkframe:flag, b	. RX frames in trunk?
+	lret	0			. keep running
+
+	tz	this_if:oq2:head:bx	. high volume tx frames ?
+	lret	0			. yes, keep running
+iattended
+	jxge	icool			. trunk-master I/Fs all walked?
+	j	iattendu		. no
+icool	lret	1			. yes
+
+icapsule
+	ii	YIELD$			. let other threads ahead
+	lcal	iattend			. traffic rx / waiting tx?
+	j	icarryon		. yes
+
+	dl	activity_revision	
+	dan	DAYCLOCK$U		. 
+	jpa	icarryalong		. keep going
+					. but don't move the time out
+
+	. continuous execute frame end and no net activity
+	. do a granule of cool
+
+	la	-1,,xi
+	ii	ENERGY$			. advise other cores to cool of they want
+					. and if they pass thru thread switch
+	dl	takt
+	outB	chill$down
+	outA	INDICATION$		. a granule of chill
+
+	la	0,,xi
+	ii	ENERGY$			. advise other cores to go for it
+	lret	0			. don't restart execution timeframe
+
+icarryon				. restart continuous time frame
+	dl	DAYCLOCK$U
+	da	akt			. (ACTIVITY_SPACE:d)
+					. change from literal to variable
+	ds	activity_revision
+
+icarryalong
+	lret	0

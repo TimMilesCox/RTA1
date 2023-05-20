@@ -1,0 +1,611 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+IFNUMBER_I* $set	ifNumber:i
+
+$(1)
+
+ifagent_i24	mobjet	0	0	SNMP_INT	3	1 
+ifagent_string	mobjet	0	2	SNMP_STRING	18	1
+ifagent_string48 mobjet	0	6	SNMP_STRING	6	1
+ifagent_t48	mobjet	0	9	SNMP_TIMETICKS	6	1
+ifagent_g48	mobjet	0	5	SNMP_GAUGE	5	1
+ifagent_c48	mobjet	0	0	SNMP_COUNTER	6	1
+ifagent_onone	mobjet	0	22	SNMP_OID	2	1	;
+			0	0	ifagent_onone
+ifagent_p48	0L
+
+$(0)
+
+ifagent_idx	$head_far	 params(ifidxseq,	int	;
+					ifidxflags,	int	;
+					ifidxroutine,	int)
+
+	lb	ifidxseq
+	la	ifidxroutine
+	ana, xi	SNMP_GETREQ
+
+	jza	ifagent_this_row
+	lcal	ifagent_find_next_if
+
+	j	ifagent_row?
+
+ifagent_this_row
+	lcal	ifagent_find_i_f
+ifagent_row?
+	jzb	ifagent_noidx
+
+	la, i	this_if:id, b
+	sa	ifagent_i24:data
+
+	la	0, a
+
+	lb	ifidxseq
+	sa	9, b
+
+
+	la, xi	1
+	sa	ifagent_i24:seq
+
+.	la, xi	9
+.	sa	1, b
+
+	lb, xi	ifagent_i24
+
+ifagent_noidx
+	fret	0
+
+stril	lk, xi	+(1*/$byte)-1
+	lb, xi	0
+	sa	6
+strilw*	la	*6
+	inc	6
+	ab, xi	$word/$byte
+	mta	(0)
+	j	strilw
+
+	or, xi	1
+
+strail	ab, xi	-1
+	rar	$byte
+	mta	(0)
+	lret	0
+	j	strail	
+
+
+ifagent_descr	$head_far	 params(ifdescseq,	int	;
+					ifdescflags,	int	;
+					ifdescroutine,	int)
+
+	lb	ifdescseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nodescr
+
+	la, i	this_if:description, b
+	sa	ifagent_string:data
+
+	push	this_if:description_bytes, b
+	pop	ifagent_string:bytes
+
+.	lb	ifdescseq
+	la, xi	2
+.	sa	10, b
+	sa	ifagent_string:seq
+
+	lb, xi	ifagent_string
+ifagent_nodescr
+	fret	0
+
+
+ifagent_type	$head_far	 params(iftypseq,	int	;
+					iftypflags,	int	;
+					iftyproutine,	int)
+
+	lb	iftypseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_notype
+
+	la, i	this_if:type, b
+	sa	ifagent_i24:data
+
+.	lb	iftypseq
+	la, xi	3
+.	sa	10, b
+	sa	ifagent_i24:seq
+
+	lb, xi	ifagent_i24
+ifagent_notype
+	fret	0
+
+
+ifagent_MTU	$head_far	 params(ifmtuseq,	int	;
+					ifmtuflags,	int	;
+					ifmturoutine,	int)
+
+	lb	ifmtuseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noMTU
+
+	la, i	this_if:mtu, b
+	sa	ifagent_i24:data
+
+.	lb	ifmtuseq
+	la, xi	4
+.	sa	10, b
+	sa	ifagent_i24:seq
+
+	lb, xi	ifagent_i24
+ifagent_noMTU
+	fret	0
+
+
+ifagent_speed	$head_far	 params(ifrateseq,	int	;
+					ifrateflags,	int	;
+					ifrateroutine,	int)
+
+	lb	ifrateseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nospeed
+
+	la,i	this_if:bitrate, b
+	sa	ifagent_g48:data
+
+.	la, xi	5
+.	lb	ifrateseq
+.	sa	10, b
+
+	lb, xi	ifagent_g48
+
+ifagent_nospeed
+	fret	0
+
+
+ifagent_phy	$head_far	 params(ifphyseq,	int	;
+					ifphyflags,	int	;
+					ifphyroutine,	int)	;
+				scalars(ifphycaller_x,	int, x)
+
+	lb	ifphyseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nophy
+
+	lx	b
+	dl	this_if:physa		. BER editing wants this
+	sbl	8			. in internal format
+	dsl	8			. and it's in network format
+	lk	(00FFFF)
+	mlb	this_if:physa+2		. BER turns it back into network 
+	ds	ifagent_p48		. format, but packing it here is
+	la	ifagent_p48,,xi		. less extra code than adding an
+					. extra data type to BER
+	sa	ifagent_string48:data
+
+.	la, xi	6
+.	lb	ifphyseq
+.	sa	10, b
+
+	lb, xi	ifagent_string48
+
+ifagent_nophy
+	pop	x
+	fret	0
+
+
+ifagent_admins	$head_far	 params(ifastaseq,	int	;
+					ifastaflags,	int	;
+					ifastaroutine,	int)
+	lb	ifastaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noadmins
+
+	la, i	this_if:state, b
+	sa	ifagent_i24:data
+
+.	lb	ifastaseq
+	la, xi	7
+.	sa	10, b
+	sa	ifagent_i24:seq
+
+	lb, xi	ifagent_i24
+
+ifagent_noadmins
+	fret	0
+
+
+ifagent_osta	$head_far	 params(ifostaseq,	int	;
+					ifostaflags,	int	;
+					ifostaroutine,	int)
+
+	lb	ifostaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noosta
+
+	la, i	this_if:state, b
+	sa	ifagent_i24:data
+
+	la, xi	8
+.	lb	ifostaseq
+.	sa	10, b
+	sa	ifagent_i24:seq
+
+	lb, xi	ifagent_i24
+
+ifagent_noosta
+	fret	0
+
+
+ifagent_lastc	$head_far	 params(iflcseq,	int	;
+					iflcflags,	int	;
+					iflcroutine,	int)
+	lb	iflcseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nolastc
+
+	la, i	this_if:lastchange, b
+	sa	ifagent_t48:data
+
+.	lb	iflcseq
+	la, xi	9
+.	sa	10, b
+	lb, xi	ifagent_t48
+
+ifagent_nolastc
+	fret	0
+
+
+ifagent_ibytes	$head_far	 params(ifibytseq,	int	;
+					ifibytflags,	int	;
+					ifibytroutine,	int)
+
+	lb	ifibytseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noibytes
+
+	la, i	this_if:inoctets, b
+	sa	ifagent_c48:data
+
+	la, xi	10
+.	lb	ifibytseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noibytes
+	fret	0
+
+
+ifagent_iucast	$head_far	 params(ifiucaseq,	int	;
+					ifiucaflags,	int	;
+					ifiucaroutine,	int)
+
+
+	lb	ifiucaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noiucast
+
+	la, i	this_if:inpackets, b
+	sa	ifagent_c48:data
+
+	la, xi	11
+.	lb	ifiucaseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noiucast
+	fret	0
+
+
+ifagent_imcast	$head_far	 params(ifimcaseq,	int	;
+					ifimcaflags,	int	;
+					ifimcaroutine,	int)
+
+
+
+	lb	ifimcaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noimcast
+
+	la, i	this_if:inmcast, b
+	sa	ifagent_c48:data
+
+	la, xi	12
+.	lb	ifimcaseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noimcast
+	fret	0
+
+
+ifagent_idrops	$head_far	 params(ifidropseq,	int	;
+					ifidropflags,	int	;
+					ifidroproutine,	int)
+
+
+	lb	ifidropseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noidrops
+
+	la, i	this_if:indrops, b
+	sa	ifagent_c48:data
+
+	la, xi	13
+.	lb	ifidropseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noidrops
+	fret	0
+
+
+ifagent_ierrs	$head_far	 params(ifierseq,	int	;
+					ifierflags,	int	;
+					ifierroutine,	int)
+
+
+	lb	ifierseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noierrs
+
+	la, i	this_if:inerrs, b
+	sa	ifagent_c48:data
+
+	la, xi	14
+.	lb	ifierseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noierrs
+	fret	0
+
+
+ifagent_inoproto $head_far	 params(ifinoproseq,	int	;
+					ifinoproflags,	int	;
+					ifinoproroutine, int)
+
+
+	lb	ifinoproseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noinoproto
+
+	la, i	this_if:inoproto, b
+	sa	ifagent_c48:data
+
+	la, xi	15
+.	lb	ifinoproseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noinoproto
+	fret	0
+
+
+ifagent_obytes	$head_far	 params(ifobytseq,	int	;
+					ifobytflags,	int	;
+					ifobytroutine,	int)
+
+
+	lb	ifobytseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noobytes
+
+	la, i	this_if:outoctets, b
+	sa	ifagent_c48:data
+
+	la, xi	16
+.	lb	ifobytseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noobytes
+	fret	0
+
+
+ifagent_oucast	$head_far	 params(ifoucaseq,	int	;
+					ifoucaflags,	int	;
+					ifoucaroutine,	int)
+
+
+	lb	ifoucaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nooucast
+
+	la, i	this_if:outpackets, b
+	sa	ifagent_c48:data
+
+	la, xi	17
+.	lb	ifoucaseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_nooucast
+	fret	0
+
+
+ifagent_omcast	$head_far	 params(ifomcaseq,	int	;
+					ifomcaflags,	int	;
+					ifomcaroutine,	int)
+
+
+	lb	ifomcaseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noomcast
+
+	la, i	this_if:outmcast, b
+	sa	ifagent_c48:data
+
+	la, xi	18
+.	lb	ifomcaseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noomcast
+	fret	0
+
+
+ifagent_odrops	$head_far	 params(ifodropseq,	int	;
+					ifodropflags,	int	;
+					ifodroproutine,	int)
+
+
+
+	lb	ifodropseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_noodrops
+
+	la, i	this_if:outdrops, b
+	sa	ifagent_c48:data
+
+	la, xi	19
+.	lb	ifodropseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_noodrops
+	fret	0
+
+
+ifagent_oerrs	$head_far	 params(ifoerseq,	int	;
+					ifoerflags,	int	;
+					ifoerroutine,	int)
+
+
+
+	lb	ifoerseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nooerrs
+
+	la, i	this_if:outerrs, b
+	sa	ifagent_c48:data
+
+	la, xi	20
+.	lb	ifoerseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+ifagent_nooerrs
+	lb, xi	ifagent_c48
+
+	fret	0
+
+
+ifagent_oqlen	$head_far	 params(ifoqlseq,	int	;
+					ifoqlflags,	int	;
+					ifoqlroutine,	int)
+
+
+	lb	ifoqlseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nooqlen
+
+	la, i	this_if:oqlen, b
+	sa	ifagent_c48:data
+
+	la, xi	21
+.	lb	ifoqlseq
+.	sa	10, b
+	sa	ifagent_c48:seq
+
+	lb, xi	ifagent_c48
+
+ifagent_nooqlen
+	fret	0
+
+
+ifagent_smib	$head_far	 params(ifsmibseq,	int	;
+					ifsmibflags,	int	;
+					ifsmibroutine,	int)
+
+	lb	ifsmibseq
+	lcal	ifagent_find_i_f
+	jzb	ifagent_nosmib
+
+	lb, xi	ifagent_onone
+
+ifagent_nosmib
+	fret	0
+
+ifagent_find_next_if
+	la	1, b
+	aa, xi	-8
+	jc	ifagent_find_another
+	lb, xi	interface(1)
+	lret	0
+
+ifagent_find_another			. you have the instance stem
+	aa, xi	-1
+	jnc	ifagent_find_i_f
+
+	la	9, b			. you have the attribute tag
+	lr, i	1, a			. so increment the instance stem
+	j	ifagent_find
+
+ifagent_find_i_f
+	lr	9, b
+ifagent_find
+	la	i_f_pointer_array
+	anu	r
+	jnc	ifagent_idx_2hi
+	la, xi	i_f_pointer_array
+	aa	r
+	lb	0, a
+	lret	0
+ifagent_idx_2hi
+	la, xi	SNMP_NOSUCHNAME
+	lb, xi	0
+	lret	0

@@ -1,0 +1,242 @@
+$(66::,x)
+fspaxq	fileq
+
+$(1)
+
+startup_osocket_encoding	0L
+
+$(0)
+
+startups	$tree
+
+USTDOUT	$equ	18		. historic assignement message send
+
+	.	vector name initial_startups
+
+initial	ql	(read_startups, 1, 0, THREAD_FP(1)q)
+	ii	THREAD$
+	jza	startupz
+	lb	$3("initial startups":0),,xi
+	ii	TAG$
+
+startupz
+	fret	0
+
+read_startups
+	$head_near	scalars(socko,		int		;
+				config_retry,	int,	40,,xi	)
+
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	no_stdout
+	sa	socko
+	c	(bind)	a	(0L),,long
+	jna	no_stdout
+	la	socko
+	ii	READ_SOCKET$
+	ds	startup_osocket_encoding
+	dl	10
+	sabr	BSOCKET
+	ly	b
+	dl	($net_socket	255.255.255.255:USTDOUT)
+	ds	sbind:remote_address, y
+					. leave an extra gap for ifconfig
+config?	ii	YIELD$			. there should have been one already
+	ql	(00FFFF00FFFFq)
+	call	(__route)
+	tnz	x
+	j	no_stdout		. hopeless and theoretically impossible
+	dl	ro:next_hop
+	tn	ro:i_f			. that's the gateway
+	j	local_address
+
+	dec	config_retry
+	tz	config_retry
+	j	config?
+
+	dl	(00AC1D000707)		. configuration hasn't run
+					. or doesn't have a broadcast route
+local_address
+	ly	11
+	sbl	8
+	dsl	8
+	lk	(00FFFF)
+	mlb	sbind:socket_address+1, y
+	ds	sbind:socket_address, y
+
+	c	(run_start)	$3("/initial/script":0),,xi
+
+no_stdout
+	$ret
+
+.       read consective text lines from the text file at script path
+.	scripts may be nested. A new script name in the text starts /path
+.	other text lines are application names + optional following lines of stdin
+
+.	first stdin line to an application is its own command line
+.	no command except application names and nested /script_path is expected
+.	but stdin text may be commands to applications like shells
+
+.	script execution is sequential to make proper sense
+.	waiting for each started process to finish before reading more text
+.	but you can call run_start from multiple simultaneous threads
+
+run	$head_far	 params(script_path,	int	)	;
+								;
+			scalars(file_position,	long		;
+				siobloc,	int		;
+				zdepth,		int		)
+
+	c	(fspath)	script_path
+	jza	no_run
+	ds	file_position
+
+	c	(fileshare_assign)	(FS$DEVICE$ARRAY,,7s))
+	tnz	x
+	j	no_run
+
+	z	fspaxq:o:column
+	sx	siobloc
+	lc	runfile_scan	zdepth   x   file_position,,long
+
+	lx	siobloc		 . free shared open file state bloc
+	la	7,,xi
+	sa	0, x
+
+no_run	$ret
+
+runfile_scan $head_near	 params(depth,		int		;
+				share_iobloc,	int		;
+				fposition,	long	)	;
+								;
+			scalars(save_fspp,	8,	0, x)	;
+								;
+			 xframe(search_name,	80		;
+				text,		80		)
+
+	inc	depth
+	lx	depth
+	lr	4,,xi
+	jxge	runfile_breakpoint	. 3 nested scripts are plenty
+	
+	lx	share_iobloc
+	z	fspaxq:o:column
+	c	(fs24_open)	share_iobloc	fposition,,long
+
+read_script
+	call	(fileshare_space_open)
+
+.	c	(fs24_snoop)	share_iobloc	text,,i	80,,xi
+	c	(fgets_datafile)	share_iobloc	text,,i	80*3,,xi
+
+	jna	runfile_breakpoint
+	jza	runfile_breakpoint
+
+	dsr	24
+	wsr	24
+
+.	call	(fileshare_space_open)
+.	lx	share_iobloc		. get non-snoop read position in open file
+					. then pull the string left over whitespace
+
+	c	(normal_string)   search_name,,i   text,,i   80*3-3,,xi	0,,xi	. fspaxq:o:column
+
+	jza	read_script		. blank line read past it
+
+	lr	a			. save containing words of extracted token
+
+	la	search_name
+	lk	(255*/$word-$byte:s)
+	mta	('/'*/$word-$byte:s)	. a nested path?
+	j	text_command		. no
+
+					. now consume the snooped text
+.	c	(fgets_datafile)   share_iobloc   text,,i   80*3,,xi
+.	dsr	24
+.	wsr	24			. push last bytes thru WDATA
+					. staging register
+	call	(fileshare_space_open)
+	c	(fspath)	text,,i
+	jza	read_script		. skip silently if you can't find it
+
+	lx	share_iobloc
+	lc	runfile_scan	depth   x   a,,long
+					. recurse within limits
+	j	read_script
+
+text_command
+
+	lx	share_iobloc
+
+	$if	0
+	dl	fspaxq:serialp:absolute_pointer	. mark file position
+	ds	fposition			. in case it doesn't move
+	$endif
+
+	lc	action_command	  x	r	search_name,,i	text,,i
+
+	$if	0
+	lx	share_iobloc
+	dl	fspaxq:serialp:absolute_pointer
+	dan	fposition
+	jdz	text_skip		. so lazy he never read his own name
+	j	read_script
+
+text_skip
+	c	(fgets_datafile)	share_iobloc   text,,i	80*3-3,,xi
+	$endif
+
+	j	read_script
+
+runfile_breakpoint
+	lx	share_iobloc
+	call	(fileshare_space_open)
+	qpop	0, x
+	qpop	4, x			. retrieve the previous file open state
+	push	-80*2,,xi		. clear external stack
+	popA	fp
+	lret	0
+
+
+action_command	 $head_near	 params(share_ioblocp,	int	;
+					textw,		int	;
+					searchp,	int	;
+					textp,		int)	;
+								;
+				scalars(new_process,	int	)
+
+	c	(online_xqt)	textw	searchp
+
+	jza	action_skip
+	jna	action_skip
+	sa	new_process
+
+	sabr	32				. start with the new thread control block
+	ly	textp
+	call	(forward_callstring)		. called app name + arguments
+	la	*(32*/12++ABT+2-01000)		. progress to his vector list
+	sabr	32
+	la	(3*/16)
+	lb	share_ioblocp			. hand over the shared file open state
+	ds	*(32*/12++handle(1)-02000)	. as his stdin
+
+	ii	KERNEL$B1_1			. into kernel 1st B1 block
+	dl	startup_osocket_encoding	. hand over UDP broacast socket encoding
+	ii	B1$				. back to application actual B1 block
+	ds	*(32*/12++handle(2)-02000)	. as his stdout
+	ds	*(32*/12++handle(3)-02000)	. and his stderr
+
+	la	new_process
+action_running?
+	ii	YIELD$
+	ii	THREAD$STATE
+	j	action_concluded		
+	j	action_running?
+
+action_concluded
+action_skip
+	$ret
+
+	$endif
+
+	$root

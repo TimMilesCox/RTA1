@@ -1,0 +1,1158 @@
+
+	$if		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$include	fs/response.def
+	$include	t77.4/dq.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	t77.4/socket.def
+	$path
+	$endif
+
+p	$proc
+XDR_TXLONG* $name
+	dsl	16
+XDR_TXINT* $name
+	dsr	8
+	sbr	8
+	ds	p(1, 1)
+	$end
+
+$(66::,x)
+transmission	tcp_connection
+
+$(70::,fp)
+tcpa	$res	2
+request	xdr_rpcreq
+
+$(70::,fp)
+tcpresp	$res	2
+response xdr_rpcresp
+
+$(67::,y)
+openfile_bloc	filenfs
+
+$(1:*1)
+.	these items are in KERNEL_B1(1)
+.	so switch to KERNEL_B1(1) before touching them
+
+txid			0L	. assembled into kernel B1
+				. do not touch when in application B1
+
+client_port		256L	. privileged ports 256..511
+
+
+		$if	0
+unixauth_v		00000001, 00000018q
+			00000000, 00000000q
+			501,	 20, 1,	20o
+			0q
+
+nullauth_v		0h
+		$endif
+
+$(0)
+
+rpc	$tree			. return a nonzero # that's not the same
+				. as any other # returned from here recently
+				. regardless of cores and threads
+getunique
+	ii	KERNEL$B1_1
+
+	push	7,,xi		. switch interrupt to highest value
+	sim	0, sp
+	ts	txid		. lock
+	j	$-1
+	inc	txid+1		. advance
+	la	txid+1		. then acquire
+	jza	$-2		. don't use zero. The server might not believe it
+	z	txid		. free
+	sim	0, sp		. restore interrupt mask at entry
+	inc	sp
+
+	ii	B1$
+	lret	0
+
+get_client_port
+	ii	KERNEL$B1_1
+
+	push	7,,xi		. switch interrupt mask to highest value
+	sim	0, sp
+	ts	client_port	. lock
+	j	$-1
+	la	client_port+1	. acquire
+	inc	client_port+1	. then advance
+	z	client_port	. free
+	sim	0, sp		. restore interrupt mask at entry
+	inc	sp
+
+	and	511,,xi		. use only values 256..511
+	or	256,,xi
+
+	ii	B1$
+	lret	0
+
+	$root
+
+
+
+.	vector name nfsmount
+
+$(67::,y)
+server_response xdr_rpcresp
+
+$(67::,y)
+mountres	xdr_mountres3
+
+$(67::,y)
+readrespo	xdr_read3res
+
+$(67::,y)
+result_attr	post_op_attr
+
+$(0)
+TARGET_MOUNTD	$equ	RPCADAPT(MOUNTD)
+
+nfs_fsmount	$tree
+	$head_far	 params(local_port,	int		;
+				mount_pathp,	int		;
+				fobloc,		int	)	;
+								;
+			scalars(mname_bytes,	int		;
+				connectionp,	int		;
+				status_final,	int		)
+
+	lx	mount_pathp
+	dl	3, x
+	lk	(00FFFF)
+	mlb	(MOUNTD_PORT)
+	ds	6
+	dl	1,x
+
+	mlb	local_port
+
+	c	(__connect)	a,,float
+	jna	nfs_mount_x
+
+	sx	connectionp
+
+	lb	mount_pathp
+	la	0, b
+	sar	8
+	and	255,,xi		. bytes in mount point name
+	sa	mname_bytes
+
+	ly	fobloc
+	lb	openfile_bloc:auth_blank+3
+				. retrieve auth block bytes length
+				. for copying auth block
+				. to request_header
+_COUNT	$equ	4
+
+	lc	nfs:startrq	connectionp			;
+				_COUNT, a, i			;
+				(xdri(MOUNTD)d),,long		;
+				(MOUNT_VERS:d),,long		;
+				(MOUNTPROC3_MNT:d),,long	;
+				4*4, b, i			;
+				openfile_bloc:auth_unix,,i
+
+	la	mount_pathp
+
+	lc	nfs:counted_send_opaque	connectionp		;
+					mname_bytes		;
+					6, a, i			;
+					05000++TCP_ACK++TCP_PSH,,xi			
+	jna	nfs_mount_y
+
+nfs_mount_?
+	ii	YIELD$
+	la	transmission:receiveq.head
+	jnza	nfs_mount_deliver
+
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	nfs_mount_?
+	la	-FILE_NOT_OPEN,,xi
+	j	nfs_mount_x
+
+nfs_mount_deliver
+	ly	axw:apdata, a
+	ly	2, y, i			. skip the TCP micro-desciptor @ segment start
+	la	server_response:rstat+1
+	jza	nfs_astat?
+
+	la	-NOT_YOU,,xi
+	j	nfs_mount_y
+
+nfs_astat?
+	la	server_response:yes:astat+1
+	jza	nfs_copyback_fh
+	xor	-1,,xi
+	la	1, a, i
+	j	nfs_mount_y
+
+nfs_copyback_fh
+	lx	fobloc
+	lx	openfile_bloc:nfs_handle,x,i
+	ly	server_response:yes:response,,i
+	lcal	nfs:deliver_fhandle3
+	la	0,,xi
+
+nfs_mount_y
+	sa	status_final
+	lx	connectionp
+						. to get here the queue head was sampled		
+	call	(tcp_release_rxline)		. this is a locked read + drop
+	lx	connectionp
+
+	$if	1
+	n	transmission:state
+	$else
+	la	DAYCLOCK$			. direct state machine
+	sa	transmission:timer(1)		. to execute outward close
+	$endif
+
+	la	status_final
+nfs_mount_x
+	$ret
+	$root
+
+
+.	successful return is a handle #
+.	any other return is zero minus approximate errno
+.	-1 and +errno do not exist. -errno exists
+
+nfs_open_path*	$tree
+	$head_far	 params(pathp,		int	;
+				flags,		int)	;
+							;
+			scalars(string_bytes,	int	;
+				connectionp,	int	;
+				request_port,	int	;
+				fobloc,		int	;
+				sattr_3,	12-10	;
+				g_3,		float,	(1, 0q)		;
+				u_3,		float,	(1, 0q)		;
+				mode_3,		float,	(1, 01a4q)	;
+				createmode_3,	long,	(1L)		;
+				status,		int	;
+				stream_registers, float, RDATAC)
+
+	ii	ON_NETB$				. must run with default net buffer pools
+	la	NFS_MOUNTS
+	jna	common_mounts_hidden			. if you need common mounts that crashes you
+	sabr	NFS_BDIAL
+common_mounts_hidden
+
+	c	(claim_fob)	(FS$NFS,,FS$NFS_WORDS)	. file open descriptor in application external stack
+
+	tz	y
+	j	forward
+	lr	-NO_STORAGE,,xi
+	j	nfs_open_path_e
+
+forward	sy	fobloc
+	la	flags
+	sa	openfile_bloc:o:flags
+	dsr	48				. initialise 72-bit position in file
+	z	openfile_bloc:quantum_pointer
+	ds	openfile_bloc:quantum_pointer+1
+
+	lx	openfile_bloc:auth_blank,,i		. any different auth
+	ly	pathp
+	ly	5, y				. skip the the mount path
+	ly	5, y				. pull up the auth pointer
+	tnz	y
+	ly	(authunix_blank),,i		. must be introduced here
+	lcal	nfs:deliver_auth
+
+	lcal	rpc:get_client_port
+	sa	request_port
+
+	lx	pathp
+
+	dl	1, x
+	lk	(00FFFF)
+	mlb	request_port
+
+	ds	1, x
+
+	c	(__bind)	(IPPROTO_TCP*/16s)	;
+				a,,long
+
+	lr	a
+	jna	nfs_open_path_w				. unwind the connection attempt
+	lx	pathp
+	ql	1, x
+	lk	(00FFFF)
+	mlb	request_port
+
+connection_launch
+	c	(__connect)	a,,float		. local port socket index don't know
+							. low-level call
+							. sockets, buffers remain addressable
+	lr	a
+	jna	nfs_open_path_v				. free port socket
+
+connection_running
+	sx	connectionp				. on return from connect
+							. B1 is application B1
+
+							. use the local port of the first connection
+
+	lb	pathp
+
+	c	(nfsmount)	request_port			;	. local port #
+				5, b				;	. mount path pointer
+				fobloc					. first handle
+
+	jpa	fs_mounted
+
+	lr	-FILE_NOT_OPEN,,xi
+	j	nfs_open_path_u				. disconnect and free port socket
+
+fs_mounted
+	ly	fobloc
+	lx	connectionp
+	sx	openfile_bloc:socket+1			. save transmission control block pointer
+	la	BSOCKET,,xi
+	ii	A$IDX
+	sa	openfile_bloc:socket			. save storage block index
+
+	la	pathp					. read the word at pointer *pathp
+	la	0, a
+	sar	8					. centre octet is bytes in name
+	and	255,,xi
+	sa	string_bytes
+	lx	openfile_bloc:nfs_handle+1
+	ax	a
+
+	ly	fobloc
+	lb	openfile_bloc:auth_blank+3		. obtain auth block bytes length
+
+        la	flags
+	and	O_CREAT,,xi
+	jza	obtain_existing_handle
+	la	flags
+	and	O_TRUNC,,xi
+	jza	open_create_unguarded
+	z	createmode_3+1		. force create again
+open_create_unguarded
+
+	lc	nfs:startrq	connectionp			;
+				8+28+12, x, i			;
+				(xdri(NFSD)d),,long 		;
+				(NFS_VERS:d),,long		;
+				(NFSPROC3_CREATE:d),,long	;
+				4*4, b, i			;
+				openfile_bloc:auth_blank,,i
+
+	ly	fobloc
+	la	openfile_bloc:nfs_handle+1
+
+	lc	nfs:send_opaque16	connectionp		;
+					4, a, i			;
+					openfile_bloc:nfs_handle,,i
+	ly	pathp
+	lc	nfs:counted_send_opaque connectionp		;
+					string_bytes		;
+					6, y, i			;
+					05000++TCP_ACK,,xi
+
+	ly	fobloc
+	la	openfile_bloc:auth_unix:auth:family+1
+	aa	-1,,xi
+	jnza	auth_another_family?
+	ql	openfile_bloc:auth_unix:auth:uid
+	ds	u_3+2
+	dl	6
+	ds	g_3+2
+
+auth_another_family?
+
+	lc	nfs:send_opaque16	connectionp		;
+					12+24+4,,xi		;
+					createmode_3,,i		.	unguarded
+
+.	la	05000++TCP_PSH++TCP_ACK,,xi
+.	sa	01b
+
+	lk	05000++TCP_PSH++TCP_ACK,,xi
+
+	la	0,,xi
+	lb	0,,xi		. ??????????
+	lx	connectionp
+	call	(tcp_tx)
+	
+	$if	0
+	lc	nfs:counted_send_opaque	connectionp		;	push it out
+					0,,xi			;
+					0,,xi			;
+					05000++TCP_PSH++TCP_ACK,,xi
+	$endif
+
+	lx	connectionp
+	j	readsocket
+
+obtain_existing_handle
+	lc	nfs:startrq	connectionp			;
+				8, x, i				;	+ 4 + 4	
+				(xdri(NFSD)d),,long		;
+				(NFS_VERS:d),,long		;
+				(NFSPROC3_LOOKUP:d),,long	;
+				4*4, b, i			;
+				openfile_bloc:auth_blank,,i
+
+	ly	fobloc
+	la	openfile_bloc:nfs_handle+1
+
+	lc	nfs:send_opaque16	connectionp		;
+					4, a, i			;
+					openfile_bloc:nfs_handle,,i	
+
+	ly	pathp
+	lc	nfs:counted_send_opaque	connectionp		;
+					string_bytes		;
+					6, y, i			;
+					05000++TCP_PSH++TCP_ACK,,xi
+
+.	lr	a
+.	jna	nfs_open_path_u
+
+	lx	connectionp
+
+readsocket
+	ii	YIELD$
+	la	transmission:receiveq:head
+	jnza	data
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	readsocket
+	lr	-FILE_NOT_OPEN,,xi
+	j	nfs_open_path_u		. close connection
+					. and free port socket
+					. and cancel fobloc
+data	ly	axw:apdata, a
+	ly	2, y, i			. advance over record mark
+	la	server_response:rstat+1
+	jza	data?
+	lr	-NOT_YOU		. cache credentials objection
+	j	nfs_open_path_s		. unwind the open attempt
+
+data?	la	server_response:yes:astat+1
+	jza	data!			. remote operation worked
+	xor	-1,,xi			. otherwise rerurn -errno
+	lr	1, a, i			. cache NOT errno + 1
+	j	nfs_open_path_s		. unwind the open attempt
+
+data!	lx	fobloc
+	lx	openfile_bloc:nfs_handle,x,i
+	ly	server_response:yes:response,,i
+
+	la	flags
+	and	O_CREAT,,xi
+	jza	handle_retrieve		. for create has different
+					. responses
+	la	1, y			. post op handle
+	anu	1,,xi			. is nice?
+	jnzb	nfs_open_path_s		. is don't nice?
+
+	ay	2,,xi			. that should be the handle
+	lcal	nfs:deliver_fhandle3	. if we'd like any post-op attributes			
+					. y should be pointing at they
+
+	j	splice_handle
+
+handle_retrieve
+	lcal	nfs:deliver_fhandle3
+
+	lx	fobloc
+	lx	openfile_bloc:dimensions,x,i
+					. y hasn't moved from -> handle byte count
+	la	1, y			. go past the handle
+	la	1, a, i
+	sar	1
+	ay	2, a, i
+
+	lcal	nfs:capture_fileinfo
+
+	la	flags			. O_APPEND tested here
+	and	O_APPEND,,xi		. is not considered when O_CREAT
+	jza	splice_handle		. default is write file from start
+					. attributes are in fobloc
+	ly	fobloc
+	ql	openfile_bloc:dimensions:attr:size	00xxxx [4]
+	lx	openfile_bloc:quantum_pointer,,i
+	lcal	quantum:compress			00xxxx xxxxxx xxxxxx
+
+	la	flags
+	and	O_OCTET,,xi
+	jnza	splice_handle
+
+	ql	openfile_bloc:dimensions:attr:size
+	lcal	quantum:align
+
+splice_handle
+	la	(AF_INET*/16)		. NFS file handle encoding
+	ii	HANDLE$
+
+	lr	a			. this should be the handle #
+	jna	nfs_open_path_s
+	lx	fobloc			. this should be the file open structure
+	ii	FILE$HANDLE
+					. unwind, status is cached in r
+nfs_open_path_s				. drop message segment from server
+	sr	status
+	lx	connectionp
+	call	(tcp_release_rxline)	. this is a locked read + drop
+	la	status
+	lr	a
+	jpa	nfs_open_path_x
+
+nfs_open_path_u				. cause connection to drop
+	lx	connectionp
+
+	$if	1
+	n	transmission:state
+	$else
+
+	lb	DAYCLOCK$
+	sb	transmission:timer(1)
+	$endif
+
+nfs_open_path_v				. disengage client port socket
+	la	request_port
+	call	(__free_tcp_port)
+
+nfs_open_path_w				. hand back the file open descriptor
+	lx	fobloc
+	la	0, x
+	and	255,,xi
+	sa	0, x
+nfs_open_path_e
+	la	r
+
+nfs_open_path_x
+	ii	FREE_NETB$		. must now mask network resources
+	ii	FREE_SOCKB$		. from address space
+	la	(0C00001s)
+	ii	XBASE$34
+	la	r
+
+	qpop	RDATAC			. stream registers now need
+					. to be nonvolatilw
+"$$frame"	$set	$$frame-4
+	$ret
+.	USTREAM				. defaults -> b$stream / SIMD registers
+	$root				. end nfsopen -> nfs_open_path
+
+nfs_close_path
+	$head_far		 params(close_handle,	int)
+
+	la	close_handle
+	ii	READ_SOCKET$
+
+	la	openfile_bloc:socket, b		. address the
+	lx	openfile_bloc:socket+1, b	. TCP connection
+	sabr	BSOCKET
+	la	openfile_bloc:fs_type, b	. change the file open block
+	and	(00FFFF)			. to type spare / available
+	sa	openfile_bloc:fs_type, b
+	call	(__disconnect_free_tcp)
+	ii	FREE_NETB$
+	ii	FREE_SOCKB$
+	fret	0
+
+.	vector name nfsread
+.	this is a go target from read and has the same arguments
+.	but deepens the stack and restores it before return
+
+nfs_data_read $tree
+	$head_far	 params(handle,			int	; . already decoded in a:b
+				bufferp,		int	;
+				bytes,			int)	;
+								;
+			scalars(connectionp,		long	;
+				foblocp,		int	;
+				segment_axw,		int	;
+				wdatac_wdata,		long	;
+				total,			long	;
+				record_mark,		long	;
+				record_net_bytes,	long	;
+				stream_registers,  float, RDATAC)
+
+
+	ii	ON_NETB$
+	la	handle
+	ii	READ_SOCKET$
+	sb	foblocp
+
+	dl	openfile_bloc:socket, b
+	sabr	BSOCKET
+	sb	connectionp
+
+	ly	foblocp
+
+	la	openfile_bloc:nfs_handle+1			. opaque byte count
+	lb	openfile_bloc:auth_blank+3			. opaque byte count
+
+	lc	nfs:startrq	connectionp			;
+				16, a, i			; . 4 + offset8 + datacount4
+				(xdri(NFSD)d),,long		;
+				(NFS_VERS:d),,long		;
+				(NFSPROC3_READ:d),,long		;
+				4*4, b, i			; . flavour4 bytecount4 verf8
+				openfile_bloc:auth_blank,,i
+
+	ly	foblocp
+	la	openfile_bloc:nfs_handle+1
+	lc	nfs:send_opaque16	connectionp		;
+					4, a, i			;
+					openfile_bloc:nfs_handle,,i
+
+	ly	foblocp
+	lc	nfs:add_uhyper72	connectionp				;
+					openfile_bloc:quantum_pointer,,i	;
+					05000++TCP_ACK,,xi
+
+	ly	foblocp
+	lb	bytes
+	la	openfile_bloc:o:flags
+	and	O_OCTET,,xi
+	jnza	read_octets	
+	mf	3,,xi
+
+read_octets
+	lc	nfs:add_uinteger	connectionp			;
+					b				;
+					05000++TCP_ACK++TCP_PSH,,xi
+
+	jna	request_issue_fail
+	lx	connectionp
+sample	ii	YIELD$
+	la	transmission:receiveq.head
+	jnza	data
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	sample
+
+request_issue_fail
+	lr	-FILE_NOT_OPEN,,xi
+	j	nfs_data_read_z
+
+data	sa	segment_axw
+	ly	axw:apdata, a
+	dl	0, y				. save the record mark
+	ds	record_mark
+	ly	2, y, i				. advance past record mark
+	la	server_response:rstat+1
+	jza	data?
+	lr	-NOT_YOU,,xi
+	j	nfs_data_read_z
+
+data?	la	server_response:yes:astat+1
+	jza	data!
+
+net_response_fail
+	xor	-1,,xi
+	lr	1, a, i
+
+nfs_data_read_z
+	la	foblocp
+	la	openfile_bloc:socket,a
+	sabr	BSOCKET
+	lx	connectionp
+	call	(__disconnect_free_tcp)		. close the connection
+						. and free the privileged port
+	la	r				.  __disconnect_free_tcp does not change r
+	j	nfs_data_read_x
+
+
+data!	ly	server_response:yes:response, y, i
+	dl	readrespo:eof			. 32 bits not 64
+	ds	10
+
+	dl	readrespo:count			. 32 bits not 64
+	sbl	8
+	dsr	8				. net data count of record
+
+	ds	record_net_bytes
+
+
+	$if	1
+	dl	readrespo:data, y		. there is an opaque count
+	ly	readrespo:data+2, y, i		. mostly identical to result count
+	sbl	8
+	dsl	16				. store that anywhere you like
+						. it's the same as result count
+						. and can scan millions of segments
+	la	segment_axw
+	lb	axw:apdata,a
+	la	axw:bytes, a
+	anb	y				. data word negative difference
+	sbl	1				. each with a data byte pair
+	aa	b
+	$else
+	la	segment_axw
+	la	axw:bytes, a
+	aa	-132,,xi			. headers appear fixed size
+						. temporary measure worked but not scientifically
+	ly	readrespo:data, y, i		. and this did not walk past the opaque length :-)
+	$endif
+
+next_net_segment
+	sa	7
+
+	dl	wdatac_wdata			. install bit stream state
+	ds	WDATAC
+	la	bufferp
+	sa	p
+	
+	la	7				. recover the byte count
+	lcal	nfs3:data_read
+
+	dl	WDATAC				. save the bit stream state
+	ds	wdatac_wdata
+	la	p
+	sa	bufferp
+
+	lx	connectionp
+	call	(tcp_release_rxline)
+
+	z	6
+	dl	total
+	da	6
+	ds	total
+	dl	record_net_bytes
+	dan	6
+	ds	record_net_bytes
+	jdz	complete_record
+	jna	complete_record
+
+next_segment
+	ii	YIELD$
+	la	transmission:receiveq:head
+	jnza	next_segment_in
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	next_segment
+	j	net_response_fail
+
+next_segment_in
+	ly	axw:apdata, a
+	la	axw:bytes, a
+	j	next_net_segment
+
+complete_record
+	la	record_mark
+	and	(008000s)	. record mark
+	jza	sample		. until we can find out different it's hoped
+				. a new record has the same headers as a 1st record
+
+	dl	total
+	ly	foblocp
+	da	openfile_bloc:quantum_pointer+1
+	ds	openfile_bloc:quantum_pointer+1
+	sc	a
+	aa	openfile_bloc:quantum_pointer
+	sa	openfile_bloc:quantum_pointer
+
+	la	0,,xi
+	wsr	16			. push final octets out of WDATA
+	dl	total
+
+	la	openfile_bloc:o:flags
+
+	and	O_OCTET,,xi		. if octets
+	xor	O_OCTET,,xi		. not not words
+	jza	nfs_data_read_x		. report octets count
+
+	lb	2, b, i
+	mf	(0555556)
+
+nfs_data_read_x
+.	USTREAM				. defaults -> b$stream / SIMD registers
+	ii	FREE_NETB$
+	ii	FREE_SOCKB$
+
+	qpop	RDATAC			. stream register now need to be
+					. nonvolatile
+"$$frame" $set	$$frame-4
+	$ret
+
+	$root				. end nfsread -> nfs_data_read
+
+
+.	vector name nfs_seek
+
+
+nfs_file_position	$tree
+
+	$if	1
+
+	$head_far	 params(handle,		int	;
+				position,	long	;
+				source,		int	)
+
+	la	handle
+	ii	READ_SOCKET$
+	ly	b
+
+	lc	nfs3:seek72	source					;
+				openfile_bloc:o:flags			;
+				openfile_bloc:quantum_pointer,,i	;
+				position,,long				;
+				openfile_bloc:dimensions:attr:size,,i
+	$ret
+
+	$else
+
+	$head_far	 params(handle,		int	;
+				position,	long)	;
+							;
+			scalars(caller_y,	int, y	;
+				octet_position,	triple	)
+
+
+	la	handle
+	ii	READ_SOCKET$
+	ly	b
+	lb	position+1
+	mf	3,,xi
+	ds	octet_position+1
+	lb	position
+	mf	3,,xi
+	da	octet_position
+	ds	openfile_bloc:quantum_pointer
+	pop	0, sp
+	pop	0, sp
+	pop	openfile_bloc:quantum_pointer+2
+	pop	y
+	fret	0
+
+	$endif
+
+			$root
+
+nfs	$tree
+startrq
+	$head_near	 params(connectionp,	int			;
+				size,		int			;
+				rqprogram,	long			;
+				programversion,	long			;
+				nfspro,		long			;
+				auth_bytes,	int			;
+				authp,		int		)	;
+									;
+			scalars(procedure_l,	long,	nfspro		;
+				programvers_l,	long,	programversion	;
+				program_l,	long,	rqprogram	;
+				rpcvers,	long,	(2d)		;
+				req_resp,	long			;
+				tid,		long			;
+				count,		int,	size		;
+				container,	int,	(008000s)	)
+
+
+
+	lcal	rpc:getunique		. request #
+	dsr	16			. and kernel B1 is now based	
+	sbr	8
+	ds	tid
+
+	la	size			. target data bytes after auth
+					. and net of roundup
+	la	3, a, i			. round up for header
+	and	-4,,xi
+	ly	auth_bytes
+	ay	6*4,a,i			. 6Lheader + auth + uprounded data
+	sy	count
+
+	lb	sp			. fire 7Lheader
+	la	7*4,,xi
+	lx	connectionp
+	lcal	nfs:send16to16i
+
+	la	auth_bytes		. fire auth structure
+	lb	authp
+	lcal	nfs:send16to16i
+
+	$ret
+
+
+
+
+add_uinteger
+	$head_near	 params(connectpiu,	int		;
+				uinteger,	int		;
+				uiflags,	int	)	;
+								;
+			scalars(format2,	long		)
+
+	$if	1
+	lk	uiflags
+
+	$else				. no sir
+	la	uiflags
+	sa	SOCKET_CALL_FLAGS
+	$endif
+
+	la	uinteger
+	dsr	16
+	sbr	8
+	ds	format2
+
+	lb	format2,,i
+	la	4,,xi
+	lx	connectpiu
+	lcal	send16to16
+	$ret
+
+add_uhyper72
+	$head_near	 params(connectphy,	int		;
+				hyperp,		int		;
+				uyflags,	int	)	;
+								;
+			scalars(format4,	float		)
+
+	$if	1
+	lk	uyflags
+	$else				. no sir
+	la	uyflags
+	sa	SOCKET_CALL_FLAGS
+	$endif
+
+	lx	hyperp
+	dl	0, x
+	sal	8
+	sar	8
+	sa	format4
+	la	0,,xi
+	drr	8
+	sb	format4+1
+	lb	2, x
+	sar	16
+	dsl	8
+	sbr	8
+	ds	format4+2
+
+	lb	format4,,i
+	la	8,,xi
+	lx	connectphy
+	lcal	send16to16
+	$ret
+
+send_opaque16
+	$head_near	 params(tcp_tcbp,	int		;
+				bytes2go,	int		;
+				fromp,		int	)
+	lx	tcp_tcbp
+	la	bytes2go
+	lb	fromp		. and just fall thru
+				. don't add any scalars or xframe
+				. to send_opaque16
+send16to16i
+	$if	1
+	lk	05000++TCP_ACK,,xi	. method of passing to tcp_add tcp_addx
+	$else
+	push	(05000++TCP_ACK)
+	pop	SOCKET_CALL_FLAGS
+	$endif
+
+send16to16
+	sb	q
+	z	RDATAC
+	on	b$stream16r
+	call	(tcp_addx)
+	lret	0
+
+counted_send_opaque
+	$head_near	 params(connexiopaque,	int		;	
+				opaque_bytes,	int		;
+				opaque_string,	int		;
+				opaque_flags,	int	)	;
+								;
+			scalars(opaque_count,	long		;
+				opaque_pad,	int	)
+
+	lx	connexiopaque
+
+	la	opaque_bytes
+	sa	opaque_count+1
+	la	4,,xi
+	lb	opaque_count,,i
+	lcal	send16to16i
+
+	$if	0
+
+.	lb	05010,,xi
+.	sb	SOCKET_CALL_FLAGS
+
+	$else
+	lk	05010,,xi
+	$endif
+
+	la	opaque_bytes
+	lb	opaque_string
+.	sb	q
+	call	(tcp_tx)
+
+
+	$if	0
+.	lb	opaque_flags
+.	sb	SOCKET_CALL_FLAGS
+	$else
+
+	lk	opaque_flags
+	$endif
+
+	la	4,,xi
+	ana	opaque_bytes
+	and	3,,xi
+
+	lb	opaque_pad,,i
+.	sb	q
+	call	(tcp_tx)
+	
+	$ret
+
+send_string
+	$head_near	 params(connexionstring,int		;
+				string_bytes,	int		;
+				stringp,	int		;
+				string_flags,	int		)
+
+	lx	connexionstring
+
+	lk	string_flags
+.	lb	string_flags
+.	sb	SOCKET_CALL_FLAGS
+	lb	stringp
+.	sa	q
+	la	string_bytes
+	call	(tcp_tx)
+
+	$ret	0
+
+deliver_fhandle3			. also usable to copy auth structure
+
+c4*	$proc
+	qpush	32-?*4+2, y
+	qpop	32-?*4+2, x
+	$end
+
+	dl	0, y			. second half longword as ever
+	ds	0, x
+
+	jzb	none
+	ab	-1,,xi
+
+	sbr	3
+	andB	7,,xi
+
+	xorB	7,,xi
+	sbl	1
+	j	jump2it, b
+	
+jump2it
+?	$do	8,	c4
+
+none	lret	0
+
+deliver_auth
+
+c2*	$proc
+	dl	32-?*2+4, y
+	ds	32-?*2+4, x
+	$end
+
+	ql	0, y
+	qs	0, x
+
+	la	7
+	jza	none_more
+
+	aa	-1,,xi
+	sar	2			. 4-byte blocks
+	and	15,,xi
+	xor	15,,xi
+	sal	1			. for the macro is an instruction pair
+	j	jump2auth, a
+
+jump2auth
+?	$do	16,	c2
+
+none_more
+	la	7
+	sar	1			. point to data words after aux opaque bytes
+	ax	4, a, i
+	ay	4, a, i
+	ql	0, y			. write default verification
+	qs	0, x
+
+	lret	0
+
+
+	$if	1
+
+	.	an unrolled function of 22 instructions is not justified
+	.	because this only happens on file open
+	.	but to avoid fooling about
+	.	the long-int boolean before result attributes
+	.	is copied with the attributes to make a multiple of 4 words 
+	.	and to avoid needing to point past the boolean
+
+capture_fileinfo
+	$do	FS$NFS3RESULT_WORDS**3^=0,	$flag	change this
+
+	lr	FS$NFS3RESULT_WORDS/4-1,,xi
+
+capture_fileinfo_quad
+	qpush	0, y
+	qpop	0, x
+	ax	4,,xi
+	ay	4,,xi
+	jdr	capture_fileinfo_quad
+
+	lret	0
+
+	.	that's the job done generating 7 instructions instead of 22
+	.	and executing 5 instructions 11 times each
+	.	instead of 22 instructions once each
+	.	use unrolled lightning for datagrams and arrays. We do
+
+	$else
+
+capture_fileinfo
+	$do	FS$NFS3RESULT_WORDS**3^=0,	;
+	$flag	do this differently
+
+qover*	$proc
+	qpush	?*4-4, y
+	qpop	?*4-4, x
+	$end
+
+?	$do	FS$NFS3RESULT_WORDS/*2,		qover
+
+	lret	0
+
+	$endif
+
+	$root
+
+.	routines mostly about xdr format data in tree nfs 
+.	routines about compression and expansion in tree nfs3
+
+nfs3	$tree
+.	$path		../
+	$list	3
+	$include	rpc/dataread
+	$include	rpc/position
+.	$path
+
+	$root

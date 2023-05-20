@@ -1,0 +1,285 @@
+	$path		../../
+	$list		0
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$list
+	$path
+
+OPER8	 $equ		11*4096
+RANGE1	 $equ		4096-256
+BACKHAUL $equ		RANGE1
+
+	$do		BACKHAUL///3^=0,	$flag	BACKHAUL out of range
+
+$(0::OPER8)
+"$pointer8_offset_x"*	$vector	pointer_plus_minus_x
+"$table8_offset_x"*	$vector	table_subscript_x
+"$ltable8_offset_x"*	$vector	large_table_subscript_x
+"$normalise8_x"*	$vector	set_octet_pointer_x
+"$renormalise8_x"*	$vector	alter_octet_pointer_x
+"$inrange_x"*		$vector	range_test_x
+
+"$pointer8_offset_y"*	$vector	pointer_plus_minus_y
+"$table8_offset_y"*	$vector	table_subscript_y
+"$ltable8_offset_y"*	$vector	large_table_subscript_y
+"$normalise8_y"*	$vector	set_octet_pointer_y
+"$renormalise8_y"*	$vector	alter_octet_pointer_y
+"$inrange_y"*		$vector	range_test_y
+
+"$chx3"*		$vector	xinrange3
+"$chy3"*		$vector	yinrange3
+
+	$list		0
+	$do		64-$,	fret	0
+	$list
+
+xinrange3					. test that caller can use execute pointers inline
+	push		r			. for development or for ultra-secure applications
+	lr		3,,xi			. x value [0..2] picks an execute target instruction
+	jxge		nosir			. and it's helpful if executes don't point out of range
+	pop		r
+	fret		0
+
+yinrange3					. test that caller can use execute pointers inline
+	push		r			. for development or for ultra-secure applications
+	lr		3,,xi			. y value [0..2] picks an execute target instruction
+	jyge		nosir			. and it's helpful if executes don't point out of range
+	pop		r
+	fret		0
+
+range_test_x
+	push		r
+	lr		3, sp
+	jxge		nosir
+	pop		r
+	fret		0
+
+range_test_y
+	push		r
+	lr		3, sp
+	jyge		nosir
+	pop		r
+	fret		0
+
+pointer_plus_minus_x				. +- octet offset x from pointer
+	qpush		x
+	ly		6, sp			. word pointer on stack
+
+	tp		x
+	lcal		backhaul_x		. lower limit pointer - BACKHAUL
+
+	lcal		forehaul_x		. upper limit pointer + RANGE1
+
+	la		btable, x
+	dsr		12
+	sbr		12
+
+	ay		a
+	sb		0, sp			. x on stack
+
+	sy		6, sp			. word part dynamicpointer on stack
+	qpop		x
+	fret		0
+
+table_subscript_x				. unsigned octet subscript x in table
+	qpush		x
+	ly		6, sp			. table base on stack
+
+	lcal		forehaul_x		. is the call safe for this path?
+
+	la		btable, x
+	dsr		12
+	sbr		12
+
+	ay		a
+	sb		0, sp			. x in the stack
+
+	sy		6, sp			. word part dynamic pointer in the stack
+	qpop		x
+	fret		0
+
+large_table_subscript_x				. unsigned octet subscript in table
+	qpush		x
+	ly		6, sp			. table base in the stack
+
+	la		x
+	dsr		24
+
+	push		6			. we don't need quotient 47..24
+	d		3,,xi
+	pop		6			. neither does the caller
+
+	ay		a
+	sb		0, sp			. x in the stack
+	
+	sy		6, sp			. word part dynamic pointer in the stack
+	qpop		x
+	fret		0
+
+set_octet_pointer_x				. initialise pointer at a named array + x
+	qpush		x
+	ly		6, sp			. target array base in the stack
+
+	la		x
+	dsr		24
+
+	push		6			. we don't need quotient 47..24
+	d		3,,xi
+	pop		6			. neither does the caller
+
+	ay		a
+	sb		0, sp			. x in the stack
+
+	sy		6, sp			. new pointer in the stack
+	qpop		x
+	fret		0
+
+alter_octet_pointer_x				. set octet pointer +-
+	qpush		x
+	lx		6, sp			. word part of current pointer
+	tp		x			. normalised byte part + alteration
+	lcal		backhaul_x
+	lcal		forehaul_x
+
+	la		btable, x
+	dsr		12
+	sbr		12
+
+	ay		a			. word part of new pointer
+	sb		0, sp			. x in stack
+
+	sy		6, sp			. new pointer in stack
+	qpop		x
+	fret		0
+
+forehaul_x					. in range of fast process? If not call was wrong
+	push		r
+	lr		RANGE1,,xi
+	jxge		nosir
+	pop		r
+	lret		0
+
+backhaul_x					. limit on (pointer - subscript)
+	ax		BACKHAUL,,xi
+	tp		x
+	ii		GUARD$
+	ay		-BACKHAUL/3,,xi
+	lret		0
+
+pointer_plus_minus_y				. +- octet offset y from pointer
+	qpush		x
+	lx		6, sp			. word pointer on stack
+
+	tp		y
+	lcal		backhaul_y		. lower limit pointer - BACKHAUL
+
+	lcal		forehaul_y		. upper limit pointer + RANGE1
+
+	la		btable, y
+	dsr		12
+	sbr		12
+
+	ax		a
+	sb		1, sp			. y on stack
+
+	sx		6, sp			. word part dynamicpointer on stack
+	qpop		x
+	fret		0
+
+table_subscript_y				. unsigned octet subscript y in table
+	qpush		x
+	lx		6, sp			. table base on stack
+
+	lcal		forehaul_y		. is the call safe for this path?
+
+	la		btable, y
+	dsr		12
+	sbr		12
+
+	ax		a
+	sb		1, sp			. y in the stack
+
+	sx		6, sp			. word part dynamic pointer in the stack
+	qpop		x
+	fret		0
+
+large_table_subscript_y				. unsigned octet subscript in table
+	qpush		x
+	lx		6, sp			. table base in the stack
+
+	la		y
+	dsr		24
+
+	push		6			. we don't need quotient 47..24
+	d		3,,xi
+	pop		6			. neither does the caller
+
+	ax		a
+	sb		1, sp			. y in the stack
+	
+	sx		6, sp			. word part dynamic pointer in the stack
+	qpop		x
+	fret		0
+
+set_octet_pointer_y				. initialise pointer at a named arrax + y
+	qpush		x
+	lx		6, sp			. target arrax base in the stack
+
+	la		y
+	dsr		24
+
+	push		6			. we don't need quotient 47..24
+	d		3,,xi
+	pop		6			. neither does the caller
+
+	ax		a
+	sb		1, sp			. y in the stack
+
+	sx		6, sp			. new pointer in the stack
+	qpop		x
+	fret		0
+
+alter_octet_pointer_y				. set octet pointer +-
+	qpush		x
+	ly		6, sp			. word part of current pointer
+	tp		y			. normalised bxte part + alteration
+	lcal		backhaul_y
+	lcal		forehaul_y
+
+	la		btable, y
+	dsr		12
+	sbr		12
+
+	ax		a			. word part of new pointer
+	sb		1, sp			. y in stack
+
+	sx		6, sp			. new pointer in stack
+	qpop		x
+	fret		0
+
+forehaul_y					. in range of fast process? If not call was wrong
+	push		r
+	lr		RANGE1,,xi
+	jyge		nosir
+	pop		r
+	lret		0
+
+backhaul_y					. limit on (pointer - subscript)
+	ay		BACKHAUL,,xi
+	tp		y
+	ii		GUARD$
+	ax		-BACKHAUL/3,,xi
+	lret		0
+
+nosir	ii		GUARD$
+
+	$do	$<256,$(0:256)
+
+	$list		0
+
+btable
+?	$do	RANGE1,		+(?-1)/3, +(?-1)///3
+
+	$do	$zenith>4096,	$flag	table off limits
+

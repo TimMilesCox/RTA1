@@ -1,0 +1,114 @@
+__KEEP_SIMD_SETTING	$set	0
+__APPLY_GUARD		$set	1
+
+p		$proc
+terapage*	$name	12
+teraframe*	$name	18
+
+__ARRAY		$equ	p(2, 1)			. application declared name [ __ARRAY_A .. ARRAY_Z ]
+__GRANULE_LOG	$set	__ARRAY_GRANULE(__ARRAY)	. log of storage block 12 or 18
+__LIMIT		$set	__ARRAY_LIMIT(__ARRAY)		. storage words in array max 17179607040
+
+		$do	(__GRANULE_LOG^=12)**(__GRANULE_LOG^=18),__GRANULE_LOG	$set	p(0,0)
+
+		$do	(__GRANULE_LOG^=12)**(__GRANULE_LOG^=18),	$flag	granule not 12 and not 18
+		$do	(__GRANULE_LOG^=12)**(__GRANULE_LOG^=18),	$return
+
+__GRANULE	$set	1*/__GRANULE_LOG
+
+S		$equ	24
+WINDOW		$set	p(1, 1)
+
+__SEVERAL	$set	p(1, 1:2)-p(1, 1:1)
+	$do	__SEVERAL<0,__SEVERAL	$set	0
+	$do	__SEVERAL>15,__SEVERAL	$set	0
+
+array		$equf	p(2)
+CONTAINER_SIZE	$set	p(3, 1)
+instance	$equf	p(4)
+
+		$do	(p()>4)**(p(5, *1)=0)**(p(5, 2)=0)**($t(p(5, 1:1))^=127),;
+__LIMIT	$set	p(5,1:1)
+
+__CHEX_LIMIT	$set	__LIMIT//__GRANULE
+__CHEX_ESCAPE	$set	p(5, 4)
+
+LOG_TRUE*	$func
+LOG	$do	18,	$do	1*/LOG=CONTAINER_SIZE,	$return	LOG
+		$return	0
+		$end
+
+__SCALE		$set	LOG_TRUE			
+
+		$if	p(4, 4)=S
+__SCALE		$set	0
+	$do	(instance\2^=0)++(p(4, *1))++(instance^=b),	lb	p(4)
+
+		mf	CONTAINER_SIZE,,xi
+
+		$elseif	__SCALE++(CONTAINER_SIZE=1)
+	$do	(instance\2^=0)++(p(4, *1))++(instance^=a),	dl	instance
+
+		$else
+		$if	__KEEP_SIMD_SETTING
+		dpush	instance
+		pop	b
+		m	CONTAINER_SIZE,,xi
+		sb	6
+		pop	b
+		mf	CONTAINER_SIZE,,xi
+		aa	6
+		$else
+		dpush	instance
+		rex	(m	CONTAINER_SIZE,,xi)
+		dpop	a
+		$endif
+		$endif
+
+p		$proc
+chex_load*	$name
+	$if	p(1, *1)++p(1, 2)++($t(p(1, 1)=127))
+	lr	p(1)
+	$elseif	__CHEX_LIMIT<32768
+	lr	__CHEX_LIMIT,,xi
+	$else
+	lr	(__CHEX_LIMIT:s)
+	$endif
+	$end
+
+		$do	$t("p(2, 1)_CLUSTER")^=0,		__TILE	p()
+		$do	$t("p(2, 1)_CLUSTER")^=0,		$return
+
+		dsl	24-__GRANULE_LOG+__SCALE		. a <- target memory block 
+
+		orB	WINDOW
+		rbr	24-__GRANULE_LOG
+
+		$if	__APPLY_GUARD++(p()>4)++__SEVERAL	. concerns page index relative to array
+		chex_load	p(5)
+		lx	a
+		$endif
+
+		$if	__APPLY_GUARD
+		$if	p(5)>3
+		jxge	__CHEX_ESCAPE			. jump if target x not < upper limit r
+		$else
+		jxge	(ii	GUARD$)
+		$endif
+		$endif
+
+		$do	__GRANULE_LOG=18,	sal	6
+
+		aa	array				. relative page index + absolute
+		sabr	WINDOW
+
+__MORE*		$proc
+		call	(array_round)			. make sure there is a continue block
+
+		la	1*/__GRANULE_LOG-12, a, i	. so that is checked as normal operation
+		sabr	WINDOW+?			. base the continue block or none
+		$end
+
+?		$do	__SEVERAL,	__MORE	p(0, 0)
+
+		$end

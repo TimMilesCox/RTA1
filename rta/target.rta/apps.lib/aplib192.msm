@@ -1,0 +1,355 @@
+ap_lib192	$tree
+
+.	arguments in internal stack
+.	as for programming languages
+.	read-only arguments may be by pointer
+.	return is in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+square_root
+	$head_far	 params(magnitude2,	float192)		;
+			scalars(trial2,		float192, magnitude2	;
+				diminuition2,	float192, (0.5o)	;
+				signs2,		int, magnitude2		)
+
+.	vector name is square_root
+
+	la	signs2
+	jpa	square_away
+	lx	magnitude2,,i
+	lcal	flip8
+	lx	trial2,,i
+	lcal	flip8	
+
+square_away
+
+	la	(0400000)
+	ana	trial2
+	jc	uprate			. exponent: 0400000- 
+					.        a: 0400000-exponent
+
+.	some smallest numbers need kinder rounding
+.	but leave that to the caller
+
+	la	trial2
+	and	(03FFFFF)
+	aa	1,,xi			. halve scale above midpoint
+	sar	1			. 0400001 changes to 0400001
+	or	(0400000)
+
+	j	start_variation
+
+uprate	aa	1,,xi			. add half the undershot to midpoint
+	sar	1			. 0400000 changes to 0400000
+	aa	trial2
+
+start_variation
+
+	sa	diminuition2		. set initial exponent of +- variable
+	sa	trial2
+	aa	-72,,xi
+	sa	trial2+4
+	lr	144,,xi			. start the fateful count
+					. don't worry, you may escape before the count is out
+downrate
+	ql	trial2+4
+	qs	8
+
+downrate_again!
+	ql	trial2
+
+	c	(fp192_multiply)	trial2,,i
+	c	(fp192_add_negative)	magnitude2,,i
+
+	jdz	arrive
+	jpa	downrate_down
+
+	ql	trial2+4
+	qs	8
+	ql	trial2
+
+	c	(fp192_add)		diminuition2,,i
+	j	downrate_again?
+
+downrate_down
+
+	ql	trial2+4
+	qs	8
+	ql	trial2
+
+	c	(fp192_add_negative)	diminuition2,,i
+
+downrate_again?
+	qs	trial2			. store the candidate value
+	ql	8
+	qs	trial2+4
+
+	dec	diminuition2		. scale of variation
+	jdr	downrate_again!
+
+arrive	lx	trial2,,i
+	tp	signs2
+	lcal	flip8
+	push	8+1, sp, i
+	pop	sp
+
+	qpop	a
+	qpop	8
+	fret	0
+
+.	vector name square
+
+square	$head_far	 params(root, 		float192)	;
+			scalars(polar,		int, root	;
+				caller_x,	int, x)
+
+	c	(fp192_mfa)	root,,i	root,,i
+
+	ql	root		. load and supernormalise
+	on	fp$r
+	fa	root+4
+	off	fp$r
+
+	lx	a,,xi		. retrieve input sign
+	tp	polar
+	lcal	flip8
+
+	pop	x		. restore caller x
+	inc	sp		. clear stack
+	fret	0
+
+
+cube_root
+	$head_far	 params(magnitude3,	float192)		;
+			scalars(trial3,		float192, magnitude3	;
+				diminuition3,	float192, (0.5o)	;
+				signs3,		int,	  magnitude3	)
+
+.	vector name cube_root
+
+	la	magnitude3
+	jpa	root3_start
+
+	lx	magnitude3,,i		. must work in positive magnitude
+	lcal	flip8			. because of subtraction
+	lx	trial3,,i		. which compares the filtered trial root
+	lcal	flip8
+
+root3_start
+	lb	(0400000)
+	anb	trial3
+	jc	up3wards		. scale is midpoint/less
+
+	lb	trial3
+	andB	(03FFFFF)		. isolate the net positive scale
+
+	ab	2,,xi			. 0400001..2 -> 0400001
+	mf	(0555556)		. thirdify the net positive scale
+
+	or	(0400000)		. new exponent in a
+	j	scale_away3
+
+up3wards	. distance up to midpoint is positive in b
+
+	mf	(0555556)		. thirdify he and round he down
+	aa	trial3			. quotient is in a
+
+scale_away3
+
+	sa	diminuition3		. set initial exponent of +- variable
+	sa	trial3
+	aa	-72,,xi			. minor part is already normalised
+	sa	trial3+4
+	lr	144,,xi			. start the fateful count
+					. don't worry, you may escape before the count is out
+downrate3
+	ql	trial3+4
+	qs	8
+downrate3_again!
+	ql	trial3
+
+	c	(fp192_multiply)	trial3,,i
+	c	(fp192_multiply)	trial3,,i
+	c	(fp192_add_negative)	magnitude3,,i
+
+	jdz	arrive3
+	jpa	downrate3_down
+
+	ql	trial3
+	on	fp$r
+	fa	trial3+4
+	off	fp$r
+
+			. for the benefit of fractions
+			. if under, don't diminish the diminuend
+			. and don't decrement the count in r
+			. just add to the candidate root and loop back
+
+	c	(fp192_add)		diminuition3,,i
+	qs	trial3
+	ql	8
+	qs	trial3+4
+	j	downrate3_again!	. _again?
+
+downrate3_down
+
+	ql	trial3
+	on	fp$r
+	fa	trial3+4
+	off	fp$r
+
+	c	(fp192_add_negative)	diminuition3,,i
+
+	dec	diminuition3		. scale of variation
+
+downrate3_again?
+
+	qs	trial3			. store the candidate value
+	ql	8
+	qs	trial3+4
+
+.	dec	diminuition3		. scale of variation
+	jdr	downrate3_again!
+
+arrive3	lx	trial3,,i
+	tp	signs3
+	lcal	flip8
+
+	push	8+1, sp, i
+	pop	sp
+
+	qpop	a
+	qpop	8
+	on	fp$r
+	fa	$residue
+	off	fp$r
+	fret	0
+
+.	vector name cube
+
+cube	$head_far	 params(cubase,	float192)
+	ql	cubase
+	on	fp$r
+	fa	cubase+4
+	off	fp$r
+
+	c	(fp192_multiply)	cubase,,i
+	c	(fp192_multiply)	cubase,,i
+	fret	0
+
+flip8	n	0, x
+	n	1, x
+	n	2, x
+	n	3, x
+	n	4, x
+	n	5, x
+	n	6, x
+	n	7, x
+	lret	0
+
+.	vector name fraction
+
+fraction $tree
+	$head_far	 params(input,	float192)	;
+			scalars(i_rkxy,	float,	r	)
+
+	ql	input		. read and supernormalise
+	on 	fp$r
+	fa	input+4
+	off	fp$r
+
+	lx	a		. obtain exponent magnitude
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	all_fraction	. there is no integer part: return all of it
+	lr	144,,xi
+	jxge	all_integer	. there is no fraction part: return zero
+
+	c	(integer192)	a,,float192
+
+	lx	a,,xi
+	lcal	ap_lib192:flip8	. reverse polarity to effect subtract from addend
+
+	c	(fp192_add)	input,,i
+	j	complete
+	
+all_integer
+	dsa	48
+	ds	6
+	qs	8
+all_fraction
+complete
+	qpop	r
+	fret	0
+
+	$root
+
+.	vector name integer
+
+integer	$tree
+	$head_far	 params(input,	float192)	;
+			scalars(i_rkxy,	float,	r	)
+
+	ql	input		. read and supernormalise
+	on	fp$r
+	fa	input+4
+	off	fp$r
+
+	lx	a		. obtain exponent magnitude
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	all_fraction	. there is no integer part: return 0
+	lr	144,,xi
+	jxge	all_integer	. there is no fraction part: return all of it
+
+	lr	72,,xi
+	jxge	major_part_plus	. the result includes the major part
+				. and possibly some of the minor part
+major_part_only
+	ds	input
+	dsa	48		. some signs for the minor part
+	ds	8		. the result is some of the major part
+	ds	10
+	dl	input		.
+
+	lcal	ap_lib96:sign_around
+	j	complete
+
+major_part_plus
+
+	lx	8		. obtain magnitude minor exponent
+	tp	x
+	n	x
+
+	ax	(-0400000)	. obtain relation to midpoint
+	tz	x
+	tp	x
+	j	major_part_only	. all expected bits were signs
+				. and normalised out
+
+	qs	input
+	ql	8
+	lcal	ap_lib96:sign_around
+	qs	8
+	ql	input
+	j	complete
+	
+all_fraction
+	dsa	48
+	ds	6
+	qs	8
+all_integer
+complete
+	qpop	r
+	fret	0
+
+	$root		. of routine ap_lib192:integer
+
+	$root		. of block ap_lib:192

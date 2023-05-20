@@ -1,0 +1,61 @@
+$(3)
+subagent_ithread
+	$do	170,	0
+
+$(0)
+
+.	routines have static data in IP process so only callable from IP process
+
+.	far call vector name (subagent)
+.	transmission control block x-> is leased to another process a
+
+subagent_insert
+	push	a
+	lcal	subagent_point
+	pop	0, a			. store the process control block index
+	fret	0
+
+.	far call vector name (subagent?)
+.	is transmission control block x-> leased to another process?
+
+subagent_lookup
+	lcal	subagent_point
+	tz	0, a			. has this connection a subagent?
+	lcal	subagent_running?	. currently?
+	fret	1			. either no or not active
+	fret	0			. yes and still using this handle
+
+subagent_running?
+	ly	a
+	la	0, a
+	ii	THREAD$STATE		. is this the thread leasing this connection?
+	j	subagent_cancel		. either it isn't or it isn't running
+
+	sabr	32			. base target threadCB in volatile-use window
+	la	*(32*/12++ABT-01000+2s)	. pull up vector list pointer
+	sabr	32			. base target process vector list
+	
+	la	x			. construct connection handle encoding
+	lb	(TCP_TCB*/16)		. from transmission control block pointer x
+	drl	12
+	rar	12
+	lb	tcx_v4(1)		. storage pointer connections memory window[b] into b
+
+					. compare
+	dan	*(32*/12++handle(1)-02000)
+	jdz	subagent_running!	. target process got this handle from us
+					. or rather no it didn't. This must be a new process
+subagent_cancel
+	z	0, y
+	lret	0
+
+subagent_running!
+	lret	1
+
+subagent_point
+	lb	x
+	andB	4095,,xi		. maximum connections in one table 169
+	mf	(0AAAAAB/*4)		. jerst multiply hee by one liddle ole reciprocal of 24yar
+	aa	subagent_ithread,,xi	. that way you stay inside a table of 170 entries
+	lret	0
+

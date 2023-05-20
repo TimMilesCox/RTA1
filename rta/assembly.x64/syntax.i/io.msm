@@ -1,0 +1,233 @@
+_inA:	mov	ebx, dword ptr [eax*4+_base]
+	mov	dword ptr [ebp+A], ebx
+_inA_:	ret
+
+_inB:	mov	ebx, dword ptr [eax*4+_base]
+	mov	dword ptr [ebp+B], ebx
+_inB_:	ret
+
+_outA:	mov	ebx, dword ptr [ebp+A]
+	jmp	oport
+
+_outB:	mov	ebx, dword ptr [ebp+B]
+	jmp	oport
+
+
+ISR_ONLY equ	8
+MEMTYPE	equ	1
+MEMZERONLY equ	2
+EXTERNAL_IO equ	4
+
+B_1	equ	MEMTYPE
+B_TCB	equ	MEMTYPE+ISR_ONLY
+B_KERN	equ	MEMTYPE+ISR_ONLY
+A_THREP	equ	MEMZERONLY+ISR_ONLY
+I_PORT	equ	EXTERNAL_IO
+O_PORT	equ	EXTERNAL_IO
+O_INDICA equ	EXTERNAL_IO
+O_CHILL	equ	EXTERNAL_IO
+I_TZONE	equ	EXTERNAL_IO
+RAM_THRESH equ	ISR_ONLY+MEMZERONLY
+XI_ACK	equ	ISR_ONLY+EXTERNAL_IO
+O_LEDS	equ	EXTERNAL_IO
+O_INC	equ	ISR_ONLY+EXTERNAL_IO
+O_MCAST	equ	ISR_ONLY+EXTERNAL_IO
+
+
+mask_port_outAB
+	db	0, B_1, 0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	    0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+	db	0,  B_TCB,B_KERN,B_KERN,B_KERN,B_KERN,B_KERN,B_KERN
+	db	A_THREP, 0, 0, XI_ACK,  O_INC, 0,0, O_MCAST
+
+	db	I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT,I_PORT
+	db	O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT,O_PORT
+
+	db	0,0,0,0, 0, I_TZONE, O_INDICA, O_CHILL
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  RAM_THRESH, 0,0, O_LEDS
+
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+	db	0,0,0,0,  0,0,0,0,  0,0,0,0,  0,0,0,0
+
+					; outA|B rules flags per I/O port
+
+oport:	cmp	eax, 192
+	jnb	ocheck
+	mov	cl, byte ptr [mask_port_outAB+eax]
+	and	cl, cl
+	jz	ocheck
+	test	cl, ISR_ONLY
+	jz	check_ahead
+	test	byte ptr [_psr+2], 128
+	jz	ocheck
+
+check_ahead:
+	test	cl, EXTERNAL_IO
+	jz	check_mpointer		; no restriction if the port is flagged
+
+	mov	dword ptr [_base+eax*4], ebx
+					; effects of some outA|B cases
+	cmp	eax, 102
+	jnz	io_ack_pins?
+	or	dword ptr [_indication], ebx
+	jmp	outxio_complete
+
+io_ack_pins?:
+	cmp	eax, 75			; turn off an ISR pending pin
+	jnz	alert_multicast?	; corresponding to the ACK pin in bl
+	not	bl
+	and	byte ptr [_base+74*4], bl
+	jmp	outxio_complete
+
+alert_multicast?:			; raise core2core broadcast signal
+	cmp	eax, 79
+	jnz	outxio_complete
+	test	bl, 1			; only 1 core is emulated
+	jz	outxio_complete		; = bit 0 of broadcast mask
+	or	byte ptr [_indication], ATTENTION
+
+outxio_complete:
+	ret				; for requester type [ ISR | anyone ]
+					; and is not a memory pointer [ 1..63 65..72 124 ]
+ocheck:
+	mov	esi, LP_AUTHORITY
+	jmp	guard_ii_escape
+					; rules for ports
+					; wnich are pointers to memory
+					; outA|B isn't allowed 
+check_mpointer:				; on ports [ 2..63 ]
+	test	cl, MEMTYPE		; they are in scope of sabr insrtuction
+	jnz	check_mdevice
+
+	test	ebx, 0400000h		; only the plain page pointer accepted
+	jnz	ocheck
+
+check_mpointer_zero
+	mov	ecx, dword ptr [_base+128*4]
+	and	ecx, 003fffffh		; can't be higher than device zero pages
+	cmp	ecx, ebx
+	jb	ocheck
+	mov	dword ptr [_base+eax*4], ebx
+	ret
+
+check_mdevice:
+	test	ebx, 00400000h		; page pointer is good & quick
+	jz	check_mpointer_zero
+	test	ebx, 63			; device zero = system memory
+	jz	check_device_zero	; is good & quick
+
+	mov	cl, bl			; otherwise measure the device
+	and	ecx, 63
+	mov	ecx, dword ptr [_base+128*4+ecx*4]
+	rol	ecx, 10			; the device must have
+	and	cl, 3			; the same type as system memory
+	cmp	cl, 2
+	jne	ocheck
+
+	shr	ecx, 10			; a page #, last 6 bits always 63 (03F)
+
+	mov	esi, ebx		; a page #, last 6 bits zero for comparison
+	and	esi, 00BFFFC0h
+	cmp	ecx, esi
+	jb	ocheck
+	mov	dword ptr [_base+eax*4], ebx
+	ret
+
+check_device_zero:
+	mov	ecx, dword ptr [_base+128*4]
+	and	ecx, 003FFFFFh
+	or	ecx, 00400000h
+	cmp	ecx, ebx
+	jb	ocheck
+	mov	dword ptr [_base+eax*4], ebx
+	ret
+
+_reload:
+	push	eax
+	mov	eax, dword ptr [ebp+A]
+	add	dword ptr [ebp+A], 2
+	call	_burst_read2
+	pop	edi
+	mov	dword ptr [edi*4+_base], eax
+	mov	dword ptr [edi*4+_base+4], ebx
+	ret
+
+_emulator_cool: ret
+
+;	sabr checks what it places in operand space windows
+;	there are no subsequent range checks on reference
+
+_sabr:	test	eax, 0000003Eh		; target window must be 2..63
+	jz	near guard_ii_authority
+	test	eax, 00FFFFC0h
+	jnz	near guard_ii_authority
+	mov	esi, eax		; target window
+	mov	eax, dword ptr [ebp+A]	; requested storage block index
+	mov	ebx, eax		; cache a copy
+
+	mov	ecx, dword ptr [_base+128*4]
+					; device zero = executable space
+					; load its size parameter
+	test	eax, 00400000h		; big and maybe not system memory?
+	jz	_sabr_executable_space	; yes executable space
+
+	test	ebx, 63
+	jz	_sabr_executable_space	; yes executable space
+					; no some other space
+
+	and	ebx, 63
+	mov	ecx, dword ptr [_base+128*4+ebx*4]
+	test	ecx, DATA16_FLAG
+	jnz	 _sabr_device_array
+	test	ecx, 00800000h
+	jz	_sabr_guard		; range issue. The device is void
+
+	mov	ebx, eax
+	and	ebx, 00BFFFC0h		; blocks of 64 pages if not device zero
+	jmp	_sabr_executable_type	; devices usable as system memory
+	
+_sabr_executable_space:			; is the target page @+ application space?
+	and	ebx, 00BFFFFFh		; just the page, not any flags
+	cmp	ebx, dword ptr [_base+72*4]
+	js	_sabr_guard		; neither ISrs nor applications may base ISR space
+
+_sabr_executable_type:			; has the device this much memory?
+	and	ecx, 003FFFFFh		; 4K-word page high index of device
+					; has the device this many pages?
+	sub	ecx, ebx
+
+	jns	_sabr_thru		; yes
+	jmp	_sabr_guard		; no
+
+_sabr_device_array:
+	test	dword ptr [_psr], 00800000h
+	jz	near guard_ii_authority	; only be here if you are an ISR
+	mov	ebx, eax		; refresh the requested block index
+	and	ebx, 003FFFFFh
+	shr	ebx, 6			; align it with high index from device port
+	and	ecx, 003FFFFFh		; has the device array this many blocks?
+
+	sub	ecx, ebx
+	jns	_sabr_thru		; yes
+					; no
+_sabr_guard:
+	mov	eax, 00C00001h		; no-access value
+					; will trip on reference in target window
+_sabr_thru:
+	mov	dword ptr [_base+esi*4], eax
+					; esi = target window
+	mov	ebx, dword ptr [_base+65*4]	; thread TCB
+	shl	ebx, 12+2		; 4K page * 4 platform bytes
+	mov	edi, _memory		; so system memory of emulated machine
+	add	edi, ebx		; + offset of TCB 
+	bswap	eax			; big endian store at TCB + ABT + esi * 4 
+	mov	dword ptr [edi+esi*4+64*4], eax
+					; -> TCB + ABT + window index
+_sabrx:	ret
+

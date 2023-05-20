@@ -1,0 +1,115 @@
+i48	$tree
+
+.	far call vector name m48_24
+.	multiplicand in a b
+
+m24	$head_far	 params(multiplier_24,	int	)	;
+								;
+			scalars(lookaside_a,	int,	a	;
+				lookaside_ab,	long		)
+
+	mf	multiplier_24
+	sb	7
+	dsa	24
+	ds	lookaside_ab
+
+	lb	lookaside_a
+	m	multiplier_24
+	da	lookaside_ab
+	sb	6
+	dsa	24		. quadword containing 72 significant bits
+	$ret
+
+.	far call vector name m48_48
+.	multiplicand in a b
+
+m48	$head_far	 params(multiplier_48,	long	)		;
+									;
+			scalars(msave_multiplicand,	long, a		;
+				quad_return_ab,		long		;
+				msave_rounding,		int, fp$guard	)
+	la	0,,xi
+	ii	FP_GUARD$		. suppress rounding guard pattern
+
+	dl	msave_multiplicand
+	lc	qm48_48		msave_multiplicand,,long multiplier_48,,long
+	qs	quad_return_ab
+
+	pop	a
+	ii	FP_GUARD$
+	qpop	a
+	fret	0
+	
+
+qm48_48	$head_near	 params(qmultiplicand,	long		;
+				qmultiplier,	long	)	;
+								;
+			scalars(qmaside,	float		)
+
+	
+	dl	qmultiplier
+	call	(i48_2float)
+	qs	qmaside
+	dl	qmultiplicand
+	call	(i48_2float)
+	fm	qmaside
+	call	(float2i72)
+	$ret
+
+.	far call vector name d48_48
+.	dividend in a b
+
+d48	$head_far	 params(divisor_48,	int	)	;
+								;
+			scalars(dsave_dividend,	long, a		;
+				quad_return_quo, long		;
+				dsave_rounding,	int, fp$guard	)
+
+	la	0,,xi
+	ii	FP_GUARD$	. suppress rounding guard pattern
+
+	dl	dsave_dividend
+	lc	qd48_48		dsave_dividend,,long	divisor_48,,long
+	qs	quad_return_quo
+
+	pop	a
+	ii	 FP_GUARD$	. restore rounding duard pattern
+	qpop	a
+	fret	0
+
+qd48_48	$head_near	 params(qdividend,	long		;
+				qdivisor,	long	)	;
+								;
+			scalars(qdaside,	float		)
+
+	dl	qdivisor
+	call	(i48_2float)
+	qs	qdaside
+	dl	qdividend
+	call	(i48_2float)
+	fd	qdaside
+	call	(float2i72)
+	$ret
+
+.	far call vector name i48_2float
+.	accelerator for 48-bit integer to floating
+
+_2float	ds	mantissa2	. input 48-bit integer
+	dsa	48		. make 48 signs
+	push	a		. save a word of signs
+	da	mantissa2	. make - values 1s-complement
+	pop	mantissa3	. write 3rd mantissa word
+
+	dlsc	a		. scale and count
+	dpush	a		. 1st & 2nd mantissa words
+	la	48,,xi		.
+	ana	6		. subtract normalising count from 48
+	jza	all_signs	. 48 bits normalising count = +- zero
+	or	(0400000)	. all integers are all +midpoint
+
+all_signs			. polarise word containing
+	xor	7		. sign + exponent along with mantissa
+	dpop	b
+	fret	0
+
+	$root

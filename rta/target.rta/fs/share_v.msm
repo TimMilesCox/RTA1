@@ -1,0 +1,43 @@
+.	vector name	appdata_share
+
+appdata_vector*	$tree
+	$head_far	 params(vector_index,	int	;
+				data_words,	int	)
+
+
+	lx	vector_index
+	lr	DATA_SHARE_VECTOR(1)+1,,xi
+	jxge	zero_out			. vector too high
+	lr	DATA_SHARE_VECTOR(DATA_SHARES),,xi
+	jxge	in_order
+						. vector too low
+zero_out
+	la	0,,xi
+	j	end_of
+
+in_order
+	ii	READ_XVECTOR$			. populated already?
+	lcal	qualify
+	tp	data_words			. seeking to remove?
+	j	remove				. remove
+	jnza	acquire				. participate
+	la	data_words			. not populated
+	jza	end_of				. participating but not assigning
+	ii	ASSIGN_XVECTOR$			. get some
+	jza	end_of				. if available
+acquire	ii	WRITE_AVECTOR$			. write application vector
+	j	end_of
+
+remove	jza	end_of				. if nothing you may keep it
+.	ii	(BANK$FREE)			. otherwise you need
+.	la	0,,xi				. the descriptor
+.	ii	WRITE_XVECTOR			. not the Page Index
+						. so far you haven't got that
+end_of	$ret
+
+qualify	lk	(0C00001s)			. translate nothing to zero
+	mta	k
+	lret	0
+	la	0,,xi
+	lret	0
+	$root

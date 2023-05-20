@@ -1,0 +1,60 @@
+
+rm -f	list.txt
+
+export	PLATFORM=`uname`
+
+if	[ $PLATFORM = Linux ]
+then
+	RAMFS=/dynamic/rta
+else
+	RAMFS=/Volumes/rta
+fi
+
+COME_FROM=$PWD
+cd	$HOME/dynamic.rta 	# pushd is noisy and bshell cant do > [handles] indirections
+
+if	[ ! -e "dynamic.def" ]
+then
+	cp	$RTA_BINARY/../../target.rta/fponline/dynamic.def .
+fi
+
+if	[ ! -e "my_names.def" ]
+then
+	touch	my_names.def
+fi
+#	echo	started mpdu
+
+if	[ ! -e $RAMFS/fponline/$USER ]
+then
+	mkdir	$RAMFS/fponline/$USER
+	chmod	0777 $RAMFS/fponline/$USER
+fi
+
+#	cp	target.def $RAMFS/fponline/$USER
+#	cp	target2.def $RAMFS/fponline/$USER
+#	cp	runagate.msm $RAMFS/fponline/$USER
+
+cd	$RAMFS/fponline/$USER
+
+rm -f	pdu.txo
+rm -f	pdu
+rm -f	pduimage
+rm -f	pduwords
+
+masmx	-lnkeuX	$RTA_BINARY/../../target.rta/fponline/pdu_S	\
+		pdu						\
+		> list.txt
+if	[ ! -e pdu.txo ]
+then
+	echo	error in just-in-time assembly
+	echo	see $RAMFS/fponline/$USER/list.txt
+	exit
+fi
+symbol	< pdu.txo > pduwords
+lstring	-b	pdu.txo pdu
+source	./pduwords
+slab	pdu pduimage $FPONLINE_WORDS
+
+cd	$COME_FROM		# popd is noisy and bshell can't do > [handles] indirections
+				# COME_FROM is always $RTA_BINARY/../../client anyway
+

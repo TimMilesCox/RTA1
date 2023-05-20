@@ -1,0 +1,415 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+TCP_MIB		$equ	4096/24*2-2
+
+$(1)
+tcp_mib_chain	+	0
+tcp_mib_free	+	0
+tcp_mib_high	+	tcp_mib
+
+tcp_mib_ostat	mobjet	0	1	SNMP_INT		3	1	;
+			0	0	tcp_mib_xstate
+
+tcp_mib_oneta	mobjet	0	2	SNMP_NETWORKADDRESS	4	1	;
+			0	0	tcp_mib_xnet
+
+tcp_mib_oport	mobjet	0	4	SNMP_INT		2	1	;
+			0	0	tcp_mib_xnet+1
+
+tcp_mib_xstate	+	99
+tcp_mib_xnet	-	99:d
+
+$(3)
+tcp_mib		$res	TCP_MIB
+
+.	this is done with a wrapper because 
+.	few connections are MIB-visible and 
+.	density requires that they don't all
+.	have a lexical-order chain pointer
+.	as well as a hash link
+
+.	the new connection pointer is x
+
+
+$(0)
+
+tcpagent_add
+	la	tcp_mib_free
+	jza	tcp_agent_add_new
+	push	0, a
+	pop	tcp_mib_free
+	j	tcpagent_add_assigned
+
+tcp_agent_add_new
+	la	tcp_mib_high
+	anu, xi	tcp_mib+TCP_MIB
+	jc	tcpagent_add_x
+	lr, i	2, a
+	sr	tcp_mib_high
+
+tcpagent_add_assigned		. the wrapper is assigned
+	sx	1, a		. the connection is wrapped
+
+	lr	a
+	ql	transmission:socket_address
+	qs	8
+
+	lcal	tcpagent_search
+	tz	y		. add on the end?
+	jdz	tcpagent_add_nop . it seeems to be there
+				. already
+	sr	0, x		. next after before
+	la	r
+	sy	0, a
+	lx	1, a		. restore the connection
+	fret	0		. pointer
+
+tcpagent_add_nop		. listed already
+	la	r
+	lx	1, a		. restore the connection *
+	push	tcp_mib_free	. give the wrapper back
+	pop	0, a
+	sa	tcp_mib_free
+tcpagent_add_x
+	fret	0
+
+
+tcpagent_free
+	push	y
+	push	b
+	lb, xi	tcp_mib_chain
+
+tcpagent_free_search
+	ly	b
+	lb	0, b
+	jzb	tcpagent_free_nop
+	la	1, b
+	ana	x
+	jnza	tcpagent_free_search
+	push	0, b
+	pop	0, y
+
+	push	tcp_mib_free
+	pop	0, b
+	sb	tcp_mib_free
+tcpagent_free_nop
+	pop	b
+	pop	y
+	fret	0
+
+tcpagent_state	$head_far	 params(taseq,		int	;
+					taflags,	int	;
+					taroutine,	int)
+
+	la	tcx_v4(1)
+	sabr	BSOCKET
+
+	lb	taseq
+	la	taroutine
+	ana,xi	SNMP_GETREQ
+	jnza	tcpagent_state_along
+
+	lcal	tcpagent_search_exact
+	jzb	tcpagent_nostate
+	j	tcpagent_state!
+
+tcpagent_state_along
+	lcal	tcpagent_search_forward
+	jzb	tcpagent_nostate
+
+	lx	b
+	la	taseq
+
+	lcal	tcpagent_write_oid_tokens
+
+tcpagent_state!
+	la	transmission:state, b
+	sa	tcp_mib_xstate
+
+	lb, xi	tcp_mib_ostat
+tcpagent_nostate
+	fret	0
+	
+tcpagent_write_oid_tokens
+	push	b
+	push	y
+
+	ly, i	9, a
+	dl	transmission:socket_address
+	lcal	tcpagent_write_address
+
+	dl	transmission:remote_address
+	ly, i	5, y
+	lcal	tcpagent_write_address
+	
+	pop	y
+	pop	b
+
+	lret	0
+
+tcpagent_write_address		. distribute the address
+	dpush	a		. into 5 tokens pre-BER
+	dsr	16
+	sbr	16
+	ds	0, y
+	pop	a
+	and, xi	255
+	sa	2, y
+	pop	a
+	dsr	16
+	sbr	8
+	ds	3, y
+	lret	0
+
+tcpagent_neta	$head_far	 params(tanseq,		int	;
+					tanflags,	int	;
+					tanroutine,	int)
+
+
+        la      tcx_v4(1)
+        sabr    BSOCKET
+
+	lb	tanseq
+	lcal	tcpagent_search_exact
+	jzb	tcpagent_noneta
+
+	dl	transmission:socket_address, b
+	ds	tcp_mib_xnet
+
+	la, xi	2
+	sa	tcp_mib_oneta:seq
+
+	lb, xi	tcp_mib_oneta
+
+tcpagent_noneta
+	fret	0
+
+tcpagent_port	$head_far	 params(tapseq,		int	;
+					tapflags,	int	;
+					taproutine,	int)
+
+
+        la      tcx_v4(1)
+        sabr    BSOCKET
+
+	lb	tapseq
+	lcal	tcpagent_search_exact
+	jzb	tcpagent_noport
+
+	dl	transmission:socket_address, b
+	andB	(65535)
+	ds	tcp_mib_xnet
+
+	la, xi	3
+	sa	tcp_mib_oport:seq
+
+	lb, xi	tcp_mib_oport
+
+tcpagent_noport
+	fret	0
+
+
+
+tcpagent_neta_remote	$head_far	 params(tanrseq,	int	;
+						tanrflags,	int	;
+						tanrroutine,	int)
+
+
+        la      tcx_v4(1)
+        sabr    BSOCKET
+
+	lb	tanrseq
+	lcal	tcpagent_search_exact
+	jzb	tcpagent_noneta_remote
+
+	dl	transmission:remote_address, b
+	ds	tcp_mib_xnet
+
+	la, xi	4
+	sa	tcp_mib_oneta:seq
+
+	lb, xi	tcp_mib_oneta
+
+tcpagent_noneta_remote
+	fret	0
+
+tcpagent_port_remote	$head_far	 params(taprseq,	int	;
+						taprflags,	int	;
+						taprroutine,	int)
+
+        la      tcx_v4(1)
+        sabr    BSOCKET
+
+
+	lb	taprseq
+	lcal	tcpagent_search_exact
+	jzb	tcpagent_noport_remote
+
+	dl	transmission:remote_address, b
+	andB	(65535)
+	ds	tcp_mib_xnet
+
+	la, xi	5
+	sa	tcp_mib_oport:seq
+
+	lb, xi	tcp_mib_oport
+
+tcpagent_noport_remote
+	fret	0
+
+
+tcpagent_search_exact
+	qpush	8
+	lcal	tcpagent_compress_tokens
+	lcal	tcpagent_search
+	qpop	8
+
+	tz	y
+	jdz	tcpagent_find
+
+tcpagent_runout
+	lb, xi	0
+	la, xi	SNMP_NOSUCHNAME
+	lret	0
+
+tcpagent_find
+	lb	1, y
+	la, xi	0
+	lret	0
+
+tcpagent_search_forward
+	la	1, b	. < 8 tokens = front of list 
+	aa, xi	-8	. 8..17 tokens means row
+			.	          or row after
+			. 18 tokens means row after
+
+	jc	tcpagent_search_on
+	ly	tcp_mib_chain
+	tz	y
+	j	tcpagent_find
+	j	tcpagent_runout
+
+tcpagent_search_on	. 8 or more tokens
+	aa, xi	-10
+	jc	tcpagent_search_higher
+	
+	ly	2, b
+	ay, i	2, b	. zero the unsupplied tokens
+tcpagent_zerof
+	aa, xi	1
+	jc	tcpagent_search_as_high
+	z	0, y
+	ly, i	1, y
+	j	tcpagent_zerof
+
+tcpagent_search_as_high
+	qpush	8
+	lcal	tcpagent_compress_tokens
+	lcal	tcpagent_search
+	qpop	8
+
+	tz	y
+	j	tcpagent_find	. found equal or higher = OK
+	j	tcpagent_runout	. found lower or none
+
+tcpagent_search_higher
+	qpush	8
+	lcal	tcpagent_compress_tokens
+	lcal	tcpagent_search
+	qpop	8
+
+	tz	y
+	j	$+2
+	j	tcpagent_runout	. found lower or none
+	jdz	$+2		. found equal
+	j	tcpagent_find	. found higher = OK
+	ly	0, y		. next
+	tz	y
+	j	tcpagent_find	. found higher = OK
+	j	tcpagent_runout	
+
+
+tcpagent_search
+	ly, xi	tcp_mib_chain
+
+tcpagent_search_next	. seach until the connection
+	lx	y	. in the list is not <
+	ly	0, y	. then decide if what you got
+			. is what you wanted
+	tz	y
+	j	tcpagent_test_local
+	lret	0
+
+tcpagent_test_local
+	la	1, y
+	ql	transmission:socket_address, a
+	dan	8
+	jnc	tcpagent_search_next
+	jdz	tcpagent_test_remote
+	lret	0	. connection in list is >
+tcpagent_test_remote
+	dl	6
+	dan	10
+	jnc	tcpagent_search_next
+	lret	0
+	
+
+
+tcpagent_compress_tokens
+	lk	(00FFFF)
+	ly, i	9, b
+	lcal	tcpagent_compress_address
+	ly, i	5, y
+	ds	8
+	lcal	tcpagent_compress_address
+	ds	10
+	lret	0
+
+tcpagent_compress_address
+	dl	0, y
+	sbl	16
+	dsl	8
+	lb	2, y
+	sbl	16
+	dsl	8
+	lb	3, y
+	sbl	16
+	mlb	4, y
+	lret	0

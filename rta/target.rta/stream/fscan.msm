@@ -1,0 +1,87 @@
+	$if		0
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	fs/response.def
+	$include	language/stack.def
+	$include	t77.4/socket.def
+	$list
+	$path
+	$endif
+	
+$(0)
+
+	. vector name fscanform
+
+f_scanform* $tree	
+	$head_far	 params(handle,	int)
+
+	la	handle
+	ii	READ_SOCKET$
+
+	lk	(255*/16s)
+
+	mtane	(TCP_TCB*/16)
+	go	(net_scan_tcp)
+
+	mta	(FS$DEVICE$ARRAY*/16s)
+	j	no_file_type
+
+	sb	handle			. replace handle in arguments
+	go	(fscan_datafile)	. with open file block pointer
+
+	. more media go here
+	
+no_file_type
+	la	-NO_FILE_TYPE,,xi
+	fret	0
+	$root
+
+
+	. vector name fprintf
+	. format in program space
+	. same for all media types
+
+FORMAT_FRAME	$equ	1012
+
+f_editform* $tree
+			$head_far params(handle,			int		;
+					formatp,		int	)	;
+										;
+				 xframe(save_rkxy,		float,	r	;
+					save_ab67,		float,	a	;
+					stream_registers,	float, RDATAC	;
+										;
+			 		o_frame,		FORMAT_FRAME	)
+
+	lx	o_frame,,i
+	call	(wstream_starta)
+
+	c	(wstream_composea)	handle-1		;	. stack walkback word = args limit
+					formatp,,i			. address of 1st **pointer
+
+	jna	no_write					. if the format call went wrong
+
+	c	(write)	handle	o_frame,,i	a		. a = columns in frame
+	c	(fsync)	handle
+
+no_write
+	sa	save_ab67
+	ql	save_rkxy
+	qs	r
+	ql	stream_registers
+	qs	RDATAC
+	ql	save_ab67
+	$ret
+	
+	$if	0
+	qpop	RDATAC	. stream registers now need to be nonvolatile
+	qpop	r						. recover the shielded caller registers
+	push	FORMAT_FRAME, fp, i				. sell the external stack composition frame
+	pop	fp
+.	USTREAM		. defaults -> b$stream / SIMD registers
+	fret	0
+	$endif
+
+	$root

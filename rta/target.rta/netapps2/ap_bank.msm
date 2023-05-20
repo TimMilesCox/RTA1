@@ -1,0 +1,263 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$include	../lib/register.def
+	$include	../lib/alib.def
+	$include	../lib/i72.def
+	$include	../lib/144.def
+	$include	../lib/ascii.def
+	$include	../fponline/fponline.def
+	$include	../def.app/iframes.def
+	$include	../stream/stream.def
+
+LIBRARY	$set		LIBRARY_XDR
+
+FPSERVER_PORT	$equ	128
+FPSERVER_PORT2	$equ	130
+CALIBRATE_PORT	$equ	0	.	4610
+AGENT1_PORT	$equ	0	.	4611
+
+
+$(0::A_PROTOS_BANK1)
+telnet		$vector	telnet_i
+http_server	$vector	http_serve
+fp_server	$vector	fp_96:fp_server
+fp_server_192	$vector	fp_192:fp_server
+integer_server	$vector	iserve:integer_serve
+fponline	$vector	fponline:launch
+
+		$if	SNMP_AGENT_THREADED
+snmp_agent*	$vector	snmp_agent_launch
+		$else
+agent2*		$vector agent_2			. snmpv1
+		$endif
+
+subagent*	$vector subagent_insert
+subagent?*	$vector subagent_lookup
+
+	$if	CALIBRATE_PORT
+calibration	$vector	calibrate
+	$endif
+
+online_xqt*	$vector	search_onlinexqt
+run_start*	$vector	startups:run
+initial_startups* $vector startups:initial
+normal_string*	$vector	normal_s
+
+x72_orU*	$vector	x72oru
+x72_andU*	$vector	x72andu
+x72_xorU*	$vector	x72xoru
+x72_xtend*	$vector	x72xtend
+x72_sa*		$vector	x72sa
+x72_sl*		$vector	x72sl
+x72_aU*		$vector	x72au
+x72_anU*	$vector	x72anu
+x72_m48_24*     $vector x48m24
+x72_m72_24*	$vector	x72m24
+x72_m48_48*     $vector x48m48
+x72_m72_48*	$vector	x72m48
+x72_m72_72*	$vector	x72m72
+x72_d72_24*	$vector	x72d24
+x72_d48_48*     $vector x48d48
+x72_d72_48*	$vector	x72d48
+x72_d72_72*	$vector	x72d72
+
+sysinfo*	$vector	sys_info
+
+app_threads*	$vector	athreads_start
+app_protos*	$vector	a_protos_inline
+
+	$do	48-$,	fret	0
+
+fraction192*	$vector	ap_lib192:fraction
+integer192*	$vector	ap_lib192:integer
+
+fraction96*	$vector	ap_lib96:fraction
+integer96*	$vector	ap_lib96:integer
+
+sine192*	$vector	trig192:sine
+cosine192*	$vector	trig192:cosine
+tangent192*	$vector	trig192:tangent
+cotangent192*	$vector	trig192:cotangent
+
+sine96*		$vector	trig96:sine
+cosine96*		$vector	trig96:cosine
+tangent96*		$vector	trig96:tangent
+cotangent96*	$vector	trig96:cotangent
+
+square192*	$vector	ap_lib192:square
+square_root192*  $vector ap_lib192:square_root
+cube192*	$vector	ap_lib192:cube
+cube_root192*	$vector	ap_lib192:cube_root
+
+athreads_start
+	$include	athreads
+	fret		0
+
+a_protos_inline
+        $include	a_protos
+        fret		0
+
+	$include fpserver
+	$include fpser192
+	$include fp_react
+
+	$include telnet
+	$include search_x
+	$include span_rom
+	$include startups
+	$include normal_s
+
+	$list	5
+
+	$include http.msm
+	$include iserver1
+
+	$path	../fponline
+	$include fponline
+	$path	../apps.lib
+	$include aplib192
+	$include aplib96
+
+	$include trig192
+	$include trig96
+
+	$path	../mib
+	$include snmpv1
+	$include ber
+	$include sequo
+
+	$path	../netapps2
+	$include subagent
+	$include ../lib/x72_48if
+	$include sysinfo
+
+$(0)
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	A_PROTOS_BANK1 too large
+
+
+$(0::A_PROTOS_BANK2)
+mib_get*	$vector	mib_read
+mib_getnext*	$vector	mib_walk
+mib_set*	$vector	mib_write
+mib_start*	$vector	mib_initial
+mib_line*	$vector	mib_wline
+mib2ticks*	$vector	mib2tick
+
+udp_agent1*	$vector	udpagent_net
+udp_agent2*	$vector	udpagent_port
+
+if_agentidx	$vector	ifagent_idx
+if_agentdescr	$vector	ifagent_descr
+if_agenttype	$vector	ifagent_type
+if_agentMTU	$vector	ifagent_MTU
+if_agentspeed	$vector	ifagent_speed
+if_agentphy	$vector	ifagent_phy
+if_agentadmins	$vector	ifagent_admins
+if_agentosta	$vector	ifagent_osta
+if_agentlastc	$vector	ifagent_lastc
+if_agentibytes	$vector	ifagent_ibytes
+if_agentiucast	$vector	ifagent_iucast
+if_agentimcast	$vector	ifagent_imcast
+if_agentidrops	$vector	ifagent_idrops
+if_agentierrs	$vector	ifagent_ierrs
+if_agentinoproto $vector ifagent_inoproto
+if_agentobytes	$vector	ifagent_obytes
+if_agentoucast	$vector	ifagent_oucast
+if_agentomcast	$vector	ifagent_omcast
+if_agentodrops	$vector	ifagent_odrops
+if_agentoerrs	$vector	ifagent_oerrs
+if_agentoqlen	$vector	ifagent_oqlen
+if_agentsmib	$vector	ifagent_smib
+
+tcp_agent_add	$vector	tcpagent_add
+tcp_agent_free	$vector	tcpagent_free
+tcp_agent_state	$vector	tcpagent_state
+tcp_agent_neta	$vector	tcpagent_neta
+tcp_agent_port	$vector	tcpagent_port
+tcp_agent_remote_neta $vector tcpagent_neta_remote
+tcp_agent_remote_port $vector tcpagent_port_remote
+tcp_agent_established $vector tcpagent_established
+
+ip_agent_address		$vector	ipagent_address
+ip_agent_address_ifidx		$vector	ipagent_address_ifidx
+ip_agent_address_netmask	$vector ipagent_address_netmask
+
+.	placeholders kept as dummy in case BROADCAST_AND_MAXREASM is switched on
+.	place held to avoid displacing subsequent vector locations
+.	not that these MIB function names seem to be exported
+.	these can be switched on but don't seem necessary in operation
+
+ip_agent_address_broadcast	fret	0	. $vector	ipagent_address_broadcast
+ip_agent_address_maxreasm	fret	0	. $vector	ipagent_address_maxreasm
+
+ip_agent_route_dest	$vector	ipagent_route_dest
+ip_agent_route_ifidx	$vector	ipagent_route_ifidx
+ip_agent_route_next_hop	$vector	ipagent_route_next_hop
+ip_agent_route_type	$vector	ipagent_route_type
+ip_agent_route_mask	$vector	ipagent_route_mask
+
+ip_agent_cidr_route_dest_type			$vector	ipagent_cidr_route_dest_type
+ip_agent_cidr_route_dest			$vector	ipagent_cidr_route_dest
+ip_agent_cidr_route_mask_log			$vector	ipagent_cidr_route_mask_log
+ip_agent_cidr_route_next_hop_type 		$vector ipagent_cidr_route_next_hop_type
+ip_agent_cidr_route_next_hop			$vector	ipagent_cidr_route_next_hop
+ip_agent_cidr_route_ifidx			$vector	ipagent_cidr_route_ifidx
+ip_agent_cidr_route_type			$vector	ipagent_cidr_route_type
+
+	$do	$>64,	flag	jump pad overfull A_PROTOS_BANK2
+	$do	64-$,	fret	0
+	
+	$path	../mib
+	$include mib-II
+	$include mib2tick
+	$include udpagent
+	$include ifagent
+	$include ipagent
+	$include roagent
+	$include tcpagent
+	$include tcpagen2
+
+	$include idragent
+	$include loadplan
+
+$(0)
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	ap_bank2 overflow

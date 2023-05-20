@@ -1,0 +1,455 @@
+SOCKET_LPOINTER $equ	d$save2
+
+hvsocket	$tree
+
+$(69::,b)
+so	$socket
+
+$(0)
+
+bind	$head_far		 params(sockets,	int	;
+					port1,		int	;
+					transmissions,	int	;
+					net_address,	long	)
+	dl	net_address
+	sbl	8
+	dsl	8
+	ds	net_address
+
+	lr	sockets
+	j	more?
+
+more	sr	sockets
+	lk	(00FFFF)
+	dl	net_address
+	mlb	port1
+	c	(__bind)	(IPPROTO_TCP*/16)	a,,long
+	jna	no_more
+
+	la	(0800000s)
+	sa	so:flags, y		. flag uses private buffers
+	z	so:tcp:tbase, y		. and does not yet have them
+	z	so:tcp:rxowner, y	. no thread claims the port yet
+
+	la	transmissions		. and will have this many
+	sa	so:tcp:tcbs, y		. transmission control blocks
+
+	inc	port1
+	lr	sockets
+more?	jdr	more
+no_more
+	$ret
+
+storage	$head_far	scalars(connections,	int			;
+				caller_ab67,	float,	a		;
+				caller_rkxy,	float,	r		;
+				bound_address,	float, *SOCKET_LPOINTER+1)
+
+	ly	SOCKET_LPOINTER+1
+	lb	so:tcp:tcbs, y		. connections
+	sb	connections		. save max connections
+	sbl	3
+	la	b
+	sal	1			. * 24 + CHAINS + 8
+	lx	CHAINS+8, b, i		. connections * 24w + 40w
+	ax	a
+
+					. rx buffer start
+	ax	(BSOCKET*/18s)		. offset by connections tank
+	la	(262144)
+
+	ii	BANK$
+	sa	caller_ab67		. and that's where is is on return
+	jza	data_x			. zero result
+
+	lb	(0400000s)		. now has port-dedicated segment+tcb storage
+	orB	so:flags, y
+	sb	so:flags, y
+
+	lk	so:tcp:rxowner, y	. waiting socket owner thread if any
+	sa	so:tcp:tbase, y
+	sx	so:tcp:rxbu_p, y
+	lb	(BSOCKET*/18++131072:s)
+	sb	so:tcp:txbu_p, y
+
+	ly	a			. drop port socket address window
+	la	tcx_v4(1)		. open 1st transmissions table
+	sabr	BSOCKET			. get maintenance chain head pointer
+	lr	*(BSOCKET*/12++tlist:link)	. from 1st transmissions table
+	sy	*(BSOCKET*/12++tlist:link)	. replace chain head pointer
+	la	y
+					. drop addressing to 1st transmissions table
+	sabr	BSOCKET			. prime the new connections + buffers array
+	sr	*(BSOCKET*/12++tlist:link)	. maintenance chain point forward
+	sx	*(BSOCKET*/18++tlist:rxbu_p:s)	. upper limit transmission blocks
+	sb	*(BSOCKET*/18++tlist:txbu_p:s)	. + rx + tx buffer pointers
+	sk	*(BSOCKET*/18++tlist:rxowner:s)	. thread control block waiting socket owner
+	sx	caller_rkxy+2
+
+	z	*(BSOCKET*/12++tlist:txchain)	. zero forward pointer
+						. in frames transmission list
+
+	la	b			. start of tx buffer
+	ana	x			. minus start of rx buffer
+	call	(far_initpool)
+
+	lx	(BSOCKET*/18++131072:s)
+	la	(131072)
+	call	(far_initpool)
+
+	lx	(BSOCKET*/18s)
+	z	tlist:free
+
+.	z	tlist:link		. original ->null is rippled forward from 1st block
+
+	la	tlist:connection_block(2),,i		. 1st in block is q-concentrator
+	sa	tlist:top
+	la	(0800000s)
+	sa	tlist:flags
+
+
+					. this part configures the guideline segment size
+					. for assignment if high-volume socket does
+					. a stream transmit, i.e. without TCP_PSH
+					. in order to construct output serially
+					. the derived figure is stored in concentrator connection
+					. (a transmission control block which is not a connection):
+
+					. 	tlist:connection_block(1):mss
+
+					. and is not the MSS derived as a function of MTU
+
+	lb	connections		. retrieve maximum connections
+	sbl	4			. let each connection occupy 2 descriptors
+	la	(131072-264)		. TX block minus management chains
+	ana	b			. minus estimated frame descriptors
+	dsr	24+5			. available words / 32 = avaliable blocks
+	d	connections		. / maximum connections
+	sal	6			. bytes * blocks 
+	aa	-20-20-32,,xi		. protocol headers frame header / preamble
+
+	sa	*(+(BSOCKET*/18++tlist:connection_block(1):mss)s)
+
+	lr	CHAINS//4-1,,xi
+	dsr	48
+	ds	6
+
+data_qz	qs	tlist:chain(1)
+	ax	4,,xi
+	jdr	data_qz
+
+	lx	(BSOCKET*/18s)
+
+	ql	bound_address
+	qs	tlist:connection_block(1):socket_address
+	z	tlist:connection_block(1):tsq
+	z	tlist:connection_block(1):receiveq:head
+	z	tlist:connection_block(1):q4ack:head
+
+data_x	qpop	0, sp
+	qpop	r
+	qpop	a
+	inc	sp			. drop connections word
+	fret	0
+
+$(67::,y)
+array	$socket_array
+
+$(66::,x)
+transmission tcp_connection
+
+$(0)
+
+qreadq	call	(hvsocket_readq)
+	lx	*(BSOCKET*/12++tlist:rxbu_p)
+	tz	a
+	call	(if_sell1)
+	lret	0
+
+.	vector name hvsocket:rx
+
+rx	$head_far	 params(sockets_p,	int	;
+				tcb_p,		int	;
+				buffer,		int	;
+				data_bytes,	int	;
+				rx_flags,	int	)
+
+	la	sockets_p		. the port number
+	call	(connection_array)
+	j	rx_type_wrong		. port wrong for this operation
+
+	la	*(BSOCKET*/12++tlist:connection_block(1)+transmission:receiveq.head)
+	jza	rx_all_read
+	ly	descriptor:tcbloc, a
+	sy	tcb_p			. for now the parameter is wildcard
+	ly	descriptor:apdata, a
+	lb	descriptor:bytes, a
+	andB	(03FFFFF)
+	jnzb	rx_nonzero
+	lcal	qreadq
+	j	rx_zero
+
+rx_nonzero
+	lr	b
+	lx	data_bytes
+	jxge	space_allowed
+	lr	data_bytes		. accept less than the message
+
+space_allowed
+	sr	data_bytes
+	lx	buffer
+	lcal	block_read
+
+	tp	rx_flags
+	j	rx_result		. don't drop the input
+
+	lcal	qreadq			. do drop the input
+	j	rx_result
+
+rx_type_wrong
+rx_all_read
+	z	tcb_p			. tell caller no traffic these connections
+rx_zero	z	data_bytes		. tell caller no traffic or remote close
+
+rx_result
+	la	0,,xi
+	sabr	BSOCKET			. close the gate
+	la	data_bytes		. report how many bytes
+	lb	tcb_p			. connection identifier
+	$ret
+
+.	vector name hvsocket_tx
+
+tx	$head_far	 params(socket_p,	int	;
+				socket_q,	int	;
+				response,	int	;
+				bytes,		int	;
+				xmit_flags,	int)	;
+							;
+			scalars(caller_rdatac,	float,	RDATAC)
+
+
+	la	socket_p	. port #
+	call	(connection_array)
+	j	tx_mismatch
+
+	lx	socket_q	. connection->
+	la	transmission:socket_address+1
+	and	(00FFFF)
+	xor	socket_p
+	jnza	tx_mismatch	. well it should be the same
+
+.	lb	response
+.	sb	q
+
+	la	xmit_flags
+	and	TCP_PSH,,xi
+	or	05000++TCP_ACK,,xi
+	lk	a
+	lb	response
+.	sb	SOCKET_CALL_FLAGS
+.	jnza	txx		. segment size is transmission size @ socket
+				. mss allows some accumulation instead
+
+.	la	*(+(BSOCKET*/18++tlist:connection_block(1):mss)s)
+.	sa	transmission:mss
+
+txx	la	bytes
+	call	(tcp_tx)
+	jza	tx_zero
+	jpa	tx_complete
+
+tx_zero
+tx_minus
+	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outerrs,0,xi	1,,xi
+
+	j	tx_complete
+
+tx_mismatch	
+	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outdrops,0,xi	1,,xi
+
+tx_complete
+	qpop	RDATAC		. stream / simd registers saved at function head
+	fret	0
+
+.	vector name hvsocket_close closes a connection
+
+close	$head_far	 params(close_hvport,		int	;
+				close_connection,	int	)
+
+	la	close_hvport
+	call	(connection_array)
+	j	close_y
+	lx	close_connection
+	n	transmission:state
+	la	0,,xi
+	j	close_z
+
+close_y	la	-BAD_ARGUMENT,,xi
+close_z	$ret
+	
+block_read
+	lb	r
+	lb	1, b, i		. containing transfer size
+	sbr	1		. in socket buffer words
+	push	b		. save containing network words
+	push	y		. save network string start
+
+	lk	(00FFFF)
+	mf	(0555556)	. one third downrounded
+				. words in socket buffer
+
+	lr	a
+	j	read6?
+
+read6	dl	0, y		. compress 3 socket buffer words
+	sbl	8
+	dsl	8
+	mlb	2, y
+	ds	0, x
+	ax	2,,xi
+	ay	3,,xi
+read6?	jdr	read6
+
+	pop	r		.   socket buffer containing words
+	popA	r		. + socket buffer start = rx limit
+
+	jyge	read_0		. all rx words are read
+	dec	r		. already read
+	jyge	read_1		. to 1 word less than transfer?
+
+	dl	0, y		. not zero words and not 1 word
+	sbl	8		. = 2 words
+	dsl	8		. compress them
+	ds	0, x		. that leaves 2 trailing zero bytes
+	lret	0		. whether data is string text or not
+
+read_1	la	0, y		. 1 more input word
+	sal	8		. align to packed input
+	sa	0, x		. that leaves 1 trailing zero byte
+	lret	0		. whether data is string text or not
+
+read_0	z	0, x		. guarantee at least 1 zero byte
+	lret	0		. whether data is string text or not
+
+.	vector name	hvsocket_readq
+.	does not release the buffer
+.	hvsocket_rx without flag 800000 calls this then sell1
+
+readq	lx	(BSOCKET*/12++tlist:connection_block(1))
+	LOCK	transmission:tsq
+	la	transmission:receiveq.head
+	jza	readq_clear
+	push	descriptor:next, a
+	pop	transmission:receiveq.head
+
+readq_clear
+	FREE	transmission:tsq
+	fret	0
+
+.	vector name	connection_array
+
+locate	call	(__tcp_socket)
+	jza	not_assigned
+	la	so:flags			. high volume port?
+	jpa	not_high_volume			. no
+	and	(0400000)			. memory assigned?
+	jza	not_initialised			. no
+	la	so:tcp:tbase
+	sabr	BSOCKET
+	fret	1				. available and based
+
+not_assigned
+not_high_volume
+not_initialised
+	fret	0				. not available
+
+xbind	$head_far	 params(xbind_port1,	int	;
+				xbind_portz,	int	;
+				xbind_spring_q,	int	)
+
+xbind_next
+	lx	xbind_port1
+	lr	xbind_portz
+	jxge	xbindx
+	la	x
+	inc	xbind_port1
+		
+	call	(__tcp_socket)
+	jza	xbind_next
+	la	so:flags
+	jpa	xbind_next
+	and	(0400000)			. dedicated storage assigned?
+	ly	b
+	jza	pending_1st_traffic		. not yet
+	la	so:tcp:tbase		
+	sabr	BSOCKET
+	inA	65				. thread control block <- connection array
+
+	lx	(BSOCKET*/18s)
+
+	sa	tlist:rxowner, x
+	la	xbind_spring_q
+	sa	tlist:connection_block(1):remote_address+1
+
+	j	xbind_next
+
+pending_1st_traffic			. dedicated storage first assigned on traffic
+	inA	65			. thread control block
+	sa	so:tcp:rxowner, y	. cached in socket structure until then
+
+	la	xbind_spring_q
+	sa	so:remote_address+1, y
+
+	j	xbind_next
+	
+xbindx	$ret
+
+write_rxq
+        push    x
+        sx      descriptor:tcbloc, a    . needed later
+        lx      (BSOCKET*/12++tlist:connection_block(1)
+
+        LOCK    transmission:tsq
+        ly      transmission:receiveq,,i
+
+	z	descriptor:next, a
+        tz	rxq2:head
+	j	write_rxq_tail
+	sa	rxq2:head 
+	j	write_after_rxq_tail
+write_rxq_tail
+	lb	rxq2:tail
+	sa	descriptor:next, b
+write_after_rxq_tail
+	sa	rxq2:tail
+
+        la      *(BSOCKET*/12++tlist:rxowner)
+        jza     tcp_free_rxq            . no-one asked to know
+        lcal    notify			. new receiveq:head this connection array
+
+tcp_free_rxq
+        FREE    transmission:tsq
+        pop     x
+	fret	0
+					. inbound segment queue-write
+					. calls notify under lock
+					. x -> connection block(1) of connnection table
+notify	lb	(TIME_WAIT++ACTIVATE:s)
+	ii	EVENT_FREE$
+
+	$if	__SPRING_LOAD
+	la	transmission:remote_address+1
+	jza	notification_not_listed
+	tp	transmission:state
+	j	notification_queued
+	n	transmission:state
+	c	(spring_load)	a	0,,BASE_SOCKET	. [ tumble_page connections_table ]
+
+notification_queued
+notification_not_listed
+	$endif
+
+	lret	0
+
+	$root

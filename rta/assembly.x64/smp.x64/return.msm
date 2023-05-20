@@ -1,0 +1,52 @@
+_autoexit:
+	mov	eax, II_EXIT
+	mov	ecx, LP_AUTOEXIT
+	jmp	_ii_escape
+
+_lret:	test	dword ptr [rsi+PSR], 00800000h
+	jnz	_lret_
+
+	cmp	dword ptr [rbp+S_P], 128
+	jz	_autoexit
+
+_lret_:	call	stack_read1
+	add	eax, dword ptr [rsi+rbx*4]
+	and	eax, 00FFFFFFh
+	jmp	_j
+
+_fret:	test	dword ptr [rsi+PSR], 00800000h
+	jnz	_fret_
+
+	cmp	dword ptr [rbp+S_P], 128
+	jz	_autoexit
+
+_fret_:	call	stack_read2
+	mov	qword ptr [rsi+APC],r12
+	mov	rdx, rax
+	add	edx, dword ptr [rsi+rbx*4+1*4]	; add EA as displacement to offset on stack
+	mov	eax, dword ptr [rsi+rbx*4]	; return b0_name
+	xor	ebx, ebx			; 1-page frame?
+	test	eax, 00800000h			; multipages frame?
+	jz	_fret_1page
+
+	mov	ebx, eax
+	shl	ebx, 2+8			; drop flag bit from b0_name
+	shl	rbx, 12-10			; complete multiplication * page
+
+	%if	__MOVBE				; read the embedded gate table
+	movbe	ebx, dword ptr [_memory+rbx*4+64*4]
+	%else
+	mov	ebx, dword ptr [_memory+rbx*4+64*4]
+	xor	al, al
+	bswap	ebx
+	%endif
+
+	shr	rbx, 18				; ebx <- iframe page high index
+
+_fret_1page:					; eax <- iframe name
+	jmp	_go2_frame			; edx <- word offset
+
+_fpxpo:	mov	eax, II_FPXPO
+	mov	ecx, LP_RANGE
+	jmp	_ii_escape
+

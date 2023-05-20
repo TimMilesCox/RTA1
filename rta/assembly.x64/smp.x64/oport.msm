@@ -1,0 +1,148 @@
+
+OOO_TRACE	equ	0
+
+							; static void oport(int ea, int value, smp *xcore)
+							; {
+oport:		; write I / O port			;    int		 rule,
+		; RTA instructions outA outB		;			 device;
+							; 
+		; ports which are memory pointers	;    int		 mask,
+		; must have a block that exists		;			 from,
+		; ISRs can write trap value C00001 	;                 	 index;
+		; = device 400001 | illegal 800000	; 
+		; port # = effective address = eax	;    int		 device_index = 0;
+		; write value in ebx			; 
+		; multicast bits in RTA register k	;    smp		*ascor;
+		 					;    unsigned	*register_set = xcore->register_set;
+
+	cmp	eax, IO_PORTS				; 
+	jnb	near no_port				;    if (ea < IO_PORTS)
+							;    {
+	mov	cl, byte ptr [rax+mask_port_outAB]	;       rule = mask_port_outAB[ea];
+	and	cl, cl					; 
+	jz	near no_rule				;       if (rule)
+	test	cl, ISR_ONLY				;       {
+	jz	application_plus_isr_rule		;          if (((rule & ISR_ONLY) == 0) || (psr & 0x00800000))
+	test	dword ptr [rsi+PSR], 0800000h		;          {
+	jz	near no_authority			;
+							;
+application_plus_isr_rule:				;
+	test	cl, EXTERNAL_IO				;             if (rule & EXTERNAL_IO)
+	jz	broadcast_rule?				;             {
+	mov	dword ptr [rsi+IO_PORT+rax*4], ebx	;                base[ea] = value;
+	cmp	eax, 102	; INDICATION$		;                if (ea == 102) indication |= value;
+	jne	xi_ack?		 			;
+	or	dword ptr [rsi+INDICATION], ebx		;
+ 							;
+xi_ack?:							;
+	cmp	eax, 75					;                if (ea == 75)
+	jne	xi_no_ack				;                {
+	not	bl					;                    base[74] &= (value & 255) ^ 255;
+	movzx	ebx, bl					;                    // indication |= (value & 255) << 8;
+							;                }
+	and	dword ptr [rsi+IO_PORT+_XI_PENDING], ebx	; 
+xi_no_ack:						; //               if ((ea == 79) && (value & 1)) indication |= ATTENTION;
+	ret						;                return;
+							;             }
+							; 
+broadcast_rule?:					;             if (rule & BROADCAST)
+	test	cl, BROADCAST				;             {
+	jz	memory_rule?				;                mask = k;
+							;
+	mov	edx, dword ptr [rsi+IO_PORT+_CORE_PIN]	;
+							;
+	mov	rdi, _core				;
+	mov	ecx, dword ptr [rbp+REGISTER+K]		;
+	and	ecx, dword ptr [rsi+IO_PORT+_CORES_MASK] ;
+							;
+multicast_select:					;
+	shr	ecx, 1					;                from = base[77];
+	jnc	multicast_next				; 
+	and	ebx, ebx	; operand value?	;                for (index = 0; index < RTA_SMP; index++)
+	jz	multicast_time
+
+	mov	dword ptr [rsi+IO_PORT+rax*4], ebx	;
+	or	dword ptr [rdi+IO_PORT+_MCAST_PENDING], edx ;             {
+	or	byte ptr [rdi+INDICATION], ATTENTION	;                   if (mask & 1)
+	jmp	multicast_next				;                   {
+
+multicast_time:
+	or	byte ptr [rdi+INDICATION], TPULSE
+
+multicast_next:						;                      ascor = core + index;
+	add	rdi, CORE_SIZE				;                      ascor->BASE[78] |= 1 << from;
+							;                      ascor->INDICATION |= ATTENTION;
+	and	ecx, ecx				;                   }
+	jnz	multicast_select			; 
+	ret						;                   mask >>= 1;
+							;                }
+no_port:						; 
+no_rule:						;                /**************************************************
+no_authority:						; 			keep these on the sending side
+							; 			until constructing interrupt frame
+	jmp	guard_ii_authority			; 			between instructions at target core
+							;                         to avoid overwrites from other cores
+							;                **************************************************/
+							; 
+							;                base[ea] = value;	/* latent parameter	*/
+							;                return;
+							;             }
+							; 
+memory_rule?:	; system memory type only		;             else if (rule & MEMTYPE)
+
+	test	cl, MEMTYPE				;             {
+	jz	page_pointer?				;                if (value & 0x00400000) device_index = value & 63;
+	test	ebx, 0400000h	; bank sized?		; 
+	jz	memory_page_pointer			;                if (device_index)
+							;                {
+	test	ebx, 63					;                   if (value & 0x00800000)
+	jz	device_is_pointed			;                   {
+	test	ebx, 0800000h	; the trap device?	;                      if (psr & 0x00800000)
+	jz	device_is_pointed			;                      {
+	test	dword ptr [rsi+PSR], 00800000	; ISR?	;                         base[ea] = value;
+	jz	no_authority				;                         return;
+	mov	[rsi+IO_PORT+rax*4], ebx		;                      }
+	ret						; 
+							;                      GUARD_AUTHORITY
+device_is_pointed:					;                      return;
+	mov	ecx, dword ptr [rsi+IO_PORT+_DEVICE]	;                   }
+	test	ecx, 00800000h				;                }
+	jz	no_authority				; 
+	test	ecx, 00400000h				;                device = base[128+device_index];
+	jnz	no_authority				;            
+	and	ecx, 003FFFFFh				;                if ((device & 0x00C00000) == 0x00800000)
+	mov	edi, ebx				;                {
+	and	edi, 003FFFFFh	; catch any 00800000	;                   if ((value & 0x003FFFC0) > (device & 0x003FFFFF))
+	cmp	ecx, edi				;                   {
+	jb	outwith		; beyond memory		;                   }
+	mov	[rsi+IO_PORT+rax*4], ebx		;                   else
+	ret						;                   {
+							;                      base[ea] = value;
+							;                      return;
+							;                   }
+							;                }
+							;             }
+							;             else
+							;             {
+							;                /*******************************************
+;	only a device zero page index will do		; 			page pointer to system memory
+							;                *******************************************/
+page_pointer?:						; 
+	test	cl, MEMZERONLY				;                if ((value & 0x00400000) == 0)
+	jz	no_rule					;                {
+	test	ebx, 00C00000h				;                   if (value > (base[128] & 0x003FFFFF))
+	jnz	no_authority				;                   {
+							;                   }
+memory_page_pointer:					;                   else
+	mov	ecx, dword ptr [rsi+IO_PORT+_DEVICE]	;                   {
+	and	ecx, 003FFFFFh				;                      base[ea] = value;
+	and	ebx, 00FFFFFFh				;                      return;
+	cmp	ecx, ebx				;                   }
+	jb	outwith					;                }
+	mov	dword ptr [rsi+IO_PORT+rax*4], ebx	;             }
+	ret						;          }
+							;       }
+							;    }
+outwith:						; 
+	mov	ecx, LP_ADDRESS				;    GUARD_AUTHORITY;
+	jmp	guard_ii_escape				; }							; 

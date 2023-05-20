@@ -1,0 +1,421 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$include	a_protos.def
+
+IPV4_DINITIAL_BANK      $equ    3*/12
+SIGALERT		$equ	0
+QSIMULTANEOUS		$equ	1
+NET_ATTENTION_PORT	$equ	121
+
+NETWORK_D		$equ	12*1024
+D0_WORDS		$equ	NETWORK_D
+
+.	$include	t77.def
+
+. networks 		$equ	IPV4_BANK/*6
+
+$(67::,y)
+sbind	$socket
+
+$(67::,y)
+axw	acw
+
+.	$(1:4096:IPV4_DINITIAL_BANK/$1)
+
+$(1:*1/$1)
+$(3:*1/$3)
+
+$(0::IPV4_BANK)
+networks	$vector		networks_start
+__socket*	$vector		network_socket
+__bind*		$vector		$bind:autobind
+__connect*	$vector		$sockif:active_connect
+connect*	$vector		$sockif:socket_connect
+bind*		$vector		$bind:network_bind
+net_disengage*	$vector		$sockif:net_disengage
+.	tfer_dgram*	$vector		net_pass_xcall
+release_udgram*	$vector		udp_drop_dgram
+__route		$vector		ip_route_advance
+
+recv*		$vector		socket_receive
+send*		$vector		socket_send
+ipsend*		$vector		ip_send
+__tcp_connect*	$vector		tcp_send_syn
+tcp_accept*	$vector		tcp_respond_syn_ack
+.	tcp_send_push*	$vector		tcp_send_i
+tcp_ack_fin	$vector		tcp_respond_fin_ack
+accept*		$vector		$sockif:tcp_await_connection
+sense_data*	$vector		socket_sense
+__net_disengage*  $vector	$sockif:net_disengage
+__port_disengage* $vector	$sockif:port_disengage		. ports without message q: TCP
+__port_disengage_udp* $vector	$sockif:port_disengage_udp	. ports with message q: UDP
+__free_tcp_port* $vector	$sockif:free_tcp_port
+__disconnect_free_tcp* $vector	$sockif:disconnect_free
+__tcp_socket*	$vector		$sockif:tcp_port_socket		. far call tcp port encoding
+
+	$do	24-$,	fret	0
+
+		$if		DRIVERS_BANK1
+
+		$note		external drivers
+
+frame_to_protocol* $vector	frame2p
+far_initpool*	$vector		if_initpool
+
+.	if_dualport_txwrite* $vector	if_dportw	. moved to drivers
+
+if_sell1*	$vector		ifsellmsg
+if_buy1*	$vector		ifbuy
+far_readq*	$vector		ifrq
+far_q2*		$vector		ifq2
+if_q2ifree*	$vector		ifq2ifree
+
+if_tx_nocheck*	$vector		iftx_nocheck
+if_rx_nocheck*	$equ		if_tx_nocheck
+
+ipv4_4us?*	$vector		ipv44us?
+ipv4_this_if?*	$vector		ipv4thisif?
+ipv4_this_host?* $vector	ipv4thishost?
+
+		$else
+
+.	jump pad for interface drivers included in this bank
+
+		$note		internal drivers
+
+"$rxtx_lo"*	$vector		rxtx_softwareloopback
+
+"$rxtx_ift1"*	$vector		ift1_rxtx
+"$initial_ift1"* $vector	start_ift1
+
+		$endif
+
+		$if	0
+dlt_null*	$vector		ifw_dlt_null	. moved to drivers
+dlt_loop*	$vector		ifw_dlt_loop
+dlt_e10mb*	$vector		ifw_dlt_e10mb
+		$endif
+
+	$do	40-$,	fret	0
+
+xaccept*	$vector		tcp_xaccept
+xdisco*		$vector		tcp_xdisco
+xdecline*	$vector		tcp_refuse
+
+tcpr*		$vector		tcp_rsegment		. far calls for message take from rx queue
+tcpz*		$vector		tcp_zsegment		. and message drop
+
+tcp_release_rxline* $vector	tcp_textline_release	. message drop from rx queue
+
+tcp_hash_localsocket* $vector	tcp_hashlocal
+tcp_hash_connection* $vector	tcp_hash_connect
+
+tcp_rx*		$vector		tcp_read
+tcp_tx*		$vector		tcp_add
+tcp_addx*	$vector		tcp_add:__x		. DIY PSR stream settings, otherwise same as tcp_tx
+
+		$if		0
+tcp_addbyte*	$vector		tcp_add1byte		. nothing has called this	rwsocket.msm
+tcp_pushbytes*	$vector		tcp_pushline		. nothing has called this	rwsocket.msm
+
+udgram_rx*	$vector		udgram_read		. changed to an internal routine in rwsocket.msm
+. udgram_tx*	$vector		udgram_transmit		. did nothing call this either?
+		$endif
+
+udgram_acw_send_nocheck* $vector udp_txaw_nocheck
+udp_rtxbuffer*	$vector		udp_response_buffer
+udp_send*	$vector		udp_tx
+udp_txbuffer*	$vector		udp_buy_txaw
+udp_acw_send*	$vector		udp_txaw
+
+	$do	$>64,	$flag IPV4_BANK please pack vectors
+	$do	64-$,	fret	0
+
+networks_start
+	$base_d	NETWORK_D
+	c	(seg$load)	3,,xi	(minimald.seg:d),,long
+
+	dl	(0, $3("*ip":0)d)
+	ii	TAG$
+
+	$do	$TEST_WPROTECT,	lcal	test_wprotect
+
+	$if	1
+        dl      DAYCLOCK$U		. initialise energy monitoring
+        da      (ACTIVITY_SPACE:d)
+        ds      activity_revision
+	$endif
+
+NET_ADAPTING	$equ	1
+
+	$if	NET_ADAPTING
+	lcal	net_buffers
+	$else
+	lcal	net_bank
+	$endif
+
+	ii	CACHE_NETB$
+	lcal	locate_interfaces
+	lcal	tcp4_construct_connections_bank
+
+	lx	tcx_v4(1),,xi
+	ii	WRITE_XVECTOR$
+	ax	-1,,xi			. 2nd block is at 1st block - 1
+	la	0,,xi			. and isn't populated or used
+	ii	WRITE_XVECTOR$
+
+	la	-1,,xi			. restart the system with trace in TCB + 1024
+	ii	RESTART_EI$		. if a thread of this process faults anywhere
+
+	call	(app_threads)
+
+	$if	TCP_STATES_BEAT
+	lcal	tcp_states_step
+	$endif
+
+	$if	1
+	$else
+	la	2,,xi
+	ii	$SMP
+	$endif
+
+network
+	.	push	fp	**************** no need, can even make problems
+
+	lcal	frames
+
+.	$do	IPV4_OVERHAUL^=0,	lcal	icapsule
+
+	$if	SIGALERT
+	la, xi	0
+	outA	NET_ATTENTION_PORT
+	$endif
+
+	lcal	xarp			. exists because it has timers
+	lcal	ipv4			. exists for timing fragments out
+	lcal	icmp			.
+	lcal	udp4			. arbitrates socket RX queues with socket owners
+					. input to common udpq needs no arbitration
+					. so interface buffers may be released
+					. immediately and unconditionally
+	lcal	xtcp4
+
+	call	(app_protos)
+
+.	$do	IPV4_OVERHAUL=0,	lcal	icapsule
+	lcal	icapsule
+
+	.	pop	fp	**************** no need, can even make problems
+
+	j	network
+
+network_socket
+	anu	(IPPROTO_UDP*/16)
+	jzb	srequest
+	anu	(IPPROTO_TCP*/16)
+	jzb	srequest
+	la, xi	-2
+	fret	0
+srequest
+	ii	HANDLE$
+	fret	0
+
+
+.	    A	    B	    6	    7
+.	_________________________________
+.	| socket|   0	|  address:port	|
+.	|_______|_______|_______________|
+
+.	the kernel vector bank is read and
+.	written with internal interrupts
+
+.		ii	READ_XVECTOR
+.		ii	WRITE_XVECTOR
+
+.	because this routine is available
+.	to threads of IP process which has
+.	kernel vector bank, and application
+.	processes which have their own vector
+.	bank
+
+.	thos ISRs switch to the kernel
+.	vector bank
+
+.		on	see$2
+
+.	return from any ISR restores all PSR
+.	flags to what they were on II
+
+
+	$if	0
+
+network_bind
+	ds	d$save
+	ii	READ_HANDLE$
+	jna	network_bind_x
+
+	anu	(IPPROTO_UDP*/16)
+	jzb	bind_udp
+	anu	(IPPROTO_TCP*/16)
+	jzb	bind_tcp
+
+	la, xi	-2	. protocol unknown
+			. or socket already bound
+			. (lower 16 bits nonzero)
+
+network_bind_x
+	fret	0
+
+bind_udp
+	lx, xi	usockb(1)
+	j	protocol_bind
+bind_tcp
+	lx, xi	tsockb(1)
+protocol_bind
+	sa	d$save2
+	la	7
+	and	(65535)
+	sa	8
+	jnza	selected_bind
+        la	7
+	or, xi	1024
+	sa	7
+selected_bind
+
+	$if	1
+	lcal	protocol_socket
+	$else
+
+	lb, xi	BSOCKET*/9
+	dsr	9
+	and, xi	127
+
+	ax	a
+	ii	READ_XVECTOR$
+
+	$endif
+
+	rbr	12
+	ly	b
+
+	jza	new_bind_bank
+
+	sabr	BSOCKET
+	ii	UHANDLE$
+	ds	10		. return also the long
+				. virtual address of 
+				. the port control block
+
+	dl	sbind:socket_address
+	jdz	bind_clear_to_add
+
+	tz	8
+	j	bind_e3
+
+	inc	7
+	la	7
+	lb	7
+	andB,xi 2048
+	jzb	selected_bind
+bind_e3
+	la, xi	-3	. port number already claimed
+	fret	0
+
+new_bind_bank
+	la, xi	4096
+	ii	BANK$
+	jnza	bind_bank_granted
+
+	la, xi	-4	. cannot resource the bind
+	fret	0
+
+bind_bank_granted
+	ds	10	. save the long virtual address
+			. of the port control block
+
+	ii	WRITE_XVECTOR$
+	sabr	BSOCKET
+	ii	UHANDLE$
+
+	qpush	a
+	dsr	48
+	ds	6
+
+	lx	(BSOCKET*/12)
+	lr, xi	512/2-1		. initialise 2 8-word
+				. port blocks per loop
+bind_bank_prepare
+?	$do	4,	qs	?*4-4, x
+	ax, xi	16
+	jdr	bind_bank_prepare
+
+	qpop	a
+
+bind_clear_to_add
+	dl	6
+	ds	sbind:socket_address
+
+				. TCP bind, place a
+				. connections bank pointer
+				. in the port socket
+				. structure
+
+	la	d$save2
+	ana	(IPPROTO_TCP*/16)
+	jnza	bind_complete
+
+	lx, xi	tcx_v4(1)
+	ii	READ_XVECTOR$
+
+	jza	bind_failed_cbank
+	sa	sbind:tcp:tbase
+	z	sbind:tcp:tbase+1
+
+bind_complete
+	la, xi	0
+	fret	0
+
+bind_failed_cbank
+	z	sbind:socket_address+1
+	la, xi	-19
+	fret	0
+
+	$endif
+

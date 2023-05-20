@@ -1,0 +1,128 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.	these maintain the caller's open file state
+.	They are access blocks
+
+.	they may be user-supplied in assembler programming
+.	in language programming they are tabled at BASE_FBLOC at one
+.	window in the range 33...45. The storage bank identity fbloc_index
+.	is in the vector bank constructed by the kernel
+
+.	in language programming handles in the vector bank
+.	point to these blocks
+
+.	the first word is file system type
+
+FS$NONE		$equ	0	. never opened
+
+FS$NFS		$equ	2	. remote file system via NFS client
+FS$CORE		$equ	1	. ROM / RAM executable space FS
+FS$DEVICE$ARRAY	$equ	3	. FS in device array
+
+
+FS$FILE_WORDS	$equ	5
+
+p		$proc
+filep*		$name			. 6 words, header word not self-inclusive
+*		$tree			. user state serial read part
+fs_type		+	p(4, 1),,p(4, 3)s . core FS / external device / NFS client
+device					. external device address or...
+bank		+	p(1, 1)s	. core start bank
+extent		+	p(2, 1)d	. long pointer to current extent descriptor
+absolute_pointer +	p(3, 1)d	. word offset in the total file system
+		$root
+		$end
+
+FS$DEVICE_WORDS	$equ	FS$FILE_WORDS+6	. 11 words not including initial format word
+FS$CORE_WORDS	$equ	FS$FILE_WORDS+6	. 11 words not including initial format word
+FS$STREAM_WORDS	$equ	FS$FILE_WORDS+2	.  7 words not including initial format word
+
+p		$proc			. serial read par with extension for seek
+fileq*		$name
+*		$tree			. user state read / rewind / seek
+serialp		filep	p()		. the 6 words used for serial read
+o		$tree
+column		$res	1
+flags		$res	1
+		$root
+rewind_extentp	$res	2
+quantum_pointer	$res	2
+		$root
+		$end
+
+FS$NFS3ATTRIBUTE_WORDS	$equ	21*2
+FS$NFS3RESULT_WORDS	$equ	FS$NFS3ATTRIBUTE_WORDS+2
+FS$NFS_WORDS	$equ	65+FS$NFS3RESULT_WORDS
+
+p		$proc
+filenfs*	$name			. 39 words, header word not self-inclusive
+*		$tree
+fs_type		+	p(4, 1),,0
+quantum_pointer	+	p(3, 1)t
+socket		+	0:d		. that makes 6 words
+o		$tree
+column		$res	1
+flags		$res	1		. that is word 7 for data files with handle
+		$root			. (but not serial-only files / net sockets)
+dimensions	post_op_attr	
+nfs_handle	$res	34
+auth_blank	$branch
+		$res	24		. allow 48 characters of auth
+		$root
+auth_unix	$branch
+auth		authunix
+		$root
+		$root
+		$end
+
+f	$func
+LOG24*	$name
+fulcrum	$equ	f(1, 1)-1
+	$do	fulcrum<1,	$return	0
+?	$do	24,	$do	1*/?>fulcrum,	$return	?
+	$return	24
+	$end
+
+BYTES_RECIPROCAL* $func
+	$do	$word/$byte<3,	$flag	don't try to multiply reciprocal 1 or 2
+	$do	$word/$byte^=3,	$flag	filestore is only accessed as word array or octet array
+	$return	0555556
+	$end
+

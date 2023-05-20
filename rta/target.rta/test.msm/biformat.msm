@@ -1,0 +1,318 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$path
+	$list
+
+.	output 6 hex digits pro word in the C-Language
+.	left-justifed default fashion. Leading zero is skipped
+.	The target field sizes itself
+
+.	the choice of a..f or A..F is ?
+
+
+biditl	lb	0, y		. read six digits. On last word
+	jyge	bi48lz		. output at least 1 column
+	jnzb	bilsos		. on nonzero start output
+	ay, xi	1
+	j	biditl		. loop for next word
+
+bi48lz	jnzb	binz		. not 6 zeros, edit this last word
+	la	ahex		.
+	wsr	$byte		. force a single '0' out
+	lret	0
+
+
+.	subroutine, edit the first nonzero word in the digit row
+
+binz	push	r
+	lr, xi	6-1
+	la, xi	0
+binzr	dsl	4
+	jnza	binsignificant
+	jdr	binzr
+	j	binzpopr	. you get here if no quartet
+				. in the word is significant
+binzagain
+	dsl	4
+binsignificant
+	la	ahex, a
+	wsr	$byte		. this should clear a
+	jdr	binzagain
+binzpopr
+	pop	r
+	lret	0
+
+binzwrite* $proc
+	dsl	4
+	la	ahex, a
+	wsr	$byte		. this should clear a
+	$end
+
+binz6
+	$do	6,	binzwrite
+	lret
+	
+bilsos	lcal	binz		. write the significant part 1st word
+bilsos1	ay, xi	1		. that is never the last word
+	lb	0, y		. read some more
+	lcal	binz6		. write all of it
+	jyge	bilx
+	j	bilsos1		. write any more
+bilx	lret	0
+
+
+
+
+.	simple right-justifiedd edit in a fixed field
+.	____________________________________________
+
+.	register b contains an edit mask
+
+.	The first bits in the mask, whether they are zeros or ones,
+.       represent high order positions in front of the target fbild
+.	where a significand from the source value is not expected
+
+.       if one of these unexpected digits is significant then significance
+.       switches on early and the output is longer than expected and grows
+.       rightward with low-order digits further right than expected
+
+.	if the unexpected-position flags are ones, then subsequent zero
+.	bits represent positions in the expected target fbild which will
+.	always be written and where leading zero is replaced with space
+
+.       a string of ones then represents the digit positions which are
+.	not zero-suppressed
+
+.	the high-order mask bit indicates the polarity of the following
+.	flags if any which designate positions where a digit is not
+.	expected or intended
+
+.	the input array is processed in trios of digits
+
+
+.	for 24-bit input
+.	________________
+
+.	the edit mask is a 10-bit mask in register b
+.	the input array is 9 digits. Up to 7 of them are significant
+
+.	A simple 10-bit mask for 24-bit input is
+
+.	___________________________________________________
+.	| 1 1 1 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+.	The first high order bit only means that the mask DOES begin
+.	with some ones bits. This means that the zero bits after are
+.	a zero-suppress zone
+
+.	The initial no-digit-expected flags may be zeros. This
+.	means there is no zero-suppress zone
+
+.	The high-order bit here is one, meaning following ones
+.	bits represent input digit positions where significance
+.	is not expected
+
+.	The next two ones bits mean significance is not expected
+.	for at least two digits
+
+.	If the digit array is generated from a 24-bit integer
+.	then digits 9..8 are always zero
+
+.	The six zero bits followed by a one mean the target fbild
+.	has seven positions and the first six are zero-suppress
+
+.	For a target fbild less than 7 positions the initial ones
+.	fbild is longer, but unexpected significant digits will
+.	cause extra columns to be written
+
+
+.	for 48-bit input
+.	________________
+
+.	the edit mask is a 16-bit mask in register b
+
+.       A simple 16-bit mask for 48-bit input is
+
+.       ___________________________________________________
+.       | 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 |
+.       |_________________________________________________|
+
+
+.       The first high order bit only means that the mask DOES begin
+.       with some ones bits. This means that the zero bits after are
+.       a zero-suppress zone
+
+.       The initial no-digit-expected flags may be zeros. This
+.       means there is no zero-suppress zone
+
+.	There is no significand corresponding to the high-order bit
+.	because a 48-bit value can only generate 15 decimal significands
+
+.       The 14 zero bits followed by a one mean the target fbild
+.       has 15 positions and the first 14 are zero-suppress
+
+.       For a target fbild less than 15 positions the initial ones
+.       fbild is longer, but unexpected significant digits will
+.       cause extra columns to be written
+
+.       this example of a mask in b for 48-bit input shows up to nine
+.       integral digits expected of which eight may be zero suppressed
+
+.       if the output is larger that 999,999,999 then the
+.       output fbild will get longer than nine positions
+
+.       ___________________________________________________
+.       | 1 1 1 1 1 1 1 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 |
+.       |_________________________________________________|
+
+
+
+.	for 72-bit input
+.	________________
+
+.       A simple 24-bit mask for the 24-column digit array is
+
+.       ___________________________________________________
+.       | 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 |
+.       |_________________________________________________|
+
+
+.	There is no separate flag polarity bit at the start
+.	although there is for the shorter mask layouts
+
+.	The high-order bit is the first no-significand-expected
+.	flag and gives the polarity of any more following it
+
+.	The fixed fbild maximum size is 23 columns, but 24
+.	significands in the digit array will output 24 columns
+
+.       The initial no-digit-expected flags may be zeros. This
+.       means there is no zero-suppress zone
+
+.       The two high-order bits here are one, meaning significance
+.       is not expected in the first two columns of the 24-digit
+.	array.  A 72-bit integer can generate 22 significant digits
+
+.       The 21 zero bits followed by a one mean the target fbild
+.       has 22 positions and the first 21 are zero-suppress
+
+.       For a target fbild less than 22 positions the initial flags
+.       fbild is longer, but unexpected significant digits will
+.       cause extra columns to be written
+
+.	Here is an example of a mask for a fixed 21 position fbild
+.	with leading zero suppression except for the final column
+
+.	___________________________________________________
+.	| 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 |
+.	|_________________________________________________|
+
+
+.	imputed fractional scale of integer input
+.	_________________________________________
+
+.	if any trailing positions out of 9 / 15 / 24 are represented with
+.	zero, a decimal point is output before the last positions are written
+
+
+.	edit fbild with no zero-suppress zone
+.	_____________________________________
+
+.	if there is no leading zero-suppress fbild, then the
+.	mask begins with zeros which represent positions
+.	where significands are not expected and the subsequent
+.	ones fbild represents non-suppress positions
+
+.	This example is for the 15-column digit array
+
+.	here exactly four digits will be output without
+.	zero-suppression. If the source value is > 9999
+.	then significance will switch on early and the
+.	output fbild will occupy more than four positions
+
+.	___________________________________________________
+.	| 0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+
+.	This is the equivalent mask for use with the 9-column
+.	digit array
+
+.	___________________________________________________
+.	| 0 0 0 0 0 0 1 1 1 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 |
+.	|_________________________________________________|
+
+
+
+
+biditr?1			. entry point for 24-column variant
+	lk	(+(1*/$byte)-1*/$word-$byte:s)
+        jpb     biditrz1	. 
+        j	biditrf1	. leading flag is not represented
+
+
+.	common part, used for editing 24 / 48 / 72 bits
+.	may be used for decimal hex octal
+
+biditr	lk	(+(1*/$byte)-1*/$word-$byte:s)
+	la	0, y
+	jnb	biditrf		. has zero-suppress zone
+
+.	fall through
+
+biditrz	rbl	1
+biditrz1			. entry point for 24-column string!
+	mta	('0'*/$word-$byte:s)
+	j	biditrs
+	jnb	biditrs		. have entered fbild
+
+	sal	$byte
+	jnza	biditrz
+	jyge	biditzx
+	ay, xi	1
+	la	0, y
+	j	biditrz
+
+biditrs
+	tp	6
+	lcal	ifloat
+biditrsym
+	wsr	$byte
+	jnza	biditrsym
+	jyge	biditzx		.  significance on
+	ay, xi	1
+	la	0, y
+	j	biditrsym
+
+biditrf	rbl	1
+biditrf1			. entry point for 24-column string!
+	mta	('0'*/$word-$byte:s)
+	j	biditrs
+	sal	$byte
+	jpb	biditrx		. started zero-suppress fbild
+	jnza	biditrf		. not yet in fbild, output no column
+	jyge	biditzx
+	ay, xi	1
+	la	0, y
+	j	biditrf
+
+biditrx	or, xi	' '		. in fbild but not significant
+	rar	$byte
+	wsr	$byte
+	jnza	biditrq
+	jyge	biditzx
+	ay, xi	1
+	la	0, y
+
+biditrq	rbl	1
+	mta     ('0'*/$word-$byte:s)
+	j	biditrs
+	jnb	biditrs		. significance flagged on
+	sal	$byte		. suppress another zero
+	j	biditrx
+
+biditzx	lret	0

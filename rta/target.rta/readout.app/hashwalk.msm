@@ -1,0 +1,136 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def.sys/base.def
+	$include	lib/ascii.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+	$lit	4
+$(4:*1)
+
+$(3:03000/$3)
+
+HASH_BUCKETS	$equ	100
+
+hash_buckets_used_index	$res	1
+hash_buckets		$res	HASH_BUCKETS*2
+inputs			$res	24//3
+hash_chain_high_index	$res	1
+tctable			$res	1
+output_cursor		$res	1
+
+ram_start		$res	1
+ram_end			$res	1
+			$res	1
+tcp_hash_chains		$res	1
+
+
+$(0:*1/$0)
+walk_hash
+	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(hashwalk_data:L),,long	
+
+	call	(sysinfo)
+	qs	ram_start
+	inc	ram_end		. change page high index to page limit
+
+input?	c	(write)	stdout $3("connections block>"),,xi	18,,xi
+	fflush	stdout
+
+	fgets	inputs,,xi	24,,xi	stdin
+
+	la	inputs,,t1
+	aa	-'.',,xi
+	jza	hash_accounted
+
+	sscanf	inputs,,xi	$3("%x":0),,xi	tctable,,xi
+	jna	input?
+
+	la	tctable
+	anu	ram_start
+	jnc	input?
+
+	lb	a
+	andB	(03FFFFF)	. likely to have big bank flag, discard for comparison	
+	anb	ram_end
+	jc	input?		. include the last page of RAM although
+				. it could never be a connections hash table
+        sabr    BSOCKET
+
+	ly	hash_buckets,,xi
+        lx      (BSOCKET*/12++8)
+	sy	hash_buckets_used_index
+	la	tcp_hash_chains
+	aa	x
+	sa	hash_chain_high_index
+	lk	-1,,xi
+
+next_lane
+        la      0,,xi
+        lb      0, x
+
+hash_next
+        jzb    total_and_next
+	aa	1,,xi
+	lb	0, b
+	j	hash_next
+
+total_and_next
+        lcal    hash_total_lane
+        ax      1,,xi			. inc total in chain
+        lr      hash_chain_high_index
+        jxge    hash_readout
+        j       next_lane
+
+hash_readout
+
+	lx	hash_buckets,,xi	. I / O mostly saves x for you
+
+hash_readout_next
+	lr	hash_buckets_used_index
+	jxge	hash_accounted
+	sx	output_cursor
+
+	printf	$3("%d chains with %d connections":LF:0),,xi	1,x	0,x
+
+	lx	output_cursor
+	ax	2,,xi
+	j	hash_readout_next
+	
+hash_accounted
+	fret	0
+
+hash_total_lane
+        lr      hash_buckets_used_index
+        ly      hash_buckets,,xi
+
+match_b
+        jyge    new_bucket
+        mta     0, y
+        j       next_bucket
+        inc     1, y                      . chains of this total
+
+	j	counted
+
+next_bucket
+        ay      2,,xi
+        j       match_b
+
+new_bucket
+        lr      hash_buckets+2*HASH_BUCKETS,,xi
+        jyge    counted                 . in fact not counted
+
+	sa	0, y	. store  # connections at the out_of_range bucket
+	push	1,,xi
+	pop	1, y
+
+	push	2,,xi			. out_of_range bucket is in_range
+	popA	hash_buckets_used_index
+
+counted	lret	0
+

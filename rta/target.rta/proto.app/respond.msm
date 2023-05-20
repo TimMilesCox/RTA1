@@ -1,0 +1,78 @@
+
+	$head_near	 params(sockets_actual,	int		)	;
+									;
+			scalars(connection,	int			;
+				bytes,		int			;
+				tally_response,	int			;
+				accumulate,	int		)	;
+									;
+			 xframe(udata,	600/3				)
+			
+sweep_sockets
+	c	(hvsocket_rx)	sockets_actual	0,,xi	udata,,i	600,,xi	0,,xi
+					.	connection wildcard		flags default
+
+	ds	bytes		. and connection @ word bytes + 1
+	jza	remote_closed	. pipe drained
+	jna	sweep_exitz	. or bent
+
+	inc	accumulate
+
+	$if	0
+
+	c	(hvsocket_tx)	sockets_actual	connection	udata,,i	bytes	0,,xi
+	jna	sweep_sockets
+	jza	sweep_sockets
+	c	(hvsocket_tx)	sockets_actual	connection	response,,xi	RESPONSE_BYTES,,xi	TCP_PSH,,xi
+	
+	$elseif	1
+
+	c	(memcat)	udata,,i	bytes	response,,xi	RESPONSE_BYTES,,xi
+	la	RESPONSE_BYTES,,xi
+	aa	bytes
+	c	(hvsocket_tx)	sockets_actual	connection	udata,,i	a	TCP_PSH,,xi
+
+	$else
+
+        sprintf	obuffer,,xi	$3("%s %s":0),,xi	udata,,i	response,,xi
+
+	c	(hvsocket_tx)	sockets_actual	connection	obuffer,,xi	a	TCP_PSH,,xi
+
+	$endif
+
+	jna	sweep_sockets
+	jza	sweep_sockets
+	inc	tally_response
+	j	sweep_sockets
+
+remote_closed
+	jzb	sweep_exit	. no data + no connection
+				. = all traffic this port has been read
+
+	c	(hvsocket_close)	sockets_actual	connection
+
+				. connection readout zero = connection remote close
+				. listening-type application responds by closing
+				. this one connection
+
+	j	sweep_sockets
+
+sweep_exit
+	$if	0
+	lb	accumulate
+	jzb	sweep_exitz	. no traffic
+	la	0,,xi
+	da	payload_segments
+	ds	payload_segments
+	lb	tally_response
+	la	0,,xi
+	da	payload_response
+	ds	payload_response
+	$endif
+
+sweep_exitz
+	push	600/3,fp,i
+	pop	fp
+	qpop	a		. return the receive interim count
+				. and the responses interim count
+	lret	0

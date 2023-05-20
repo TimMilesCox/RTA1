@@ -1,0 +1,330 @@
+
+$(0)
+
+	. vector name scanfi
+
+SENTINEL $equ	r
+
+scan_fi $tree
+
+	$head_far	 params(limit,		int		;
+				argop,		int	)	;
+								;
+			scalars(caller_xyab,	float,	x	;
+				delivery_words,	int		;
+				column,		int		;
+				specificationp,	int		)
+
+	lx	argop			. pointer to first pointer
+	sx	caller_xyab+2		. initialise result
+	lx	0, x			. pointer to format string
+	sx	specificationp
+	la	' ',,xi
+	sa	LAST_BYTE_READ
+
+read_format
+	lcal	advance
+	jza	read_format_end
+
+	lb	RDATA
+	dsr	$byte
+	la	RDATAC
+	aa	$byte,,xi
+	ds	RDATAC
+
+	lx	specificationp
+	lk	+(1*/$byte)-1,,xi
+
+	inc	argop
+	ly	argop
+	lr	limit
+	jyge	read_format_end_backstep
+
+read_format_byte
+	ly	column
+	inc	column
+	call	(read_octet_column)
+	jza	read_format_end_backstep . format string end
+
+	mta	('%')
+	j	read_format_byte	. stuff to consume nonspace goes near here
+					. scanning sizes goes here
+	ly	column
+	inc	column
+	call	(read_octet_column)
+	jza	read_format_end_backstep . format string end
+
+	z	delivery_words		. set default to type default
+	lcal	edit_fo:size?		. is there a size tag before the type tag?
+	j	target?			. no
+
+	sa	delivery_words		. yes, remember it
+	ly	column
+	inc	column
+	call	(read_octet_column)	. read again for the type tag
+	jza	read_format_end_backstep
+
+target?	mta	('f')			. float ?
+	j	symbol?
+
+	lcal	is_it_a_number?
+	j	read_format_end_backstep
+
+	la	delivery_words
+	jza	fp96
+	mta	('q')			. quad is accepted. It is the size of a float
+	j	fp192?	
+
+fp96	call	(floating_scan)		. 4-word float
+	ly	argop
+	ly	0, y
+	qs	0, y
+	j	read_format
+
+fp192?	mta	('L')
+	j	fp_compress?		. don't know don't write target memory
+
+	call	(floating_scan192)	. 8-word float
+	ly	argop
+	ly	0, y
+	qs	0, y
+	ql	$residue
+	qs	4, y
+	j	read_format
+
+fp_compress?
+	mta	('l')
+	j	read_format_byte	. that only leaves j and we don't input 3-word floats
+	call	(floating_scan)		. with l you may input...
+	ly	argop
+	ly	0, y
+	qpush	a			. ...and compress a float unbeautifully not-rounded
+	fpp	0, y			. into a long which is 48 bits
+					. and won't be unrounded if it's ever re-expanded...
+	j	read_format		. ...and won't ever be computed unless it is re-expanded
+
+symbol?	mta	('c')			. right justified character scalar?
+	j	decimal?
+
+	call	(symbol_scan)
+	ly	argop			. position argument array
+	ly	0, y			. pointer from argument array
+	sa	0, y
+	j	read_format
+
+decimal?
+	mta	('d')
+	j	hex?
+
+        lcal    is_it_a_number?
+        j       read_format_end_backstep
+
+	la	delivery_words
+	jnza	decimal_48?
+
+	call	(iscana)		. 24 bits base 10
+	ly	argop
+	ly	0, y
+	sb	0, y
+	j	read_format
+	
+decimal_48?
+	mta	('l')
+	j	decimal_72?
+
+	call	(iscan48a)		. 48 bits base 10
+	ly	argop
+	ly	0, y
+	ds	0, y
+	j	read_format
+
+decimal_72?
+	mta	('j')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(iscan72a)		. 72 bits base 10
+	ly	argop
+	ly	0, y
+	sb	0, y
+	dl	6
+	ds	1, y
+	j	read_format
+
+hex?	mta	('x')
+	j	integer?
+
+        lcal    is_it_hex?
+        j       read_format_end_backstep
+
+	la	delivery_words
+	jnza	hex_48?
+
+	call	(scanhex)		. 24 bits base 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	j	read_format
+
+hex_48?	mta	('l')
+	j	hex_72?
+
+	call	(scanhex48)		. 48 bits base 16 
+	ly	argop
+	ly	0, y
+	ds	0, y
+	j	read_format
+
+hex_72?	mta	('j')
+	j	hex_96?
+
+	call	(scanhex72)		. 72 bits base 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	dl	6
+	ds	1, y
+	j	read_format
+
+hex_96?	mta	('q')
+	j	hex_192?
+
+	call	(qscanquartets)		. 96 bits base 16
+	ly	argop
+	ly	0, y
+	qs	0, y
+	j	read_format
+
+hex_192?
+	mta	('L')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(oscanquartets)		. 192 bits base 16
+	ly	argop
+	ly	0, y
+	qs	0, y
+	ql	$residue
+	qs	4, y
+	j	read_format
+
+
+integer?
+	mta	('i')
+	j	string?
+
+        lcal    is_it_a_number?
+        j       read_format_end_backstep
+
+	la	delivery_words
+	jnza	i48?
+
+	call	(ixscan)		. 24 bits base 10 or 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	j	read_format
+
+i48?	mta	('l')
+	j	i72?
+
+	call	(ixscan48)		. 48 bits base 10 or 16
+	ly	argop
+	ly	0, y
+	ds	0, y
+	j	read_format
+
+i72?	mta	('j')
+	j	read_format_byte	. don't know don't write target memory
+
+	call	(ixscan72)		. 72 bits base 10 or 16
+	ly	argop
+	ly	0, y
+	sb	0, y
+	dl	6
+	ds	1, y
+	j	read_format
+
+string?	mta	('s')
+	j	string_sentinel?
+
+	ly	argop			. string by default rules
+	ly	0, y
+	z	SENTINEL
+	la	0,,xi			. zero sentinel
+	lcal	scan_istring
+	j	read_format	
+
+string_sentinel?
+	mta	(':')
+	j	read_format_byte	. none of the above, keep walking
+					. string until named symbol
+	ly	column			. read delimiter
+	inc	column
+	call	(read_octet_column)
+	jza	read_format_end_backstep
+	sa	SENTINEL		. set delimiter
+	ly	argop			. transfer string until delimiter
+	ly	0, y
+	lcal	scan_istring:until
+
+	j	read_format		. independent callers to istring
+					. cancel SENTINEL as required
+read_format_end_backstep
+	dec	argop			. a field has been counted
+					. but not delivered
+read_format_end
+	la	argop			. arguments used up to here
+	ana	caller_xyab+2		. starting from here
+	sa	caller_xyab+2		. result in caller register a
+
+	pop	x			. relinquish specification pointer
+	pop	x			. relinquish column offset
+	pop	x			. relinquish words tag
+	qpop	x			. reload 4 caller registers
+	fret	0			. including result = items read
+
+
+.	is the sampled byte of sscanf input the start of a number?
+.	stop the scan if not
+
+.	data code is not known until assembly
+.	RTA1 coding standard
+
+.	but assume sets [ '0'..'9' ] [ 'a'..'f' ] [ 'A'..'F' ]
+.	are each individually serial and contiguous
+
+is_it_hex?				. call here here for %x %X
+	la	LAST_BYTE_READ
+	aa	-'a'-6,,xi
+	jc	it_is_not_lowercase_hex
+	aa	6,,xi
+	jc	it_is_a_number
+
+it_is_not_lowercase_hex
+	la	LAST_BYTE_READ
+	aa	-'A'-6,,xi
+	jc	it_is_not_uppercase_hex
+	aa	6,,xi
+	jc	it_is_a_number
+
+it_is_not_uppercase_hex			. fall thru from hex not [ a..f A..F ]
+is_it_a_number?				. call here for decimal and %i
+	la	LAST_BYTE_READ
+	aa	-'+',,xi
+	jza	it_is_a_number
+	aa	'+'-'-',,xi
+	jza	it_is_a_number
+	aa	'-'-'^',,xi
+	jza	it_is_a_number
+	aa	'^'-'0'-10,,xi
+	jc	it_is_not_a_number
+	aa	10,,xi
+	jc	it_is_a_number
+
+it_is_not_a_number
+	lret	0
+
+it_is_a_number
+	lret	1
+
+	$root
+

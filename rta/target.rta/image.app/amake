@@ -1,0 +1,74 @@
+rm	$1
+rm	*.abs
+rm	*.txo
+
+if	[ -e make_rel ]
+then
+	rm	*.rel
+	./make_rel
+	masmx -kwX $1 $1.abs
+
+else
+
+	masmx -kw $1 $1.abs
+	lstring -bL $1.abs lsegment '(1,3,35,41)'
+fi
+
+masmx -kwX ../image.app/trigger trigger $1.abs
+symbol < trigger.txo export | grep OUTRIGGER > outrigger
+
+if	[ -e make_pro ]
+then
+	./make_pro
+fi
+
+#	if	[ ! -e $1_profile.txo ]
+#	then
+#	echo	run profile make not completed
+#	exit
+#	fi
+
+
+if	[ "$2" = 8 ]
+then
+	XGFORMAT=8gformat
+elif	[ "$2" = 4 ]
+then
+	XGFORMAT=4gformat
+elif	[ "$2" = 2 ]
+then
+	XGFORMAT=2gformat
+else
+	XGFORMAT=1gformat
+fi
+
+echo	$XGFORMAT
+
+source ./outrigger
+echo FS offset $OUTRIGGER
+$XGFORMAT -xy $1.fs $OUTRIGGER < loadfs
+masmx ../image.app/load $1 $OUTRIGGER -lnkeX
+symbol < $1.txo export | grep STORAGE > storage
+lstring -bL $1.txo $1
+
+if	[ -e amass ]
+then
+source	./storage
+echo	storage $STORAGE
+	slab $1 $1.rom $STORAGE 
+fi
+
+diff --brief $1_fs.zak $1.fs
+diff --brief $1_txo.zak $1.txo
+diff --brief $1_abs.zak $1.abs
+cmp $1.zak $1
+diff --brief outrigger.zak outrigger
+diff --brief storage.zak storage
+diff --brief trigger_txo.zak trigger.txo
+
+if	[ -e amass ]
+then
+cmp $1_rom.zak $1.rom
+./amass
+fi
+

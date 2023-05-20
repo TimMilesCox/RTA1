@@ -1,0 +1,2365 @@
+<div	style="font-size:14pt">
+<center>
+
+<h1>RTA1 Kernel and API</h1>
+
+<i>
+Copyright Tim Cox, 2012<br>
+This document is part of the RTA1 Processor Programmable Architecture Specification<br>
+The RTA1 Architecture is freeware licensed with the GNU General Public Licence Version 3<br>
+The same licence encompasses all accompanying software and documentation <br>
+The full licence text is included with these materials<br>
+See also the licensing notice at the foot of this document
+</i>
+
+</center>
+
+
+<div	style="font-size:12pt">
+<ol>
+<li><a href="#preamble">Kernel and API</a></li>
+	<ol>
+	<li><a href="#posix_api">POSIX API and Lower Level Interface</a></li>
+	<li><a href="#ii_call">Call Interface and Internal Interrupt Interface</a></li>
+	</ol>
+<li><a href="#api">API</a></li>
+	<ol>
+	<li><dl><a	href="#ii">Internal Interrupt System Calls</a></li>
+		<dd><a	href="#spawn_ii">SPAWN$</a></dd>
+		<dd><a	href="#thread_ii">THREAD$</a></dd>
+		<dd><a	href="#tag_ii">TAG$</a></dd>
+		<dd><a	href="#bank_ii">BANK$</a></dd>
+		<dd><a	href="#array_ii">ARRAY$</a></dd>
+		<dd><a	href="#bank_free_ii">BANK$FREE</a></dd>
+                <dd><a  href="#switch_fp_guard_ii">FP_GUARD$</a></dd>
+		<dd><a	href="#fp_xpo_flag_ii">FP_XPO$FLAG</a></dd>
+		<dd><a	href="#yield_ii">YIELD$</a></dd>
+		<dd><a	href="#twait_ii">TWAIT$</a></dd>
+		<dd><a	href="#exit_ii">EXIT$</a></dd>
+                <dd><a  href="#event_wait_ii">EVENT_WAIT$</a></dd>
+                <dd><a  href="#event_free_ii">EVENT_FREE$</a></dd>
+		<dd><a	href="#itable_ii">I$TABLE</a></dd>
+		<dd><a	href="#xint_bind_ii">XINT$BIND</a></dd>
+		<dd><a	href="#affinity_ii">AFFINITY$</a></dd>
+		<dd><a	href="#send_alert_ii">ALERT$</a></dd>
+		<dd><a	href="#zeta_ii">$ZETA</a></dd>
+	</dl><br>
+	<li><a	href="#handles"/>Handles</a></li>
+	<li><dl><a	href="#so_calls">Network Call Interface</a></li>
+	<dt><a href="#net_posix">Calls by Socket Handle</a></dt>
+		<dd><a href="#__socket">__socket</a></dd>
+	        <dd><a href="#bind">bind</a></dd>
+		<dd><a href="#connect">connect</a></dd>
+        	<dd><a href="#recv">recv</a></dd>
+	        <dd><a href="#send">send</a></dd>
+                <dd><a href="#tcp_listen">tcp_listen</a></dd>
+                <dd><a href="#tcp_accept">tcp_accept</a></dd>
+                <dd><a href="#socket_close">close</a></dd>
+	</dl>
+	<li><a	href="#fs_calls">File Systems Call Interface</a></li>
+	<ol>
+		<li><a href="#fs_posix">Calls by File Handle</a></li>
+		<dl>
+			<dd><a href="#open">open</a></dd>
+			<dd><a href="#read">read</a></dd>
+			<dd><a href="#write">write</a></dd>
+			<dd><a href="#seek">lseek</a></dd>
+			<dd><a href="#fsync">fsync</a></dd>
+			<dd><a href="#close">close</a></dd>
+		<br>
+		</dl>
+		<li><a href="#process">Initial Data Load, Iframe Load and Reentrant Shared Code Applications</a></li>
+		<dl>
+			<dd><a href="#process">Reentrant Shared Code Applications</a></dd>
+		</dl>
+		<br>
+		<dl><a href="#fs_loadgo">Process Load Calls</a>
+			<dd><a href="#seg$load">seg$load</a></dd>
+			<dd><a href="#recursive$seg$load">recursive$seg$load</a></dd>
+			<dd><a href="#array$seg$load">array$seg$load</a></dd>
+			<dd><a href="#iframe_load">iframe_load</a></dd>
+			<dd><a href="#qstart">qstart</a></dd>
+		</dl>
+		<br>
+		<li><a href="#fs_stream">File Stream Calls</a></li>
+		<dl>
+			<dd><a href="#fstream">Mapping Streams to Files</a></dd>
+			<dd><a href="#format">Scan and Format Control Strings</a>
+			<dd><a href="#sscanf">sscanf</a>		macro -->	__sscanf</dd>
+			<dd><a href="#sprintf">sprintf</a>		macro -->	__sprintf</dd>
+			<dd><a href="#fscanf">scanf/fscanf</a>		macro -->	__fscanf</dd>
+			<dd><a href="#fprintf">printf/fprintf</a>	macro -->	__printf fprintf</dd>
+			<dd><a href="#fgets">fgets</a>			macro -->	__fgets</dd>
+			<dd><a href="#fflush">fflush</a>		macro -->	fsync</dd>
+		</dl>
+	</ol>
+	<br>
+<li><a href="#auto">Automatic Events</a></li>
+	<ol>
+	<li><dl><a	href="#ii_contingency">Contingency Interrupts</a></li>
+                <dd><a  href="#xpo_ii">FP_XPO$</a>      79      .       bank 1  vector  15      . exponent overflow | underflow</dd>
+		<dd><a	href="#guard_ii">GUARD$</a>	95	.	bank 1	vector	31</dd>
+	</dl>
+	<li><a	href="#timeslice">TimeSlice</a></li>
+	<li><a	href="#estac">Automatic Exit on Empty Stack Return</a></li>
+	</ol>
+	<br>
+<li><a	href="#library">Embedded Library</li>
+	<ol>
+	<li><dl><a href="#arith_lib">Large Arithmetic Library</a></li>
+		<dt><a href="#fp192_lib">192-Bit Floating Library</a></dt>
+		<dd><a href="#fp192_add">fp192_add</a></dd>
+		<dd><a href="#fp192_add_negative">fp192_add_negative</a></dd>
+		<dd><a href="#fp192_multiply">fp192_multiply</a></dd>
+		<dd><a href="#fp192_mfa">fp192_mfa</a></dd>
+		<dd><a href="#fp192_divide">fp192_divide</a></dd>
+		<dd><a href="#fp192_load">fp192_load</a></dd>
+		<dd><a href="#fp192_load_negative">fp192_load_negative</a></dd>
+		<dd><a href="#reciprocal192">reciprocal192</a></dd>
+		<dt><a href="#i72_lib">72-Bit Integer Macro Library</a></dt>
+	</dl>
+	<li><dl><a href="#app_lib">192-Bit Floating Application Library</a></li>
+		<dd><a  href="#square192">square192</a></dd>
+		<dd><a	href="#root192">square_root192</a></dd>
+		<dd><a  href="#cube192">cube192</a></dd>
+		<dd><a  href="#cube_root192">cube_root192</a></dd>
+
+		<dd><a  href="#integer192">integer192</a></dd>
+		<dd><a  href="#fraction192">fraction192</a></dd>
+
+		<dd><a  href="#sine192">sine192</a></dd>
+		<dd><a  href="#cosine192">cosine192</a></dd>
+		<dd><a  href="#tangent192">tangent192</a></dd>
+		<dd><a  href="#cotangent192">cotangent192</a></dd>
+	</dl>
+	</ol>
+</dl>
+</ol>
+
+<div    style="background-color:E0E0E0">
+
+<dl><a href="#udp_steps">Appendix A: UDP Low-Level Interface</a>
+</dl>
+<dl><a href="#tcp_steps">Appendix B: TCP Low-Level Interface</a>
+</dl>
+</div>
+<dl><a href="#appx_c">Appendix C: System Information Interrupt Calls</a>
+		<dd><a	href="#total_mfree_ii">TOTAL$FREE</a></dd>
+		<dd><a  href="#thread_state_ii">THREAD$STATE</a></dd>
+                <dd><a  href="#storage_block_idxa_ii">A$IDX</a></dd>
+                <dd><a  href="#storage_block_idxb_ii">B$IDX</a></dd>
+</dl>
+<dl><a href="#appx_d">Appendix D: Interrupt Calls normally issued by Kernel Routines</a>
+		<dd><a	href="#dayclock_w_ii">DAYCLOCK$W</a></dd>
+		<dd><a	href="#xbase_ii">XBASE$32..XBASE$43</a></dd>
+		<dd><a  href="#net2sym_ii">NET2SYM$</a></dd> 
+</dl>
+<dl><a href="#ii_steps">Appendix E: Kernel Building Block Interrupt Calls</a>
+</dl>
+
+<dl><a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
+</dl>
+
+<dl><a href="#scheduling">Appendix G: Scheduling</a>
+</dl>
+
+<dl><a href="#file_system">Appendix H: File System  Media</a>
+	<dd><a href="#file_system">Ha: Available File Systems<a></dd>
+	<dd><a href="#fs_device">Hb: Device Array [ 1, 3..63 ]</a></dd>
+	<dd><a href="#fs_nfs">Hc: Remote Files</a></dd>
+	<dd><a href="#fs_xs">Hd: ROM /RAM File Systems in Executable Space</a></dd>
+</dl>
+
+<dl><a href="#diagnostic">Appendix I: File and Socket Error Codes</a>
+</dl>
+
+</div>
+
+<a	name="preamble"/>
+<h2>1. Kernel and API</h2>
+
+<a	name="posix_api"/>
+<h3>1.1 POSIX API and Low Level Interface</h3>
+
+<p>
+
+RTA1 kernel has services with a POSIX-like API based on handles
+
+<p>
+The kernel is not similar to Unix but an ultra-thin layer with very short instruction paths
+
+<p>
+Kernel services are also callable at a lower layer than handle-based POSIX functions
+
+<p>
+This allows applications to serve millions of network users at once although it is not possible to have millions of handles
+
+
+<a      name="ii_call"/>
+
+<h3>1.2 Kernel Call Interface and Internal Interrupt Interface</h3>
+
+Most kernel routines have a call interface and their
+arguments are on the internal stack
+
+<p>
+Some system calls are internal interrupts. They are called with
+the <a href="rta.html#ii">ii</a> internal interrupt instruction
+
+<p>
+Functional wrappers may be placed around internal interrupt system calls
+for a single and simple C-Language interface
+
+<p>
+Macro language supports a <a href="language.html">structured calling sequences</a> for a call-based API
+
+<p>
+Arguments for internal interrupts are typically in the application
+accumulator registers
+
+<pre	style="font-size:12pt">
+
+        la      <i>argument</i>
+        ii      <i>isr_vector</i>
+
+</pre>
+
+<p>
+An interrupt vector is a value with a 16-bit page pointer and a 6-bit offset
+
+<p>
+The immediate operand of ii instruction has 10 page bits
+<pre	style="font-size:12pt">
+
+					
+	__________________________________
+	| ii instr | 10 page bits |offset| 
+	|____code__|______________|______|
+	 23	    15		 6	0
+
+</pre>
+The first four megawords of memory may therefore contain ISR entry points
+
+<p>
+Currently the 1st 8192 words of memory contain ISRs. System call ISRs are in the second of these two pages
+
+<pre	style="font-size:12pt">
+
+         [ii opcode] 00 0000 000p offset
+				|
+			   	|{0|1}
+
+</pre>
+
+Application Threshold I/O Port 72 points to the first page of application space and the end of ISR space
+
+<p>
+Only ISR space may be the target of an ii instruction
+
+<p>
+Applications may not enter restart page 0 with ii instruction
+
+<p>
+The instruction code <a href="rta.html#ii">ii</a> is 750000<sub>16</sub> and the vector name THREAD$ is 000047<sub>16</sub> = Page Index 1 offset 7
+
+<pre	style="font-size:12pt">
+
+        <b>
+        00:00004C 750047              +50       ii              THREAD$
+        </b>
+
+</pre>
+
+<p>
+The operand of the far call instruction <b>call</b>
+is a variable or a constant containing the vector value
+of the target routine, or an indirect pointer to a <a href="rta.html#gate">gate<a>
+
+<p>
+The instruction code <a href="rta.html#call">call</a> is FF0000<sub>16</sub> and the literal at 00:000e74 is vector name __socket at Page Index 2 offset 1
+
+
+<pre	style="font-size:12pt">
+
+        <b>
+        00:000047 FF0E74              +122      call    (__socket)
+
+
+        00:000e74+000081
+        </b>
+
+</pre>
+
+<p>
+A far call routine executes in application mode and reads parameters
+from the internal stack. It returns by executing a far return instruction <a href="rta.html#fret">fret</a>
+
+<p>
+System call ISRs are in 4096-word page at absolute address 4096, i.e. the second page of storage at Page Index 1.
+
+<p>
+Instruction frames can be any size in consecutive pages of 4096 words
+
+<a	name="api"/>
+<h2>2: API</h2>
+
+<a	name="ii"/>
+<h3>2.1: Internal Interrupt System Calls</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="spawn_ii"/>
+	SPAWN$		66 (042<sub>16</sub>)	= Page Index 1	offset 2
+
+				process launch
+		                has 4 parameters in application registers a b mantissa2 mantissa3
+
+				<a	style="color:#0000FF">
+				ql	(<i>iframe:offset, PRIORITY, DATA_SIZE, -B1_PRIVATE_DATA_FRAMES</i>:q)
+				ii	SPAWN$
+				</a>
+
+				<a style="color:#0000FF"><i>PRIORITY</i></a> is 0..7
+				Highest priority 0 is not timesliced. Lowest priority 7 has the least timeslice
+				All threads ready to execute get some time
+
+				<a style="color:#0000FF"><i>DATA_SIZE</i></a> is words of application data including an external stack
+				which contains file open descriptors, fprintf format buffer and
+				and any large dynamic data not in the internal stack
+
+				<a style="color:#0000FF"><i>-B1_PRIVATE_DATA_FRAMES</i></a> is a negative number expressing how many 4096-word
+				private data frames the application requires. If no negative number is present
+				in the 4th parameter field the application has one B1 frame. Applications do
+				not share access to this space with any called or calling routines
+
+
+	<a	name="thread_ii"/>
+	THREAD$		71 (047<sub>16</sub>)	= Page Index 1  offset 7
+
+		                start a new thread of the current process
+
+                		has 4 parameters in application registers a b mantissa2 mantissa3
+
+				<a      style="color:#0000FF">
+				ql	(<i>offset, PRIORITY, LATENT_PARAMETER, INITIAL_FP</i>:q)
+				ii	THREAD$
+				</a>
+
+				<a style="color:#0000FF"><i>offset</i></a> is in the current Instruction Frame
+
+				<a style="color:#0000FF"><i>PRIORITY</i></a> is 0..7
+				Highest priority 0 is not timesliced. Lowest priority 7 has the least timeslice
+				All threads ready to execute get some time
+
+				<a style="color:#0000FF"><i>LATENT_PARAMETER</i></a> is an integer or pointer delivered in register a at thread start
+
+				<a style="color:#0000FF"><i>INITIAL_FP</i></a> is an external stack root delivered if required in register fp
+
+
+	<a	name="tag_ii"/>
+	TAG$		73 (049<sub>16</sub>)	= Page Index 1  offset 9
+
+				name a thread
+
+				<a      style="color:#0000FF">
+				dl	({0 | <i>TARGET_TCB</i>}, <i>POINTER_TO_NAMESTRING</i>:d)
+				ii	TAG$
+				</a>
+
+				application register a -> target Thread Control Block, zero = calling thread
+				application register b -> name string, low order octet final word = zero
+
+
+	<a	name="bank_ii"/>
+	BANK$		67 (043<sub>16</sub>)	= Page Index 1  offset 3
+
+
+				<a      style="color:#0000FF">
+				la	{ (<i>STORAGE_WORDS_REQUIRED</i>) | <i>STORAGE_WORDS_REQUIRED</i>,,xi }
+				ii	BANK$
+				</a>
+
+                		storage acquire
+		                words requested in application register a
+                		start page index returned in a / zero if no grant
+		                descriptor is linked to thread memory estate
+
+	<a	name="array_ii"/>
+	ARRAY$		68 (044<sub>16</sub>)	= Page Index 1  offset 4
+
+				<a      style="color:#0000FF">
+				la	(<i>STORAGE_PAGES_REQUIRED</i>)
+				ii	ARRAY$
+				</a>
+
+                		very large storage acquire
+		                4096-word blocks requested in application register a
+                		start page index returned in a / zero if no grant
+		                descriptor is linked to thread memory estate
+
+	<a	name="bank_free_ii"/>
+	BANK$FREE	69 (045<sub>16</sub>)	= Page Index 1  offset 5
+
+				<a      style="color:#0000FF">
+				la	<i>START_PAGE_INDEX</i>
+				ii	BANK$FREE
+				</a>
+
+                		storage relinquish
+                		start page index in application register a
+		                descriptor is unlinked from thread memory estate
+
+	<a	name="switch_fp_guard_ii"/>
+	FP_GUARD$	94 (05E<sub>16</sub>)	= Page Index 1  offset 30
+
+				<a      style="color:#0000FF">
+				la	(<i>ROUNDING_PATTERN</i>)
+				ii	FP_GUARD$
+				</a>
+
+				set floating point rounding guard pattern in interrupt register 147
+				to the value in application register a
+				returns old value in application register a
+
+	<a	name="fp_xpo_flag_ii"/>
+	FP_XPO$FLAG	78 (04E<sub>16</sub>)	= Page Index 1  offset 14
+
+				<a	style="color:#0000FF">
+				ii	FP_XPO$FLAG
+				lcal	<i>react_to_outflow</i>
+				j	<i>result_valid</i>
+				</a>
+
+				retrieve + clear exponent overflow flag
+				interrogate OR-sum of exponent underflow / overflow events in this thread
+				reset the sum
+				return skips one instruction if the the sum is not set at interrupt start
+
+	<a	name="yield_ii"/>
+	YIELD$		65 (041<sub>16</sub>)	= Page Index 1  offset 1
+
+				<a	style="color:#0000FF">
+				ii	YIELD$
+				</a>
+
+				thread switch	on preemptive event
+                		                or event wait
+                                		or voluntarily
+
+	<a	name="twait_ii"/>
+	TWAIT$		91 (05B<sub>16</sub>)	= Page Index 1	offset 27
+
+
+				<a	style="color:#0000FF">
+				dl	(<i>MILLISECONDS</i>:d)
+				ii	TWAIT$
+				</a>
+
+
+                		thread switch and wait millisecond count in
+                		application registers a:b
+
+	<a	name="exit_ii"/>
+	EXIT$		70 (046<sub>16</sub>)	= Page Index 1	offset 6
+
+				<a	style="color:#0000FF">
+				ii	EXIT$
+				</a>
+
+         			end thread
+	 			end initial thread ends all other threads of process
+
+				instructions fret and lret also raise interrupt EXIT$ if internal stack pointer sp = 128
+
+        <a      name="event_wait_ii"/>
+        EVENT_WAIT$     92 (05C<sub>16</sub>)        = Page Index 1  offset 28
+                                <a      style="color:#0000FF">
+                                la      (<i>EVENT_SELECTORS</i>)
+                                ii      EVENT_WAIT$
+                                </a>
+
+                                wait for the event[s] flagged in application register a
+
+				wait for event 1 XINT queues for preemptive realtime scheduling
+
+                                events  100000 (thread faulted)
+                                        200000 (thread ended) cannot be flagged for wait
+
+				if TIME_WAIT flag 800000<sub>16</sub> is flagged in accumulator a
+				the event wait is limited to milliseconds count in accumulator b
+				and [preemptive] scheduling takes place on event or timeout
+
+				<a	style="color:#0000FF">
+				dl	(TIME_WAIT++<i>EVENT_SELECTORS</i>, <i>milliseconds</i>:L)
+				ii	EVENT_WAIT$
+				</a>
+
+				XINT scheduling is preemptive when event or timeout triggers
+
+				<a	style="color:#0000FF">
+				dl	(TIME_WAIT++XINT, 5000L)	. event or 5 seconds
+				ii	EVENT_WAIT$
+				</a>
+
+				value in accumulator b has no effect on the EVENT_WAIT$ ISR
+				if event flags in accumulator a do not include TIME_WAIT
+
+
+        <a      name="event_free_ii"/>
+        EVENT_FREE$     93 (05D<sub>16</sub>)        = Page Index 1  offset 29
+                                <a      style="color:#0000FF">
+				la	<i>thread_id</i>
+                                lb      (<i>EVENT_SELECTORS</i>)
+                                ii      EVENT_FREE$
+                                </a>
+
+                                cancel wait for selected events
+                                flags   100000 (thread faulted)
+                                        200000 (thread ended) are not cleared
+
+
+	<a	name="itable_ii"/>
+	I$TABLE		75 (04B<sub>16</sub>)	= initialise thread interrupts table
+				<a      style="color:#0000FF">
+				ii	I$TABLE
+				</a>
+
+				adds an external interrupt table to the thread control block
+
+				external interrupts preprocessor queues an input word
+				from an interrupt source bound to the thread on each interrupt
+
+				the index value of the interrupt source is coupled
+				with the input data word in a 2-word tuple
+
+					_________________________________________________
+					| interrupt source index|  data or status input	|
+					|_______________________|_______________________|
+
+				the interrupt source index is relative 1
+				value zero tags a void entry
+
+				there may be eight interrupt sources per core
+				the interrupt source index is <i>core</i> * 8 + interrupt source + 1
+				where <i>core</i> is the core where the interrupt source is attached
+
+
+	<a	name="xint_bind_ii"/>
+	XINT$BIND	79 (04F<sub>16</sub>)	= thread bind interrupt source
+				<a      style="color:#0000FF">
+				la	<i>interrupt_source</i>
+				ii	XINT$BIND
+				</a>
+
+				the thread receives external interrupt tuples in the I$TABLE queue
+				interrupt source is as I$TABLE
+
+				the interrupt source may be bound to any core but only
+				a core attached to the interrupt source can postprocess
+				the interrupt if that needs more I/O operations than
+				the preprocess acquisition queued in the I$TABLE queue
+
+				see <a href="#external_i">Appendix F: External Interrupts and Peripherals</a>
+
+	<a	name="affinity_ii"/>
+	AFFINITY$	76 (04C<sub>16</sub>)	= thread attach to specific core[s]
+				<a      style="color:#0000FF">
+				la	<i>cores_mask</i>
+				ii	AFFINITY$
+				</a>
+
+				typically AFFINITY$ attaches the calling thread
+				to one core to which a peripheral is attached
+				but <i>cores_mask</i> is a bit mask selecting
+				among 24 possible core[s] at corresponding
+				schematic socket positions
+
+					_________________________
+					|23		       0|
+					|_______________________| low order bit -> core socket 0
+					 |		       |________________________________
+					 |
+					 |			high order bit -> core socket 23
+					 |______________________________________________________
+
+
+
+	<a	name="send_alert_ii"/>
+	ALERT$		125 (07D<sub>16</sub>)	= request core to core[s] multicast transmission
+				<a      style="color:#0000FF">
+				la	<i>message</i>
+				lb	<i>cores_mask</i>
+				ii	ALERT$
+				</a>
+
+				multicast a message to other cores
+				<i>cores_mask</i> is as AFFINITY$ with low order bit selecting core 0
+				through high-order bit selecting core 23
+
+				assigned <i>message</i> values are
+
+				bit 23: force yield to the thread with identity bits [ 21..0 ]
+					this is a request from an exiting process
+					and prevents threads from continuing to execute
+					after deallocation of process resources
+
+				bit 22	$ACTIVATE clears the event wait flags of the
+					thread with identity <i>message</i> bits [ 21..0 ]
+
+					the thread is not activated if it has faulted
+					or already exited
+
+				bit 9	$MCAST_DEVICE activates the thread attached to
+					device <i>message</i> bits [ 7..0 ] = core * 8 + device + 1
+
+				bit 8	$MCAST_DAYCLOCK advises an updated millisecond
+					dayclock value may be transferred from kernel
+					storage to interrupt registers [ DAYCLOCK$U DAYCLOCK$ ]
+
+
+	<a	name="zeta_ii"/>
+	$ZETA		124 (07C<sub>16</sub>)	= terminate named process or thread
+				<a      style="color:#0000FF">
+				la	<i>thread_id</i>
+				ii	$ZETA
+				</a>
+
+				terminate the thread <i>thread_id</i>
+				if <i>thread_id</i> is the process initial thread
+				it terminates all its threads
+
+				the thread is not terminated if its TAG$ name
+				starts with character * asterisk
+
+
+</pre>
+
+<a	name="handles"/>
+<h3>2.2: Handles</h3>
+<pre	style="font-size:12pt">
+
+	<div	style="font-family:optima">
+	Socket and file handles share a number space
+
+	Handles [ 0 1 2 ] are the automatic files stdin stdout stderr
+
+	Handles are modeled in the process vector list, an information table which an application reads but does not write
+
+	The process vector list is common to all threads in a process
+
+	Handles are common to all threads in a process
+	</div>
+
+</pre>
+
+<a	name="so_calls"/>
+<h3>2.3: Network Call Interface</h3>
+
+<pre	style="font-size:12pt">
+
+
+<a	name="net_posix"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">Calls by Socket Handle</a>
+
+	<a	name="__socket"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">__socket</a>
+
+	get a socket
+
+        	la	{ (IPPROTO_TCP*/16) | (IPPROTO_UDP*/16) }	. according to protocol
+        	call    (__socket)
+
+
+	<div	style="font-family:optima">
+        result in application register a
+        +integer = socket ID
+        -1      = handle not available
+        -2      = protocol not supported
+
+
+
+	<a	name="bind"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">bind</a>
+
+        bind a handle to a port and optionally to a network address
+	</div>
+
+		c	(bind)	handle	socket_address,,long	. [net_address:]port
+
+	<div	style="font-family:optima">
+        result in application register a
+        0       = good
+        -2      = handle is not TCP or UDP
+        -3      = port number specified and not free
+        -4      = no resource to model the socket
+
+
+	<a	name="connect"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">connect</a>
+	</div>
+
+        	c	(connect)	socket_handle                           ;
+					($net_socket 10.0.0.65:REMOTE_PORT),,long
+
+	<div	style="font-family:optima">
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">connect UDP socket</a>
+
+        connect() in UDP associates the local
+        socket with a remote socket, but causes no
+        external protocol activity. UDP socket connect
+        therefore returns immediately
+
+
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">connect TCP socket</a>
+
+        connect() in TCP changes the socket to a
+        connection handle and negotiates that connection
+        with the remote socket over TCP and IP protocols
+
+        The handle may already be bound to a port
+        and optionally to a local network address
+
+        Otherwise connect() binds the socket to an available
+        unique local port, and to the default network address
+        of the outgoing interface
+
+        The socket moves from the port to the connection on connect()
+	and is lost on close()
+
+        To use that local port for another connect() a new
+        socket must first be bound to it
+
+        TCP connect() is a blocking call
+
+        NON_BLOCKING call tcp_start_connection() in the
+        low-level interface starts the negotiation of
+        a remote connection for asynchronous completion
+
+        The sequence for outgoing connections is, starting with
+        the optional separate bind() step
+	</div>
+
+                                 _______________
+                                (    bind()     )
+                                 ---------------
+                                        |
+                        any port        |   specific port
+                        ________________|________________
+                        |                               |
+                ________|________                       |
+                | TCP names port|                       |
+                |_______________|                       |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                ________|________
+                                | bind the port |
+                                | to address:   |
+                                | may be 0.0.0.0|
+                                |_______________|
+                                        |
+                                ________|________
+                                | handle -> port|
+                                |_______________|
+
+
+
+
+                                 _______________
+                                (   connect()   )
+                                 ---------------
+                                        |
+                                        |
+                        not bound       |           bound
+                        ________________|________________
+                        |                               |
+                ________|________                       |
+                |   bind to     |                       |
+                |   0.0.0.0:0   |                       |
+                |_______________|                       |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                        |
+                                ________|________
+                                |   construct   |
+                                |   connection  |
+                                |_______________|
+                                        |
+                                ________|________
+                                | copy local net|
+                                | address from  |
+                                | port socket   |
+                                |_______________|
+                                        |
+                                        |
+                                        |
+                        local network   |  local network
+                        address=0.0.0.0 |address^0.0.0.0
+                        ________________|________________
+                        |                               |
+                        |                               |
+                        |                               |
+                ________|________                       |
+                |local address  |                       |
+                |of connection =|                       |
+                |default address|                       |
+                |of interface on|                       |
+                |default route  |                       |
+                |to remote host |                       |
+                |_______________|                       |
+                        |                               |
+                        |                               |
+                        |_______________________________|
+                                        |
+                                        |
+                                        |
+                                        |
+                                ________|________
+                                |       handle  |
+                                | -> connection |
+                                |_______________|
+                                        |
+                                        |
+                                ________|________
+                                | send TCP_SYN  |
+                                |_______________|
+                                        |
+                                        |
+                                ________|________
+                                | await SYN_ACK |
+                                |_______________|
+                                        |
+                                        |
+                                        |
+
+
+	<a	name="recv"/>
+	<a      style="font-family:optima;font-size:16pt;color:#0000FF">recv</a>
+
+        	c    (recv)  socket_handle   buffer[,,xi]  bytes,,xi   flags,,xi
+
+	<div	style="font-family:optima">
+        socket handle is the integer handle number
+
+        For UDP sockets bit 23 of flags has a PEEK effect
+        -the user datagram stays on the input queue
+
+        flag bit 22 has NON_BLOCKING effect.
+        recv() is by default BLOCKING
+
+        if a UDP socket has no user datagram available it
+        blocks if flag bit 22 = 0
+
+        if a TCP connection has less data available than
+        requested it blocks if flag bit 22 = 0
+
+        TCP sockets receiving XDR data require BLOCKING to
+        obtain a complete result atomically
+
+        Application protocols with BLOCKING sockets must be
+        separate processes or threads from the IP main thread
+
+        recv() returns bytes read in register a
+
+        result 0 on a BLOCKING receive means a TCP connection
+        has received remote close
+
+        On a NON_BLOCKING receive, result 0 means there
+  	no data is available
+
+	a negative value in a is an <a href="#diagnostic">error code</a>
+
+
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">receive from</a>
+
+        source addresses of User Datagrams can be retrieved
+        on receive from the containing IP datagram
+	</div>
+
+
+	<a	name="send"/>
+	<a      style="font-family:optima;font-size:16pt;color:#0000FF">send</a>
+
+        	c    (send)  socket_handle   buffer[,,xi]  bytes,,xi   flags,,xi
+
+	<div	style="font-family:optima">
+        socket_handle is the integer handle number
+
+        for TCP sockets bit 3 of flags is TCP_PSH which sends
+        immediately instead of on full segment
+
+        result in application register a is bytes sent
+	a negative value in a is an <a href="#diagnostic">error code</a>
+
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">send to</a>
+
+        destination addresses for User Datagrams can be set
+        before send
+
+	<a	name="tcp_listen"/>
+	<a      style="font-family:optima;font-size:16pt;color:#0000FF">tcp_listen</a>
+
+        Argument 1 is the socket bound to a TCP port,
+        not to a TCP connection
+
+        Value in register b sets the socket in BLOCKING or in
+        NON_BLOCKING mode
+	</div>
+
+        NON_BLOCKING    $equ    0
+
+                la      handle1                         . no limit
+                lb, xi  NON_BLOCKING                    . = NON_BLOCKING
+                call    (tcp_listen)
+
+                la      handle2                         . nonzero limit
+                lb, xi  CONNECTION_WAITQ_MAXIMUM        . = BLOCKING
+                call    (tcp_listen)
+
+	<div	style="font-family:optima">
+        there will be an error return in register a if
+        the handle in a is not a bound TCP port
+
+        If the socket is BLOCKING, connections are
+        only admitted with tcp_accept() which
+        always blocks
+
+        If the socket is NON_BLOCKING, connections
+        are accepted automatically
+	</div>
+
+	<a	name="tcp_accept"/>
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">tcp_accept</a>
+
+                c       (tcp_accept)    handle
+
+	<div	style="font-family:optima">
+        tcp_accept() awaits an incoming connection
+        on a listening socket
+
+        The remote address is in the new transmission control
+        block, and if it is required anywhere else it must be
+        copied from there
+
+        tcp_accept() is a blocking call
+
+        Incoming connections are accepted automatically on
+        NON_BLOCKING sockets
+	</div>
+
+	<a	name="socket_close"/>
+
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">close</a>
+
+		c	(close)
+
+	<div	style="font-family:optima">
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">close UDP socket</a>
+
+        close() in UDP frees the port and makes
+        the socket handle number reassignable within
+        the process. The free port accepts no traffic
+
+
+        <a      style="font-family:optima;font-size:16pt;color:#0000FF">close TCP connection</a>
+
+        close() removes the connection and the process may reassign the handle number
+
+	TCP listening ports are not freed when attached connections close
+	The listening socket owns the port and accesses multiple connections
+
+        TCP ports bound to outgoing connections
+        are freed on connection socket close
+
+        close() returns immediately without blocking
+	but incoming traffic may still be available
+	the remote socket does not usually send after acknowledging TCP_FIN
+	and normally sends its own TCP_FIN with the acknowledgement
+	</div>
+
+</pre>
+
+
+<a	name="fs_calls"/>
+<h3>2.4: File Systems Call Interface</h3>
+
+Noted here are APIs
+<ul	type="square">
+
+	<li><a href="#fs_posix">handle based file I/O</a></li>
+	<li><a href="#process"></a>process initial data load / iframe load / re-entrant shared code</li>
+	<li><a href="#fstream">file streams</a></li>
+	<li><a href=""></a></li>
+
+</ul>
+
+File system types are noted at Appendix H <href="#file_system">File System Media</a>
+
+
+<a name="fs_posix"/>
+<h4>2.4.1: Calls by File Handle</h4>
+<pre	style="font-size:12pt">
+
+	$include	language/stack.def
+
+</pre>
+The handle-based API accesses <a href="#fs_device">device array file systems</a> and <a href="#fs_nfs">remote files</a>
+
+<p>
+<a href="#fs_xs">File systems in executable RAM or ROM</a> are accessed with routines in <a href="#fs_calls">File I/O Libraries</a> which access file-open state descriptors directly
+
+<p>
+The opened file is an array of RTA1 24-bit words or an array of octets
+
+<p>
+An open flag O_OCTET makes the open file an array of octets instead of words.
+
+<p>
+Word or octet mode is not a feature of the stored file but of the open mode
+
+<p>
+Files and their directory metadata are stored identically whether loaded in word or octet mode
+and different applications may even have the same file open simultaneously in different modes,
+at least for reading
+
+<pre	style="font-size:12pt">
+
+	<a	name="open"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">open</a>
+
+	c	(open)	path,,xi O_FLAGS,,xi
+	jna	no_handle
+	sa	handle
+
+	<div	style="font-family:optima">
+	result in register a is a handle number or a negative value indicating an <a href="#diagnostic">error</a>
+	open flags are O_RDONLY O_RDWR O_CREAT O_TRUNC O_APPEND O_OCTET
+	O_TRUNC in conjunction with O_CREAT replaces the target file unconditionally
+	O_APPEND positions the file read / write pointer at its end as if lseek(file, 0L, SEEK_END) were executed
+
+	files are closed recording how many octet positions including sparse-file gaps are written
+	file end is the position after the highest written octet and it is recorded as a number of octets
+
+	a file with one word written to it in word mode is recorded as containing three octets
+	a file with one octet written to in in O_OCTET mode is recorded as containing one octet
+
+	when a file capable of octet-oriented processing is opened O_APPEND and not O_OCTET
+	the write position is the first word location beyond the highest written octet
+	</div>
+
+	<a name="read"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">read</a>
+
+	c	(read)	handle buffer,,xi MAXIMUM_WORDS|OCTETS,,xi	
+
+	<div	style="font-family:optima">
+	result in register a is objects read or a negative value indicating an <a href="#diagnostic">error</a>
+	the maximum read size is words or octets depending open flag O_OCTET
+	a file which is a network socket reads and reports octets read
+	</div>
+
+	<a name="write"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">write</a>
+
+	c	(write)	handle buffer,,xi WORDS|OCTETS,,xi
+
+	<div	style="font-family:optima">
+	result in register a is objects written or a negative<a href="#diagnostic">error code</a>
+	the write size is words or octets depending open flag O_OCTET
+	a file which is a network socket writes and reports octets written
+	</div>
+
+	<a name="lseek"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">lseek</a>
+
+	c	(lseek)	handle offset,,long SEEK_HOW,,xi
+
+	<div	style="font-family:optima">
+	SEEK_HOW is { SEEK_SET | SEEK_CUR | SEEK_END }
+
+	SEEK_SET sets the read / write position to unsigned offset
+	SEEK_CUR changes the read / write position by signed offset
+	SEEK_END sets the read / write position to file end + signed offset
+
+	offset is an offset in words or an offset in octets depending open flag O_OCTET
+	when a file capable of octet-oriented processing is opened not O_OCTET and lseek(file, offset, SEEK_END) is executed
+	new read / write position is a signed offset in words added to the first word location beyond the highest writen octet
+
+	the 72 bit result in registers [ 6 a b ] is the new offset in the file processing quantum word or octet
+	or a negative value indicating an <a href="#diagnostic">error</a>. The only known errors are
+
+	the net offset attempted is negative
+	the SEEK_HOW argument is not in the three allowed values
+
+	errors can arise from call arguments of the wrong size
+
+	the maximum file dimensions possible with the 48-bit offset argument of lseek are
+
+	256 teraquanta SEEK_SET
+	&plusmn;128 teraquanta SEEK_CUR / SEEK_END
+
+	an additional function lseek64 is planned for applications which process sparse files of greater dimensions
+	lseek64 will have a 72-bit offset
+
+	c	(lseek64)	handle	offset,,triple	SEEK_HOW
+
+	the 48-bit offset argument of lseek is simpler for applications to manipulate
+	for that reason function lseek is maintained
+	</div>
+
+	<a name="fsync"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">fsync</a>
+
+	c	(fsync)	handle
+
+	fsync pushes buffered output date to physical medium
+
+	<a name="close"/>
+	<a	style="font-family:optima;font-size:16pt;color:#0000FF">close</a>
+
+	c	(close)	handle
+
+
+</pre>
+<a	name="process"/>
+<h4>2.4.2: Initial Data Load, Iframe Load and Reentrant Shared-Code Applications</h4>
+<pre	style="font-size:12pt">
+	<div	style="font-family:optima">
+
+	All applications are shared code whether fixed or loadable
+
+	Process instances unpack initial data into process RAM
+	from an embedded file system in the application code image
+	</div>
+
+
+	<a	name="fs_loadgo"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">Process Load Calls</a>
+
+	<a	name="seg$load"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">seg$load</a>
+
+		c	(seg$load)	<i>FS_START_PAGE_INDEX</i>[,,xi] (<i>FILE_DESCRIPTOR_OFFSET</i>:d),,long
+
+	<div	 style="font-family:optima">
+	seg$load loads program sections $(3) data and $(1) private data to process RAM.
+
+	<i>FILE_DESCRIPTOR_OFFSET</i> is a 48-bit linked address in a file system included in application build
+
+	program data sections $(3) and $(1) must be based in the address space
+
+	if <i>FS_START_PAGE_INDEX</i> is zero the file system is the calling instruction frame
+	and file system metadata is offset after the instruction code
+
+	<i>FILE_DESCRIPTOR_OFFSET</i> is linked not searched.
+
+	The iframe-included file system is constructed using <a href="masmx7r3.html#1gformat">1gformat</a>
+	1gformat minimises file system metadata. The micro-filesystem is linked at any 64-word granule offset
+
+	nonzero <i>FS_START_PAGE_INDEX</i> identifies a core filesystem in separate space constructed using <a href="masmx7r3.html#4kformat">4kformat</a>
+
+	The file system has searchable metadata at <i>FS_START_PAGE_INDEX</i>.
+	<i>FILE_DESCRIPTOR_OFFSET</i> is nevertheless linked not searched
+	</div>	
+	
+	<a	name="recursive$seg$load"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">recursive$seg$load</a>
+
+		c	(recursive$seg$load)	<i>FS_START_PAGE_INDEX[,,xi]</i> (<i>FILE_DESCRIPTOR_OFFSET</i>:d),,long
+
+	<div	 style="font-family:optima">
+
+	recursive$seg$load loads a program data section to an external stack frame pointed with frame pointer fp
+
+	This allows application subsections to be executed from initial state recursively.
+	The load strings of the data section have zero-relative addresses and reference is indexed with fp
+
+	program data section $(3) includes the external stack and must be based in the address space
+
+	input file system for recursive$seg$load is as seg$load
+</div>
+
+	<a	name="array$seg$load"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">array$seg$load</a>
+
+		c	(array$seg$load)	<i>FS_START_PAGE_INDEX</i>[,,xi]		;
+						(<i>FILE_DESCRIPTOR_OFFSET</i>:d),,long)	;
+						<i>RAM_ARRAY_START_PAGE_INDEX</i>[,,xi]
+
+	<div	 style="font-family:optima">
+
+	array$seg$load loads initial strings of a large array
+	to a buffer of any available size at <i>RAM_ARRAY_START_PAGE_INDEX</i>
+
+	No part of the target array need be initially based in the address space
+
+	input file system for array$seg$load is as seg$load
+	</div>
+
+	<a	name="iframe_load"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">iframe_load</a>
+
+		c	(iframe_load)	(<i>FILE_DESCRIPTOR_DEVICE_OFFSET</i>:d),,long		;
+					<i>RUN_PROFILE_RECEIVE_BUFFER</i>[,,i]
+	
+	<div	style="font-family:optima">
+	iframe_load loads a group of instruction frames constructed with macros $application / catalog /  $iframe
+	from file system device array 1 to executable RAM
+
+        The 48-bit <i>FILE_DESCRIPTOR_DEVICE_OFFSET</i> may be obtained with FS24 kernel routine fspath
+
+	Instruction code is not loaded from any file system which is writeable from networks
+
+	The file system in Device array 1 is <a href="masmx7r3.html#fsformat">constructed offline</a>
+	and is not writeable during system operation
+
+	The iframe group may be an application or libraries
+
+	load_iframe returns the application start specification if <i>RUN_PROFILE_RECEIVE_BUFFER</i> is nonzero
+	</div>
+	
+	<a	name="qstart"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">qstart</a>
+
+		c	(qstart)	<i>FS_START_PAGE_INDEX</i>[,,xi]		;
+					(<i>DIRECTORY_DESCRIPTOR_OFFSET</i>:d),,long	;
+					<i>CALLNAME_LENGTH_CONTAINING_WORDS</i>	;
+					<i>APPLICATION_CALLNAME</i>
+
+	<div	style="font-family:optima">
+	qstart searches a given application callname of a fixed iframe in a known directory of a core file system,
+	retrieves an application start specification from the file contents and launches an application process
+
+	The 48-bit value <i>DIRECTORY_DESCRIPTOR_OFFSET</i> may be obtained using kernel routine fsrom_find in advance
+
+	</div>
+</pre>
+<a	name="fs_stream"/>
+<h4>2.4.3: File Stream Calls</h4>
+<pre>
+
+	<a	name="fstream"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">Mapping Streams to Files</a>
+
+	<div	style="font-family:optima">
+	There is no FILE stream structure in RTA1. Every kind of file is buffered
+	The names stdin stdout and stderr are equated to automatic handles [ 0 1 2 ]
+
+	These three handles are usually one TCP dialogue leased from telnet
+
+	All stream commands are macros:	sscanf		calls		__sscanf
+								sprintf		calls		__sprintf
+								scanf / fscanf	call		__fscanf
+								printf / fprintf	call		__fprintf
+								fgets			calls		__fgets
+								fflush		calls		fsync
+					
+	</div>
+	<a	name="format"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">Scan and Format Control Strings</a>
+
+	data tags in format strings:	%d	an integer in decimal
+					%i	input only, an integer in decimal or hex
+					%f	a floating number
+					%x	an integer in hex
+					%c	a character symbol
+					%s	a character string
+					%:<a style="background-color:#E0E0E0"> </a>	input string terminated by the symbol after %:
+
+	<div	style="font-family:optima">
+	The default size of an integer is one word
+
+	The default size of a floating number is four words
+ 
+	%i does no octal conversion. Leading zero is converted as hex. 0x or 0X is not scanned
+
+	Size overrides are:	%ld %li %lx capture two input words. %ld %lx format two output words from the internal stack
+
+				%lf on input <a href="rta.html#fp">compresses</a> the captured number to two words on storage
+				%lf assumes <a href="rta.html#fp">compressed floating number</a> has been promoted on output to four internal stack words
+
+				%jd %ji %jx capture three input words. %jd %jx format three output words from the internal stack
+
+				%qx captures or formats four words in hex
+				%qf captures or formats a <a href="rta.html#fp">four-word floating number</a> and is indentical to %f
+
+				%Lx captures or formats eight words in hex
+				%Lf captures or formats an <a href="rta.html#fp">eight-word floating number</a>
+
+	<a	name="sscanf"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">sscanf</a>
+
+	__sscanf is called with macro
+
+		sscanf	<i>BUFFER</i>[,,i] <i>FORMAT_STRING</i>[,,xi] <i>POINTER1</i> [ <i>POINTER2</i>... ]
+
+	<a	name="sprintf"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">sprintf</a>
+
+		sprintf	<i>BUFFER</i>[,,i] <i>FORMAT_STRING</i>[,,xi] <i>VALUE1</i> [ <i>VALUE2</i>... ]
+
+	<a	name="fscanf"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fscanf</a>
+
+	__fscanf is called with macros
+
+		fscanf	<i>FILE_HANDLE</i>[,,i] <i>FORMAT_STRING</i>[,,xi] <i>POINTER1</i> [ <i>POINTER2</i>... ]
+
+		scanf	<i>FORMAT_STRING</i>[,,xi] <i>POINTER1</i> [ <i>POINTER2</i>... ]
+
+	there is no FILE stream structure in RTA1. The name stdin equals handle number zero.  scanf is the same as
+
+		fscanf	stdin <i>FORMAT_STRING</i>[,,xi] <i>POINTER1</i> [ <i>POINTER2</i>... ]
+		
+	<a	name="fprintf"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fprintf</a>
+
+	there is no FILE stream structure in RTA1. The name stdout equals handle number 1
+
+	__fprintf is called with the macros
+
+		printf	<i>FORMAT_STRING</i>[,,xi] <i>VALUE1</i> [ <i>VALUE2</i>... ]
+
+		fprintf	<i>handle</i>[,,xi] <i>FORMAT_STRING</i>[,,xi] <i>VALUE1</i> [ <i>VALUE2</i>... ]
+
+	</div>
+</pre>
+
+<a	name="auto"/>
+<h2>3: Automatic Events</h2>
+<a	name="ii_contingency"/>
+<h3>3.1: Contingency Interrupts</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="xpo_ii"/>FP_XPO$</a>
+
+	<div	style="font-family:optima">
+	Interrupt FP_XPO$ is generated by underflow or overflow of a floating exponent
+
+	ISR OR-sums the contingency in the thread control block and sets the floating result to -0.0
+
+	The OR-sum is retrieved and restarted with system call interrupt <a href="#xpof_ii">ii FP_XPO$FLAG</a>
+	</div
+
+	<a  name="guard_ii"/>GUARD$</a>
+
+	<div	style="font-family:optima">
+	Interrupt GUARD$ is generated by out-of-range and unallowed references
+
+	An interrupt stack frame latent parameter classes the contingency as address-range or authority
+
+	If the contingency is in application code, or arises from a bad parameter passed from application to ISR
+	then the thread is withdrawn from scheduling for analysis / deletion
+
+	If the contingency is in an ISR without cause from any application, the system restarts
+	in order to eliminate effects of the error and resume service
+
+	Software may also issue <a href="#guard_ii">ii GUARD$</a> for error-tracing
+	</div>
+
+</pre>
+
+<a  name="timeslice"/>
+<h3>3.2: TimeSlice</h3>
+<pre	style="font-size:12pt">
+
+	<div	style="font-family:optima">
+	TimesSlice is a <a href="#yield_ii">YIELD$</a> interrupt forced at instruction ration runout
+
+	Instruction ration is not applied to highest priority zero and is graded from priorities 1..7 lowest
+
+	Threads are rarely timesliced in practice because of the unusual code efficiency of RTA1.
+	An I/O wait happens first and scheduling restarts the instruction ration
+	</div>
+
+</pre>
+<a  name="estac"/>
+<h3>3.3: Automatic EXIT$ on Empty Stack Return</h3>
+<pre>
+
+	<div	style="font-family:optima">
+	An process or thread executing instruction <a href="rta.html#lret">lret</a> or <a href="rta.html#fret">fret</a>
+	with internal stack pointer = 128 enters <a href="#exit_ii">EXIT$</a> ISR
+	</div>
+
+</pre>
+<a	name="library"/>
+<h2>4: Embedded Library</h2>
+<a	name="arith_lib"/>
+<h3>4.1: Large Arithmetic Library</h3>
+
+	192-bit floating operations are sequences of atomic 96-bit floating instructions
+
+	<p>
+	These instruction sequences are embedded as library subroutines for simplicity of use
+
+<pre    style="font-size:12pt">
+
+
+	<a      name="fp192_lib"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">192-Bit Floating Library</a>
+
+	Arguments referenced by address are shown here with designator ,,i for base+displacement and fixed addresses 
+	Sign exteded immediate designator ,,xi delivers fixed immediate addresses but not addresses with base register
+
+	<a	name="fp192_add"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_add</a>
+
+		c	(fp192_add)	<i>ADDEND</i>,,i
+
+	the 8-word value at address <i>ADDEND</i> is add to the addend in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a	name="fp192_add_negative"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_add_negative</a>
+
+		c	(fp192_add_negative)	<i>SUBTRAHEND</i>,,i
+
+	1s complement of the 8-word <i>SUBTRAHEND</i> is added to the minuend in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a	name="fp192_multiply"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_multiply</a>
+
+		c	(fp192_multiply)	<i>MULTIPLIER</i>,,i
+
+	the multiplicand in registers a:b:mantissa2:mantissa3:8:9:10:11 is multiplied by the 8-word value at address <i>MULTIPLIER</i>
+
+	<a	name="fp192_mfa"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_mfa</a>
+
+		c	(fp192_mfa)	<i>MULTIPLICAND</i>,,i	<i>MULTIPLIER</i>,,i
+
+	the 8-word value at address <i>MULTIPLICAND</i> is multiplied by the 8-word value at address <i>MULTIPLIER</i>
+	8-word product is stored at address <i>MULTIPLICAND</i>. Accumulators a:b:mantissa2:mantissa3:8:9:10:11 are overwritten 
+
+	<a	name="fp192_divide"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_divide</a>
+
+		c	(fp192_divide)	<i>DIVISOR</i>,,i
+
+	the dividend in registers a:b:mantissa2:mantissa3:8:9:10:11 is divided by the 8-word floating value at address <i>DIVISOR</i>
+
+	<a	name="fp192_load"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fp192_load</a>
+
+		c	(fp192_load)	<i>INPUT</i>,,i
+
+	the 8-word value at address <i>INPUT</i> is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a	name="fp192_load_negative"/><a	 style="font-family:optima;font-size:16pt;color:#0000FF">fp192_load_negative</a>
+
+		c	(fp192_load_negative)	<i>INPUT</i>,,i
+
+	the 1s complement of the value at address <i>INPUT</i> is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a	name="reciprocal192"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">reciprocal192</a>
+
+		c	(reciprocal192)		<i>INPUT_DIVISOR</i>,,float_192
+
+	the reciprocal of the <i>INPUT_DIVISOR</i> is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+
+	<a      name="i72_lib"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">72-Bit Integer Macro Library</a>
+
+
+	See also <a href="masmx7r3.html#x_i">integer algorithmic expressions</a>
+
+	The command field is not a call because this is a library of macros
+
+	Most inputs and outputs are 72 bits
+
+
+
+		$include	lib/i72.def
+
+		i72a		<i>ADDEND72</i>	<i>ADDEND72</i>	<i>DESTINATION72</i>		. add
+
+		i72an		<i>MINUEND72</i>	<i>SUBTRAHEND72</i>	<i>DESTINATION72</i>		. difference
+
+		i72compare	<i>MINUEND72</i> 	<i>SUBTRAHEND72</i>				. comparison result in register a
+
+		172a48		<i>ADDEND72</i>	<i>ADDEND48</i>	<i>DESTINATION72</i>		. add
+
+		i72an48		<i>MINUEND72</i> 	<i>SUBTRAHEND48</i>	<i>DESTINATION72</i>		. difference
+
+		i72compare48	<i>MINUEND72</i>	<i>SUBTRAHEND48</i>				. comparison result in register a
+
+		i72a48_48	<i>ADDEND48</i>	<i>ADDEND48</i>	<i>DESTINATION72</i>		. add
+
+		i72an48_48	<i>MINUEND48</i>	<i>SUBTRAHEND48</i>	<i>DESTINATION72</i>		. difference
+
+		i48m		<i>MULTIPLICAND48</i>	<i>MULTIPLIER24</i>	<i>PRODUCT72</i>
+
+		i48m48		<i>MULTIPLICAND48</i>	<i>MULTIPLIER48</i>	<i>PRODUCT96</i>
+
+		i72m		<i>MULTIPLICAND72</i>	<i>MULTIPLIER24</i>	<i>PRODUCT72</i>
+
+		i72m48		<i>MULTIPLICAND72</i>	<i>MULTIPLIER48</i>	<i>PRODUCT72</i>
+
+		i72m72		<i>MULTIPLICAND72</i>	<i>MULTIPLIER72</i>	<i>PRODUCT72</i>
+
+		i48d48		<i>DIVIDEND48</i>	<i>DIVISOR48</i>	<i>QUOTIENT48</i>
+
+		i72d		<i>DIVIDEND72</i>	<i>DIVISOR24</i>	<i>QUOTIENT72</i> [ <i>REMAINDER24</i> ]
+
+		i72d48		<i>DIVIDEND72</i>	<i>DIVISOR48</i>	<i>QUOTIENT72</i>
+
+		i72d72		<i>DIVIDEND72</i>	<i>DIVISOR72</i>	<i>QUOTIENT72</i> [ <i>REMAINDER72</i> ]
+
+
+</pre>
+
+<a	name="app_lib"/>
+<h3>4.2: 192-Bit Floating Application Library</h3>
+<pre    style="font-size:12pt">
+
+
+		$include	language/stack.def
+
+	<a	name="square192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">square192</a>
+
+		c	(square192)	<i>INPUT_ROOT</i>,,float192
+
+	the square of the input is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="root192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">square_root192</a>
+
+		c	(square_root192)	<i>INPUT_SQUARE</i>,,float192
+
+	the square root of the input is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="cube192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cube192</a>
+
+		c	(cube192)	<i>INPUT_ROOT</i>,,float192
+
+	the cube of the input is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="cube_root192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cube_root192</a>
+
+		c	(cube_root192)	<i>INPUT_CUBE</i>,,float192
+
+	the cube root of the input is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="integer192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">integer192</a>
+
+		c	(integer192)	<i>INPUT_FRACTION</i>,,float192
+
+	the integral part of the input fraction is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="fraction192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">fraction192</a>
+
+		c	(fraction192)	<i>INPUT_FRACTION</i>,,float192
+
+	the fractional part of the input fraction is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="sine192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">sine192</a>
+
+		c	(sine192)	<i>INPUT_ANGLE</i>,,float192
+
+	the sine of the input angle is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="cosine192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cosine192</a>
+
+		c	(cosine192)	<i>INPUT_ANGLE</i>,,float192
+
+	the cosine of the input angle is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+	<a      name="tangent192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">tangent192</a>
+
+		c	(tangent192)	<i>INPUT_ANGLE</i>,,float192
+
+	the tangent of the input angle is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+        <a      name="cotangent192"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cotangent192</a>
+
+		c	(cotangent192) <i>INPUT_ANGLE</i>,,float192
+
+	the cotangent of the input angle is returned in registers a:b:mantissa2:mantissa3:8:9:10:11
+
+</pre>
+
+<a      name="app_lib96"/>
+<h3>4.3: 96-Bit Floating Application Library</h3>
+<pre    style="font-size:12pt">
+
+	<a	name="integer96"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">integer96</a>
+
+		c	(integer96)	<i>INPUT_FRACTION</i>,,float
+
+	the integral part of the input fraction is returned in registers a:b:mantissa2:mantissa3
+
+	<a	name="fraction96"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">fraction96</a>
+
+		c	(fraction96)	<i>INPUT_FRACTION</i>,,float
+
+	the fractional part of the input fraction is returned in registers a:b:mantissa2:mantissa3
+
+
+        <a      name="sine96"/><a	style="font-family:optima;font-size:16pt;color:#0000FF">sine96</a>
+
+                c       (sine96)	<i>INPUT_ANGLE</i>,,float
+
+        the sine of the input angle is returned in registers a:b:mantissa2:mantissa3
+
+        <a      name="cosine96"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cosine96</a>
+
+                c       (cosine96)     <i>INPUT_ANGLE</i>,,float
+
+        the cosine of the input angle is returned in registers a:b:mantissa2:mantissa3
+
+        <a      name="tangent96"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">tangent96</a>
+
+                c       (tangent96)    <i>INPUT_ANGLE</i>,,float
+
+        the tangent of the input angle is returned in registers a:b:mantissa2:mantissa3
+
+        <a      name="cotangent96"/><a    style="font-family:optima;font-size:16pt;color:#0000FF">cotangent96</a>
+
+                c       (cotangent96) <i>INPUT_ANGLE</i>,,float
+
+        the cotangent of the input angle is returned in registers a:b:mantissa2:mantissa3
+
+
+</pre>
+
+<div	style="background-color:#E0E0E0">
+<a	name="udp_steps"/>
+<h3>Appendix A: UDP Low-Level Interface</h3>
+
+Low-level network interfaces are largely used for maximum efficiency in server rôles
+
+<p>
+UDP Low-Level Interface uses a handle in order to bind to a port, then keeps the port input queue in application address space and and has zero-copy access to input messages instead of calling any receive function
+
+<p>
+Applications using this interface call a reply buffer function and a queue function instead of a write function. The reply buffer is primed with addresses from the input message. The application writes the data part of the reply buffer directly
+
+<p>
+Input messages are dropped from the socket input queue after consumption
+
+<p>
+This technique will be rolled out anew for large applications when private buffers per large-volume socket are implemented. No-copy access to the default buffer pool supporting the system is not for new applications preferred
+
+
+<a	name="tcp_steps"/>
+<h3>Appendix B: TCP Low-Level Interface</h3>
+
+TCP Low-Level Interface is largely used for very large numbers of connections and maximum efficiency in server rôles
+
+<p>
+TCP Low-Level Interface uses a handle in order to bind to a port, then keeps an array of transmission control blocks in application address space and and has zero-copy access to input segments instead of calling any receive function. Function calls insert reply data into the output stream and optionally push out finalised segments
+
+<p>
+Input segments are dropped from the connection input queue after consumption
+
+<p>
+TCP Low-Level Interface accepts incoming and connects outgoing connections by constructing transmission control blocks without corresponding handles. The application accesses transmission control clocks directly in large numbers which could not be represented with handles 
+
+<p>
+This technique will be rolled out anew for large applications when private buffers per port-based-connection-array are implemented. No-copy access to the default buffer pool supporting the system is not for new applications preferred
+</div>
+
+
+
+<a	name="appx_c"/>
+<h3>Appendix C: System Information Interrupt Calls</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="total_free_ii"/>
+	TOTAL$FREE	88 (058<sub>16</sub>)	= Page Index 1	offset	8
+				<a	style="color:#0000FF">
+				ii	TOTAL$FREE
+				</a>
+
+				return free data words system memory in registers a:b
+
+
+        <a      name="thread_state_ii"/>
+        THREAD$STATE    114 (072<sub>16</sub>)       = Page Index 1  offset 50
+                                <a      style="color:#0000FF">
+                                la      <i>THREAD_CONTROL_BLOCK_INDEX</i>
+                                ii      THREAD$STATE
+                                j       no_longer_running
+                                j       running
+                                </a>
+
+                                check if thread is running
+                                skip one instruction if so
+
+
+        <a      name="storage_block_idxa_ii"/>
+        A$IDX           115 (073<sub>16</sub>)       = Page Index 1  offset 51
+                                <a      style="color:#0000FF">
+                                la      [2..63],,xi
+                                ii      A$IDX
+                                </a>
+
+                                retrieve the Start Page Index of the storage block in Window [register a]
+                                into register a
+
+        <a      name="storage_block_idxb_ii"/>
+        B$IDX           116 (074<sub>16</sub>)       = Page Index 1  offset 52
+                                <a      style="color:#0000FF">
+                                lb      [2..63],,xi
+                                ii      B$IDX
+                                </a>
+
+                                retrieve the Start Page Index of the storage block in Window [register b]
+                                into register b
+</pre>	
+
+<a	name="appx_d"/>
+<h3>Appendix D: Interrupt Calls normally issued by Kernel Routines</h3>
+<pre	style="font-size:12pt">
+
+	<a	name="dayclock_w_ii"/>
+	DAYCLOCK$W	90 (05A<sub>16</sub>)	= Page Index 1  offset 26
+				<a	style="color:#0000FF">
+				dl	<i>MILLISECOND</i>
+				ii	DAYCLOCK$W
+				</a>
+
+				start millisecond on aeon with write to
+				interrupt registers DAYCLOCK$U DAYCLOCK$
+
+	<a	name="xbase_ii"/>
+	XBASE$32	96 (060<sub>16</sub>)	= Page Index 1	offset 32
+	...XBASE$33 XBASE$34 XBASE$35 XBASE$36 XBASE$37
+	   XBASE$38 XBASE$39 XBASE$40 XBASE$41 XBASE$42...
+	XBASE$43	107 (06B<sub>16</sub>)	= Page Index 1	offset 43
+				<a	style="color:#0000FF">
+				la	(<i>DEVICE_BLOCK_BASE_REQUEST</i>)
+				ii	XBASE${ 32 | 33 | 34 | 35 | 36 | 37 | 38 | 39 | 40 | 41 | 42 | 43 }
+				</a>
+
+				place a peripheral device array block in one address space window of [32..43]
+
+
+	<a	name="net2sym_ii"/>
+	NET2SYM$	113 (071<sub>16</sub>)	= Page Index 1  offset 49
+				<a	style="color:#0000FF">
+				lx	<i>TRANSMISSION_CONTROL_BLOCK</i>
+				la	<i>THREAD_CONTROL_BLOCK_INDEX</i>
+				ii	NET2SYM$
+				</a>
+
+				encode a handle from transmission control block address [register x]
+				in handles [ 0 1 2 ] stdin stdout stderr
+				of the containing process of thread [register a]
+
+</pre>
+
+<a	name="ii_steps">
+<h3>Appendix E: Kernel Building Block Interrupt Calls</h3>
+
+These system calls are made within kernel routines which applications have called
+
+<p>
+Some of these ISRs may for safety only be called from a closed ring of iframes and are screened from other callers
+
+<pre	style="font-size:12pt">
+
+	<a  name="handle_ii"/>
+	HANDLE$		1:16	obtain a handle
+				handle number in range 3..1655 is returned
+				0 1 2 are already stdin stdout stderr
+				high order 8 bits application register a = { AF_INET | IPPROTO_UDP | IPPROTO_TCP }
+				AF_INET = handle of NFS file
+				return -1 = no handle free for use
+				<a style="color:#0000FF">
+				la	(<i>handle_type</i>*/16)
+				ii	HANDLE$
+				</a>
+
+	<a  name="free_handle_ii"/>
+	FREE_HANDLE$	1:17	relinquish a handle for reuse
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	FREE_HANDLE$
+				</a>
+
+	<a  name="read_handle_ii"/>
+	READ_HANDLE$	1:18	read 1st word of handle encoding
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	READ_HANDLE$
+				</a>
+
+	<a  name="read_xvector_ii"/>
+	READ_XVECTOR$	1:19	obtain a pointer from kernel vector list
+				value is returned in application register a
+				<a style="color:#0000FF">
+				lx	<i>kernel_vector_address</i>
+				ii	READ_XVECTOR$
+				</a>
+
+	<a  name="write_xvector_ii"/>
+	WRITE_XVECTOR$	1:20	update a pointer in kernel vector list
+				<a style="color:#0000FF">
+				la	<i>value</i>
+				lx	<i>kernel_vector_address</i>
+				ii	WRITE_XVECTOR$
+				</a>
+
+	<a  name="read_socket_ii"/>
+	READ_SOCKET$	1:21	read both words of handle encoding
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				ii	READ_SOCKET$
+				</a>
+
+	<a  name="usocket_ii"/>
+	USOCKET$	1:56	bind: attach port socket structure to handle
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lb	<i>port_number</i>
+				ii	USOCKET$
+				</a>
+
+	<a  name="usocketc_ii"/>
+	USOCKET$C	1:22	connect/accept: attach transmission control block to handle
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lx	<i>transmission_control_block</i>
+				ii	USOCKET$C
+				</a>
+
+	<a  name="kernel_b1_ii"/>
+	KERNEL$B1	1:23	switch to a named kernel B1 frame
+				<a style="color:#0000FF">
+				la	VECTOR_B1(<i>number</i>),,xi
+				ii	KERNEL$B1
+
+	<a  name="b1_ii"/>
+	B1$		1:24	switch to application current b1 frame
+				<a style="color:#0000FF">
+				ii	B1$
+				</a>
+
+	<a  name="kernel_b1_ii_1"/>
+	KERNEL$B1_1	1:25	switch to 1st kernel b1 frame
+				<a style="color:#0000FF">
+				ii	KERNEL$B1_1
+				</a>
+
+	<a  name="cache_standard_netbuf_ii"/>
+	CACHE_NETB$	1:44	IP initialisation call
+				<a style="color:#0000FF">
+				ii	CACHE_NETB$
+				</a>
+
+	<a  name="base_standard_netbuf_ii"/>
+	ON_NETB$	1:45	place default network buffers
+				in application address windows B48 to B63
+				<a style="color:#0000FF">
+				ii	ON_NETB$
+				</a>
+
+	<a  name="unbase_deviceb_ii"/>
+	FREE_DEVB$	1:46	close address space window B32
+				<a style="color:#0000FF">
+				ii	FREE_DEVB$
+				</a>
+
+	<a  name="unbase_socketb_ii"/>
+	FREE_SOCKB$	1:47	close address space window B47
+				<a style="color:#0000FF">
+				ii	FREE_SOCKB$
+				</a>
+
+	<a  name="unbase_standard_netbuf_ii"/>
+	FREE_NETB$	1:48	close address space windows B48 to B63
+				<a style="color:#0000FF">
+				ii	FREE_NETB$
+				</a>
+
+	<a  name="file_open_frame_ii"/>
+	FO$FRAME	1:57	obtain a data file open descriptor
+				<a style="color:#0000FF">
+				la	(<i>FILE_TYPE,,WORDS_FOLLOWING</i>)
+				ii	FO$FRAME
+				</a>
+
+	<a  name="files_open_heap_ii"/>
+	FO$HEAP		1:58	start data file open descriptor heap
+				between static data and external stack
+				<a style="color:#0000FF">
+				la	SUMMIT$3,,xi	. or la (SUMMIT$3)
+				ii	FO$HEAP
+				</a>
+
+	<a  name="file_handle_ii"/>
+	FILE$HANDLE	1:59	add to handle pointer -> data file open frame
+				<a style="color:#0000FF">
+				la	<i>handle</i>
+				lx	<i>file_open_frame_pointer</i>
+				ii	FILE$HANDLE
+				</a>
+
+	<a  name="assign_xvector_ii"/>
+	ASSIGN_XVECTOR$ 1:10	obtain kernel storage
+				for new kernel structures
+				<a style="color:#0000FF">
+				la	<i>storage_words_required</i>
+				lx	<i>kernel_vector_address</i>
+				ii	ASSIGN_XVECTOR$
+				</a>
+				
+</pre>
+<a	name="external_i"/>
+<h3>Appendix F: External Interrupts and Peripherals</h3>
+
+RTA1 emulated machine does not receive external interrupts but the intended migration to semiconducter may bring directly connected peripherals and interrupts
+
+<p>
+Currently network traffic is connected with Berkeley Packet Filter passing frames on a shared memory trunk
+
+<p>
+<a href="#file_system">File systems</a> are RAM under power backed up over NFS / UDP / TCP  on other platforms and high-capacity filestore boxes
+
+<p>
+There exists no intention of changing filesystems to flash. RAM has highest performance and is without maintenance problems, and other firms and projects have best experience and knowledge at creating offline and PC filestore
+
+<p>
+An exception is RTA1's Device 1 file system which is treated as read-only and could move to NVRAM as a stable source of software load and web host pages, which it already is
+
+<p>
+The likeliest peripheral needs in a semiconductor RTA1 are network adaptors. These could as now run outside RTA1 executable space with a separate machine (currently the emulator platform) exchanging network frames on a shared memory trunk
+<pre>
+
+	_________________________			_________________________
+	|			|<----------------------|			|
+	|  RTA1 protocol stack	|			| BPF activity currently|
+	|			|  network frames trunk	|			|
+	|_______________________|---------------------->|_______________________|
+
+
+</pre>
+Alternatively RTA1 could become its own helper and maintain both ends of its network frames trunk: could drive network adapters and read and write the shared memory trunk to and from RTA1 protocols
+
+<p>
+There is no intention to change the way in which RTA1 protocol stack exchanges frames with a trunk essentially of interface buffers (currently more exactly BPF process buffers)
+
+<p>
+There are electronic fabrics available which are capable of interfacing many peripherals to many cores, but RTA1 is designed for the minimum of support electronics
+
+<p>
+Each SMP core is expected to occupy and be identified by a socket or position on the schematic, and each socket is expected to have maximum eight direct peripheral connections
+<pre>
+
+<div	style="height:200pt;width:700pt;border-radius:10pt;color:#FFFFFF;background-color:#0000FF">
+
+als [25..32]	peripherals [17..24]	peripherals [9..16]	peripherals [1..8]
+		||||||||		||||||||		||||||||
+		|core 2|		|core 1|		|core 0|
+		|______|		|______|		|______|
+________________|_______________________|_______________________|				
+				    core to core interrupt lines
+
+
+		     all cores interface to all of system memory
+		
+</div>
+
+</pre>
+
+The following interrupt preprocessing is already in RTA1 supplied system images
+
+<p>
+Up to eight interrupt sources identified by eight pending signals shall be able to interrupt a core to vector address 0:2
+
+<p>
+The pending signals are to be represented in eight low-order bit positions on input port <a href="rta.html#iolist">XI_PENDING$</a>
+
+<p>
+Preprocess ISR is programmed to read status or data from eight input ports <a href="rta.html#iolist">I$DATA</a> and output acknowledgement on eight low-order bit positions of output port <a href="rta.html#iolist">XI_ACK$</a>
+
+<p>
+Preprocess ISR queues the data or status input to an application thread bound to the peripheral. This driver thread is scheduled with absolute preemptive priority. See <a href="#event_wait_ii">EVENT_WAIT$</a>
+
+<p>
+The driver thread is bound to the peripheral by <a href="#affinity_ii">affinity</a> to core[s] connected to the peripheral
+
+<p>
+If the interrupt source requires more I/O more immediately than the latency of switching its driver thread, then the existing preprocess ISR must of course call extensions hosted in application code. It is considered prefereable to avoid this
+
+<p>
+There ought only be one preemptive driver thread per core for each <i>type</i> of attached peripheral, so that the driver thread is the only candidate for pre-emptive switching and can keep executing until all available inputs are handled
+
+<p>
+There are seven priority levels of preemptive switching. A driver thread may resist becoming itself preempted or time-sliced by setting a nonzero interrupt mask, prefereably 1 in the range [ 0..7 ]
+
+<p>
+Output is co-ordinated with core to core interrupt signals to port <a href="rta.html#iolist">MCAST_TO$</a>. Each bit-selected destination receives a single-bit source indication at port <a href="rta.html#iolist">MCAST_PENDING$</a>. Parameters and acknowledgement are in system memory
+
+<p>
+An application sends interrupt signals between cores with service call <a href="#send_alert_ii">ALERT$</a>
+
+
+<a	name="scheduling"/>
+<h3>Appendix G: Scheduling</h3>
+
+The aim of kernel scheduler is twofold
+
+<p>
+Threads from highest to lowest priority all get some instruction execution time
+
+<p>
+Threads which must react instantly to an event may switch preemptively, unless actual thread is equally preemptive
+
+<p>
+Priority is from zero = highest to seven = lowest
+
+<p>
+All threads which are not preemptive are queued at the last priority list [ 7 ] and prioritised by graded timeslice
+
+<p>
+Timeslice is an instruction ration which is unlimited at priority zero and diminishing per priorities [ 1..7 ]
+
+<p>
+It is rare for any thread to exhaust its instruction ration because of the brevity of RTA1 instruction paths. The instruction ration is restarted after every I/O wait or other yield
+
+<p>
+Preemptive threads are queued at their priority list [ 0..7 ]
+
+<p>
+All priority lists form one queue for attention in the order [ 0..7 ], so all preemptive threads are considered before any which are graded by timeslice
+
+<p>
+A thread becomes preemptive by waiting for <a href="#event_wait_ii">event XINT</a>
+
+<p>
+A preemptive thread may defend itself from another preemption or from timeslice by executing with nonzero interrupt mask, recommended value 1 in the range [ 0..7 ]. This both signals ISRs which might otherwise decide to preempt, and blocks automatic timeslice where the thread priority is [ 1..7 ]
+
+<p>
+Interrupt mask is not priority but a level of resistance to interrupts of graded urgency. Any thread of any priority is interrupted by any interrupt if the thread's interrupt mask is at zero
+
+<p>
+Interrupt mask is programmed with the Switch Interrupt Mask instruction <a href="rta.html#sim">sim</a> which exchanges current interrupt mask with a storage or register operand, for example
+<pre>
+
+	push	REQUIRED_IMASK,,xi
+	sim	0, sp
+	
+	.
+	.
+	sim	0, sp			. if there is any need to change it back
+	inc	sp
+
+</pre>
+Interrrupt mask is part of the thread state, so a thread that maintains one mask value at all times does not need to save the replaced mask:
+<pre>
+
+	lr	REQUIRED_IMASK,,xi	. at thread initialisation for example
+	sim	r			. and that's how it stays
+
+</pre>
+
+
+<a      name="file_system"/>
+<h3>Appendix H: File Systems Media</h3>
+
+<h3>Ha:	Avalable File Systems</h3>
+
+File systems are
+
+<ul	type="none">
+
+	<li><a href="#fs_device">Device Arrays [ 1, 3..63] </a></li>
+	<l1><a href="#fs_nfs">remote files</a></li>
+	<li><a href="#fs_xs">RAM / ROM core file Systems in executable space</a></li>
+	
+</ul>
+
+<a	name="fs_device"/>
+<h3>Hb: Device Array [ 1, 3..63 ]</h3>
+
+64 device arrays are memories up to 16 Gigawords in size where
+<ul	type="none">
+	<li>device array zero is executable space</li>
+	<li>device array 1 is a <a href="#fsda">file system</a></li>
+	<li>device array 2 is a network frames trunk</li>
+	<li>device arrays 3..63 are additional memory arrays or network trunks or <a href="#fsda">file systems</li>
+</ul>
+
+<a	name="fsda"/>
+<h3>Hb1: Device Array Filestore Medium</h3>
+Device array file systems are RAM arrays under power up to 17,179,869,184 words (51,539,607,552 octets) in size
+
+<p>
+Device array file systems may be <a href="masmx7r3.html#fsformat">constructed offline</a> and their online image is backed via network to external platforms and third-party devices
+
+<p>
+Filestore Device Array 1 is always present and treated as read-only. It contains webhost pages and loadable instruction code, which are not allowed to be read from any other device
+
+<a	"fsda_access"/>
+<h3>Hb2: Device Array Filestore Access</h3>
+<p>
+Filestores are accessed with a POSIX handle-based API or with a filestream API
+
+<p>
+Files are opened as either an array of words or an array of octets. File offsets and read / write counts are therefore quanta either of 24-bit words or of octets depending open flag O_OCTET
+
+<p>
+Initially only filestream processing on device arrays is octet oriented : fgets() fscanf() fprintf() fread fwrite()
+
+<p>
+read() write() lseek() on device array filesystems view the target file as an array of 24-bit words
+
+
+<a	name="fsda_org"/>
+<h3>Hb3: Device Array Filestore Organisation</h3>
+<p>
+RTA1 onboard filestores are organised in granules of 64 words (192 octets). Minimum extent size is 64 words and maximum 262144 words
+
+<p>
+File system image contains directories and files. Root directory is at the start of the filestore and contains its own descriptor. The descriptors of other directories are in their containing directory
+
+<p>
+Here filestore image <a style="color:#FF0000">remington</a> has descriptors in root of directories including for example <a style="color:#FF0000">web</a>
+
+<p>
+<a style="color:#0000FF">Directory page control</a> gives next writeable word of directory block at 000067 and 000398 words writable, forward granule pointer 000000 000000 = no extension page. Writeable word at 000067 is bypass record header <a style="color:#0000FF">800398</a> pointing to end of directory block
+
+<pre	style="font-size:12"> 
+
+$ fds24 fsimages/rand7 
+000000000000: <a style="color:#0000FF">500004 000067 000398 000000</a>  "P    g      "
+000000000004: <a style="color:#0000FF">000000</a> 4c0004 00000f 000000  "   L        "
+000000000008: 000000 2e0000 4c0004 000000  "   .  L     "
+00000000000c: ffffff ffffff 2e2e00 <a style="color:#FF0000">560006</a>  "      .. V  "
+000000000010: <a style="color:#FF0000">000002 000000 001c4b 72656d</a>  "        K<a style="color:#FF0000">rem"</a>
+000000000014: <a style="color:#FF0000">696e67 746f6e</a> 440005 000010  "<a style="color:#FF0000">ington</a>D     "
+000000000018: 000000 000010 626f6f 742400  "      boot$ "
+00000000001c: 440007 000010 000000 000040  "D          @"
+000000000020: 667265 652474 726565 240000  "free$tree$  "
+000000000024: 440005 000010 000000 000050  "D          P"
+000000000028: 646d73 610000 440006 000010  "dmsa  D     "
+00000000002c: 000000 000060 736368 656d61  "     `schema"
+000000000030: 310000 440006 000010 000000  "1  D        "
+000000000034: 000070 736368 656d61 320000  "  pschema2  "
+000000000038: 440005 000010 000000 000080  "D           "
+00000000003c: 757469 6c0000 440005 000010  "util  D     "
+000000000040: 000000 0000ed 746573 740000  "      test  "
+000000000044: 440006 000010 000000 00014b  "D          K"
+000000000048: 696e69 746961 6c0000 44000a  "initial  D  "
+00000000004c: 000010 000000 00015c 617070  "        \app"
+000000000050: 6c6963 617469 6f6e5f 696672  "lication_ifr"
+000000000054: 616d65 730000 440005 000010  "ames  D     "
+000000000058: 000000 00016d 646f77 6e0000  "     mdown  "
+00000000005c: <a style="color:#FF0000">440004 000010 000000 000209</a>  "D           "
+000000000060: <a style="color:#FF0000">776562</a> 440005 000010 000000  "<a style="color:#FF0000">web</a>D        "
+000000000064: 001c3a 776562 320000 <a style="color:#0000FF">800398</a>  "  :web2     "
+000000000068: 000000 000000 000000 000000  "            "
+
+</pre>
+
+Directory <a style="color:#FF0000">web</a> is <a style="color:#FF0000">10<sub>16</sub></a> granules at granule <a style="color:#FF0000">000000 000209<sub>16</sub></a> (word address 000000 008240<sub>16</sub>) of the file system image
+<pre	style="font-size:12">
+
+000000008240: 500004 00013a 0002c5 000000  "P    :      "
+000000008244: 000000 4c0004 00005c 000000  "   L    \   "
+000000008248: 000000 2e0000 4c0004 00000f  "   .  L     "
+00000000824c: 000000 000000 2e2e00 46000c  "      .. F  "
+000000008250: 0000a7 000000 000219 000000  "            "
+000000008254: 000000 000000 000000 007d26  "          }&"
+000000008258: 666176 69636f 6e2e69 636f00  "favicon.ico "
+00000000825c: 46000c 000029 000000 0002c0  "F    )      "
+000000008260: 000000 000000 000000 000000  "            "
+000000008264: 001e0c 696e64 65782e 68746d  "   index.htm"
+000000008268: 6c0000 <a style="color:#0000FF">46000b</a> <a style="color:#FF0000">00000e 000000</a>  "l  F        "
+00000000826c: <a style="color:#FF0000">0002e9 000000 000000 000000</a>  "            "
+000000008270: <a style="color:#FF0000">000000 0009fa 72696e 672e68</a>  "      <a style="color:#FF0000">ring.h</a>"
+000000008274: <a style="color:#FF0000">746d6c</a> 46000c 000033 000000  "<a style="color:#FF0000">tml</a>F    3   "
+000000008278: 0002f7 000000 000000 000000  "            "
+00000000827c: 000000 002608 6c6f5f 636f73  "    & lo_cos"
+000000008280: 742e68 746d6c 46000b 000509  "t.htmlF     " 
+
+
+</pre>
+
+Each file entry
+<pre	style="font-size:14">
+
+	<a style="color:#0000FF">{ 'F'::words_follow }</a>
+
+</pre>
+contains
+<pre	style="font-size:14">
+
+	<a style="color:#FF0000">{ { 1st_extent_granules[24]:start_granule[48] }
+	  { next_extent_descriptor_granule[48]:word_offset[24] }
+	  octets_recorded[48]:filename[*24] }</a>
+
+</pre>
+
+<a	name="fs_nfs"/>
+<h3>Hc: NFSv3 Remote Files</h3>
+
+RTA1 is an NFSv3 client of NFS servers. Client API is described here. See also <a href="connect.html#nfsv3_server">NFSv3 Server Configuration</a>
+
+<p>
+Remote files are accessed with NFS version 3 over TCP
+
+<p>
+The handle-based client API presents remote files to RTA1 applications either as octet arrays (open option O_OCTET) or as 24-bit word arrays
+<pre	style="font-size:12pt">
+
+	c	(open)	path,,xi	[ O_OCTET,,xi ]
+
+</pre>
+<p>
+Server nfsd is TCP port 2049. RTA1 client requires server mountd to be TCP port 1023
+
+<p>
+The remote open object is the leaf file by name. The remote mount object is the containing directory
+
+<p>
+Path strings contain encoded information to bind the file to the remote directory
+
+
+<pre    style="font-size:12pt">
+
+        $include        rta/target.rta/t77.4/ip.def                     . for function macro $neta
+        $include        rta/target.rta/fs/mntaddrs.def: mount_path      . for procedural macro mount_path
+	$include	rta/target.rta/rpc/rpc.def
+
+SUSE_NFSD       $equ    $neta(192.168.0.14:2049)        . server enet
+SUSE_MOUNTD     $equ    $neta(192.168.0.14:1023)
+
+MACMINI_NFSD...
+
+</pre>
+
+Definitions and path strings can be collected separately in a shared storage container called <a href="#dialplan">dialplan</a>
+
+<p>
+Some more example of remote path definitions: mount points and files are both defined with macro <a style="color:#0000FF">mount_path</a>
+
+<pre	style="font-size:12pt">
+
+<a style="color:#0000FF">suse</a>		mount_path      SUSE_NFSD::<a style="color:#0000FF">mount_suse</a>:"FILE_NAME"
+<a style="color:#0000FF">mount_suse</a>      mount_path      SUSE_MOUNTD::<a style="color:#0000FF">general_permissions</a>:"/home/laclimpide/online_files/"
+
+                # protocol NFSv3
+                # server must have mountd bound to TCP port 1023
+
+macmini		mount_path	MACMINI_NFSD::<a style="color:#0000FF">mount_mcmini</a>:"file_name"
+<a style="color:#0000FF">mount_macmini</a>	mount_path	MACMINI_MOUNTD::<a style="color:#0000FF">general_permissions</a>:"/directory_path..."
+
+macmini_wifi	mount_path	MACMINI_WIFI_NFSD::MACMINI_NFSD::<a style="color:#0000FF">mount_mcmini</a>:"file_name"
+<a style="color:#0000FF">mount_mcmini_wifi</a> mount_path	MACMINI_WIFI_MOUNTD::<a style="color:#0000FF">general_permissions</a>:"/directory_path..."
+
+airbook		mount_path	AIRBOOK_NFSD::<a style="color:#0000FF">mount_airbook</a>:"file_name"
+<a style="color:#0000FF">mount_airbook</a>	mount_path	AIRBOOK_MOUNTD::<a style="color:#0000FF">general_permissions</a>:"/directory_path..."
+
+platform	mount_path	PLATFORM_NFSD::<a style="color:#0000FF">mount_platform</a>:"file_name"
+<a style="color:#0000FF">mount_platform</a>	mount_path	PLATFORM_MOUNTD::<a style="color:#0000FF">general_permissions</a>:"/directory_path..."
+
+<a style="color:#0000FF">general_permissions</a>	authunix	<a style="color:#0000FF">UID, GID</a>
+
+</pre>
+
+<p>
+The permissions tuple is normally only required for writing remote files. It is left out by typing <a style="color:#0000FF">:::</a> where the examples shows <a style="color:#0000FF">::general_permissions:</a>
+
+<a      name="dialplan"/>
+<h3>dialplan</h3>
+
+dialplan collects remote directory and file stub paths in system-global shared storage instead of constructing remote paths in the application
+
+<p>
+The global plan of NFSv3 servers is defined in rta/target.rta/dialplan/dialplan.msm and constructed with BUILD.ME
+
+<p>
+rta/target.rta/dialplan.msm is freely to be changed for actual network servers and serves as a startpoint example. In case of mishap dialplan.msm can be restored from identical file dialplan_example.msm
+
+<p>
+Note that dialplan.ram is included offline in file system device 1 with script rta/mrand7. RTA1 is restarted to load the newlx constructed file system
+
+<p>
+Applications reference dialplan with function speed_dial which writes the first six words of the path string with information for file_open function
+
+<pre	style="font-size:12pt">
+
+	c	(speed_dial)	host_name,,long	path,,xi
+	jna	no_hit
+	c	(open)	path,,xi	[ options ]
+
+</pre>
+The first two words of the host name for search are used
+
+<p>
+Note that if very short host names for search are read dynamically, it may be useful to zero the second buffer word before reading. If any names are hard-coded and assembled, assembly flag -c or -z is needed to ensure zero-padding to data word, but not -cz which cancels zero-padding
+
+<p>
+Application places the file name in words [ 6..] of the path string <i>before</i> calling speed_dial
+
+
+<p>
+It is also possible to use speed_dial routine with a private dialplan consisting remote paths declared in the application
+
+<p>
+The private lookup plane is a third argument to speed_dial routine
+<pre	style="font-size:12pt">
+
+	c	(speed_dial)	host_name,,long	path,,xi	private_list,,xi
+	jna	no_hit
+	c	(open)	path,,xi	[ options  ]
+
+</pre>
+This saves the application some searching and manipulation.
+The private lookup plan is assembled in application space instead of system-global shared space
+
+<pre	style="font-size:12pt">
+
+		$include	[../]t77/ip.def
+		$include	[../]fs/mntaddrs.def
+		$include	[../]rpc/rpc.def
+		$include	[../]remotefs/dialplan.def
+
+$(3)
+
+private_list	mount_list      suse suse_ro macmini macwifi airbook
+
+</pre>
+
+<a      name="fs_xs"/>
+<h3>Hd: RAM / ROM Core File Systems in Executable Space</h3>
+
+Core file systems are organised as device array file systems but with maximum extext size 4096 words
+
+<p>
+Core file systems may be inside software where they are used to identify applications and load application data sections
+
+<p>
+Core file systems occupy either a number of 64-word granules within application load images or they are independent and occupy a number of 4096-word pages of executable space
+
+<p>
+They have 24-bit word oriented access only and no octect-oriented access. They are not within the scope of handle-based access but are accessed instead with file open state descriptors which also support all handle-based file access
+
+<p>
+Core file systems frequently are or contain application build-linked objects which are automatically open without search. This is the case for all application data sections which are loaded at the start of  each process instance of an application
+
+<p>
+Core file systems embedded in an application iframe export additionally a directory <a style="color:#0000FF">application_templates</a> which links application lookup names to the execution profiles of all the applications in the iframe. <a style="color:#0000FF">application_templates</a> is pointed by a mount descriptor at location 48<sub>16</sub> of the iframe. The file system views the entire iframe as its space although its root directory is far inside the iframe. The root directory is not currently referenced by anything. The filestore exports directory application_templates and the initial data of each application in the iframe
+
+<a	name="diagnostic"/>
+<h3>Appendix I: File and Socket Error Codes</h3>
+
+RTA1 does not have errno. Error returns from kernel routines are approximately the negative mirror of POSIX errno
+
+<p>
+Negative return codes include
+<pre>
+
+DISALLOWED      $equ    1	. therefore the RTA1 error return is 	-1
+NOT_THERE	$equ	2	.					-2
+INT_SYSCALL     $equ    4	.					-4
+NO_FILE_TYPE    $equ    9	.					-9
+NO_STORAGE      $equ    12	.					-12
+NOT_YOU         $equ    13	.					-13
+BAD_ADDRESS     $equ    14	.					-14
+BAD_ARGUMENT    $equ    22	.					-22
+NO_HANDLE       $equ    22	.					-22
+FILE_NOT_OPEN   $equ    32	.					-32
+NO_PIPE         $equ    32	.					-32
+COULD_NOT       $equ    35	.					-35
+UDP_NOSOURCENET $equ    39	.					-39
+OVERSIZE        $equ    40	.					-40
+NO_PROTOCOL     $equ    42	.					-42
+ALREADY_CONNECTED $equ  56	.					-56
+PORT_ALREADY_BOUND $equ 58	.					-58
+PORT_NOT_BOUND  $equ    57	.					-57
+REMOTE_REFUSED  $equ    61	.					-61
+NO_PATH         $equ    65	.					-65
+NO_CONNECTION   $equ    FILE_NOT_OPEN	.				-32
+NO_DATA         $equ    96	.					-96
+
+
+</pre>
+
+
+</div>

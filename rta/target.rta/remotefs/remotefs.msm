@@ -1,0 +1,127 @@
+remotefs $tree
+
+.	local name load
+.	load dialplan if not already loaded
+
+defaultpath	"/nfs/mounts"
+
+	$include	../dialplan/dialkey.def
+
+load	$head_near	scalars(indexp,	int			;
+				fspax,	6			;
+				path,	4, defaultpath	)
+
+	la	NFS_MOUNTS
+	jnza	load_z
+
+	on	see$2
+	la	NFS_MOUNTS			. does the kernel have it?
+	off	see$2
+
+	sa	indexp
+	jnza	include_me_in
+
+	la	4096,,xi
+	lx	NFS_MOUNTS,,xi
+	ii	ASSIGN_XVECTOR$
+	jza	load_x			. by default no table
+	sa	indexp
+	sabr	NFS_BDIAL
+	z	*(NFS_BDIAL*/12)		. by default nothing in table
+	c	(fspath)	path,,i
+	jza	load_x
+	c	(fs24_open)	fspax,,i	a,,long
+	c	(fs24_read)	fspax,,i	(NFS_BDIAL*/12)	4096,,xi
+
+include_me_in
+	inA	2
+	sabr	NFS_BDIAL
+	la	indexp
+	sa	*(NFS_BDIAL*/12++NFS_MOUNTS-02000)	
+
+load_x	la	(0C00001s)			. just so it doesn't	
+	ii	XBASE$34			. get wrecked by accident
+
+load_z	la	indexp
+	$ret
+
+.	vector name speed_dial
+
+dial	$head_far	 params(name,		long		;
+				callpathp,	int		;
+				planp,		int		)	
+
+	lr	name-1				. how much is on the stack?
+	lx	planp,,i
+	jxge	global_dialplan			. only 3 words 
+	lx	planp				. 4+ words
+	j	planp_given			. yes
+
+global_dialplan					. no
+	la	NFS_MOUNTS
+	jnza	dialplan_bound
+	lcal	load
+	la	NFS_MOUNTS
+	jnza	dialplan_bound
+
+	la	-IO_ERROR,,xi
+	jza	xdial
+
+dialplan_bound
+	sabr	NFS_BDIAL
+
+	lx	(NFS_BDIAL*/12)
+
+planp_given
+	lr	0, x
+	ax	r
+	ax	r
+	ax	1,,xi
+	j	next?
+
+next!	ax	-2,,xi
+	la	1, x
+	dl	0, a
+	dan	name
+	jdz	retrieved
+
+next?	jdr	next!
+
+	la	-NO_DEVICE,,xi
+	j	xdial
+
+retrieved
+	ly	0, x
+	lx	callpathp
+	ql	0, y				. socket information into path
+	qs	0, x
+	dl	4, y
+	ds	4, x
+
+	c	(strlenx)	6,x,i		. complete the header word
+	sal	8				. bytes length text part of path
+	or	0, x
+	aa	b				. containing words
+	sa	0, x				. write path header word back
+
+	la	(0C00001s)
+	ii	XBASE$34
+
+	la	0,,xi
+
+xdial	$ret
+
+.	vector name dialplan_online
+.	called when not using speed_dial for a search
+.	to check the application's direct links to mount paths are not out of date
+.	if OK load dialplan if not already loaded, local routine load
+
+online	dan	(dialplan_dependency_key:L)
+	jna	caller_key_outdated
+	lcal	load
+	fret	1				. good mate
+
+caller_key_outdated
+	fret	0				. caller needs rebuild
+
+	$root

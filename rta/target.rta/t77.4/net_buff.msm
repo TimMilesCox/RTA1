@@ -1,0 +1,133 @@
+.	acquire storage for initial socket buffers
+.	one quarter of executable space
+.	maximum 16 address windows
+
+
+NET_BUFFER_THRESHOLD	$equ	2*64
+
+net_buffers
+	ii	TOTAL$FREE	. total words all free banks
+	dsr	12+1		. translate to half of free pages
+	lr	b
+
+	inA	128		. index highest page in memory
+	and	(03FFFFF)
+	aa, xi	1+3		. # pages + rounding
+	sar	2		. calculate a quarter
+
+	anb	a		
+	jc	net_request_allowable
+	la	r		. change the initial request
+				. to half the remaining available
+net_request_allowable
+
+	lb	r		. are < 1.5 banks free?
+	ab, xi	-96/2		. if so this request should be 0.25 banks
+
+	aa, xi	-NET_BUFFER_THRESHOLD/4	. 2 banks or less ?
+	jnb	net_buffer_pages
+	jc	net_buffer_banks
+
+.	acquisition will be in pages up to 64Kwords
+
+net_buffer_pages
+	aa, xi	NET_BUFFER_THRESHOLD/4-1
+	and, xi	15
+	lr	a
+	aa, xi	1
+	sal	12
+
+	lcal	net_buffer_request
+	push	b
+
+	lb	48,,xi
+net_buffer_page
+	sabr	0, b
+	ab, xi	1
+	aa, xi	1
+	jdr	net_buffer_page
+	
+	pop	b
+	lx	(NET_BASE*/12)
+
+	j	netpool_initial
+
+.	acquisition will be in banks up to 4 MWords
+	
+net_buffer_banks
+	aa, xi	NET_BUFFER_THRESHOLD/4-1
+	and, xi	15*/6
+	lb	a
+	sbr	6
+	lr	b
+	aa, xi	64
+	sal	12
+
+	lcal	net_buffer_request
+	push	b
+
+	lb, xi	48
+net_buffer_bank
+	sabr	0, b
+	ab, xi	1
+	aa, xi	64
+	jdr	net_buffer_bank
+
+	pop	b
+	lx	(NET_BASE*/18:s)
+
+netpool_initial
+	la	b			. size of granted memory request
+
+	$if	NETSERVER_INTENSIVE$	. expecting more transmission than reception
+	sbr	1			. calculate one half for txbuffers
+	$else
+	sbr	2			. calculate one quarter for txbuffers
+	$endif
+
+	ana	b			. calculate three quarters for rxbuffers
+
+	qpush	x
+	la	x			. rx_buffers address
+
+	lx	rx_buffers,,xi		. destination in vectors
+	ii	WRITE_XVECTOR$
+	aa	2, sp			. + size of rx buffers
+	lx	tx_buffers,,xi		. = tx_buffers address
+	ii	WRITE_XVECTOR$
+
+	la	2, sp			. rxbuffers size
+	lx	0, sp			. = rx_buffers pointer in vectors
+	lcal	init_pool		. initialise rxbuffers
+	lx	tx_buffers
+	la	3, sp			. retrieve txbuffers size
+	lcal	init_pool
+
+	qpop	x
+
+	lret	0
+
+					. this request is made before others
+					. except the area containing instructions plus
+					. static data / TCB / B1 frames / vector bank
+					. which may make a quarter too much to ask
+net_buffer_request
+	push	a
+	ii	BANK$
+	pop	b
+	jnza	net_buffer_acquired
+	sbr	1			. halve the request until a bank
+	la	b			. is granted or is not
+	lk	(-262144)		. does the request size remain # banks?
+	mta	(0)			. ask again if so
+	j	net_buffer_request
+	lk	(-65536)		. has the request size changed
+	mta	(0)			. from banks to < 1 bank? Then
+	la	(65536)			. its size restarts at 16 pages
+	lk, xi	-4096			. has the request diminished
+	mta	(0)			. to < 4096?
+	j	net_buffer_request	. ask again if still > 4095
+	ii	EXIT$
+net_buffer_acquired
+	lret	0
+

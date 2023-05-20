@@ -1,0 +1,110 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	array.app/array.def
+	$include	lib/ascii.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+LANES	$equ	25
+
+$(3:03000/$3)
+
+?	$do	10,!	$do	LANES,data1point(?, !)	+	?*+!
+
+?	$do	10,!	$do	LANES,data2point(?, !)	+	11-?*+26-!
+
+?	$do	10,!	$do	LANES,output(?, !)	$res	4
+
+$(4:*1)
+	$lit	4
+
+$(0:*1)
+	$base_d	$zenith(3)-03000	1024	1024
+	c	(seg$load)	0,,xi	(frame_data:L),,long
+
+__INLINE $equ	1
+
+	$if	__INLINE=0
+
+	lc	process_total_array	data1point(1, 1),,xi	;
+					data2point(1, 1),,xi	;
+					output(1, 1),,xi	;
+					10-1,,xi
+	$else
+
+	SIMD_CONTROL	(-1, 4, LANES-1, 4q)
+	lx	data1point(1, 1),,xi
+	ly	data2point(1, 1),,xi
+	la	output(1, 1),,xi
+	lr	10-1,,xi
+	push	-LANES*4+1,,xi		. 100 word frame
+	popA	sp
+
+compute_loop
+	rex	(ql	0, x)		. load 25 * 4 words
+	rex	(fa	0, y)		. add 25 addends
+	rex	(fm	(1.1))		. multiply all by 1 constan1
+	rex	(qs	0, a)		. store 25 * 4 words
+	jdr	compute_loop
+
+	push	LANES*4,sp,i		. return stack frame
+	pop	sp
+
+	$endif
+
+	lx	output(1, 1),,xi
+	lr	10-1,,xi
+
+print_table_loop
+
+
+	printf	$3("%f %f %f %f %f":LF:0),,xi				;
+		 0,x,float  4,x,float  8,x,float 12,x,float 16,x,float
+
+
+	printf	$3("%f %f %f %f %f":LF:0),,xi				;
+		20,x,float 24,x,float 28,x,float 32,x,float 36,x,float
+
+
+	printf	$3("%f %f %f %f %f":LF:0),,xi				;
+		40,x,float 44,x,float 48,x,float 52,x,float 56,x,float
+
+
+	printf  $3("%f %f %f %f %f":LF:0),,xi				;
+		60,x,float 64,x,float 68,x,float 72,x,float 76,x,float
+
+
+	printf	$3("%f %f %f %f %f":LF:LF:0),,xi			;
+		80,x,float 84,x,float 88,x,float 92,x,float 96,x,float
+
+	ax	LANES*4,,xi
+	jdr	print_table_loop
+	fret	0
+
+process_total_array
+	$head_near,$zero_stack	 params(data1pointsp,	int		;
+					data2pointsp,	int		;
+					resultsp,	int		;
+					frames,		int	)	;
+				 xframe()				;
+				scalars(tabular,	100	)
+
+	lr	frames				. how many passes?
+	SIMD_CONTROL	(-1, 4, LANES-1, 4q)
+	lx	data1pointsp
+	ly	data2pointsp
+	la	resultsp
+
+more	rex	(ql	0, x)			. load 25 * 4 words
+	rex	(fa	0, y)			. add 25 addends
+	rex	(fm	(1.1))			. multiply all by 1 constant
+	rex	(qs	0, a)			. store 25 * 4 words
+
+	jdr	more				. any frames more?
+
+	$ret

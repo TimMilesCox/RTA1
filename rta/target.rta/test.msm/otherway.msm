@@ -1,0 +1,101 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$path
+	$list
+
+
+LANES	$equ	8
+TABLE	$equ	2000000000
+
+$(3:03000/3)
+source1_cursor	040000A
+source2_cursor	040000E
+dest_cursor	0400007
+
+banks	+	TABLE/65536
+LAST_BANK $equ	TABLE///65536
+
+$(29:29*262144)
+source1
+
+$(30:30*262144)
+source2
+
+$(31:31*262144)
+dest
+
+$(0:0/$0)
+
+$(0:64)
+next_bank
+	la	source1_cursor
+	sabr	29
+	la	64, a, i
+	sa	source1_cursor
+
+	la	source2_cursor
+	sabr	30
+	la	64, a, i
+	sa	source2_cursor
+
+	la	dest_cursor
+	sabr	31
+	la	64, a, 1
+	sa	dest_cursor
+
+	lx	(dest)
+	sx	fp
+	lx	(source1)
+	ly	(source2)
+	lr	(65536-1)
+
+unroll*	$proc
+	ql	?*4-4, x
+	fa	?*4-4, y
+	qs	?*4-4, fp
+	$end
+
+next_row
+?	$do	LANES, unroll
+	ax	LANES*4,,xi
+	ay	LANES*4,,xi
+	lk	LANES*4, fp, i
+	sk	fp
+	jdr	next_row
+
+	dec	banks
+	tz	banks
+	j	next_bank
+
+	$if	LAST_BANK
+	la	source1_cursor
+	sabr	29
+	la	source2_cursor
+	sabr	30
+	la	dest_cursor
+	sabr	31
+
+	lx	(dest)
+	sx	fp
+	lx	(source1)
+	ly	(source2)
+
+	$if	LAST_BANK/LANES
+	lr	LAST_BANK/LANES-1,,xi
+
+last_rows
+?	$do	LANES, unroll
+	ax	LANES*4,,xi
+	ay	LANES*4,,xi
+	lk	LANES*4, fp, i
+	sk	fp
+	jdr	last_rows
+
+	$endif
+
+?	$do	LAST_BANK///LANES,	unroll
+
+	$endif
+
+	$do	$<256,$(0:256)

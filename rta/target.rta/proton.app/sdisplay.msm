@@ -1,0 +1,74 @@
+
+.	x -> descriptor [ structure acw ]
+
+display_segment	$tree
+	$head_near	 params(qheadp,			int)	;
+								;
+			scalars(save_rkxy,	float,	r	;
+				save_bsocket,	int		)
+
+	la	BSOCKET,,xi
+	ii	A$IDX
+
+	sa	save_bsocket
+	jna	quit			. basing zero or C00001
+	jza	quit			. crashes you
+
+superpage	$equf	0, sp
+caller_x	$equf	1+2, sp
+
+next	printf	$3("":LF:"axw @ %x:%x":LF:0),,xi	a	qheadp
+
+	la	save_bsocket		. printf closes window BSOCKET
+	sabr	BSOCKET			. x -> this window
+
+	la	qheadp
+	printf	$3("[%x:%x:%x:%x:%x:%x:%x:%x]":LF:0),,xi	0, a	1, a	2, a	3, a	;
+								4, a	5, a	6, a	7, a
+	la	save_bsocket
+	sabr	BSOCKET
+
+	la	qheadp
+	la	descriptor:frame, a
+
+	printf	$3("routing header":LF:;
+		 "%x %x %x %x %x %x %x %x":LF:;
+		 "%x %x %x %x %x %x %x %x":LF:"datagram":LF:0),,xi		;
+		  0,a	  1,a	  2,a	  3,a	  4,a	  5,a	  6,a	  7,a	;
+		8+0,a	8+1,a	8+2,a	8+3,a	8+4,a	8+5,a	8+6,a	8+7,a
+
+	la	save_bsocket
+	sabr	BSOCKET
+
+	lx	qheadp
+	lx	descriptor:dgram, x
+	lb	dgram:bytes, x
+	ab	-1,,xi
+	jpb	$+2
+	lb	72-1,,xi		. if the length is junk show 2 headings + 32 bytes			
+	mf	(R24)			. 24-octet chunkarettes @ 2 octets per socket word
+
+	lr	a			. chunkarettes - 1
+
+get_in	lcal	tae_it			. subroutined out because freehand stack work
+	la	save_bsocket		. does not mix with equated stack offsets
+	sabr	BSOCKET			. get the connections / buffers page back
+	jdr	get_in
+
+	la	qheadp
+	la	descriptor:next, a
+	sa	qheadp
+	jnza	next
+
+quit	pop	a			. return page index[BSOCKET]
+	qpop	r			. restore caller [ r k x y ] sp 4++
+	lret	0			.
+
+tae_it	push	r			. printf will mash r and x both
+	push	12, x, i		. next pointer = this pointer + 12 socket buffer words
+	printf	$3("%Lx":LF:0),,xi	0, x, buy24_bytes
+	pop	x			. next pointer -> x
+	pop	r
+	lret	0
+
+		$root

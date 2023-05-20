@@ -1,0 +1,373 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+$(66::,x)
+pool	mpool
+
+$(67::,y)
+queue	dq
+
+$(0)
+	$if	__PAD
+
+init_pool	$tree
+	$head_near	scalars(caller_y,	int,	y	;
+				save_simd,	float,	RDATAC	;
+				initial_pointers, float		;
+				simd_control,	float,		;
+				(-1, 0, NET_FREECHAINS//4-1, 4q),,float)
+
+	aa	x
+	ly	a
+	ay	-__PAD*8,,xi
+	ql	(0, 0, -1, 0q)		. descriptor stack root comparands
+?	$do	__PAD,	qs	__PAD*8-?*8, y
+	
+	sx	descriptor:frame+ACW_SIZE, y
+	lb	+(2+NET_FREECHAINS)//NET_GRANULE*NET_GRANULE, x, i
+	sb	descriptor:frame, y
+	z	descriptor:i_f, y
+	sy	pool:next
+
+	ly	pool:free(1),,i
+	qpop	RDATAC			. program repeat operation
+	rex	(qs	0, y)		. store 4 zero words per pass + increment 4
+	qpop	0, sp			. from internal stack top no increment
+	qpop	RDATAC			. restore bit-stream / SIMD registers
+	pop	y
+	lret	0
+
+	$root
+
+	$else
+
+init_pool
+	aa	x		. top of pool
+	aa, xi	-ACW_SIZE*2	. minus 2 descriptors
+	sa	pool:next	. first assignable descriptor
+	sx	descriptor:frame+ACW_SIZE, a
+				. buffer in fixed top descriptor
+	lb	-1,,xi
+	sb	descriptor:i_f+ACW_SIZE, a
+	lb, i	+(2+NET_FREECHAINS)//NET_GRANULE*NET_GRANULE, x
+	sb	descriptor:frame, a
+				. first assignable address in
+				. first assignable descriptor
+
+	dsr	48
+	ds	6
+
+?	$do	NET_FREECHAINS//4,	qs	pool:free(?*4-3)
+	z	pool:lock_cell
+
+	lret	0
+
+	$endif
+
+buy1	aa, xi	-1
+	jc	buy1_soon
+
+buy1_never		. requested size is out of range
+	la, xi	0	. result = no descriptor
+	lret	0
+buy1_soon
+	sar	NET_LOG
+	anu,xi	NET_FREECHAINS
+	jc	buy1_never
+
+	LOCK	pool:lock_cell
+
+	lb, i	1, a		. b = # granules
+	aa, i	pool:free(1)
+	ly	a
+	la	0, y		. free chain head
+	jza	buy1_new
+	lb	0, a		. second in chain
+	sb	0, y		. -> chain head
+	z	descriptor:bytes, a
+	z	descriptor:next, a
+
+	j	buy1_complete
+
+buy1_new
+	la	pool:next
+	sbl	NET_LOG
+	ab	descriptor:frame, a
+				. new next buffer
+	aa, xi	-ACW_SIZE	. new next descriptor
+
+	ly	b
+	anu	y		. descriptor < buffer
+	jc	buy1_new_now	. if so unavailable
+
+	la, xi	0		. result = no descriptor
+	j	buy1_complete
+
+buy1_new_now
+	sa	pool:next
+	sy	descriptor:frame, a
+	la	ACW_SIZE, a, i
+	z	descriptor:bytes, a
+	z	descriptor:next, a
+
+buy1_complete
+	FREE	pool:lock_cell
+	lret	0
+
+
+sell1	jza	sell1_u			. popped from an empty queue?
+	tnz	x
+	j	sell1_u			. buffer pool pointer an untested variable?
+
+	LOCK	pool:lock_cell
+
+	lb	descriptor:bytes, a
+	andB	(0400000)
+	jnzb	sell1_z			. already freed or some mistake
+	
+	lr	a
+	jxge	wrong_pool
+
+	ly	pool:next		. is the candidate the
+	anu, i	ACW_SIZE, y		. descriptor above next-> ?
+
+	jzb	sell1_more		. stack top
+	jc	sell1_list		. within stack
+	j	sell1_z			. not assigned
+
+	$if	1
+
+sell1_more
+	sa	pool:next	
+
+	z	descriptor:bytes, a	. wipe all flags out
+
+	tp	descriptor:i_f+ACW_SIZE, a
+	j	sell1_z
+	lb	descriptor:bytes+ACW_SIZE, a
+	andB	(0400000)		. is next descriptor in a free chain?
+	jzb	sell1_z			. no
+
+	ly	a
+	la	ACW_SIZE, a, i
+
+.	remove freechain links pointing to here
+.	or stop consolidating if they're not found
+
+	lb	descriptor:frame, y	. old heap top
+	anb	descriptor:frame, a	. minus this heap top
+	sbr	NET_LOG
+	ly	pool:free(1)-1,,i
+	ay	b			. free chain head for buffer size
+
+	lb	a
+	xorB	0, y			. 1st (and only) buffer in chain?
+	jnzb	sell1_sample(1)		. no
+	z	0, y			. yes, clear free chain head
+ 	j	sell1_more
+
+					. is this descriptor next ->
+					. of a descriptors near stack top?
+					. if so unchain and consolidate
+					. otherwise stop consolidating
+p	$proc
+sell1_probe* $name
+	lb	a
+	xorB	descriptor:next+ACW_SIZE*?, a
+
+	$if	sell1_sample(?+1)
+	jnzb	sell1_sample(?+1)
+	$else
+	jnzb	sell1_z
+	$endif
+
+	z	descriptor:next+ACW_SIZE*?, a	. clear pointer to this
+	j	sell1_more
+
+	$end
+
+?	$do	__PAD,sell1_sample(?)	sell1_probe
+
+					. _________________________
+	$else				. replaced as too iterative
+
+sell1_more				. yes, the heap gets taller
+	sa	pool:next		. replace next-new
+
+sell1_summit
+	lb	descriptor:frame, a
+				. buffer size of
+	anb	descriptor:frame+ACW_SIZE, a
+					. next buffer down
+					. <- next descriptor up
+
+	sbr	NET_LOG
+
+	ab, i	pool:free(1)-1		. free chain for size
+	la, i	ACW_SIZE, a		. next descriptor up
+	lr	b
+
+.	now keep looking to see if the new heap top
+.	buffer is on its free chain. If it is, it
+.	is the one at the far end, because the
+.	highest-positioned buffers are the last
+.	choice for re-use
+
+.	the stack of descriptors grows down towards
+.	the heap of buffers which grows up
+
+.	the stack of descriptors packs back up
+.	away from the heap of buffers which
+.	packs down
+
+
+
+sell1_free?				. move on chain
+	ly	r			. until next has a
+	lr	0, y			. lower address
+	
+
+	anu	r
+	jnc	sell1_free?		. keep on towards
+					. the stack top
+
+	jnzb	sell1_z			. not in the free 
+					. chain so stop now
+
+					. equal so take it
+	lb	0, a			. from the chain
+	sb	0, y			. and pack the heap
+
+	sa	pool:next		. this may change
+
+	OPEN	pool:lock_cell
+					. this is a window where
+					. this CPU may accept an
+					. interrupt and other
+					. CPUs may take the
+					. buffer pool
+
+	SHUT	pool:lock_cell
+
+	la	pool:next		. this may have changed
+
+	j	sell1_summit
+
+	$endif				. replaced as too iterative
+.					. ___________________________
+
+sell1_list				. it wasn't the one at
+					. the heap top
+
+	$if	0			. done up front now
+	$if	1			. flip this to trap void buffer frees
+	jza	sell1_z
+	$else
+	jnza	sell1_log
+	ii	GUARD$			. free candidate buffer was not named
+					.
+	j	sell1_z			. in case there is every any return
+					. from the sin-bin interrupt
+	$endif
+	$endif
+
+sell1_log
+	ly	a			. find free chain
+	ay, xi	-ACW_SIZE		. per buffer size
+	lb	descriptor:frame, y
+	anb	descriptor:frame, a
+
+	sbr	NET_LOG
+	ab, i	pool:free(1)-1
+	lr	b
+
+
+sell1_list?
+	ly	r
+	lr	0, y
+	
+	anu	r
+
+	jnc	sell1_list?		. keep moving towards
+					. the stack top
+
+	jzb	sell1_z			. equal, it's already free
+
+	sr	0, a			. chain it in
+	sa	0, y
+	lb	descriptor:bytes, a
+	orB	(0400000)
+	sb	descriptor:bytes, a
+
+sell1_z	FREE	pool:lock_cell
+sell1_u	lret	0
+	
+wrong_pool
+	ii	GUARD$
+
+q2first?
+	tz	queue:head
+	j	q2z
+	sa	queue:head
+	sa	queue:tail
+	z	0, a
+	lret	1		. indicate this is a write
+				. to a previously empty q
+				. by skipping an instruction
+				. on return
+
+q2	tz	queue:head
+	j	q2z
+	sa	queue:head
+	sa	queue:tail
+	z	0, a
+	lret	0
+q2z	lb	queue:tail
+	sa	0, b
+	sa	queue:tail
+	z	0, a
+	lret	0	
+
+readq	la	queue:head
+	jza	readqz
+	lb	0, a
+	sb	queue:head
+readqz	lret	0
+

@@ -1,0 +1,614 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+i$aside(1)	$equ	8
+i$aside(2)	$equ	10
+i$aside(3)	$equ	d$save
+i$aside(4)	$equ	d$save2
+i$aside(5)	$equ	24
+i$aside(6)	$equ	26
+i$aside(7)	$equ	28
+i$aside(8)	$equ	30
+
+"$$significands" $set	0
+"$ASIDE"	$set	1
+
+
+f		$func
+"$indirect_or_identifier"* $name
+		$do	f(1, *1),	$return	1
+		$do	$r(f(1, 1)),	$return	1
+		$do	$t(f(1, 1))=127,	$return	1
+		$do	$t(f(1, 1))=$equf,	$return	1
+		$return	0
+		$end
+
+f		$func
+"$steamout"*	$name
+		$return	f(1, 1)
+		$end
+
+f		$func
+"$steamout2"*	$name
+		$return	f(1, 2)
+		$end
+
+f		$func
+"$1w"*		$name
+		$do	f(1)<3,		$return	0
+		$do	f(1, 3)<0,	$return	0
+		$do	f(1, 3)>5,	$return	0
+		$return	1
+		$end
+
+f		$func
+S*		$name	24
+L*		$name	48
+U*		$name	-24
+		$return	f(0, 0)
+		$end
+
+p		$proc
+
+"$i_testequal"* $name
+		$aax	p(1)
+                dan     $aaa		. a result is double
+                jdz     $+3
+                dsr     48
+                j       $+2
+                lb, xi  1
+                $return
+
+"$i_testunequal"* $name
+		$aax	p(1)
+                dan     $aaa		. a result is double
+                jdz     $+3
+                la, xi  0
+                lb, xi  1
+                $return
+
+"$i_testgreater"* $name			. a result is double
+                $aax	p(1)
+		dan	$aaa
+                jdz     $+6
+                jna     $+4
+                la, xi  0
+                lb, xi  1
+                j       $+2
+                dsr     48
+                $return
+
+"$i_testless"* $name
+		$aax	p(1)
+                dan     $aaa
+                jdz     $+6
+                jpa     $+4
+                la, xi  0
+                lb, xi  1
+                j       $+2
+                dsr     48
+                $return
+
+"$i_shift"*	$name
+		$if	$indirect_or_identifier(p(1, 1:1))
+		$if	p(1, 1:2)>24
+		$aax	p(1, 1:1)+1, p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+		$if	p(1, *1)
+
+		$if	$o('C')
+		$nop		c-language style: pointer->identfier containing shift count
+		lr	$aaa
+		dsl	*r
+		$else
+		$nop		*pointer contains shift count
+		dsl	$aaa
+		$endif
+
+		$else
+		$if	$o('C')
+		$if	(p(1, 2)=0)**(p(1, 1)<8192)
+		dsl	*$aaa
+		$else
+		lr	$aaa
+		dsl	*r
+		$endif
+		$else
+		$nop		not in C-style. Shift by effective address
+		dsl	$aaa
+		$endif
+		$else
+		dsl	$steamout\p(1), $steamout2\p(1)
+		$endif
+                $return
+
+"$i_shift_right"* $name
+		$if	$indirect_or_identifier(p(1, 1:1))
+		$if	p(1, 1,:2)>24
+		$aax	p(1, 1:1)+1, p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+		$if	p(1, *1)
+
+		$if	$o('C')
+		$nop		c-language style: pointer->identfier containing shift count
+		lr	$aaa
+		dsa	*r
+		$else
+		$nop		*pointer contains shift count
+		dsa	$aaa
+		$endif
+
+		$else
+		$if	$o('C')
+		$if	(p(1, 2)=0)**(p(1, 1)<8192)
+		dsa	*$aaa
+		$nop		c->language style: identifier means get the shift count here
+		$else
+		$nop		or here like this
+		lr	$aaa
+		dsa	*r
+		$endif
+		$else
+		$nop	not in C-style. Shift by effective address
+		dsa	$aaa
+		$endif
+		$else
+		dsa	$steamout\p(1), $steamout2\p(1)
+		$endif
+                $return
+
+"$i_or"*	$name
+size	$set	48
+"$iiw"	$set	0
+"$$significands"******** $set	48
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax,y	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax,y	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		or	i$aside($ASIDE)
+		orB	i$aside($ASIDE)+1
+		$else			. long booleans are 2 parallel
+                or      $aaa		. 1-word operations
+                orB     $aaa+1
+		$endif
+                $return
+
+"$i_xor"*	$name
+size	$set	48
+"$iiw"	$set	0
+"$$significands"******** $set	48
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax,y	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax,y	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		xor	i$aside($ASIDE)
+		xorB	i$aside($ASIDE)+1
+		$else
+                xor     $aaa
+                xorB    $aaa+1
+		$endif
+                $return
+
+"$i_and"*	$name
+size	$set	48
+"$iiw"	$set	0
+"$$significands"******** $set	48	. tell it you prefer long literals
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax,y	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax,y	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	i$aside($ASIDE)
+		la	$aaa
+		dsa	24
+		and	i$aside($ASIDE)
+		andB	i$aside($ASIDE)+1
+		$else
+                and     $aaa
+                andB    $aaa+1
+. "$$significands"******** $set	48
+		$endif
+                $return
+
+"$i_add"*	$name
+"$iiw"	$set	0
+size	$set	48
+"$$significands"******** $set	48
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(2, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+		$if	size<25
+		ds	6
+		la	$aaa
+		dsa	24
+		da	6
+		$else
+		da	$aaa		. add / subtract are double
+		$endif
+"$$significands"******** $set	48
+		$return
+
+"$i_subtract"*	$name
+"$iiw"	$set	0
+size	$set	48
+"$$significands"******** $set	48
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		ds	6
+		la, xi	0
+		ana	$aaa
+		dsa	24
+		da	6
+		$else
+		dan	$aaa
+		$endif
+"$$significands"******** $set	48
+		$return
+
+"$i_multiply"*	$name
+"$iiw"	$set	0
+size	$set	24
+
+"$$significands" $set	24	
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)		. multiplier / divisor are single
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	($msize<25)**(size<25)
+		m	$aaa
+
+		$elseif	size<25
+		c	(m48_24)	$aaa
+		dl	6	. until expansion to use longer results
+		$else
+		c	(m48_48)	$aaa,,long
+		dl	6	. until expansion to use longer results
+		$endif
+
+"$$significands"******** $set	48
+		$return
+
+"$i_divide"*	$name
+"$iiw"	$set	0
+size	$set	24
+
+"$$significands"******** $set	24
+
+		$if	p(1, 1:)>1
+size		$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+		d	$aaa
+		sb	7	. save the remainder
+		lb	a
+		la	6
+		$else
+		c	(d48_48)	$aaa,,long
+		dl	6	. until expansion to use longer results
+		$endif
+		$return
+
+
+"$i_covered_qotient"* $name
+		$flag	covered quotient may only be a constant
+		$return
+
+"$i_remainder"*	$name
+		$aax	p(1)
+		d	$aaa
+		sa	7	. save the quotient. MSW is already in 6
+		la	b
+		dsa	24
+		$return
+
+"$i_load"*	$name
+"$iiw"	$set	0
+size	$set	48
+
+"$$significands"******** $set   48
+
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		$else
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+"$msize"*	$set	24
+		la	$aaa
+		dsa	24
+		$else
+"$msize"*	$set	48
+		dl	$aaa
+		$endif
+		$endif
+		$return
+
+"$i_load_negative"* $name
+size	$set	48
+"$iiw"	$set	0
+"$$significands"******** $set	48
+
+
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		ds	i$aside($ASIDE)
+		dsr	48
+		dan	i$aside($ASIDE)
+		$else
+
+		$if	p(1, 1:)>1
+size	$set	p(1, 1:2)
+		$aax	p(1, 1:1), p(1, 2), p(1, 3)
+		$else
+		$aax	p(1)
+		$endif
+
+		$do	$1w(p(1)),size	$set	24
+		$do	$iiw^=0,size	$set	$iiw
+
+		$if	size<25
+"$msize"*	$set	24
+		la, xi	0
+		ana	$aaa
+		dsa	24
+		$else
+"$msize"*	$set	48
+		dsr	48
+		dan	$aaa
+		$endif
+		$endif
+		$return
+
+"$i_reserve"*	$name			. lookaside is always double
+		$ipush
+"$$significands"******** $set	48
+		$return
+
+"$i_reverse"*	$name
+		ds	i$aside($ASIDE)
+		dsr	48
+		dan	i$aside($ASIDE)
+		$return
+
+"$ipush"*	$name
+	$do	$ASIDE>8,	$flag	lookaside overrun
+		ds	i$aside($ASIDE)
+"$ASIDE"*********************** $set	$ASIDE+1
+		$return
+
+"$ipop"*	$name
+"$ASIDE"***********************	$set	$ASIDE-1
+	$do	$ASIDE<1,	$flag	lookaside underrun
+		$return
+
+"$i_retrieve_testequal"* $name
+		$ipop
+                dan	i$aside($ASIDE)
+		jdz	$+3
+		dsr	48
+		j	$+2
+		lb, xi	1
+                $return
+
+"$i_retrieve_testunequal"* $name
+		$ipop
+                dan     i$aside($ASIDE)
+                jdz     $+3
+                la, xi  0
+		lb, xi	1
+                $return
+
+"$i_retrieve_testgreater"* $name
+		$ipop
+                dan     i$aside($ASIDE)
+                jdz     $+6
+		jna	$+4
+		la, xi	0
+                lb, xi  1
+		j	$+2
+		dsr	48
+                $return
+
+"$i_retrieve_testless"* $name
+		$ipop
+                dan     i$aside($ASIDE)
+		jdz	$+6
+                jpa	$+4
+                la, xi	0
+                lb, xi  1
+		j	$+2
+		dsr	48
+                $return
+
+"$i_retrieve_shift"* $name		. setaside shift count is LS word
+		$ipop			. and is indirect
+		dsl	*i$aside($ASIDE)+1
+		$return
+
+"$i_retrieve_shift_right"* $name
+		$ipop
+		dsa	*i$aside($ASIDE)+1
+		$return
+
+"$i_retrieve_or"* $name
+		$ipop	
+		or	i$aside($ASIDE)
+		orB	i$aside($ASIDE)+1
+		$return
+
+"$i_retrieve_xor"* $name
+		$ipop
+                xor     i$aside($ASIDE)
+                xorB    i$aside($ASIDE)+1
+                $return
+
+"$i_retrieve_and"* $name
+		$ipop
+                and     i$aside($ASIDE)
+                andB    i$aside($ASIDE)+1
+                $return
+
+"$i_retrieve_add"*	$name
+		$ipop
+		da	i$aside($ASIDE)
+		$return
+
+"$i_retrieve_subtract"*	$name
+		$ipop
+		dan	i$aside($ASIDE)
+		$return
+
+"$i_retrieve_multiply"*	$name
+		$ipop
+
+		$if	1
+		c	(m48_48)	i$aside($ASIDE),,long
+		dl	6		. until expansion to use longer results
+		$else
+		sb	7
+		lb	a
+		m	i$aside($ASIDE)+1
+		sb	6
+		lb	7
+		mf	i$aside($ASIDE)+1
+		aa	6
+		$endif
+
+		$return
+
+"$i_retrieve_divide"*	$name
+		$ipop
+
+		$if	1
+		c	(d48_48)	i$aside($ASIDE),,long
+		dl	6		. until expansion to use longer results
+		$else
+		d	i$aside($ASIDE)+1
+		sb	7	. save the remainder
+		sa	b
+		la	6
+		$endif
+
+		$return
+
+"$i_retrieve_covered_quotient"*	$name
+		$flag	covered quotient may only be a constant
+		$return
+
+"$i_retrieve_remainder"*	$name
+		$ipop
+                d       i$aside($ASIDE)+1
+		sa	7	. save the quotient. MSW is already in 6
+		la	b
+		dsa	24
+
+		$end
+

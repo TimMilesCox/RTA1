@@ -1,0 +1,164 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+PD_INET	$equ	0800
+
+. UDP	$equ	17	. protocol tag + handle type
+. TCP	$equ	6	. protocol tag + handle type
+
+TCP_TCB	$equ	63	. connection handle
+			. not a protocol tag
+			. but a handle type tag
+
+SOCKET_NO_PROTOCOL	$equ	-1
+SOCKET_ENGAGED		$equ	-2
+
+
+	$if		0
+
+f	$func
+"$net_ipv4"* $name
+
+net	$set	0
+	$sterm	'.'
+
+?	$do	f(1, 1:),;
+net	$set	net*/8++f(1, 1:?)
+
+	$sterm	':'
+
+	$return	net
+	$end
+
+
+"$netp"	$form	32, 16
+
+p	$proc
+"$net_socket"* $name
+	$netp	$net_ipv4(p(1, 1:1)), p(1, 1:2)
+	$end
+
+	$endif			. these have moved to the 
+				. application-visible ip.def
+
+p		$proc
+"$socket"*	$name
+*		$tree
+socket_address	$net_socket	p(1, 3)
+remote_address	$net_socket	p(1, 4)
+flags		+	0
+udp		$branch
+tsq		+	0
+socket_inq	dq
+		$root
+tcp		$branch
+tbase		+	0
+tcbs					. re_use location, # transmission control blocks
+rxbu_p		+	0		. if socket dedicated storage is applied
+rxowner					. re_use location, thread control block waiting owner
+txbu_p		+	0		. if socket dedicated (high volume) storage
+		$root
+		$do	$-socket_address^=8,	$flag	socket structure size wrong
+		$root
+		$end
+
+
+p		$proc
+tcp_connection*	$name
+*		$tree
+
+next		+	0
+automatic_fin
+state		+	TCP_LISTEN
+mss		+	576
+tsq		+	0
+
+?		$do	2,;
+timer(?)	+	0
+
+socket_address	$netp
+remote_address	$netp
+
+remote_ack_window +	0:d
+sequence_ackx	+	0:d
+ack_window	+	0:d
+
+receiveq	dq
+deferq		dq
+q4window	dq
+q4ack		dq
+
+		$root
+		$end
+
+LOG1BIT* $func
+?	$do	12,	$do	1*/?-1=LOG1BIT(1, 1),	$return	?-1
+	$flag	permitted values exact powers2 highest 2048
+	$return	0
+	$end
+
+CHAINS		$equ	32
+CHAINS_LOG	$equ	LOG1BIT(CHAINS)
+CHAINS_MASK	$equ	CHAINS-1
+
+p	$proc
+tbank*	$name
+*	$tree
+link	+	0			. id next 4096-word block of connections in total system, kernel use
+free	+	0			. chain pointer freed connection TCBs in this block
+top	+	connection_block(1)	. heap top unassigned connection TCBs in this block
+
+climit					. same word as rxbank. Upper limit of connections tank
+rxbu_p	+	0			. address of rx buffers. In default TCBloc array = rx_buffers vector
+txbu_p	+	0			. address of tx buffers. In default TCBloc array = tx_buffers vector
+txchain	+	0			. I/F link connection arrays:frames awaiting TX. High volume only **
+flags	+	0			. indicators
+rxowner	+	0			. application attention chain
+
+?	$do	CHAINS,chain(?)	+ 0
+?	$do	2,connection_block(?) tcp_connection
+	$root				. in high volume connection_block(1) is receiveq concentrator
+	$end				. connection_block(1):q4ack is despatcher to I/F **
+
+TPORTCHAIN* $func
+BITS	$equ	TPORTCHAIN(1, 1)
+	$return	CHAINS_MASK**;
+	((BITS/*5*CHAINS_LOG)--(BITS/*4*CHAINS_LOG)--;
+	 (BITS/*3*CHAINS_LOG)--(BITS/*2*CHAINS_LOG)--(BITS/*CHAINS_LOG)--BITS)
+	$end

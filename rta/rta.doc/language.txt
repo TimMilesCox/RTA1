@@ -1,0 +1,1152 @@
+<html>
+<div	style="font-size:14pt">
+
+<center>
+
+<h1>Towards Compiler Languages for RTA1 Architecture</h1>
+
+<h1><a href="#structural_macros">Calling Sequences and Dynamic Variables</a></h1>
+
+
+<i>
+Copyright Tim Cox, 2012<br>
+This document is part of the RTA1 Processor Programmable Architecture Specification<br>
+The RTA1 Architecture is freeware licensed with the GNU General Public Licence Version 3<br>
+The same licence encompasses all accompanying software and documentation <br>
+The full licence text is included with these materials<br>
+See also the licensing notice at the foot of this document
+</i>
+
+</center>
+
+<p>
+There are no compiler languages yet for RTA1. Every instruction in it
+has been assembled with the masmx meta-assembler
+
+<p>
+Macro language constructs applications with calling sequence and dynamic variable rules projected for a future C compiler
+
+<p>
+<a	name="structural_macros"/>
+This document is about
+
+<ol>
+	<li><a href="#far_call">Far Call Targets</a></li>
+	<ol>
+		<li><a href="#vector">$vector Macro</a></li>
+		<li><a href="#gate">Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Location</a></li>
+	</ol>
+	<li><a href="#sequence">Formal Calling Sequences used in Structured Assembly Language Code</a></li>
+	<ol>
+		<li><a href="#realtime">Structured Realtime in the Internal Stack</a></li>
+		<li><a href="#argument">Calling and Constructing the Call Argument Stream</a></li>
+		<li><a href="#transform">Macro Conversion of Call Arguments</a></li>
+		<li><a href="#dynamic">The Called Routine: Parameters and Dynamic Data</a></li>
+		<li><a href="#zeronet">Recursive Programming and Zero-Net Internal Stack</a></li>
+		<li><a href="#trapping">Trapping Wrong Argument Lists</a></li>
+	</ol>
+	<li><a href="#algo">Runtime Algorithmic Expressions</a></li>
+	<li><a href="#struco">Data and Procedure Structures</a></li>
+
+</ol>
+<blockquote>
+
+	<a href="#licence_note">Appendix Z: Licence Note</a>
+
+</blockquote>
+
+
+<a	name="far_call"/>
+<a	name="vector"/>
+<h2>1. Far Call Targets</h2>
+<h3>1.1 1-Page Instruction Frame and $vector Macro</h3>
+
+<b>$vector</b> publishes routines which are the target
+of far <b>call</b> or <b>go</b> instructions. <b>$vector</b> is a procedural macro coded
+in the leading 64 locations of the target iframe
+
+<p>
+<b>$vector</b> exports the entry point name and jumps to the target routine
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+.	<b>$vector</b> goes in the first 64 words of an
+.	instruction frame
+.	64 words at instruction frame start are externally addressable
+.	They are a jump pad
+
+$(0::LOAD_LOCATION)	
+handle_name*	<b>$vector</b>	routine1
+handle_name2*	<b>$vector</b>	routine2
+		$do	64-$,	fret	0	. no entry
+routine1
+	.
+	.
+	fret	0
+routine2
+	.
+	fret	0
+
+</pre>
+The handle value is the single-word constant or
+variable operand of <b>go</b> and <b>call</b> instructions
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+		call	handle
+
+
+handle		+	handle_name
+
+</pre>
+or more frequently
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+		call	(handle_name)	. literal constant of the vector value
+					. generated in storage by reference
+</pre>
+The handle value  encodes the target frame identifier and vector offset
+
+<p>
+See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</a>
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+
+        vector encoding at a 4K word page edge
+	______________________________________
+
+
+        vector descriptors flagged 00 in two high order bits
+	identify a 4K-word instruction frame at a 4K address boundary
+	in the first 256 Megawords of memory
+
+	the frame has 64 entry vectors
+
+        call or go instruction reads the descriptor as
+        a constant or variable operand at location[EA]
+
+
+        23  21                 6|5    0
+        ________________________|_______
+        |00| 4K page identifier |offset|
+        |__|____________________|______|
+
+        the name of a 4K-word instruction frame
+        is its 4K page identifier represented in 22 bits and tagged 00 in two high-order bits
+
+	   |21                        0
+	___|____________________________
+	|00|     4K page identifier    |
+	|__|___________________________|
+
+	page identifier becomes B0 window pointer on go or call
+
+        new B0 page identifier is copied to frame high index I/O port 64 on call or return into the frame
+        indicating that the application may execute instructions in one page or 4096 words
+
+	far return and interrupt return retrieve the frame name
+	and next instruction offset from the internal stack
+
+	47  45                       24|23                            0   
+	_______________________________|________________________________
+	|00|     4K page identifier    |    next instruction offset    |
+	|__|___________________________|_______________________________|
+
+
+
+
+</pre>
+
+<a	name="gate"/>
+<h3>1.2 Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</h3>
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+	go or call operand flagged 1 in high order bit 23 is a pointer to a 48-bit gate
+	in the first 8 megawords of application address space
+
+	the gate describes an instruction frame of any size at any 4K-word boundary
+	entry point is not restricted to 64 vector offsets
+
+
+
+        23|22                         0          47     41                   24|  |21                         0
+	__|_____________________________	_______________________________|__|_____________________________
+	|1|      pointer to gate       |------->|pppppp|   entry point offset  |00|   4k start page identifier |
+	|_|____________________________|	|______|_______________________|10|____________________________|
+
+
+	bits 47..42 of the 48-bit gate are the target frame Page High Index
+
+	if Page High Index is zero then the last page of the instruction frame is also its first page
+
+	iframe size is one page more than Page High Index
+
+        the name of the instruction frame is the start page identifier tagged { 00 | 10 } in two high order bits
+
+
+		00 if page high index is zero
+
+	           |21                         0
+        	___|_____________________________
+	        |00|	Start Page Index	|
+        	|__|____________________________|
+
+
+
+		 10 if page high index is nonzero
+
+        	   |21                         0
+	        ___|_____________________________
+        	|10|	Start Page Index	|
+	        |__|____________________________|
+
+
+	Flag bits 23:22 + Start Page Index are the Iframe Name
+
+        B0 window pointer is set to Start Page Index on go or call
+
+        Start Page Index plus Page High Index is transferred to execution limit pointer I/O port 64
+	on call or return into the instruction frame
+
+        far return and interrupt return retrieve the frame name
+        and next instruction offset from the internal stack
+
+        47  45                       24|23                            0
+        _______________________________|________________________________
+        |F0|  4K start page identifier |    next instruction offset    |
+        |__|___________________________|_______________________________|
+
+
+	the gate is not refetched on return from ISR or another instruction frame
+	and the pointer to the gate is not retained after the instruction frame is called
+
+	high order flag bits 47:46 of the far return frame are
+
+		00: Page High Index is zero and Iframe is one 4K page in size
+
+		10: Page High Index is six leading bits from the sample gate at iframe location 64
+
+		    iframe size is Page High Index plus one pages
+
+
+	|<--------------- page high index at iframe location 64
+	|
+	|_______________________________________________________________
+	|pppppp|     zero offset       |10|   4k start page identifier |
+	|______|_______________________|__|____________________________|
+	|47    |45                   24|                              0
+
+</pre>
+<p>
+
+See also <a href="iframe.html">Large and Loadable Instruction Frames<a>
+
+
+<a	name="sequence"/>
+<a	name="realtime"/>
+<h2>2. Formal Calling Sequences used in Structured Assembly Language Code</h2>
+<h3>2.1 Structured Realtime in the Internal Stack</h3>
+<p>
+These calling sequences make many functions simpler to write
+
+<p>
+They  construct a non-volatile argument and dynamic variable list in the internal stack
+
+<p>
+Many simple subroutines are easier to write without this structuring,
+because they then have more freedom for internal stack manipulation
+
+
+<a	name="argument"/>
+<h3>2.2 Calling and Constructing the Argument Stream</h3>
+
+<b>c / lc</b> macro embeds far and near call instructions
+<b>call</b> and <b>lcal</b>, first pushing parameters on the
+internal stack, and afterwards clearing the internal stack
+
+<p>
+<b>c / lc</b> finalises the parameter list by pushing a stack walkback before
+the <b>call / lcal</b> instruction and popping the internal stack pointer on
+return. If there are no parameters, it doesn't. Then the effect is the same
+as issuing a <b>call</b> or <b>lcal</b> instruction directly
+
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+$ masmx ruxample -lnk
+MASMX 7r3
+3/ruxample.msm
+*EOF*
+  :                            1        $path           ../def
+  :                            2:       $include        rta.def
+  :                            3        $path           ../language
+  :                            4:       $include        stack.def
+  :                            5        $path
+  :                            6
+  :                            7
+  :                            8 $(3:03000)
+  :                            9 left   $res    4
+  :                            10 right $res    4
+  :                            11 centre        $res    4
+  :                            12       $lit
+  :                            13
+  :                            14 $(0:64)
+  :                            15
+  :                            16
+                                        c       (floating_algorithm)    left,,          float           ;
+                                                                        (1.875:d),,     floating_packed ;
+00:000040 8F3004              +19                                       right,,         float
+00:000041 5F300C              +19
+00:000042 8F3000              +19
+00:000043 FCF00C              +19
+00:000044 FF300E              +19
+00:000045 38000F              +19
+  :                            20
+00:000046 473008              +21       qs      centre
+  :                            22
+  :                            23
+  :                            24       $do     $<256,$(0:256)
+  :                            25
+*EOF*
+03:00300c+401F00000000
+03:00300e+[0000]18:000000
+:$(00):000040:000100 :$(03):003000:00300F
+ruxample.msm: object code 174 bytes: 0 errors: 1 undefined labels
+
+
+</pre>
+
+Between the data name and the data type of each <b>c / lc</b> argument is an index register
+subfield which is not always typed
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+	lc	routine	left,,float	;
+			right,,float	;
+			centre, x, int	;
+			36, y, long
+
+
+</pre>
+If the datum is direct-addressed, an index register is not named because
+none is used
+
+<p>
+The assembly may otherwise already know a base + displacement register
+for the data name. If it is in the submacros <b>params() scalars() xframe()</b>
+or any other base + displacement section, the assembler does already know the
+default index base. Names like this have the masmx label type <b>$equf</b>
+which is an equate to a tuple of attributes
+
+<p>
+The index field may typed to apply or to override an index register
+
+<p>
+
+The third argument subfield is a default source type defaulting to integer variable
+and may be immediate and byte types which push as one word, or a larger object
+
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx loademup -ln
+MASMX 7r3
+3/loademup.msm
+*EOF*
+  :                            1 
+  :                            2 	$path		../
+  :                            3: 	$include	def/rta.def
+  :                            4: 	$include	language/stack.def
+  :                            5 
+  :                            6 $(3:03000)
+  :                            7 data	$res	20
+  :                            8 
+  :                            9 $(0:64)
+  :                            10 
+                                	c	(routine_far)	data		;
+                                				-10,,xi		;
+                                				99, b, i	;
+00:000040 F93004              +14 				data+4,,t1
+00:000041 FCD063              +14 
+00:000042 FDFFF6              +14 
+00:000043 F83000              +14 
+00:000044 FCF004              +14 
+00:000045 FF0100              +14 
+00:000046 38000F              +14 
+  :                            15 
+  :                            16 	$do	$<256,$(0:256)
+*EOF*
+00:000100+[0000]18:000000
+:$(00):000040:000101 :$(03):003000:003014 
+
+</pre>
+<b>c / lc</b> macro also takes parameters of two, three, four or eight words
+and expands compressed floating 2-word source to 4-word float in the stack
+  
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx -ln types
+MASMX 7r3
+3/types.msm
+*EOF*
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	language/stack.def
+  :                            4 	$path
+  :                            5 $(0:64)
+                                inward	$head_far	 params(left, float	;
+  :                            7 				right,float	)
+  :                            8 
+                                        lc      routine left,,float     ;
+                                                        right,,float    ;
+                                                        centre, x, int  ;
+                                                        36, y, long	;
+00:000040 5F0106              +13 			(1.875:d),, floating_packed            
+00:000041 9FB024              +13 
+00:000042 FDA100              +13 
+00:000043 8FF00E              +13 
+00:000044 8FF00E              +13 
+00:000045 FCF00F              +13 
+[+0000]0f
+00:000046 3E0000              +13 
+00:000047 38000F              +13 
+  :                            14 
+  :                            15 	$do	$<256,$(0:256)
+  :                            16 centre
+00:000100 000006              +17 ?	$do	6,	7-?
+00:000101 000005              +17 
+00:000102 000004              +17 
+00:000103 000003              +17 
+00:000104 000002              +17 
+00:000105 000001              +17 
+  :                            18 
+*EOF*
+00:000106+401F00000000
+:$(00):000040:000108 
+
+</pre>
+<p>
+or subfield 3  may be a macro name which processes the parameter as it loads it
+
+<a	name="transform"/>
+<h3>2.3 Macro Conversion of Call Arguments</h3>
+
+<b>c / lc</b> macro can attach macros to individual arguments to
+generate, convert or format actual parameters as they are pushed
+
+<p>
+The macro name takes the place of the data type subfield 3
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx -lnk newtotal
+MASMX 7r3
+3/newtotal.msm
+*EOF*
+  :                            1 	$path		../
+  :                            2: 	$include	def/rta.def
+  :                            3: 	$include	language/stack.def
+  :                            4 
+  :                            5 p		$proc
+  :                            6 long2float*	$name	106
+  :                            7 		dl	p(1, 1), p(1, 2)
+  :                            8 		call	(long2fp)
+  :                            9 		$end
+  :                            10 
+  :                            11 $(0)
+00:000000 B60040              +12 newtotal*	$vector	addon
+  :                            13 $(0:64)
+  :                            14 addon	$head_far	 params(increment, long)
+  :                            15 
+00:000040 CFF003              +16 	c	(total_up)	increment,,long2float
+00:000041 FF0100              +16 
+00:000042 8F0004              +16 
+00:000043 FCF004              +16 
+00:000044 FF0101              +16 
+00:000045 38000F              +16 
+  :                            17 
+00:000046 3D0000              +18 	$ret
+  :                            19 
+  :                            20 	$do	$<256,$(0:256)	. literal table must be at 256+
+  :                            21 				. to be operand-visible
+  :                            22 
+*EOF*
+00:000100+[0000]18:000000
+00:000101+[0001]18:000000
+:$(00):000000:000102 
+
+</pre>
+
+Macro <b>c (total_up)</b>
+
+	<blockquote>
+	executed the two instructions of macro <b>long2float</b><br><br>
+	pushed four arithmetic registers <b>a:b:mantissa2:mantissa3</b>
+	</blockquote>
+
+then pushed an internal stack walkback word, called the target routine, and finally
+popped the internal stack walkback word as <b>c / lc</b> macro always does
+
+<p>
+Parameter-generating macro <b>long2float</b> belongs to the ring of macros with
+<b>$name</b> value <b>106</b>
+
+<p>
+<b>c / lc</b> macro follows macros in <b>Ring 106</b> with a quadword push instruction
+of arithmetic registers <b>a:b:mantissa2:mantissa3</b>
+
+<p>
+<b>c / lc</b> macro restricts which macros may generate actual parameters to
+<b>Ring 105</b>, <b>Ring 106</b> and <b>Ring 107</b>
+
+<p>
+<b>c / lc</b> is not concerned how many data words these macros read
+
+	<blockquote>
+	<b>c / lc</b> adds arithmetic register <b>a</b> to the internal stack
+	after a macro with <b>$name</b> value <b>107</b><br><br>
+
+        <b>c / lc</b> adds arithmetic registers <b>a:b</b> to the internal stack
+	with a double-push instruction after a macro with <b>$name</b> value <b>105</b><br><br>
+
+	<b>c / lc</b> adds arithmetic registers <b>a:b:mantissa2:mantissa3</b>
+	to the internal stack with a quad-push instruction after a macro with
+	<b>$name</b> value <b>106</b><br><br>
+	
+	</blockquote>
+
+A parameter generating macro receives two subfields before its own name as argument,
+a value or address with optional index tag. In the example, input name <b>increment</b> is
+recognised as being base + displacement on the internal stack pointer
+
+<a	name="dynamic"/>
+<h3>2.4 The Called Routine: Parameters and Dynamic Data</h3>
+
+<p>
+Macro <b>$head_near/far</b> constructs up to three lists of names which
+are base+displacement definitions on internal stack pointer <b>sp</b>
+or external stack pointer <b>fp</b>
+
+<p>
+These lists are called <b>params() scalars() xframe()</b>
+
+<p>
+<b>$head_near/far</b> macro constructs data in
+two of those lists, <b>scalars</b> in the internal stack
+and <b>xframe</b> in the external stack
+
+<p>
+A routine without large dynamic data may have <b>params()</b> and <b>scalars()</b> but not <b>xframe()</b>
+
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+$ masmx rtxample -ln
+MASMX 7r3
+3/rtxample.msm
+*EOF*
+  :                            1 	$path		../def
+  :                            2: 	$include	rta.def
+  :                            3 	$path		../language
+  :                            4: 	$include	stack.def
+  :                            5: 	$include	fpxpress.def
+  :                            6 	$path
+  :                            7 $(0:0)
+  :                            8 
+00:000000 B60040              +9 floating_algorithm*  $vector fp_routine
+  :                            10 
+  :                            11 $(0:64)
+  :                            12 
+  :                            13 fp_routine 
+                                	$head_far	 params(one,	float		;
+                                				two,	float		;
+                                				three,	float)		;
+                                							;
+Note: rtxample.msm Line 18: add $$frame to sp before return
+00:000040 F80002              +18 			scalars(temp1,	int,	x)
+  :                            19 
+00:000041 4FF004              +20 	$xqt_fp		one*1.75*+1200000*two/3.0*-625000-three
+00:000042 770100              +20 
+00:000043 77F008              +20 
+00:000044 7F0104              +20 
+00:000045 6FF00C              +20 
+  :                            21 
+  :                            22 
+00:000046 50F000              +23 	lx		temp1
+  :                            24 
+00:000047 FCF001              +25 	push, i		$$frame, sp
+00:000048 38000F              +26 	pop		sp
+00:000049 3D0000              +27 	fret		0
+  :                            28 
+  :                            29 	$do		$<256,$(0:256)
+  :                            30 	
+*EOF*
+00:000100+7CD38BB7B396D7AA20B6E083
+00:000104+2051D5B8447B77478A23F5F7
+:$(00):000000:000108 
+rtxample.msm: object code 229 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+
+<p>
+<b>params()</b> maps names onto the parameters pushed in <b>c / lc</b>
+
+<p>
+<b>scalars()</b> constructs and names dynamic variables in the
+internal stack based on <b>sp</b>
+
+<p>
+<b>xframe()</b> constructs dynamic variables in the
+in the external stack based on <b>fp</b>. <b>xframe()</b> is for
+structures and arrays. The internal stack is only large enough for scalars
+and pointers
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx -ln tempbuff.msm
+MASMX 7r3
+3/tempbuff.msm
+*EOF*
+  :                            1 		$path		../def
+  :                            2: 		$include	rta.def
+  :                            3 		$path		../language
+  :                            4: 		$include	stack.def
+  :                            5 		$path
+  :                            6 
+                                routine1        $head_near       params(left,	long		;
+                                                                        right,	long)		;
+                                								;
+                                                                scalars(down,	int,	0	;
+                                                                        up,	int,	2048//3-1) ;
+                                								;
+                                                                 xframe(sorting_buffer, 2048//3	;
+Note: tempbuff.msm Line 14: add $$frame to sp before return
+00:000000 F80000              +14 			midpoint_cursor, int, 2048//3/2, fp, i)
+00:000001 F802AA              +14 
+00:000002 FDFD54              +14 
+00:000003 2F000E              +14 
+00:000004 FCE155              +14 
+00:000005 38E2AB              +14 
+Note: tempbuff.msm Line 14: add $$xframe to fp before return
+  :                            15 
+  :                            16 .
+  :                            17 .
+  :                            18 
+  :                            19 
+  :                            20 
+00:000006 FCE2AC              +21                 push, i         $$xframe, fp
+00:000007 38000E              +22                 pop             fp
+00:000008 FCF002              +23                 push, i         $$frame, sp
+00:000009 38000F              +24                 pop             sp
+  :                            25 
+00:00000A 350000              +26                 lret            0
+  :                            27 
+*EOF*
+:$(00):000000:00000B :$(46):000000:0002AC 
+tempbuff.msm: object code 184 bytes: 0 errors: 0 undefined labels
+
+</pre>
+<p>
+These macros do not use a cover pointer for internal stack frames
+based on <b>sp</b>. The overhead of maintaining a cover pointer has
+been eliminated
+
+<p>
+<b>$head_near/far</b> and <b>c / lc</b> adjust with the
+deepening stack displacement of objects already in the stack
+as they add more objects
+
+<p>
+Routines constructed with this framework should therefore not change
+<b>sp</b> except with <b>c / lc </b> macros
+
+<p>
+Very simple assembler routines need not use this framework of macros
+at all. They can alter the stack freely
+
+<p>
+The practical way within this macro framework to save a register
+during a routine is to assign it to a dynamic variable in the
+<b>scalars()</b> list. This saves the register at routine start,
+because the dynamic frame is constructed by pushing things
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx -ln saverlod.msm
+MASMX 7r3
+3/saverlod.msm
+*EOF*
+  :                            1 		$path		../def
+  :                            2: 		$include	rta.def
+  :                            3 		$path		../language
+  :                            4: 		$include	stack.def
+  :                            5 		$path
+  :                            6 
+  :                            7 $(0:64)
+                                my_name		$head_near	scalars(caller_a, int, a	;
+                                					caller_b, int, b	;
+Note: saverlod.msm Line 10: add $$frame to sp before return
+00:000040 F80004              +10 					caller_x, int, x)
+00:000041 F80005              +10 
+00:000042 F80002              +10 
+  :                            11 
+  :                            12 .		a b x of the calling routine are in the internal
+  :                            13 .		stack and can be loaded as required
+  :                            14 
+  :                            15 .
+  :                            16 .
+00:000043 50F002              +17 		lx              caller_a . reference caller's data
+  :                            18 .
+  :                            19 .
+00:000044 60F001              +20 		la              caller_b . reference caller's data
+  :                            21 .
+  :                            22 .
+00:000045 60F002              +23 		la		caller_a . restore caller's registers
+00:000046 68F001              +24 		lb		caller_b
+00:000047 50F000              +25 		lx		caller_x
+00:000048 FCF003              +26 		push, i		$$frame, sp
+00:000049 38000F              +27 		pop		sp
+00:00004A 350000              +28 		lret		0
+  :                            29 
+  :                            30 
+  :                            31 
+*EOF*
+:$(00):000040:00004B 
+saverlod.msm: object code 147 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+
+
+<a	name="zeronet"/>
+<h3>2.5 Recursive Programming and Zero Net Internal Stack</h3>
+
+
+The RTA1 internal stack is a register array for  realtime programming.
+Realtime problem solving typically executes routines to a depth of between
+four and eight nested subroutine calls, each with between two and six
+parameter words in the stack
+
+<p>
+The internal stack contains approaching twice this intended maximum
+
+<p>
+Here a routine is called with two  parameter words on the internal stack
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+  :                            242
+00:000553 FCF003              +243      lc   ber_sequence_scan a snmp_rseq,,i
+00:000554 F80004              +243
+00:000555 FCF002              +243
+00:000556 3E0755              +243
+00:000557 38000F              +243
+  :                            244
+
+
+</pre>
+There are also a return address and a stack walkback pointer in each call,
+so the stack use in this  call is four words. The application can keep on
+like this for a nested depth of 26 calls
+
+<p>
+If the the internal stack overflows, the guard interrupt removes the thread
+from the switch list
+
+<p>
+If that problem has been avoided, all the operands in the instruction path
+are in a register array, namely the internal stack
+
+<p>
+That's the realtime intention of RTA1
+
+<p>
+If applications need more stack, there is no solution in building  a
+larger internal stack into RTA1. That would make task switch slower and
+applications could still overflow the internal stack
+
+<p>
+Some kinds of processing are not realtime, and must go about things in
+a different way
+
+
+<p>
+Recursion is a programming technique used rather indiscriminately
+because of its popularity in education circles and because of a
+widespread reluctance to understand anything in detail
+
+<p>
+Nevertheless recursive programming is really needed in some applications.
+Macro language supports net-zero internal stack demand applied to individual
+routines within a program
+
+<p>
+In realtime use, the <b>$head_near/far</b> macro claims and maps internal
+stack words at the head of a routine
+
+<p>
+The addition of the <b>$zero_stack</b> keyword keeps the internal stack
+pointer <b>sp</b> at the same place however many nested calls routines
+with <b>$zero_stack</b> make to themselves or to each other
+
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+$ masmx recursiv -ln
+MASMX 7r3
+3/recursiv.msm
+*EOF*
+  :                            1 	$path		freeware/RTA1/rta/def
+  :                            2: 	$include	rta.def
+  :                            3 	$path
+  :                            4: 	$include	stack.def
+  :                            5 
+  :                            6 $(0:64)
+  :                            7 
+                                inwego	$head_near,$zero_stack	 params(one,	float	;
+                                					two,	float	;
+                                					three,	float)	;
+                                							;
+00:000040 FDFFF2              +12 				 xframe()
+00:000041 2F000E              +12 
+00:000042 38E000              +12 
+00:000043 38E001              +12 
+00:000044 87E002              +12 
+00:000045 87E006              +12 
+00:000046 87E00A              +12 
+00:000047 780010              +13 	tp	16
+00:000048 B60054              +14 	j	enough
+00:000049 1F0010              +15 	dec	16
+  :                            16 
+00:00004A 4FE002              +17 	ql	one
+00:00004B 77E006              +18 	fm	two
+00:00004C 770100              +19 	fm	(0.875)
+00:00004D 67E00A              +20 	fa	three
+  :                            21 
+00:00004E 8FE00A              +22 	lc	inwego	a,,float two,,float three,,float
+00:00004F 8FE006              +22 
+00:000050 8F0004              +22 
+00:000051 FCF00C              +22 
+00:000052 3E0040              +22 
+00:000053 38000F              +22 
+  :                            23 
+  :                            24 enough
+00:000054 9FE000              +25 	$ret
+00:000055 FCE00E              +25 
+00:000056 38000E              +25 
+00:000057 350000              +25 
+  :                            26 
+  :                            27 	$do	$<256,$(0:256)
+*EOF*
+00:000100+400000E00000000000000000
+:$(00):000040:000104 :$(46):000000:00000E 
+recursiv.msm: object code 279 bytes: 0 errors: 0 undefined labels
+
+
+</pre>
+Routines constructed with <b>$zero_stack</b> can interact completely
+with routines constructed without
+
+<p>
+The external stack pointer <b>fp</b> must point to the high-memory
+end of a sufficient buffer
+
+<p>
+Call sequences constructed with the <b>c/lc</b> macro push the parameter
+list onto the internal stack. This is not different where <b>$zero_stack</b>
+is opted. There is no faster or better way of delivering a parameter list
+of arbitrary size. The <b>lc</b> macro shown above pushes twelve parameter
+words and a walkback pointer, then calls the target routine, itself in
+this example
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+	.------>_________________________________________________________________
+	|	|   floating parameter three					|
+	|	|_______________|_______________|_______________|_______________|
+	|	|   floating parameter two					|
+	|	|_______________|_______________|_______________|_______________|
+	|	|   floating parameter one 					|
+	|	|_______________|_______________|_______________|_______________|
+	._______| stack walkback| return address|
+		|_______________|_______________|
+
+
+</pre>
+If there are no parameters, the <b>c/lc</b> macro does not push a walkback
+pointer or pop it afterwards. This follows a principle, that routines which
+do not expect parameters can be called with <b>call</b> <b>lcal</b> instructions
+without preliminaries. In realtime programming, instructions which
+do not do anything are avoided where possible
+
+<p>
+A called routine with <b>$zero_stack</b> unloads the call frame that it expects.
+Its <b>xframe()</b> is larger than otherwise by the size of the expected call frame
+
+<p>
+<b>xframe()</b> must be declared when <b>$zero_stack</b> is opted, even if
+<b>xframe()</b> is otherwise void. <b>head_near/far</b> macro uses uppercase <b>-V</b>
+option to highlight its path. masmx has not assigned <b>-VUOS</b> for itself
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+                                inwego	$head_near,$zero_stack	 params(one,	float	;
+                                					two,	float	;
+                                					three,	float)	;
+                                							;
+Note: recursiv.msm Line 12: buy external $$xframe
+00:000040 FDFFF2              +12 				 xframe()
+00:000041 2F000E              +12 
+Note: recursiv.msm Line 12: internal stack zero net demand
+00:000042 38E000              +12 
+00:000043 38E001              +12 
+00:000044 87E002              +12 
+00:000045 87E006              +12 
+00:000046 87E00A              +12 
+
+
+</pre>
+The expected call frame is popped in four-word blocks per instruction,
+and the parameter names are mapped to the external stack locations
+
+<p>
+Without <b>$zero_stack</b> the parameter names are mapped to their internal
+stack locations
+
+<p>
+If variables are constructed in <b>scalars()</b> they are in the internal stack.
+To flat-line the internal stack, dynamic variables must be in <b>xframe()</b>
+
+<p>
+The default behaviour of a <b>$zero_stack</b> routine before return is to
+push the stack walkback word if parameters were expected and then to push
+the return address. Because there is optional behaviour, a <b>$ret</b>
+macro is supplied to match the <b>$head_near/far</b> macro
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+  :                            23 
+  :                            24 enough
+Note: recursiv.msm Line 25: internal stack zero net demand
+Note: recursiv.msm Line 25: parameter list walkback
+00:000054 9FE000              +25 	$ret
+Note: recursiv.msm Line 25: sell external $$xframe
+00:000055 FCE00E              +25 
+00:000056 38000E              +25 
+Note: recursiv.msm Line 25: near return
+00:000057 350000              +25 
+  :                            26 
+
+
+</pre>
+<p>
+Alternatively the <b>-S</b> flag opts to push all of the call frame back
+into the internal stack. This mostly makes no difference, because <b>c/lc</b>
+macro immediately frees the call frame by popping the walkback word onto the
+internal stack pointer
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+  :                            23 
+  :                            24 enough
+Note: recursiv.msm Line 25: internal stack zero net demand
+Note: recursiv.msm Line 25: restore internal stack $$list -S
+00:000054 8FE00A              +25 	$ret
+00:000055 8FE006              +25 
+00:000056 8FE002              +25 
+00:000057 9FE000              +25 
+Note: recursiv.msm Line 25: sell external $$xframe
+00:000058 FCE00E              +25 
+00:000059 38000E              +25 
+Note: recursiv.msm Line 25: near return
+00:00005A 350000              +25 
+  :                            26 
+
+
+</pre
+<p>
+A difference which <b>-S</b> option does make is that changes which the called
+routine makes inside its parameters are written back to the internal stack,
+which is also the effect without <b>$zero_stack</b>
+
+<p>
+That might be an unorthodox way of passing results which are otherwise passed
+in the accumulator registers <b>a:b:mantissa2:mantissa3</b>
+
+<p>
+<b>-S</b> restore to the internal stack can also paint over some accidental damage
+where a routine  has not been given the correct internal stack frame in the first
+place. The <b>$zero_stack</b> routine pops the call frame it thinks it has.
+
+<p>
+The internal stack may underflow. The guard interrupt then isolates the wrong call
+at this point
+
+<p>
+Otherwise <b>sp</b> points some words below (address-wise above) the stack top.
+Further call and push activity now overwrites previously stacked words energetically.
+If the called <b>$zero_stack</b> routine has <i>not</i> written to its copied
+parameters in the external stack frame, the complete restore may undo one consequence
+of a problem. If this makes a difference, it should only be done diagnostically and
+not used to bring faulty code into service. The parameters which the <b>$zero_stack</b>
+routine thinks it has are not the intended parameters until the real problem is fixed
+
+
+<a	name="trapping"/>
+<h3>2.6 Trapping Wrong Argument Lists</h3>
+<p>
+An initial check  on the call frame can also be opted to isolate problems in code
+development and testing
+
+<p>
+The check is either for at least enough parameters, or exactly the expected number
+
+<p>
+Calls which do not match the called routine prototype will
+not function as intended, even if the application appears to run
+
+<p>
+Mostly the exact check can be preferred because most assemblies only contain routines
+with fixed parameters
+
+<p>
+Neither check is certain, because each uses the call frame walk-back word. If there
+are inadvertantly no actual parameters, then there is no walkback word either. The
+word at the expected stack location has some completely different meaning. The point
+of error would be a word on the stack which accidentally has the expected walkback
+value. Then the check appears to pass although the parameters are unrelated to the
+routine and vital to another routine
+
+<p>
+However the chance of trapping a mistake is very high, because the chances of an
+accidental match on the walkback word location are very remote. Another good way
+of finding this sort of mistake is a grep on references to the routine
+
+<p>
+These are problem-finding-options. They cannot make faulty code safe. No
+code should go live with non-matching calls on the stack
+
+<p>
+The problem-finding options are aimed at two mistakes, too many parameters
+and too few
+
+<p>
+Too many parameters is a problem if routines are called recursively, because
+the called routine only flat-lines the call frame which it knows about. So
+unused gaps accumulate in the internal stack. Routines which are not recursively
+called will not have this problem, because as soon as return happens instead of
+recursion, the walkback word is popped onto internal stack pointer <b>sp</b>
+and the call frame is gone whatever size it was
+
+<p>
+Too few parameters is a more earnestly hazardous problem. It is equally a problem
+for routines with <b>$zero_stack</b> and for the default realtime routines which
+work inside the internal stack
+
+<p>
+Called routines without their expected arguments may update other internal stack
+locations. Even if they don't they're reading the wrong inputs 
+
+<p>
+The check for exact parameters is <b>-U</b> assembly flag. The check for enough
+parameters is <b>-O</b> 
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+                                inwego	$head_near,$zero_stack	 params(one,	float	;
+                                					two,	float	;
+                                					three,	float)	;
+                                							;
+00:000040 60F001              +12 				 xframe()
+00:000041 D4F00E              +12 
+00:000042 C60044              +12 
+00:000043 75005F              +12 
+Note: recursiv.msm Line 12: check absolute arguments -U
+
+</pre>
+The argument check interrupts to guard interrupt if the call frame appears wrong.
+Here it's checking for 14 words beyond the actual stack pointer value
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
+
+
+	+ a near return address one word in size
+	+ the walkback word itself
+	+ 12 parameter words
+	________________________________________
+
+	= 14
+
+
+</pre>
+<b>-UO</b> checks are not linked with <b>$zero_stack</b>. They are generated at
+every <b>$head_near/far</b> in the assembly when opted
+
+
+<a	name="algo"/>
+<h2>3. Runtime Algorithmic Expressions</h2>
+
+
+<p>
+<b>$xqt_fp</b> and <b>$xqt_i</b> directives code an instruction plan in a
+compiler-like fashion to solve expressions computing run-time variables
+
+<p>
+See <a href="masmx7r3.html#algors">Runtime Algorithmic Expressions</a>
+
+<a	name="struco"/>
+<h2>4. Data and Procedure Structures</h2>
+
+masmx.7r3A supports data structures at word and bit levels and functionally compartmented instruction code name spaces
+
+<p>
+See <a href="masmx7r3.html#structure">Structures</a>
+
+
+
+
+<a	name="licence_note"/>
+<h2>Appendix Z: Licence Note</h2>
+
+<i>
+<pre	style="font-size:12pt">
+
+_______________________________________________________________________________________
+
+
+LICENCE NOTE
+
+    Copyright Tim Cox, 2012
+    TimMilesCox@gmx.ch
+
+    This document is part of the RTA1 Processor Programmable Architecture.
+
+    RTA1 is a free processor architecture specification. It is licensed
+    under the GNU General Public Licence Version 3
+
+    The executable emulation of RTA1 is free software.
+
+    Instruction code for the target RTA1 architecture is free software
+    if it is delivered with this software
+
+    Software programs delivered with this software to connect the
+    emulated RTA1 with real network interfaces in the emulator host
+    are free software
+
+    Scripts and programs delivered with this software for running
+    on other computers and interacting with the RTA1 are free software
+
+    Scripts and utility programs for constructing RTA1 target
+    executable software are free software
+
+    You can redistribute it and/or modify RTA1
+    under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    RTA1 is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with RTA1.  If not, see &lt;http://www.gnu.org/licenses/&gt;.
+
+
+</pre>
+</i>
+
+
+</div>
+</html>
+
+

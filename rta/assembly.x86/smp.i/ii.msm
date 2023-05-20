@@ -1,0 +1,217 @@
+_on:	or	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+	ret
+
+_off:	xor	ax, 0000FFFFh
+	and	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+	ret
+
+RELOAD_SMPP	equ	1
+III_TRACE	equ	0
+
+_xi:
+	%if	RELOAD_SMPP
+;	mov	esi, dword ptr [ebp+CORE_INDEX1]
+	movd	esi, mm7
+	%endif
+
+	and	ah, ah				; 8 external interrupts?
+	jz	_xix_beat?			; nane
+
+	xor	cl, cl
+
+_xi_next:					; external interrupt pending signals[8]
+	mov	byte ptr [esi+IO_PORT+_XI_PENDING], ah	; position for inA|B from port XI_PENDING$	LL.mm.hh.zz
+	mov	byte ptr [esi+INDICATION+1], 0	; clear from platform indications fabric	ll.MM.hh.zz
+	xor	ecx, ecx			; clear latent param
+	mov	eax, II_XINT			; select external interrupt
+
+	jmp	_ii_
+
+_xix_beat?:
+	test	al, TPULSE
+	jz	_xix
+
+	mov	edi, _core					; always core zero so far
+
+_xi_atn_dayclock:
+        mov     ecx, dword ptr [edi+REGISTER+DAYCLOCK_U]
+        mov     ebx, dword ptr [edi+REGISTER+DAYCLOCK]
+        cmp     ecx, dword ptr [edi+REGISTER+DAYCLOCK_U]
+        jnz     _xi_atn_dayclock
+        mov     dword ptr [esi+REGISTER+DAYCLOCK], ebx
+        mov     dword ptr [esi+REGISTER+DAYCLOCK_U], ecx
+
+        mov     ebx, dword ptr [edi+IO_PORT+_TZONE]
+        mov     dword ptr [esi+IO_PORT+_TZONE], ebx
+
+	and	byte ptr [esi+INDICATION], TPULSE^255
+	
+_xix:	test	al, ATTENTION					; core2core interrupt
+	jz	near _xiy
+
+	mov	ebx, [esi+IO_PORT+_MCAST_PENDING]
+	mov	edi, _core					; test bit progressing
+	push	edx
+	mov	edx, -2
+	and	ebx, dword ptr [esi+IO_PORT+_CORES_MASK]
+
+_xi_atn_sources:
+	shr	ebx, 1						; this source pending?
+	jnc	_xi_atn_source_next				; no
+
+	and	dword ptr [esi+IO_PORT+_MCAST_PENDING], edx	; unpend
+	mov	ecx, dword ptr [edi+IO_PORT+_MCAST_TO]		; latent parameter from sending side
+
+	mov	eax, II_ATTENTION				; no
+	pop	edx						; ragged but working ***
+	jmp	_ii_						; _ii_ takes ecx for
+								; interrupt latent parameter
+_xi_atn_source_next:
+	add	edi, CORE_SIZE
+;	shr	ebx, 1						; MCAST_PENDING in line with edi -> core
+	rol	edx, 1						; MCAST_PENDING flag-off mask
+	and	ebx, ebx					; no bits left = no more pending
+	jnz	_xi_atn_sources					; expect from new interrupts
+
+_xi_atn_sources_all:
+
+	pop	edx						; also popped if jump to _ii_ ***
+
+	test	dword ptr [esi+IO_PORT+_MCAST_PENDING], 00FFFFFFh
+	jnz	_xi_atn_new_sources				; new interrupts flagged up, keep ATTENTION
+	and	byte ptr [esi+INDICATION], ATTENTION^255
+_xi_atn_new_sources:
+
+	%if	III_TRACE
+	mov	eax, dword ptr [esi+IO_PORT+_MCAST_PENDING]
+	mov	dword ptr [esi+REGISTER+281*4], eax
+	%endif
+
+_xiy:
+	%if	1
+
+	mov	eax, dword ptr [esi+INDICATION]			; case we did _xix in the same sweep
+	test	byte ptr [esi+INDICATION], INCREMENTER_CARRY	; nanosecond or other counter 
+	jz	_xiz						; from minus to carrry on zero
+								; to feed millisecond dayclock
+	and	byte ptr [esi+INDICATION], INCREMENTER_CARRY^255
+	mov	eax, II_MSECOND
+	xor	ecx, ecx
+	jmp	_ii_
+
+	%endif
+
+_xiz:	ret
+
+_ii_instruction:
+	mov	ebx, eax
+	shr	ebx, 6
+	sub	ebx, dword ptr [esi+IO_PORT+_APP_THRESHOLD]	; application threshold
+	jns	guard_ii_authority	; must have executed a character string
+					; like 757575
+	test	eax, -64
+	jnz	_ii			; not in restart page OK
+	test	byte ptr [esi+PSR+2], 128	; psr + 1 in BE-speak LE:L_M_H_Z
+	jnz	_ii			; ISR may interrupt to restart page
+
+		; service call application to restart page not allowed
+		; most likely to be an accident
+		; drop thru and be quelled
+
+guard_ii_authority:
+	mov	ecx, LP_AUTHORITY
+guard_ii_escape:
+	mov	eax, II_GUARD
+_ii_escape:
+	%if	RELOAD_SMPP
+;	mov	esi, dword ptr [ebp+CORE_INDEX1]		; read register 152 or 280
+	movd	esi, mm7
+	%endif						; depending ebp -> application / ISR registers
+
+	mov	esp, dword ptr [esi+REGISTER+287*4]	; read esp at start of _execute
+
+_ii:	cmp	eax, II_GUARD
+	jnz	_ii_
+	test	byte ptr [_uflag+'Z'-'A'], 1		; break to debug console?
+	jz	_ii_					; not if not opted
+	or	byte ptr [esi+INDICATION], LOCKSTEP
+	or	byte ptr [_general_indication], LOCKSTEP
+	
+_ii_:	lea	ebp, [esi+128*4] 
+
+	mov	dword ptr [esi+REGISTER_SET], ebp
+	mov	dword ptr [esi+ISELECT], 128
+
+	mov	ebx, dword ptr [ebp+S_P]
+	cmp	ebx, 256
+	ja	near guard_stack
+	add	ebx, -4
+
+	cmp	ebx, 128+24+2
+	jb	near guard_stack
+	mov	dword ptr [ebp+S_P], ebx
+
+	sub	edx, dword ptr [esi+B0P]
+	shr	edx, 2
+	mov	dword ptr [esi+ebx*4+REGISTER+3*4], edx	; save PC offset
+	mov	edx, dword ptr [esi+B0_NAME]
+	mov	dword ptr [esi+ebx*4+REGISTER+2*4], edx	; save bank ID
+	mov	edx, dword ptr [esi+PSR]
+	mov	dword ptr [esi+ebx*4+REGISTER+4], edx	; saved PSR
+	mov	dword ptr [esi+ebx*4+REGISTER], ecx	; latent parameter
+	test	edx, 00800000h				; nested interrupt ?
+	jnz	_ii_ii
+	mov	dword ptr [ebp+FP], ebx			; if not, mark interrupted
+							; application stack frame
+_ii_ii:
+	or	edx, 00800000h				; ISR active
+	mov	dword ptr [esi+PSR], edx
+
+	mov	edx, eax				; get to the operand
+	and	edx, 63					; address from interrupt vector
+	shr	eax, 6
+	and	eax, 000003FFh				; eax -> page containing ISR ; edx  -> vector
+	xor	ebx, ebx				; single page ISR
+	jmp	_go2_frame
+
+;	_ir	sign extended ea is in eax
+
+_ir:	test	byte ptr [esi+PSR+2], 128		; eax = EA = variation on return offset
+	jz	guard_ii_authority		; not good to do Interrupt Return from application space
+	mov	edi, edx			; save in case the operation interrupts itself
+	mov	edx, eax			; +- displacement operand, offset in stack added later
+
+	call	stack_read4			; [ebp+ebx*4] -> interrupt stack frame
+						; interrupt stack pointer is already updated ebx+4
+
+	mov	eax, dword ptr [esi+ebx*4+2*4]		; interrupted b0_name
+
+	mov	ecx, dword ptr [esi+ebx*4+1*4]		; interrupted psr
+
+	add	edx, dword ptr [esi+ebx*4+3*4]		; add interrupted iframe offset to EA
+
+	xor	ebx, ebx				; iframe default page high index  
+	test	eax, 00800000h
+	jz	ir_4k_iframe				; 1-page iframe return target
+
+	mov	ebx, eax				; iframe page high index
+	shl	ebx, 12					; from 6 bits at front of table
+	movzx	ebx, byte ptr [_memory+ebx*4+64*4+1]	; at iframe + 64 words
+	shr	ebx, 2					; shift 6 bits into 8 bits
+
+ir_4k_iframe:
+	mov	dword ptr [esi+PSR], ecx
+	test	ecx, 00800000h				; returning ISR -> ISR ?
+	jz	ir_application				; no
+
+	lea	ebp, [esi+REGISTER+128*4]		; for nested interrupts
+	mov	dword ptr [esi+REGISTER_SET], ebp	; interrupt register set
+	mov	dword ptr [esi+ISELECT], 128		; interrupt register set
+	jmp	_go2_frame				; yes
+
+ir_application:
+	mov	ebp, esi				; application register set
+	mov	dword ptr [esi+REGISTER_SET], ebp
+	mov	dword ptr [esi+ISELECT], 0
+	jmp	_go2_frame
+

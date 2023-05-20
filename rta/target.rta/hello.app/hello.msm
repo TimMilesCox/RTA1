@@ -1,0 +1,80 @@
+
+		$path		../			. some system headers
+		$list		0			. suppress kernel names from inflating your label lists
+		$include	def/rta.def		. define the machine
+		$include	def/ii.def		. low-level system calls
+		$include	def/vector.def		. map of your vector list
+		$include	language/catalog.def	. application template and lookup anchor
+		$include	language/stack.def	. if the application calls out to anything at all
+		$include	stream/stream.def	. for example printf, sscanf
+		$include	fs/fs24.def		. a couple of system equates are needed from here
+		$include	image.app/imports.def	. most of the kernel exports
+		$path
+		$list					. any names after here are in your label lists
+							. and source listing is by default main assembly (this) file
+
+		$set_option	"z"			. string zero-padding
+
+LF		$equ	10				. definition line feed, also in ../lib/ascii.def
+
+$(1:01000)						. you can put variable indirection pointers in here
+indirectp	+	remember_who?			. plus private data not referenced by routines outside your application
+                                                        . this section is also called your B1 section
+
+$(3:03000/$3)						. your static variable data goes in here
+from_all	"from all the crew!":0
+remember_who?	"Remember us?":0
+
+__BASE		$equ		HELLO_START_PAGE_INDEX	. start page index if you know it (fixed in system image)
+							. or if you don't for that matter (dynamic iframe load)
+							. HELLO_START_PAGE_INDEX is undefined, so hello is dynamic load
+$(0:0/$0)
+. hello*	$vector		jump2it	. (commented)	. the simplest way of having a vector (entry point) in a 4k-word iframe
+							. there are 64 $vector slots at the front of an iframe
+							. but hello is dynamic and is called a different way
+
+		catalog					. catalog is the minimal startup macro for a single application of any size
+							.	-which is dynamic loadable or
+							.	-which is fixed and may be larger than one 4k page
+							.	-which is fixed and can be found my name lookup
+
+							. for multiple applications macro $application is used instead of catalog
+
+
+jump2it		$base_d		$zenith(3)-03000 1024	. you need 1K words external stack for every thread which does printf
+						. $base_d macro places assigned static memory at address space 03000 hex
+
+		c	(seg$load) 0,,xi (my_data_segment:L),,long
+
+							. kernel routine (seg$load) initialises static data
+							. for this process instance of this application
+							. 1st argument rom file system start page index zero
+							. means file system is inside this calling iframe (it is)
+							. 2nd argument is the 48-bit address of your static data load file
+							.
+							. my_data_segment is included and named in a small text file loadfs
+							. you're ready to execute application code
+
+		printf	$3("Hello World %s %s":LF:0),,xi	;	. the output string is unnecessarily three strings
+			from_all,,xi				;	. even more unnecessarily
+			*indirectp,,i					. the third string is addressed indirectly
+
+							. string arguments are in static data literal table $3
+							. so other iframes can see them. Other iframes can't see this iframe
+							. arguments by value can be from anywhere
+							. if arguments are by address that must be specified argument,,xi
+							.					          or argument,[index],i
+
+							. arguments by value larger than one word are	argument,,long
+							.						argument,,triple
+							.						argument,,float
+							.						argument,,float192
+							.						argument,,floating_packed
+
+		fret		0			. or ii EXIT$
+
+		$do		$<256,$(0:256)		. literal constants at the end of this iframe
+							. with values (seg$load) (my_data_segment:L) (__fprintf)
+							. must be forced to address 256+ to be addressable
+							. lower addressed operands than that are registers 
+

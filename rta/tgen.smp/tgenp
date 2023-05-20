@@ -1,0 +1,172 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+if      [ "$1" != "yes" ] && [ "$1" != "intel" ] && [ "$1" != "powerpc" ] && [ "$1" != "arm" ]
+then
+        echo    ------
+        echo    ------  use tgeni instead if possible
+        echo    ------  for better performance from icc compiler
+        echo    ------  supplied by Intel oneAPI
+        echo    ------  if your platform gcc produces performant code
+        echo    ------  you can run this script as ./tgena yes\|intel\|powerpc\|arm
+        echo    ------  ...exit
+        echo    ------
+        exit
+fi
+
+PLATFORM=`uname`
+
+if      [ "$PLATFORM" == "Linux" ]
+then
+        OSPAN=-DLINUX
+        THREADS=-lpthread
+        echo    linux intel $OSPAN
+elif    [ "$PLATFORM" == "Darwin" ]
+then
+        if      [ "$1" == "powerpc" ]
+        then
+                echo darwin powerpc
+		RTA_BIN_SMP32=../binary.smp/osx.ppc
+		RTA_SMP=1
+        else
+		this is for powerpc only so far
+		exit
+#                OSPAN=-mmacosx-version-min=10.6.8
+                echo darwin intel $OSPAN
+        fi
+fi
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+	exit
+fi
+
+rm	../emulator.p32/*
+
+if	[ -z $RTA_SMP ]
+then
+	export	RTA_SMP=1
+fi
+
+gcc -m32 -c -funsigned-char $IFLAG $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.p32/netbank.o netbank.c
+gcc -m32 -c -funsigned-char $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.p32/idisplay.o idisplay.c
+gcc -m32 -c -funsigned-char $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.p32/tzone.o tzone.c
+
+rm	$RTA_BIN_SMP/rta1_$RTA_SMP
+echo	emulated RTA cores $RTA_SMP banks image ti$RTA_SMP
+
+#	if	[ "$1" == "powerpc" ]
+#	then
+#		ARCHFLAG=-UX86
+#		echo	constructing for powerpc
+#	elif	[ "$1" == "x86" ]
+#	then
+#		ARCHFLAG=-DX86
+#		echo	constructing x86 specific
+#	else
+#		ARCHFLAG=-DLLVM_LE
+#		echo	constructing LLVM LE
+#	fi
+
+export	RATIO=72000
+export	JTABLE=
+
+rm ../engine.p32/*
+
+if	[ "$TOUCHPOINT" ]
+then
+	APT=-DAPPLY_TOUCHPOINT
+	echo	$APT
+fi
+
+pushd	../engine.smp
+./genrelp $OSPAN $JTABLE -DRTA_SMP=$RTA_SMP $IFLAG $APT
+popd
+
+
+gcc -m32 -c -funsigned-char -DARGUMENTS=64		\
+			 $OSPAN				\
+		 	-o ../emulator.p32/argue.o	\
+			../netifx/argue.c
+
+gcc -m32 -c -funsigned-char -D__X64 -DRTA_SMP=$RTA_SMP -DGCC	\
+				 $OSPAN	-DGCC			\
+				-DRTA_SMP=$RTA_SMP		\
+				-DMETRIC -D_XINT		\
+			 	-o ../emulator.p32/console.o	\
+				console.c
+
+if	[ "$TOUCHPOINT" ]
+then
+	APPLY=A
+fi
+
+gcc -m32 -D__X64 -DGCC -DRTA_SMP=$RTA_SMP -DMETRIC $THREADS	\
+				 $OSPAN -DRATIO=$RATIO		\
+				$JTABLE -Wl,-lc			\
+			-o $RTA_BIN_SMP32/rta1_$RTA_SMP$APPLY	\
+				../emulator.p32/argue.o		\
+				../emulator.p32/netbank.o	\
+				../emulator.p32/idisplay.o	\
+				../emulator.p32/tzone.o		\
+				../emulator.p32/console.o	\
+				../engine.p32/rta.o		\
+				../engine.p32/ii.o		\
+				../engine.p32/rw.o		\
+				../engine.p32/alu.o		\
+				../engine.p32/fpu.o		\
+				../engine.p32/sr.o		\
+				../engine.p32/rex.o		\
+				../engine.p32/sabr.o		\
+				../engine.p32/tsblank.o		\
+				tipt64.c
+#				../engine.p32/memory.o
+
+echo	binaries in $RTA_BIN_SMP32
+ls -l $RTA_BIN_SMP32

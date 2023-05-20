@@ -1,0 +1,224 @@
+fs24			$tree
+fs24_aim		. set caller state pointing to the first extent descriptor
+			. retrieve also an absolute word pointer to the start of first
+			. extent data
+			. vector name fs24_open
+
+		$head_far	 params(fspp,			int	;
+					data_extent,		long)
+
+			lx	fspp
+			dl	data_extent
+			ds	fspax:extent, x
+
+			and	(0400000++63)
+			sa	fspax:device, x
+
+			la	data_extent
+			ii	XBASE$32
+
+			dl	fsys:e:granule, b
+
+			dsl	6
+
+			ds	fspax:absolute_pointer, x
+
+			$ret	0
+
+
+fs24_words		$head_far	 params(fsp,			int	;
+						buffer,			int	;
+						words_requested,	int)	;
+										;
+					scalars(absolute_pointer,	long)
+
+			. vector name fs24_read
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fs24_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsp
+			dl	fspax:absolute_pointer
+			ds	absolute_pointer
+			dl	fspax:extent
+			z	8			. words delivered count
+
+			$if	0	. FS_CORE
+			sabr	B_FS1
+			$else
+			ii	XBASE$32
+			$endif
+							. calculate pointer 
+			la	fsys:e:granules, b	. beyond this extent
+			ly	b
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6			. word pointer extent + 1
+							. = relative limit pointer
+			dan	absolute_pointer 	. remaining words in extent
+fs24_repoint		jna	fs24_anomaly1
+			jdz	fs24_next_extent?	. you've read this extent
+			la	words_requested
+			ana	b			. subtract it from outstanding
+			jc	fs24_transferinb	. transfer remaining words in extent 
+			lb	words_requested		. transfer remaining words in request
+
+fs24_transferinb	la	words_requested		. subtract transfer from outstanding
+			ana	b
+			sa	words_requested
+
+			sb	7
+			la, xi	0
+			
+			da	absolute_pointer
+			ds	fspax:absolute_pointer
+
+			dl	absolute_pointer
+
+			$if	0	. FS_CORE
+							. turn device-relative pointer to
+			dsl	12			. long address then to based address
+			orB	B_FS1,,xi
+			rbr	12
+			aa	fspax:bank
+			sabr	B_FS1
+			$else
+
+			dsl	6
+			orB	32,,xi
+			rbr	6
+			sal	6
+			aa	fspax:bank
+			ii	XBASE$32
+			$endif
+
+			ly	b
+			la	7
+
+			lb	8
+			ab	a
+			sb	8
+
+			lx	buffer
+			lcal	fs_xfer
+			sx	buffer
+
+fs24_next_extent?	tz	words_requested
+			j	fs24_next_extent!
+			j	fs24_exit
+
+
+fs24_next_extent!	lx	fsp
+			dl	fspax:extent
+
+			$if	0	. FS_CORE
+			sabr	B_FS1
+			$else
+			ii	XBASE$32
+			$endif
+			
+			ly	b
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fs24_exit
+
+			dsl	6		. extent offset to word offset
+			da	6
+
+			$if	0	. FS_CORE
+			dsl	12
+			orB, xi	B_FS1
+			rbr	12
+			$else
+			dsl	6
+			orB	32,,xi
+			rbr	6
+			sal	6
+			$endif
+
+			aa	fspax:bank
+			ds	fspax:extent
+
+			$if	0	. FS_CORE
+			sabr	B_FS1		. now get the new data word pointer
+			$else
+			ii	XBASE$32
+			$endif
+
+			ly	b
+			dl	fsys:e:granule, b . in the micro file_system
+			dsl	6
+			ds	absolute_pointer
+			la	fsys:e:granules, y . granules in the extent
+			dsr	24
+			dsl	6		. and the remaining words in the
+						. new extent = all of them
+			j	fs24_repoint
+
+fs24_anomaly1		la, xi	-1
+			j	fs24_exit1
+fs24_exit		la	8		. result = data words transferred
+fs24_exit1		$ret	0
+
+
+.	vector name fs24_snoop
+.	read words from file current position
+.	without updating position in the open file block
+
+fs24_fsnoop		$head_far	 params(fs_pacp,	int		;
+						fs_tractp,	int		;
+						fs_tractl,	int	)	;
+										;
+					scalars(fs_pacq,	6, *fs_pacp	)
+
+
+	c	(fs24_read)		fs_pacq,,i	fs_tractp	fs_tractl
+
+			$if	0			
+			lb	fs_pacp
+			lb	fspaxq:o:column, b
+			jzb	fs24_fsnoopz
+						. shift the sample words if they are off-column
+			jza	fs24_fsnoopz
+			jna	fs24_fsnoopz
+
+			sa	fs_tractl
+	
+			ly	fs_tractp
+			ay	a
+			lr	y
+
+			sbl	3		. get shift count from octet offset
+			ly	b
+
+			lx	fs_tractp
+
+			dl	0, x
+
+fs24_sloopx		jxge	fs24_fsnoopx
+			dsl	0, y
+			sa	0, x
+			drr	24, y
+			lb	2, x
+			ax	1,,xi
+			j	fs24_sloopx
+
+fs24_fsnoopx		la	fs_tractl
+fs24_fsnoopz
+			$endif
+
+			$ret
+
+			$root

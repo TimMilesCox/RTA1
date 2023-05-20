@@ -1,0 +1,78 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def.sys/io.def
+	$include	stream/stream.def
+	$include	language/catalog.def
+	$include	language/stack.def
+	$include	array.app/array.def
+	$include	lib/ascii.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+__BASE	$equ	__SEARCHP
+
+$(3:03000/$3)
+
+what	0
+banks	1
+pointer	0
+
+data	$res	32//3
+
+$(0::/$0)
+
+	catalog		start
+
+start	$base_d		$zenith(3)-03000	1024
+
+	c		(seg$load)	0,,xi	(search_ldata:L),,long
+
+	inA	128	. memory pages - 1 ++ SYSMEM_FLAG
+	dsr	22
+	sbr	2	. banks - 1
+	lb	1, b, i
+	sb	banks
+
+	fgets	data,,xi	12,,xi	stdin
+	sscanf	data,,xi	$3("%x %x":0),,xi what,,xi	banks,,xi
+
+	SIMD_CONTROL	(-1, 0, 4096-1, 1q)
+
+	inA	application$L	. ram$threshold
+
+again	sabr	31
+	lx	(31*/18s)
+
+more	la	what
+	lk	-1,,xi
+
+	rex	(mta	0, x)
+	j	next_bank
+
+	sx	pointer
+	inA	31
+	printf	$3("%x:%x":LF:0),,xi	a	x
+
+	dec	RDATAC			. force decrement
+	tp	RDATAC			. examined all this bank?
+	j	next_bank		. yes
+					. no
+	lx	pointer
+	lx	1, x, i			. force increment
+
+	j	more
+
+next_bank
+	inA	31
+	la	1, a, i
+
+	dec	banks
+	tz	banks
+	j	again
+
+	fret	0
+	$do	$<256,$(0:256)
+

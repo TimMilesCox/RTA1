@@ -1,0 +1,198 @@
+$(0)
+edit_fo* $tree
+
+	$head_far		 params(limit,		int		;
+					argop,		int	)	;
+									;
+				scalars(input_words,	int		;
+					column,		int		;
+					specificationp,	int		)
+
+	lx	argop
+	lx	0, x
+	sx	specificationp	. format
+
+read_format
+	lx	specificationp
+	lk	+(1*/$byte)-1,,xi
+
+read_format_byte
+	
+	ly	column
+	inc	column
+	call	(read_octet_column)
+	jza	eoform
+
+	mta	('%')
+	j	write_advance
+				. a specifier
+	ly	column
+	inc	column
+	call	(read_octet_column)
+	jza	eoform
+
+	z	input_words	. size of object is default by type
+	lcal	size?		. not default?
+	j	arg?		. default size for type
+
+	sa	input_words	. save the input object size flag
+	ly	column		. read again to get the type
+	inc	column
+	call	(read_octet_column)
+	jza	eoform
+
+arg?	inc	argop		. next pointer in argument list
+	ly	argop
+	lr	limit
+	jyge	write_advance	. if there is no corresponding argument
+				. print the specification
+				. they might then notice what they're doing
+
+				. test for type
+	mta	('f')
+	j	dinteger?
+
+	la	input_words
+	jza	float96
+	
+float192?
+	mta	('L')
+	j	float96?
+
+	ql	4, y
+	qs	$residue
+	ql	0, y
+	ay	7,,xi		. + 1 = 8 parameter words counted
+	sy	argop
+	call	(fedit192a)
+	j	read_format
+
+float96?
+	mtane	('q')		. permitted because that is really its size
+	j	float96
+	mta	('l')		. permitted because most platforms do
+	j	write_advance	. dont guess, display the format tags
+				. %lf means promoted to 96 bits in the stack
+float96	ql	0, y		. this occupies 4 internal stack words
+	ay	3,,xi		. and 1 word has been counted
+	sy	argop
+	call	(fedita)
+	j	read_format
+	
+dinteger?
+	mta	('d')
+	j	xinteger?
+
+	la	input_words
+	jnza	di48?
+
+	la	0, y
+	call	(iedita)
+	j	read_format
+
+di48?	mta	('l')
+	j	di72?
+
+	dl	0, y			. read 2 data words
+	inc	argop			. arguments pointer + 1 + 1
+	call	(iedit48a)
+	j	read_format
+
+di72?	mta	('j')
+	j	write_advance		. don't attempt to guess
+
+	dl	1, y			. read 3 data words
+	ds	6
+	la	0, y
+	dsa	24
+	ay	2,,xi			. arguments pointer + 2 + 1
+	sy	argop
+	call	(iedit72a)
+	j	read_format	
+
+xinteger?
+	mta	('x')
+	j	string?
+
+	la	input_words
+	lr	y
+	jza	xi24
+
+	mta	('l')
+	j	xi72?
+	lr	2-1, y, i
+	j	xi24
+
+xi72?	mta	('j')
+	j	xi96?
+	lr	3-1, y, i
+	j	xi24
+
+xi96?	mta	('q')
+	j	xi192?
+	lr	4-1, y, i
+	j	xi24
+
+xi192?	mta	('L')
+	j	write_advance		. if length tags are ever > [ %l %j %q %L ]
+
+	lr	8-1, y, i
+
+xi24	sr	argop			. yemmira?
+	la	0, y
+	call	(display_quartets)
+
+	wsr	24
+	la	b
+	wsr	24
+
+	push	6,,xi
+	popA	BYTES
+
+	jyge	read_format
+	ay	1,,xi
+	j	xi24
+	
+string?	mta	('s')
+	j	write_advance		. just show if the request is outside repertoire
+	ly	0, y
+	call	(textoa)
+	j	read_format
+
+write_advance
+	sal	$word-$byte
+	sa	6
+	wsr	$byte
+	tz	6
+	inc	BYTES
+	tz	6
+	j	read_format_byte
+
+eoform	wsr	$word-$byte
+
+	pop	x			. specificationp
+	pop	x			. column
+	pop	x			. input_words
+.	qpop	x			. caller registers xyab
+	la	BYTES
+	fret	0
+
+size?	mta	('l')
+	j	triple?
+	lret	1
+
+triple?	mta	('j')
+	j	quad?
+	lret	1
+
+quad?	mta	('q')
+	j	octo?
+	lret	1
+
+octo?	mta	('L')
+	lret	0
+
+	lret	1
+
+
+	$root

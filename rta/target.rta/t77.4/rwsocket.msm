@@ -1,0 +1,994 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+. SOCKET_CALL_FLAGS $equ 27		. in pointers.def
+RECORD_MARK	  $equ d$save1
+RECORD_MARK_FLAG  $equ d$save
+NON_BLOCKING	  $equ SOCKET_CALL_FLAGS
+
+REPACKED	$equ	1
+
+	$if	REPACKED
+
+resolve_socket
+        ii      READ_SOCKET$
+	jza	socket_protocol_wrong
+        jna     socket_unresolved
+        lk      (255*/16:s)
+        mta     (IPPROTO_UDP*/16:s)
+        j       socket_tcp?
+        and, xi 511
+        sal     3
+        lx      (BSOCKET*/12)
+        ax      a
+        la      b
+        sabr    BSOCKET
+	la	(IPPROTO_UDP*/16)
+	lret	1
+
+socket_tcp?
+        mta     (TCP_TCB*/16)
+        j       socket_protocol_wrong	. don't confirm the handle as a known protocol
+        and, xi 0FF8
+        lx      (BSOCKET*/12)
+        ax      a
+        la      b
+        sabr    BSOCKET
+	la	(TCP_TCB*/16)
+socket_protocol_wrong
+	lret	1
+
+socket_unresolved
+	lret	0
+
+
+.	you don't need to call here if you're a thread of ip
+.       use the socket or connection queue heads to sense traffic
+
+.	the vector name of this is (data_sense)
+
+socket_sense	$head_far	 params(serx,	int	)
+	la	serx
+	lcal	resolve_socket
+	j	sense_socket_x
+	mta	(IPPROTO_UDP*/16)
+	j	socket_sense_tcp?
+
+	la	s:udp:socket_inq:head, x
+	jza	sense_socket_x
+	
+	la	descriptor:bytes, a
+	j	sense_socket_x
+
+socket_sense_tcp?
+	mta	(TCP_TCB*/16)
+	j	sense_socket_protocol_wrong
+
+	la	transmission:receiveq:head
+	jza	sense_socket_x
+	la	descriptor:bytes, a
+	j	sense_socket_x
+
+sense_socket_protocol_wrong
+	la	-22,,xi
+
+sense_socket_x
+	ii	FREE_SOCKB$
+	$ret
+	$endif
+
+
+.	dont't call here if you're a thread of ip
+.	you get locked off ip socket buffers on exit
+.	call (tcp_rx) instead on inspecting queue heads
+.	or sense and access UDP queue heads 
+
+.	the vector name of this is (recv)
+
+socket_receive	$head_far	 params(sorx,		int	;
+					rxbuf,		int	;
+					rxbytes,	int	;
+					rxflags,	int)	;
+								;
+				scalars(rstream_registers, float, RDATAC)
+
+	la	sorx
+	ii	ON_NETB$
+
+	$if	REPACKED
+	lcal	resolve_socket
+	j	receive_socket_x
+	mta	(IPPROTO_UDP*/16)
+	j	socket_receive_tcp?
+	$else
+	ii	READ_SOCKET$
+	jna	receive_socket_x
+	lk	(255*/16:s)
+	mta	(IPPROTO_UDP*/16)
+	j	socket_receive_tcp?
+	and, xi	511
+	sal	3
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	$endif
+
+	la	rxbuf
+	sa	p
+	off	b$stream16w
+	z	WDATAC
+
+	dl	rxbytes			. rxbytes:rxflags in param order
+	sb	SOCKET_CALL_FLAGS
+
+	lcal	udgram_read
+	j	receive_socket_x
+
+socket_receive_tcp?
+	mta	(TCP_TCB*/16)
+	j	receive_socket_protocol_wrong
+
+	$if	REPACKED=0
+	and, xi	0FF8
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	$endif
+
+	la	rxbuf
+	sa	p
+.	off	b$stream16w		. those are done in tcp_read
+.	z	WDATAC
+
+	dl	rxbytes			. rxbytes:rxflags in param order
+	andB	MSG_NONBLOCK,,xi	. for TCP receive,
+	sb	SOCKET_CALL_FLAGS	. NONBLOCK or no flags
+
+	lb	transmission:state
+	ab, xi	-TCP_ESTABLISHED
+	jzb	socket_rx_established
+
+	$if	1
+
+	ab	TCP_ESTABLISHED-TCP_LISTEN,,xi
+					. all states except deassigned
+					. can read queued input if it's there
+					. change to _LISTEN when repooling
+	jnzb	socket_rx_readable	. connection block is otherwise never_LISTEN
+
+	$else
+
+	ab	TCP_ESTABLISHED-TCP_SYNSENT,,xi
+	jzb	socket_rx_readable	. block or not is (tcp_rx)
+	ab	TCP_SYNSENT-TCP_SYNRECEIVED,,xi
+	jzb	socket_rx_readable	. block or not is (tcp_rx)
+	ab	TCP_SYNRECEIVED-TCP_CLOSED,,xi
+	jzb	socket_rx_stop_reading
+	ab	TCP_CLOSED-TCP_DELETETCB,,xi
+	jnzb	socket_rx_readable	. connection may be half-closed
+					. while inward data is still queued
+socket_rx_stop_reading			. otherwise return a hands-off status
+
+	$endif
+
+	la	-NO_CONNECTION,,xi
+	j	receive_socket_x
+
+socket_rx_readable
+socket_rx_established
+	call	(tcp_rx)
+					. return is unconditionally to here
+					. return if you got anything
+					. ie part of maximum or -status
+					. if you're blocking and got nothing
+					. you didn't get here either
+	j	receive_socket_x
+
+
+	$if	0
+socket_rx_waiting
+socket_rx_not_established
+	.	something like a remote close has happened
+	.	or you tried to receive before it was established
+
+.	blocking arrives here until something happens
+
+	la	SOCKET_CALL_FLAGS	. blocking
+	jza	receive_socket_x	. report no data
+
+	la, i	TCP_ESTABLISHED, b	. non_blocking
+	xor, xi	-1			. ^state
+
+	j	receive_socket_x
+	$endif
+
+receive_socket_protocol_wrong
+	la, xi	-22			. more minus than a negative state
+
+receive_socket_x
+.	USTREAM				. restore b$stream register defaults
+	ii	FREE_SOCKB$
+	ii	FREE_NETB$
+	qpop	RDATAC
+	fret	0
+
+
+.	dont't call here if you're a thread of ip
+.	you get locked off ip socket buffers on exit
+.	call (tcp_tx) instead
+
+.	vector name of this is (send)
+
+socket_send	$head_far	 params(sotx,		int		;
+					txbuf,		int		;
+					txbytes,	int		;
+					txflags,	int	)	;
+									;
+				scalars(wstream_registers, float, RDATAC)
+
+
+	la	sotx
+
+	ii	ON_NETB$
+
+	$if	1
+	lcal	resolve_socket
+	j	transmit_socket_x
+	mta	(IPPROTO_UDP*/16)
+	j	socket_transmit_tcp?
+
+	$else
+	ii	READ_SOCKET$
+	jna	transmit_socket_x
+	lk	(255*/16:s)
+	mta	(IPPROTO_UDP*/16:s)
+	j	socket_transmit_tcp?
+	and, xi	511
+	sal	3
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	$endif
+
+	la	txbuf
+	sa	q
+	dl	txbytes				. tbytes:txflags in param order
+	sb	SOCKET_CALL_FLAGS
+	push	x
+	call	(udp_txbuffer)
+	pop	y
+	jza	socket_udp_fail5
+	lx	a
+	ql	0, y				. addresses from connected socket
+	push	b
+	ly	descriptor:dgram, x
+	dsr	8
+	sbr	8
+	ds	dgram:ipsource, y
+	dl	6
+	dsr	8
+	sbr	8
+	ds	dgram:ipdest, y
+	ly	descriptor:uproto, x
+	pop	a
+	lb	7
+	dsl	8
+	sar	8
+	sbr	8
+	ds	uugram:sourcep, y
+	la	txbytes
+	sa	descriptor:bytes, x
+	ly	descriptor:apdata, x
+	lcal	udgram_write
+	la	SOCKET_CALL_FLAGS
+	and	(UDP_NO_CHECKSUM:s)
+	jza	socket_call_udp_txaw
+
+	call	(udgram_acw_send_nocheck)
+	j	transmit_socket_x
+
+socket_call_udp_txaw
+	call	(udp_acw_send)
+	j	transmit_socket_x
+
+socket_udp_fail5
+	la, xi	-5
+	j	transmit_socket_x
+
+socket_transmit_tcp?
+	mta	(TCP_TCB*/16:s)
+	j	transmit_socket_protocol_wrong
+
+        $if	REPACKED=0
+
+	and, xi	0FF8
+	lx	(BSOCKET*/12)
+	ax	a
+	la	b
+	sabr	BSOCKET
+	$endif
+
+.	la	txbuf
+.	sa	q
+	dl	txbytes			. txbytes:txflags in param order
+	andB	 0FFF,,xi
+	orB, xi	05000++TCP_ACK
+	lk	b
+	lb	txbuf
+.	sb	SOCKET_CALL_FLAGS
+	call	(tcp_tx)
+	j	transmit_socket_x
+
+transmit_socket_protocol_wrong
+	lx	-22,,xi
+
+transmit_socket_x
+.	USTREAM				. restore b$stream register defaults
+	ii	FREE_DEVB$
+	ii	FREE_SOCKB$
+	ii	FREE_NETB$
+
+	qpop	RDATAC
+
+	fret	0
+
+.	SUBROUTINES AFTER HERE MUST NEVER REFERENCE INTERNAL STACK VARIABLES BEFORE HERE
+
+.	for write to socket buffer
+.	16 bits at a time are read from user data
+.	via the staging register
+
+.	PSR designator b$streamZR is on
+.	b$stream16r gets cleared here
+.	this is for 24-bit opaque data
+.	
+
+.	in TCP only
+.	the caller may write an odd number of bytes
+.	into the transmit segment buffer, so there
+.	may be a data word half written from the 
+.	previous send call
+
+.	the pointer is apdata[word] + bytes[byte]
+.	descriptor:bytes is updated
+
+.	the segment may be filled and queued, and
+.	a new segment started
+
+.	on calling, the connection is in x
+.	the caller may have a dynamic frame on FP
+.	we save fp and use it as descriptor:
+
+.	the user data is in q:RDATA:RDATAC
+.	the user byte count is in a
+
+
+.	tcp_add far call vector name (tcp_tx)
+.	x -> transmission control block
+.	a =  bytes
+.	q -> transmission buffer
+
+	$include	tcp_add
+
+tcp_shield_buffer
+.	dpush	MSS
+
+	lb	04500,,xi
+	lcal	tcp_startbuffer
+	sr	0
+.	pop	MSS
+.	pop	SOCKET_CALL_FLAGS
+	jza	tcp_nobuffer_shield
+	lret	1
+tcp_nobuffer_shield
+	lret	0
+
+sendbytepair* $proc
+	rsr	16
+	sa	?-1, y
+	ab	a
+	$end
+
+w2buffer
+	push	a
+	sar	5
+	lr	a
+	j	send32bytes?
+send32bytes!
+?	$do	16,	sendbytepair
+	la	b
+	dsr	16
+	sbr	8
+	ab	a
+	ay, xi	16
+send32bytes?
+	jdr	send32bytes!
+
+	la	0, sp
+	and, xi	31
+	sar	1
+	lr	a
+	j	send2bytes?
+send2bytes!
+?	$do	1,	sendbytepair
+	ay, xi	1
+send2bytes?
+	jdr	send2bytes!
+
+	pop	a
+	jao	send1byte
+	la	b
+	lret	0
+
+send1byte
+	rsr	8
+	sal	8
+	sa	0, y
+	aa	b
+	lret	0
+
+
+rbufferq* $proc
+	dl	?*2-2, y
+	dsl	8
+	wsr	16
+	la	b
+	wsr	16
+	$end
+
+rbuffer	push	a
+	sar	5
+	lr	a
+	j	rbuffer32?
+
+rbuffer32!
+?	$do	8,	rbufferq
+	ay, xi	16
+rbuffer32?
+	jdr	rbuffer32!
+
+	la	0, sp
+	and, xi	31
+	sar	1
+	lr	a
+	j	rbuffer2?
+
+rbuffer2!
+	la	0, y
+	sal	8
+	wsr	16
+	ay, xi	1
+rbuffer2?
+	jdr	rbuffer2!
+
+	pop	a
+	jao	rbuffer1
+	lret	0
+
+rbuffer1
+	la	0, y
+	sal	8
+	wsr	8
+	lret	0
+
+
+tcp_rbuffer
+	push	a			. push the total sought
+	lb	a			. initialise an outstanding final count
+tcp_rbuffer_next
+	la	transmission:receiveq:head
+	sa	fp
+	jza	tcp_rbuffer_x
+	jzb	tcp_rbuffer_x
+
+.	push	b			. # bytes sought again
+
+	la	descriptor:bytes	. read byte cound this buffer
+	lr	descriptor:readpoint	. and delivered count / pointer
+
+	ana	r			. difference is bytes not yet delivered
+	jza	tcp_rbuffer_free	. to the caller
+
+	push	b			. bytes outstanding short term on the stack top
+	anb	a			. bytes outstanding minus bytes available
+
+	jc	tcp_readtransfer	. transfer is bytes available
+					. bytes oustanding < bytes available
+
+	la	0, sp			. transfer is outstanding count
+
+
+tcp_readtransfer
+	sa	0, sp
+	popA	descriptor:readpoint
+					. so far it reads sp -> #requested | return address
+	push	b			. sp -> #requested - transfer | #requested | return address
+
+	jc	tcp_read_disaster	. if updating the octet read pointer carried
+					. something is really wrong
+	src	r			. octet read counter -> byte pair offset, carry = odd byte 
+	ly	descriptor:apdata
+	ay	r			. this instruction does not sense or change carry
+
+	jnc	tcp_read_words
+
+	push	a			. carry = 1 = last read left a byte in leading word
+	la	0, y			. read that word
+	ay, xi	1			. and point beyond it
+	sal	16			. write to receive buffer
+	wsr	8
+	dec	0, sp			. decrement final count on the stack
+	pop	a
+
+tcp_read_words
+	lcal	rbuffer
+
+	pop	b			. sp -> #requested | return address
+	jnb	tcp_rbuffer_x		. outstanding minus available < 0 = leave
+.	jzb	tcp_rbuffer_x
+
+tcp_rbuffer_free			. buffer all delivered
+	push	b			. outstanding count
+	lcal	tcp_read_rxq		. that's the delivered buffer: take it from the queue
+
+	lcal	net_free		. pool it
+
+	pop	b			. retrieve the outstanding count
+	j	tcp_rbuffer_next
+
+tcp_read_disaster
+	z	0, sp			. this should deliver -100
+	lb	100,,xi
+	j	tcp_rbuffer_complete
+
+tcp_rbuffer_x
+	jnb	tcp_rbuffer_complete	. maximum bytes read
+	jzb	tcp_rbuffer_complete
+
+	tz	NON_BLOCKING
+	j	tcp_rbuffer_complete
+
+	la	0, sp			. only block if no data is received already
+	ana	b
+	jnza	tcp_rbuffer_complete
+	
+	ii	YIELD$
+	la	transmission:state
+	aa	-TCP_LISTEN,,xi
+	jnza	tcp_rbuffer_next	. file closed
+	lb	NO_CONNECTION,,xi	. this gets turned into -NO_CONNECTION
+					. fall athru
+tcp_rbuffer_complete
+	la	0,,xi			. store any 1 or 2 bytes waiting in WDATA
+	wsr	16
+	pop	a			. original request count
+					. we need to check somewhere if the
+					. connnection has been lost
+	jnb	$+2
+	ana	b			. result is request minus oustanding count
+	lret	0			. giving bytes received
+
+
+.	tcp_read far call vector name is (tcp_rx)
+.	x -> transmission control block
+.	a =  bytes
+.	p -> receive buffer
+
+tcp_read
+	off	b$stream16w	. target store 3 octets / word
+	z	WDATAC		. starting on a word edge
+
+	push	fp
+	lcal	tcp_rbuffer
+	jza	tcp_rbuffer_z	. because you read nothing
+	tz	WDATAC
+	lcal	tcp_rbuffer_y	. write the staging register through
+tcp_rbuffer_z
+	pop	fp
+	fret	0		. end (tcp_rx)
+
+tcp_rbuffer_y
+udp_rbuffer_y
+	push	a
+	la	*p
+	lb	WDATA
+	sal	*WDATAC
+	drr	*WDATAC
+	sa	*p
+	pop	a
+	lret	0
+
+XDR_TCP_INLINE $set 0
+	$if	XDR_TCP_INLINE
+	$flag	untested and better off somewhere else
+
+.	there is no detailed guidance from IETF, SUN or anywhere else
+.	whether marked record fragments can split fields up
+
+.	Apple's NFS / TCP is written as if that was possible, so this
+.	is also written as if a new record mark could start in the
+.	middle of an opaque or number field
+
+.	these XDR calls will only work on a blocking connection
+.	so the socket owner may not be the IP stack itself for these
+
+
+
+tcp_rbuffer_marked
+	lb	RECORD_MARK
+	jzb	tcp_read_record_mark
+	anb	a
+	push,xi	0
+	jc	tcp_rbuffer_record
+	ana	RECORD_MARK
+	sa	0, sp
+	la	RECORD_MARK
+	lb, xi	0
+
+tcp_rbuffer_record
+	sb	RECORD_MARK
+	lcal	tcp_rbuffer
+	pop	a
+	jnza	tcp_read_record_mark
+	wsr	16
+	fret	0
+
+tcp_read_record_mark
+	tp	RECORD_MARK_FLAG
+	j	tcp_read_record_alignment_error
+	push	a
+	push	WDATA
+	push	WDATAC
+	push	p
+	push,xi	6
+	pop	p
+	z	WDATAC
+	la, xi	4
+	lcal	tcp_rbuffer
+	wsr	16
+	dl	6
+	dsa	16
+	ds	RECORD_MARK_FLAG
+	pop	p
+	pop	WDATAC
+	pop	WDATA
+	pop	a
+	j	tcp_rbuffer_marked
+
+tcp_read_record_alignment_error
+	la, xi	-99
+	fret	0
+
+
+
+tcp_read_opaque
+	push	fp
+	z	WDATAC
+			. ask for the number of bytes you actually want
+			. round up the descriptor:readpointer
+			. in the final buffer read
+			. push out the last delivered word to 24 bits
+
+	push	a	. how much you want
+
+	lcal	tcp_rbuffer_marked
+	jnzb	tcp_incomplete_opaque_read
+
+
+	z	WDATAC
+
+	la	0, sp	. # bytes requested
+	and, xi	3	. flag up not 4 multiple
+	jza	tcp_read_opaquex
+
+	tz	fp
+	j	tcp_round_opaque_read
+
+			. we tested the marked record
+			. for all present, so if no
+			. segment buffer is at the
+			. queue head, we are scanning
+			. the wrong structure
+
+tcp_incomplete_opaque_read
+	n	0, sp	. flag something is miscalculated
+	j	tcp_read_opaquex
+
+tcp_round_opaque_read
+	xor, xi	3
+	push, i	1, a
+	popA	descriptor:readpoint
+
+tcp_read_opaquex
+	pop	a
+	pop	fp
+	fret	0
+
+tcp_floating_xdr64_read
+	push	fp
+	push	p
+	push,xi	8
+	pop	p
+	z	WDATAC
+	la, xi	8
+	lcal	tcp_rbuffer_marked
+	jzb	tcp_double_convert
+	la, xi	-12
+	j	tcp_floating_xdr64_readx
+tcp_double_convert
+	lx, xi	8
+	call	(ieee754_64_2float)
+	ly	0, sp
+	qs	0, y
+	ay, xi	4
+	sy	0, sp
+	la, xi	12
+tcp_floating_xdr64_readx
+	pop	p
+	pop	fp
+	fret	0
+
+tcp_integer_xdr32_read
+	push	fp
+	push	p
+	push,xi	8
+	pop	p
+	z	WDATAC
+	la, xi	4
+	lcal	tcp_rbuffer_marked
+	pop	y
+	jzb	tcp_align_integer
+	la, xi	-6
+	j	tcp_integer_xdr32_readx
+tcp_align_integer
+	dl	8
+	dsa	16
+	ds	0, y
+	ay, xi	2
+	la, xi	6
+tcp_integer_xdr32_readx
+	sy	p
+	pop	fp
+	fret	0
+
+	$endif
+
+
+	$if	0	. these don't seem to be called
+tcp_add1byte
+	sal	16
+	wsr	8
+	la	0, y
+	aa, xi	1
+	anu, xi	24
+	sa	0, y
+	jnc	tcp_addxbyte
+
+	z	SOCKET_CALL_FLAGS
+
+tcp_sendlastbytes
+	lb, i, 	1, y
+	sb	p
+	sb	q
+	z	0, y
+	z	RDATAC
+	z	WDATAC
+	lcal	tcp_add
+	fet	0
+
+tcp_pushline
+	la	1, y
+	jza	tcp_addxbyte
+	push,xi	TCP_PSH
+	pop	SOCKET_CALL_FLAGS
+	wsr	16
+	j	tcp_sendlastbytes
+	
+tcp_addxbyte
+	fret	0
+	$endif
+
+
+	$if	0
+udp_read
+	lb	a
+udp_read1
+	la	s:udp:socket_inq:head
+	jza	udp_readx
+udp_read_next
+	sa	fp
+	push	b
+	la	descriptor:bytes
+	anb	a
+	jc	udp_readbuffer
+	la	0, sp
+udp_readbuffer
+	sb	0, sp
+	lr	descriptor:readpoint
+	lb	r
+	ab	a
+	sb	descriptor:readpoint
+	lb	r
+	sbr	1
+	ly	b
+	ay	descriptor:apdata	
+
+	lcal	rbuffer
+
+	pop	b
+	jnb	udp_readx
+	jzb	udp_readx
+
+	la	descriptor:dgram
+	la	dgram:flags_fragment, a
+	and, xi	IP_MORE
+	jza	udp_readx
+	lcal	udp_read_rxq	. the readq call returns q:head in A
+	push	b		. and next in B
+	push	x		. keep the socket as well
+	lcal	net_free
+	pop	x		. the socket
+	pop	a		. the new first in readq if any
+	jnza	udp_read_next
+udp_readx
+	lret	0
+
+	$endif
+
+.	that routine consumes the buffers in the user datagram
+.	unconditionally and uses the cursor :readpoint
+.	it is for XDR / RPC field extractions
+
+.	next is a similar routine for plain udgram_read
+.	the buffers are not dropped, in case it's flagged
+.	that this is a PEEK
+
+.	the :readpoint cursor is not maintained or consulted
+
+udgram_rbuffer
+	la	descriptor:bytes
+	lb	2, sp
+	anb	a	. subtract available from required
+	jc	udgram_rbloc
+	la	2, sp	. transfer block is total required
+udgram_rbloc
+	push	a
+	popA	2, sp	. increment rx count		
+	sb	2, sp	. push the new outstanding #
+	ly	descriptor:apdata
+	lcal	rbuffer
+
+	$if	RX_FRAGMENTS
+	jnb	udgram_rbuffer_x
+	jzb	udgram_rbuffer_x
+	lb	descriptor:dgram
+	lb	dgram:flags_fragment, b
+	andB,xi	IP_MORE
+	jzb	udgram_rbuffer_x
+	la	descriptor:next
+	jnza	udgram_rbuffer
+	$endif
+
+udgram_rbuffer_x
+	lret	0
+
+udp_auto_connect
+	ly	descriptor:dgram
+	dl	dgram:ipsource, y
+	sbl	8
+	dsl	8
+	ly	descriptor:uproto
+	lk	(00FFFF)
+	mlb	uugram:sourcep, y
+	ds	s:remote_address, x
+	lret
+
+
+udgram_read
+	push	fp
+	push	a		. max bytes
+	la	s:udp:socket_inq:head, x
+	jza	udgram_readx
+	sa	fp
+	
+	la	SOCKET_CALL_FLAGS
+	and	(UDP_AUTO_CONNECT:s)
+	jza	$+2
+	lcal	udp_auto_connect
+
+	push,xi	0		. received bytes
+	lcal	udgram_rbuffer
+	tz	WDATAC
+	lcal	udp_rbuffer_y
+.	tp	SOCKET_CALL_FLAGS
+	call	(release_udgram)
+	pop	a		. received
+udgram_readx
+	pop	b		. final-count
+	pop	fp
+	lret	0
+
+
+wpair_nocheck* $proc
+	rsr	16
+	sa	?-1, y
+	$end
+
+udgram_write
+	z	RDATAC
+	on	b$streamZR
+	off	b$stream16r
+w2buffer_nocheck
+	dsr	5
+	push	b
+	lr	a
+	j	w2nocheck32?
+
+w2nocheck32!
+?	$do	16,	wpair_nocheck
+	ay, xi	16
+w2nocheck32?
+	jdr	w2nocheck32!
+
+	pop	a
+	dsr	20
+	lr	a
+	push	b
+	j	w2nocheckpair?
+
+w2nocheckpair!
+	rsr	16
+	sa	0, y
+	ay, xi	1
+w2nocheckpair?
+	jdr	 w2nocheckpair!
+
+	pop	a	
+	jpa	w2nocheckbyte
+
+	rsr	8
+	sal	8
+	sa	0, y
+w2nocheckbyte
+
+	lret	0
+

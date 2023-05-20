@@ -1,0 +1,119 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+TCB	$equ	4096		. thread control block
+
+TDESCRIPTOR $equ TCB+1		. address in kernel RAM, 7-word descriptor in switch list
+WALKUP	$equ	TCB+2		. owner TCB, zero = primary thread
+ULIMIT	$equ	TCB+3		. switch countdown (timeslice), zero = never
+BANK_CHAIN $equ	TCB+4		. memory estate, descriptor linked list
+B1_P	$equ	TCB+5		. stack pointer to list of B1 frames
+
+NEXT_THREAD $equ TCB+7		. next thread TCB in chain
+ERROR_RESTART $equ TCB+8	. thread needed to keep the system running
+				. has bit 23 asserted
+
+FP_XPO	$equ	TCB+58		. indication buffer floating overflow / underflow
+FP_FRAP	$equ	TCB+59		. save location floating guard pattern
+
+UPACKET	$equ	TCB+60		. 4 word interrupt/return frame
+ABT	$equ	TCB+64		. current address windows store thru pointers
+ABXT	$equ	TCB+128
+RSAVE	$equ	TCB+192		. 128 application registers save-area
+
+TAG	$equ	TCB+320		. name tag buffer
+
+XINTT	$equ	TCB+384
+
+RESTART_TRACE_TCB	$equ	TCB+1024
+RESTART_TRACE_ISTAC_FRAME $equ	RESTART_TRACE_TCB+60
+RESTART_TRACE_ABT	$equ	RESTART_TRACE_TCB+64
+RESTART_TRACE_AREG	$equ	RESTART_TRACE_TCB+128
+RESTART_TRACE_IREG	$equ	RESTART_TRACE_TCB+256
+RESTART_TRACE_THREAD_NAME $equ	RESTART_TRACE_IREG+128
+
+				. that was most of TCB. All threads have one
+				. initial threads chain memory estate
+				. to the front of TCB + BANK_CHAIN ->
+
+				. for handles look in ../def/vector.def
+				. handles are common to all threads in process
+				. so is vector list in window 002000..002FFF 
+
+				. next is descriptor in kernel RAM
+				. address in TCB + TDESCRIPTOR ->
+				. used for switching
+
+TDESCRIPTOR_WORDS $equ	8
+
+.	eventflag values in ../def.sys/events.def
+
+.	TIME_WAIT	$equ	0800000
+.	EXIT		$equ	0200000
+.	TRAP		$equ	0100000
+.	XINT		$equ	0000001
+
+.	affinity is the 24-bit mask of which cores may run this thread
+.	 low order bit indicates core 0
+.	high order bit indicates core 23
+
+.	_________________________________________________________________________________________________
+.	|   *next   |  priority | eventflags|   *TCB    | target wait time msec | affinity  |   spare   | 
+.	|___________|___________|___________|___________|_______________________|___________|___________|
+.	|0          |1          |2          |3          |4          |5          |6          |7		|
+.	|___________|___________|___________|___________|___________|___________|___________|___________|
+.
+.	tdescriptor word 7 is reserved for future use making eight words in total
+.	because tabled descriptors of seven words are difficult to read in the debug screen
+
+.	saved bit channel states in TCB
+
+ACTIVE_ICHANNEL	$equ	TCB+2044
+ACTIVE_OCHANNEL	$equ	ACTIVE_ICHANNEL+1
+ICHANNELX	$equ	ACTIVE_ICHANNEL+2
+OCHANNELX	$equ	ACTIVE_ICHANNEL+3
+
+ICHANNEL_LIMIT_LOW $equ	TCB+2048
+ICHANNEL_LIMIT	$equ	TCB+2560
+ICHANNEL_FIRST	$equ	ICHANNEL_LIMIT-4
+OCHANNEL_LIMIT_LOW $equ	ICHANNEL_LIMIT
+OCHANNEL_LIMIT	$equ	TCB+3072
+OCHANNEL_FIRST	$equ	OCHANNEL_LIMIT-4
+
+APP_CALL_STRING	$equ	OCHANNEL_LIMIT

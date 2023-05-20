@@ -1,0 +1,10 @@
+#include "csample1.h"
+	atest	TEST21
+	atest	TEST22
+	atest	TEST23
+	atest	TEST24
+	atest	TEST25
+	atest	TEST26
+	atest	TEST27
+	atest	TEST28
+	atest	TEST29

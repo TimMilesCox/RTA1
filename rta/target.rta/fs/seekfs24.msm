@@ -1,0 +1,166 @@
+fs24position		$tree
+
+			. vector name fs24_advance
+			. part of classical seek
+			. moves forward like a read
+			. without sampling or transfering data
+
+.			________________________|________________________
+.	word	0	|ftpype	|	|   5	| file start bank:device|
+.			|_______|_______|_______|_______________________|
+.		2	|     pointer to current extent descriptor      |
+.			|_______________________________________________|
+.		4	|     file state device relative word position  |
+.			|_______________________________________________|
+
+
+
+			. the other part of a seek is rewind to opening position
+			. applications can also do that
+			. by repeating the open component fs24_da
+			. which places the device relative address
+			. of the first extent in the file open drescriptor
+			
+
+fs24_forward		$head_far	 params(fsp,			int	;
+						distance,		long)	;
+										;
+					scalars(absolute_pointer,	long	;
+						extent_remainder,	long	)
+
+			. vector name fs24_advance
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fs24_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsp
+			dl	fspax:absolute_pointer
+			ds	absolute_pointer
+			dl	fspax:extent
+
+			$if	0	. FS_CORE
+			sabr	B_FS1
+			$else
+			ii	XBASE$32
+			$endif				. b -> extent cell granules24:granule48
+							. calculate pointer 
+			la	fsys:e:granules, b	. beyond this extent
+			ly	b
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6			. device-relative word pointer to extent end
+							. = limit pointer
+			dan	absolute_pointer 	. remaining words in extent
+.			jdz	fs24_next_extent!	. if extent @end before you ever even ask
+							. draw up the next extent and report it
+fs24_repoint		jna	fs24_anomaly1
+			jdz	fs24_next_extent?	. you've spanned this extent
+			dan	distance
+			ds	extent_remainder
+			jdz	fs24_zero_distance	. extent precisely exhausted
+			jc	fs24_arrived		. extent_remainder >= distance
+			dl	extent_remainder	. absolute_pointer += extent_remainder
+
+			da	absolute_pointer
+			ds	absolute_pointer
+			ds	fspax:absolute_pointer
+
+			dl	distance
+			dan	extent_remainder
+fs24_zero_distance	ds	distance
+
+			j	fs24_next_extent!
+
+
+fs24_next_extent?	.	dl	distance
+.			jdz	fs24_arrived
+
+
+fs24_next_extent!	ly	fspax:extent+1		. you're still based
+							. because you didn't base data
+
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fs24_hard_eof
+
+			dsl	6			. extent offset to word offset
+			da	6
+
+			$if	0	. FS_CORE
+			dsl	12
+			orB, xi	B_FS1
+			rbr	12
+			$else
+			dsl	6
+			orB	32,,xi
+			rbr	6
+			sal	6
+			$endif
+
+			aa	fspax:bank
+			ds	fspax:extent		. next extent base now calculated
+							. next get its absolute pointer
+
+			$if	0	. FS_CORE
+			sabr	B_FS1			. now get the new data word pointer
+			$else
+			ii	XBASE$32
+			$endif
+
+			ly	b
+			dl	fsys:e:granule, b	. new absolute pointer
+			dsl	6			. is new granule * 64
+			ds	absolute_pointer
+			la	fsys:e:granules, y	. new extent granules * 64
+			dsr	24
+			dsl	6			. = remaining words in the
+							. new extent = all of them
+			j	fs24_repoint
+
+fs24_hard_eof		ly	fspax:extent+1
+			la	fsys:e:granules, y
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6
+			ds	fspax:absolute_pointer
+			j	fs24_exit
+
+fs24_anomaly1		la, xi	-1
+			j	fs24_exit1		. don't retrieve the nice answer
+fs24_arrived		dl	absolute_pointer
+			da	distance
+			ds	fspax:absolute_pointer
+fs24_exit		dl	extent_remainder	. result = zero or final count not traversed
+fs24_exit1		$ret
+
+
+.	vector name fs24_window
+.	extent position pointer returned in b
+.	previous 48-bit extent words remaining
+.	returned from fs24_advance
+
+view			$head_far	params(fspacp,	int)
+
+			lx	fspacp
+			dl	fspax:absolute_pointer
+			dsl	6
+			sal	6
+			aa	fspax:extent
+			orB	32,,xi
+			ii	XBASE$32
+			rbr	6
+			$ret
+
+		$root

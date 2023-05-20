@@ -1,0 +1,504 @@
+.      
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+r       $equ    0
+k       $equ    1
+x       $equ    2
+y       $equ    3
+a       $equ    4
+b       $equ    5
+p	$equ	12
+q	$equ	13
+fp	$equ	14
+sp      $equ    15
+
+mantissa2 $equ	6
+mantissa3 $equ	7
+"$residue" $equ	8
+
+d$save	$equ	16
+d$save1	$equ	17
+d$save2	$equ	18
+d$save3	$equ	19
+
+RDATAC	$equ	20
+RDATA	$equ	21
+WDATAC	$equ	22
+WDATA	$equ	23
+
+r_x	$equ	128+r
+k_x	$equ	128+k
+x_x	$equ	128+x
+y_x	$equ	128+y
+a_x	$equ	128+a
+b_x	$equ	128+b
+
+p_x	$equ	128+p
+q_x	$equ	128+q
+fp_x	$equ	128+fp
+sp_x	$equ	128+sp
+
+
+x$save	$equ	128+d$save
+x$save1	$equ	128+d$save1
+x$save2	$equ	128+d$save2
+fp$guard $equ	128+d$save3
+
+.	128+20		RT$CLOCK
+.	128+21		PRIORITY$
+.	128+22		DAYCLOCK$U
+.	128+23		DAYCLOCK$
+
+
+w0      $equ    0
+t1      $equ    1
+t2      $equ    2
+t3      $equ    3
+i       $equ    4
+xi      $equ    5
+
+h1      $equ    t2
+h2      $equ    t3
+
+i$      $form   5, 3, 1, 15
+i$x     $form   5, 3, 1, 3, 12
+i$i	$form	5, 3, 1, 2, 13 
+i$a	$form	5, 3, 16
+
+p       $proc
+sr*     $name   0
+sk*     $name   1
+sx*     $name   2
+sy*     $name   3
+sa*     $name   4
+sb*     $name   5
+z*      $name   6
+pop*	$name   7
+
+lr*     $name   8
+lk*     $name   9
+lx*     $name   10
+ly*     $name   11
+la*     $name   12
+lb*     $name   13
+tz*	$name   14
+tp*	$name	15
+
+ax*	$name	16
+ay*	$name	17
+or*     $name   18
+orB*    $name   19
+and*    $name   20
+andB*   $name   21
+xor*    $name   22
+xorB*	$name	23
+
+aa*     $name   24
+ab*     $name   25
+ana*    $name   26
+anb*    $name   27
+m*      $name   28
+mf*     $name   29
+d*      $name   30
+push*   $name   31
+
+	$do	$count_fields,	$icheckf,1	p()
+
+	$do	$o('M'),	$checkline,1	p()
+
+"$_jdesignator" $set p(0, 2)++p(1, 3)
+
+	$if	$_jdesignator=xi
+	 $do	p(1, 2)^=0,	;
+	  $flag indexing not allowed with sign extended immediate
+
+	 $do	p(1, *1),	;
+	  $flag indirection not allowed with sign extended immediate
+
+	 $do	$net(p(1, 1))<-32768,	$flag sign extended immediate too low
+	 $do	$net(p(1, 1))>65535,	$flag sign extended immediate too high
+	 i$a	$n, xi, p(1, 1)
+        $elseif p(1, 2)
+	$do	p(1, *1),	*indirection,index not possible
+        i$x     p(0, 0), $_jdesignator, 1, $index(p(1, 2)), $address12(p(1, 1))
+        $elseif	p(1, *1)
+	 i$i	p(0, 0), $_jdesignator, 1, 0, $address13(p(1, 1))
+	 $else
+	 $do	$o('A')**($bank_index<02000)**($net(p(1, 1))<128)**($_jdesignator<4),	;
+	  $note	REFERENCE MAY BE AN APPLICATION REGISTER
+         i$      $n, $_jdesignator, 0, $address15(p(1, 1))
+        $endif
+        $end
+
+p       $proc
+inA*    $name   0
+inB*    $name   1
+outA*   $name   2
+outB*   $name   3
+
+reload*	$name	4	
+
+sabr*	$name	6
+
+rex*	$name	14
+jdz*	$name	15
+
+	$do	$count_fields,	$icheckf,1	p()
+
+        $if     p(1, 2)
+	$do	p(1, *1),	$flag	*indirection,index not possible
+        i$x     $n, i, 1, $index(p(1, 2)), $address12(p(1, 1))
+        $elseif	p(1, *1)
+	i$i	p(0, 0), i, 1, 0, $address13(p(1, 1))
+	$else
+        i$      p(0, 0), i, 0, $address15(p(1, 1))
+	$endif
+        $end
+
+
+see$1   $equ    1*/14
+see$2   $equ    1*/13
+see$3   $equ    1*/12
+see$4   $equ    1*/11
+see$5   $equ    1*/10
+see$6   $equ    1*/9
+see$7   $equ    1*/8
+
+half$w  $equ    1*/7
+
+b$streamZR  $equ 1*/6
+b$stream16r $equ 1*/5
+b$stream16w $equ 1*/4
+
+fp$r	$equ	1*/3
+carry$	$equ	1
+
+see$all	$equ	see$1++see$2++see$3++see$4++see$5++see$6++see$7
+
+f	$func
+see$allbut* $name
+?	$set	see$all
+!	$do	f(1),?	$set	?--f(1, !)
+	$return	?
+	$end
+
+p       $proc
+on*     $name   0
+off*    $name   1
+
+rsr*	$name	2
+wsr*	$name	3
+
+lret*   $name   6
+fret*   $name   7
+
+ii*	$name	14
+ir*	$name   15
+
+	$do	$count_fields,	$icheckf,1	p()
+
+        $if	p(1, 2)++p(1, *1)
+        $flag	no indexing or indirection with this instruction
+        $note	only sign extended immediate 16-bit operand possible
+        $endif
+
+	$do	$net(p(1, 1))<-32768,	$flag	xi operand value too low
+	$do	$net(p(1, 1))>32767,	$flag	xi operand too high
+
+        i$a     $n, xi, p(1, 1)
+        $end
+
+p       $proc
+
+sar*    $name   0
+sbr*    $name   1
+dsr*    $name   2
+jdr*	$name	3
+
+sal*	$name	4
+sbl*    $name   5
+dsl*    $name   6
+lcal*	$name	7
+
+rar*    $name   8
+rbr*    $name   9
+drr*    $name   10
+jnc*	$name	11
+
+ral*    $name   12
+rbl*    $name   13
+drl*    $name   14
+jc*	$name	15
+
+saa*    $name   16
+sba*    $name   17
+dsa*    $name   18
+jao*	$name	19
+
+jpa*    $name   20
+jpb*    $name   21
+
+j*	$name	22
+jpo*	$name	23
+
+jza*    $name   24
+jzb*    $name   25
+
+jnza*   $name   26
+jnzb*   $name   27
+
+jna*    $name   28
+jnb*    $name   29
+
+jxge*    $name   30
+jyge*    $name   31
+
+	$do	$count_fields,	$icheckf,1	p()
+
+        $if     p(1, 2)
+	$do	p(1, *1),	$flag	*indirection,index not possible
+        i$x     $n, 6, 1, $index(p(1, 2)), $address12(p(1, 1))
+        $elseif	p(1, *1)
+	i$i	p(0, 0), 6, 1, 0, $address13(p(1, 1))
+	$else
+        i$      $n, 6, 0, $address15(p(1, 1))
+	$endif
+        $end
+
+
+p       $proc
+
+ts*     $name   0
+n*      $name   1
+inc*	$name	2
+dec*	$name	3
+sim*	$name	4
+popA*	$name	5
+src*	$name	6
+slc*	$name	7
+
+qs*     $name   8
+ql*     $name   9
+dte*    $name   10
+. dpop*    $name   11	. moved to macro space because little used
+
+fa*     $name   12
+fan*    $name   13
+fm*     $name   14
+fd*     $name   15
+
+qpop*	$name	16
+qpush*	$name	17
+ex*	$name	18
+dpush*	$name	19
+
+lsc*   $name   20
+mta*    $name   21
+sc*     $name   22
+mlb*	$name   23
+
+ds*     $name   24
+dl*     $name   25
+da*     $name   26
+dan*    $name   27
+
+dlsc*    $name   28
+
+go*    $name   30
+call*    $name   31
+
+	$do	$count_fields,	$icheckf,1	p()
+
+        $if     p(1, 2)
+	$do	p(1, *1),	$flag	*indirection,index not possible
+        i$x     $n, 7, 1, $index(p(1, 2)), $address12(p(1, 1))
+        $elseif	p(1, *1)
+	i$i	p(0, 0), 7, 1, 0, $address13(p(1, 1))
+	$else
+	$do	$o('A')**($bank_index<02000)**($net(p(1, 1))<128),	;
+	 $note	REFERENCE MAY BE AN APPLICATION REGISTER
+        i$      $n, 7, 0, $address15(p(1, 1))
+	$endif
+        $end
+
+f	$func
+"$address13"* $name
+	$do	$net(f(1, 1))>8191,	;
+         $flag  indirection only on words 0 to 8191
+	$do	$o('A')**($bank_index<02000)**($net(f(1, 1))<128),	;
+	 $note	REFERENCE MAY BE APPLICATION REGISTER
+	$return	f(1, 1)
+	$end
+
+f	$func
+"$address15"* $name
+        $do	$net(f(1, 1))>32767,	;
+         $flag  direct addressing only 0 to 32767
+       	$return	f(1, 1)
+	$end
+        
+f	$func
+"$address12"* $name
+	$do	$net(f(1, 1))>4095,	;
+         $flag  base+displacement addressing only index + 0 to 4095
+       	$return	f(1, 1)
+	$end
+
+f	$func
+"$index"* $name
+
+	$do	f(1,*1),	 ;
+	 $note  *flag on index value has no effect
+	$do	(f(1,1)>15)++(f(1,1)<2)++((f(1,1)>5)**(f(1,1)<14)),	;
+	 $flag	only registers x,y,a,b,fp,sp (2,3,4,5,14,15) may be used for indexing
+	$return	f(1, 1)	
+	$end
+
+        $set_option "a"
+
+f	$func
+"$bank_address"* $name
+
+	$do	f(1,1)>262143,	$return	f(1, 1)
+
+	$do	$o('M'),	$checkline,2	f()
+
+"$_base"	$set	f(1,1)/*12
+"$_o"	$set	f(1,1)**4095
+
+	$return $_base*/18++$_o
+	$end
+	
+	$if	$t(dpop)=0
+dpop*	$proc
+	$do	dpop(1, *1),	$flag	dpop is 2 sequential pops. * would use 2 adjacent pointers
+	pop	dpop(1, 1), dpop(1, 2)
+	$if	dpop(1, 2)=sp
+	pop	dpop(1, 1), dpop(1, 2)
+	$else
+	pop	dpop(1, 1)+1, dpop(1, 2)
+	$endif
+	$end
+	$endif
+
+tnz*	$proc
+	tz	tnz(1, 1), tnz(1, 2), tnz(0, 2)++tnz(1, 3)
+	j	$+2
+	$end
+
+tn*	$proc
+	tp	tn(1, 1), tn(1, 2), tn(0, 2)++tn(1, 3)
+	j	$+2
+	$end
+
+mtane*	$proc
+	mta	mtane(1, 1), mtane(1, 2)
+	j	$+2
+	$end
+
+jae*	$proc
+	jao	$+2
+	j	jae(1, 1), jae(1, 2)
+	$end
+
+jpe*	$proc
+	jpo	$+2
+	j	jpe(1, 1), jpe(1, 2)
+	$end
+
+jxl*	$proc
+	jxge	$+2
+	j	jxl(1, 1), jxl(1, 2)
+	$end
+
+jyl*	$proc
+	jyge	$+2
+	j	jyl(1, 1), jyl(1, 2)
+	$end
+
+anu*	$proc
+	lb	a
+	anb	anu(1, 1), anu(1, 2), anu(1, 3)++anu(0, 2)
+	$end
+
+anuba*	$proc
+	la	b
+	ana	anuba(1, 1), anuba(1, 2), anuba(1, 3)++anuba(0, 2)
+	$end
+
+tanu*	$proc
+	$note	this tests a_x not a
+	lb	a_x
+	anb	tanu(1, 1), tanu(1, 2), tanu(1, 3)++tanu(0, 2)
+	$end
+
+tanuba*	$proc
+	$note	this tests b_x not b
+	la	b_x
+	ana	tanuba(1, 1), tanuba(1, 2), tanuba(1, 3)++tanuba(0, 2)
+	$end
+
+p	$proc
+"$checkline"*	$name
+
+"$$__"		$equ		253
+
+		$if	p(0, 2)=1
+"$_jdesignator"	$equ,$$__	111
+		$endif
+
+		$if	p(0, 2)=2
+"$_o"		$equ,$$__	222
+"$_base"	$equ,$$__	333
+		$endif
+
+?	$do	p(),??	$do	p(?),	;
+	$do	$t(p(?, ??))=$$__,	;
+	$flag	label not admitted as actual parameter
+
+	$end
+
+"$count_fields"	$set	0
+
+p	$proc
+"$icheckf"* $name
+	$do	p()>p(0,2),	$flag	many fields? ;
+					macro arguments may not have spaces around expression operators ;
+					although constants, equates and algorithm plans may have
+	$end

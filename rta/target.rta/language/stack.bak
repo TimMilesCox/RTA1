@@ -1,0 +1,309 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+p		$proc	*
+"$head_far"*	$name	3
+"$head_near"*	$name	2
+"$$list"	$set	p(0, 0)
+
+"$$pass"* $func	*
+	$return	1
+	$end
+
+int	$equ		1
+long	$equ		2
+float	$equ		4
+floating_packed $equ	4
+
+params*	$func
+param*	$func
+	$do	$stack_macro_remarks^=0,	;
+	$note		param
+"param(1, 1)"*** $equf	$$list+iframe, sp
+	$return		param(1, 2)
+	$end
+        $do     $stack_macro_remarks^=0,        ;
+	$note		walking params
+?	$do		params(),"$$list"*	$set	$$list+param(params(?))
+	$return		$$list
+	$end
+
+
+scalars* $func
+
+scalar*	$proc		$(0)
+floating_packed $equ	-4
+        $do     $stack_macro_remarks^=0,        ;
+	$note		scalar
+
+	  $if		scalar(1, 4)=sp
+          $do     $stack_macro_remarks^=0,        ;
+	  $note		sp is decrementing
+"$$extra" $set		frame
+	  $else
+"$$extra" $set		0
+
+	  $endif
+	$if		scalar(1, 2)=floating_packed
+frame*	  $set		frame-4
+	  $if		scalar(1)>2
+		fpx	scalar(1, 3)+$$extra, scalar(1, 4)
+	  $else
+		fpx	(-0.0:d)
+	  $endif
+	$else
+	  $if		scalar(1, 2)=int
+	    $if		scalar(1)>2
+		push	scalar(1, 3)+$$extra, scalar(1, 4), scalar(1, 5)
+	    $else
+		push,xi	0
+	    $endif
+	  $elseif		scalar(1, 2)=long
+	    $if		scalar(1)>2
+		dpush	scalar(1, 3)+$$extra, scalar(1, 4)
+	    $else
+		dpush	(0:d)
+	    $endif
+	  $elseif		scalar(1, 2)=float
+	    $if		scalar(1)>2
+		qpush	scalar(1, 3)+$$extra, scalar(1, 4)
+	   
+	    $else
+		fpx	(-0.0:d)
+	    $endif
+	  $elseif		(scalar(1, 2)>0)**(scalar(1, 2)<25)
+	    $do	scalar(1, 2)**3,	push, xi	0
+	    $do	scalar(1, 2)>3,		fpx		(0.0:d)
+	    $do	scalar(1, 2)/4-1,	qpush		0, sp
+	  $else
+	    $flag		internal stack item size of of range
+	    $return
+	  $endif
+frame*	$set		frame-scalar(1, 2)
+	$endif
+
+
+"scalar(1, 1)"***  $equf   frame, sp
+
+	$end
+
+        $do     $stack_macro_remarks^=0,        ;
+	$note		walking scalars
+
+frame	$set		0
+?	$do	scalars(),frame	$set	frame+scalars(?, 2)
+
+iframe* $set frame
+	$if		frame
+	$note		add $$frame to sp before return
+
+$(71)
+?	$do	scalars(),	scalar	scalars(?)
+	$endif
+	$return	frame
+	$end
+
+xframe*	$func
+
+p	$proc		$(70)
+load_string* $name
+        $do     $stack_macro_remarks^=0,        ;
+	$note		load string
+
+word1	$set		$
+
+	$if		($t(p(1, 2))=$name)++($t(p(1, 2))=$proc)
+"p(1, 1)"***		p(1, 2)
+	$else
+"p(1, 1)"***	$res	p(1, 2)
+	$endif
+
+
+words	$set		$(70)-word1
+
+$(0)
+	$if		p(1)>2
+	  $if		words=1
+		push	p(1, 3), p(1, 4), p(1, 5)
+		pop	p(1, 1),, p(1, 6)
+	  $elseif	words=2
+		dpush	p(1, 3), p(1, 4)
+		pop	p(1, 1)
+		pop	p(1, 1)+1
+	  $elseif	words=4
+		qpush	p(1, 3), p(1, 4)
+		qpop	p(1, 1)
+	  $else
+		dpush	x
+		push	r
+		lx, i	p(1, 1)
+
+		ly, i	p(1, 3), p(1, 4)
+
+		$if	words/4
+		lr, xi	words/4-1
+		lcal	segment_ql
+		$endif
+		$if	words///4
+		lr, xi	words///4-1
+		lcal	segment_sl
+		$endif
+		pop	r
+		pop	x
+		pop	y
+	  $endif
+	$endif
+	 
+	$end
+
+$(0)
+	push, xi	-lframe
+	popA		fp
+
+$(71)
+        $do     $stack_macro_remarks^=0,        ;
+	$note		walking dynamic load strings
+?	$do	xframe(),	load_string	xframe(?)
+	$note		add $$xframe to fp before return
+	$return		$(70)
+	$end
+
+	
+
+$(70::,fp)
+$(71)
+
+	$do	$t(iframe)=0,iframe	$set	0
+
+?	$do	p(),part(?)*	$set	p(?, 1)
+lframe		$set	$(70)
+$(0)
+"$$frame"*	$set	iframe
+"$$xframe"*	$set	$(70)
+	$end
+
+p	$proc
+c*	$name	1
+lc*	$name	0
+
+
+INT	$equ	100		. these keyword values
+LONG	$equ	101		. must not be the same as
+PACKED_FLOATING  $equ 102	. ,,i ,,xi ,,h1 ,,h2
+FLOATING $equ	103		. ,,t1 ,,t2 ,,t3
+
+
+p	$proc
+vpush*	$name
+
+int     $equ    INT
+long    $equ    LONG
+floating_packed $equ PACKED_FLOATING
+float   $equ    FLOATING
+
+
+	$if	p(1, 2)=sp
+"$$extra" $set	$$dispo
+	$else
+"$$extra" $set	0
+	$endif
+
+	$if	p(1, 3)=FLOATING
+	qpush	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+4
+	$elseif	p(1, 3)=PACKED_FLOATING
+	fpx	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+4
+	$elseif	p(1, 3)=LONG
+	dpush	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+2
+	$else
+	push	p(1, 1)+$$extra, p(1, 2), p(1, 3)
+"$$dispo"* $set	$$dispo+1
+	$endif
+
+	$end
+
+alist	$set	p()
+
+"$$dispo" $set	0
+
+.	la	sp
+?	$do	alist-1,	vpush	p(alist+1-?)
+
+	$do	alist>1,	;
+	push	$$dispo, sp, i
+
+	$do	p(0, 0)=c,	call	p(1)
+	$do	p(0, 0)=lc,	lcal	p(1)
+
+	$do	alist>1,	;
+	pop	sp
+	$end
+
+	$end
+
+"$vector"* $proc
+	$do	$bank_index**4095^=0,	$flag	bank misaligned
+	$do	$>63,			$flag	vector outside bank locations 0..63
+*	$equ	$bank_index/*6++$
+	j	$vector(1)
+	$end
+
+SEGMENT_QL* $proc
+
+"segment_ql"*
+	qpush	0, y
+	qpop	0, x
+	ax, xi	4
+	ay, xi	4
+	jdr	segment_ql
+	lret	0
+
+segment_sl*
+	push	0, y
+	pop	0, x
+	ax, xi	1
+	ay, xi	1
+	jdr	segment_sl
+	lret	0
+
+	$end
+
+"$stack_macro_remarks"	$set	0

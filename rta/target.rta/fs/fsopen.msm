@@ -1,0 +1,135 @@
+
+fspath_walk	$tree
+
+.	(fs_find)
+.	(fs_dsearch)
+.	(fs_xbase)
+
+	$head_far	 params(inputp,		int)			;
+									;
+			scalars(directory,	2			;
+				extract,	24			;
+				stream_registers, float, RDATAC		)
+
+	lb	inputp			. initialise the input stream
+	call	(rstream_starta)
+					. LAST_BYTE_READ = ' '
+
+	lc	component	extract,,i	'/',,xi
+
+					. skips space then reads up  to '/'
+					. r = length of anything before '/'
+
+	dsr	48			. initial status no hit
+	
+
+root	lcal	test_forward		. did a branch get read?
+	j	no_next			. no, a leaf
+
+	lc	component	extract,,i	'/',,xi
+
+	ly	extract,,i
+	dl	directory		. blank scalar initially zero
+	call	(fs_find)
+	jza	no_next
+	ds	directory
+
+next	lcal	test_forward		. a branch has just been read?
+	j	no_next			. no, a leaf
+
+	lc	component	extract,,i	'/',,xi
+
+					. length in words returned in r
+	ly	extract,,i
+	dl	directory
+	call	(fs_dsearch)		. and needed here
+	jza	no_next
+	ds	directory
+
+	j	next
+
+no_next	qpop	RDATAC
+	qpop	8			. return four words of leaf name
+					. now needs to be nonvolatile
+"$$frame" $set	$$frame-4-4
+	$ret
+
+.	push	24+2-4, sp, i		. if you change scalars()
+.	pop	sp			. don't forget to change this
+.	USTREAM				. defaults -> b$stream / SIMD registers
+.	fret	0
+
+test_forward
+	dpush	a
+	la	LAST_BYTE_READ
+	lb	' ',,xi
+	sb	LAST_BYTE_READ
+	lk	255,,xi
+	mtane	('/')
+	inc	2, sp			. that means inc by 1 the word @ [sp + 2]
+	dpop	a			. which is the near return address
+	lret	0
+	
+		$root
+
+fspath_openfile	$tree
+
+	$head_far	 params(inputp,		int	;
+				flags,		int)	;
+							;
+			scalars(media_pointer,	long	;
+				state_block,	int	)
+	
+	c	(fspath)	inputp
+	jza	no_file
+	ds	media_pointer
+
+	c	(claim_fob)	(FS$DEVICE$ARRAY,,FS$DEVICE_WORDS)
+
+	tnz	y
+	j	no_state_block
+	sy	state_block
+
+	la	flags
+	sa	fspaxq:o:flags, y
+
+	z	fspaxq:quantum_pointer, y	. initialise
+	z	fspaxq:quantum_pointer+1, y
+	dl	media_pointer
+	ds	fspaxq:rewind_extentp, y
+
+					. initialise the state block
+	c	(fs24_open)	state_block	media_pointer,,long
+	la	(FS$DEVICE$ARRAY*/16)
+	ii	HANDLE$
+	jna	file_not_ok
+	lx	state_block
+	ii	FILE$HANDLE		. sew the open file state to the handle
+	jna	file_not_ok
+	j	file_ok
+
+no_state_block
+	la	-NO_STORAGE
+	j	file_not_ok
+
+no_file	la	-NOT_THERE,,xi
+file_ok
+file_not_ok
+	$ret	0
+
+		$root
+
+
+component	$tree
+	$head_near	 params(targetp,	int	;
+				sentinel,	int	)
+
+	lr	sentinel		. r = SENTINEL
+	ly	targetp
+	call	(string_scana_sentinel)
+
+					. r returns as net word count
+					. of extracted lexical word
+	$ret
+		$root
+

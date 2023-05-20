@@ -1,0 +1,277 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+	$list		0
+	$include	../def/rta.def
+	$include	../def/ii.def
+	$include	../def.sys/io.def
+	$include	../def.sys/banks.def
+	$include	../def.sys/tcb.def
+	$include	../language/stack.def
+	$include	../timer/epoch.def
+	$list
+
+	$include	register.def
+	$include	binary.def
+	$include	compress.def
+
+	$if	1
+	$include	aquiform.def
+	$include	ascii.def
+	$include	alib.def
+	$else
+	$include	../def/map1.def
+	$endif
+
+	$include	qrecipro.def
+
+
+LIBRARY	$equ	LIBRARY_XDR
+
+.	this library is for a stream continuum
+.	so nothing is set up to initialise
+.	a field pointer of any kind
+.	except it is a counted stream and must
+.	do nothing if no bytes are available
+.	and stop when it runs out of bytes
+
+.	this generation runs with the defaults
+.	ASCII / UTF8, 8-bit byte
+
+.	the initialisation call READ_START
+.	programs the staging registers
+.	RDATAC+RDATA+Q to shift two bytes
+.	per word from network buffers,
+.	which store datalike this:
+.	
+.		_________________________________
+.		| 0000 0000 XXXX xxxx XXXX xxxx |
+.		|_______________________________|
+
+.	immediately on acquisition via register *q++
+.	if bstream16r is on, RDATAC is decremented
+.	from 24 to 16 and RDATA is shifted 8 bits
+.	left:
+
+.		_________________________________
+.		| XXXX xxxx XXXX xxxx 0000 0000 |
+.		|_______________________________|
+
+
+.	in contrast to 8 bit data in program data
+.	which uses all 24 bits in the data word:
+
+.		_________________________________
+.		| XXXX xxxx XXXX xxxx XXXX xxxx |
+.		|_______________________________|
+
+.	the staging registers deliver or output
+.	16 bits per word if PSR flags
+
+.		b$stream16r
+.		b$stream16w
+
+.	are on, otherwise 24 bits per word
+
+
+	$list	2
+
+.	binary and math library data character code transparent
+
+$(0:0:LIBRARY)
+
+u72tofloat*	$vector	u72_float
+fraction6_7*	$vector	fraction_6_7
+madd144*	$vector	madd_144
+floating_scale192* $vector apply_scale192
+floating_scale*	$vector	apply_scale
+fraction3*	$vector	fraction_3
+fraction6*	$vector	fraction_6
+scale_out192*	$vector	oscale192
+scale_out*	$vector	oscale
+align192*	$vector	align_192
+scale_integrate* $vector scale_integer_fraction
+n72comp2*	$vector	n72_comp2
+
+fp192_load*	$vector	fp192lib:load
+fp192_load_negative* $vector fp192lib:load_negative
+fp192_add*	$vector	fp192lib:add
+fp192_add_negative* $vector fp192lib:add_negative
+reciprocal192*	$vector	fp192lib:reciprocal_192
+fp192_mfa*	$vector	fp192lib:heavy
+fp192_multiply* $vector fp192lib:multiply
+fp192_divide* $vector fp192lib:divide
+
+i72_multiply*	$vector	i72:i_multiply
+i72_divide*	$vector	i72:i_divide
+
+dayclock_ydsm_gmt* $vector dayclock:ydsm_gmt
+dayclock_ydsm*	$vector	dayclock:ydsm
+		fret	0	. spare vector faw yew
+
+strlen* $vector		string8:strlena
+strlenx* $vector	string8:container
+strcpy* $vector		string8:strcpya
+strcat* $vector		string8:strcatena
+read_octet_column* $vector oper8:read_column
+
+float2i72*	$vector	float2i
+i48_2float*	$vector	i48:_2float
+m48_24*		$vector	i48:m24
+m48_48*		$vector	i48:m48
+d48_48*		$vector	i48:d48
+
+tripl2float*	$vector	i72_72:tripl2f
+im72_72*	$vector	i72_72:multiply
+id72_72*	$vector i72_72:divide
+
+__fpp*	$vector	compress:fpcompress
+__fpx*	$vector	compress:fpxpand
+
+memcat*	$vector	mstring8:memcatena
+
+        $if     LIBRARY=LIBRARY_XDR
+
+        $do     58-$,   fret    0
+xdr_inopaque24* $vector rx16to24
+xdr_outopaque24* $vector tx24to16
+
+ieee754_64_2float* $vector	ieee754_64_2f
+float2_ieee754_64* $vector	f2_ieee754_64
+
+xdr16_ieee754_64_2float* $vector xdr_ieee754_64:float
+xdr16_float2_ieee754_64* $vector xdr_float:ieee754_64
+
+	$include	xdr_bina
+        $else
+
+        $do     64-$,   fret    0
+
+        $endif
+
+	$include	binary	. binary number manipulation same for ANY data code
+	$include	float2i
+	$include	fp192lib
+	$include	i48
+	$include	i72	. 72-bit integer arithmetic
+	$include	i72_72	. 72-bit integer long divisor / multiplier support
+	$include	../timer/dayclock
+	$include	octetlib
+	$list		2
+	$include	compress
+
+	$do	$zenith>4096,	$flag	binary lib > 4096 words
+
+
+	. ASCII library with different stream initilaisaton for socket and application buffers
+	. once stream is initialised
+	. all the same field scan and edit functions work for socket and application data formats
+
+$(0:0:ASCII_LIB1)
+
+	. for socket buffers. counted
+
+rstream_start_net* $vector read_stream_start16
+wstream_start_net* $vector write_stream_start16
+
+rstream_starta* $vector read_stream_start24
+wstream_starta*	$vector	write_stream_start24
+rstream_scana*	$vector	scan_fi
+wstream_composea* $vector edit_fo	. wstream_compose_core24
+
+
+fscana*		$vector	fscan		. _core24 now generic
+fsymbola*	$vector	symbol		. _core24
+fscan192a*	$vector	fp192:fscan	. _core24
+iscan_skipa*	$vector	iscanf		. _core24
+iscana*		$vector	bi		. _core24
+iscan48a*	$vector	bdi		. _core24
+iscan72a*	$vector	bti		. _core24
+tokena*		$vector	token		. _core24
+
+fedita*		$vector	fedit		. _core24
+feditia*	$vector	fediti		. _core24
+fedit192a*	$vector fedit192:fedit	. _core24
+ieditua*	$vector	ieditu		. _core24	
+iedita*		$vector iedit		. _core24
+ieditas*	$vector iedits		. _core24
+iedit48ua*	$vector	iedit48u	. _core24
+iedit48a*	$vector iedit48		. _core24
+iedit48as*	$vector iedit48s	. _core24
+iedit72ua*	$vector	iedit72u	. _core24
+iedit72a*	$vector iedit72		. _core24
+iedit72as*	$vector iedit72s	. _core24
+
+textoa*		$vector	texto		. _core24
+
+scanhex*	$vector	hexa:scan24
+scanhex48	$vector	hexa:scan48
+scanhex72	$vector	hexa:scan72
+
+ixscan*		$vector	dec_hex:scan24	
+ixscan48*	$vector	dec_hex:scan48
+ixscan72*	$vector	dec_hex:scan72
+
+display_quartets* $vector quartets
+date_timef1*	$vector	timetext_f1
+date_timef2*	$vector	timetext_f2
+date_timef3*	$vector	timetext_f3
+
+string_scana_sentinel* $vector	qstring_scana_sentinel
+
+qscanquartets*	$vector	hex2f:x2f96
+oscanquartets*	$vector	hex2f:x2f192
+unget*		$vector repoussez
+
+forward_callstring*	$vector	argument:forward
+unpack_callstring*	$vector	argument:unpack
+retrieve_callstring*	$vector	argument:retrieve
+
+	$do	64-$,	fret	0
+
+	$list	3
+
+	$include	argument
+	$include	aqunique
+	$include		aquarel	. common parts for socket and for application buffers
+
+	$include		numeral	. edit constants for THIS data code / byte size
+	$include		table_a . execute / translate constants for number scan
+	$do	$zenith(0)>4096,	$flag	libascii > 4k

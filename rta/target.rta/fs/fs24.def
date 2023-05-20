@@ -1,0 +1,166 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+GRANULE$ $equ	64
+DIRECTORY$BLOCK $equ GRANULE$*16
+FS24$_BANK_HIGH_INDEX $equ 65535
+
+
+VOLUME$	$equ	'V'
+FILE$	$equ	'F'
+MOUNT$	$equ	'M'
+TREE$	$equ	'D'
+BOOT$FILE $equ	'B'
+EXTENT$	$equ	'X'
+LINK$	$equ	'L'
+GATE$	$equ	'G'*/$word-$byte*2
+PAGE$END $equ	'E'
+LIST$END $equ	'Z'
+BY$PASS	$equ	128
+PAGE$CONTROL $equ 'P'
+
+VOLUME_WORDS$	$equ	3
+
+DIRECTORY_NAME_OFFSET$	$equ	EXTENT1_WORDS$+1	. + rfw
+VOLUME_NAME_OFFSET$	$equ	VOLUME_WORDS$+1		. + rfw
+
+LINK_WORDS$	$equ	3
+LINK_NAME_OFFSET$	$equ	LINK_WORDS$+1
+
+MOUNT_WORDS$	$equ	3
+MOUNT_NAME_OFFSET$	$equ	MOUNT_WORDS$+1
+
+p	$proc
+"$filetree"* $name
+*	$tree
+e	$extent1
+name
+	$root
+	$end
+
+p	$proc
+"$volume_label"* $name
+*	$tree
+e	$extent1
+name
+	$root
+	$end
+
+
+DATAFILE_NAME_OFFSET$ $equ EXTENT2_WORDS$+1+2		. + rfw + quanta written
+
+p	$proc
+"$filetag"* $name
+*	$tree
+e	$extent2
+quanta	+	0:d
+name
+	$root
+	$end
+
+EXTENT1_WORDS$ $equ	3
+
+p	$proc			. this extent is for
+"$extent1"* $name		. directories and volumes
+*	$tree
+rfw	+	'X', 0, EXTENT1_WORDS$
+granules +	p(1, 1):s
+granule +	p(1, 2):d
+	$root
+	$end
+
+EXTENT2_WORDS$ $equ	6
+
+p	$proc			. this extent is for files
+"$extent2"* $name
+*	$tree
+rfw	+	'X', 0, EXTENT2_WORDS$
+granules +	p(1, 1):s
+granule	+	p(1, 2):d	. the granule of the data
+next	+	p(1, 3:1):d	. granule next descriptor
+next_offset +	p(1, 3:2)	. word offset next descriptor
+	$root	
+	$end
+
+CONTROL_WORDS$ $equ	4
+
+p	$proc
+"$page_control"* $name		. top of every directory block
+*	$tree			. 
+rfw	+	PAGE$CONTROL,,CONTROL_WORDS$
+write_point	3
+write_space	p(1, 1)-6s
+next_page_granule	0:d
+	$root
+	$end
+
+
+p	$proc			. re-usable space at the end of
+*	$tree			. a directory block
+"$bypass"* $name		. before PAGE$END
+rfw	+	BY$PASS*/16++p(1, 1)-1s
+	$root			. bit 23 on for 16 length bits
+	$end
+				. if you use some of this space
+				. repaint this further down
+				. with reduced length
+
+				. if this is present, the next
+				. word writeable in the directory
+				. block header points to it
+
+
+p	$proc			. when this record PAGE$END
+"$page_end"* $name		. is encountered at page foot
+*	$tree			. then PAGE$CONTROL at page head
+rfw	+	PAGE$END,0,0	. links to the next directory block
+	$root
+	$end
+
+
+p	$proc
+"$mount"* $name MOUNT$
+"$link"* $name	LINK$
+*	$tree
+rfw	+	p(0,0),,MOUNT_WORDS$
+attribute +	p(1, 1:2)
+pointer	+	p(1, 1:1):d
+name
+	$root
+	$end

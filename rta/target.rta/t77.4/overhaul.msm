@@ -1,0 +1,93 @@
+
+	$if	IPV4_OVERHAUL
+
+.	start IP payload checksum, call from TCP / UDP / ICMP
+.	add the 2-word blocks in the internal stack
+.	except for the IP header
+
+check_part1			. call for a large datagram
+	lb	-5,,xi		. with maximum byte quads in stack
+	j	check_part1_go	. interface buffer still contains the rest
+
+				. call for a short datagram <= IPV4_OVERHAUL bytes 
+check_part1s			. a contains # datagram bytes all in stack
+	lb	IPV4_OVERHAUL-4*5,,xi . maximum loaded - minimum IP header
+	anb	a
+	sba	2		. IPV4_OVERHAUL/4 - 5 - byte quads present
+
+check_part1_go
+	ab	HEADER_LONGWORDS . 5 or more already checked
+	push	y
+	ly	b
+	dl	6		. contains seed: addresses + protocol + length
+				. for ICMP contains 0
+
+	lx	TP_HEADER	. pointer to IP payload
+
+	j	check_updword(IPV4_OVERHAUL/4), y
+
+?	$do	IPV4_OVERHAUL/4-5,;
+check_updword(IPV4_OVERHAUL/4-?+1)	da	IPV4_OVERHAUL/2-10-?*2, x
+
+	ds	6
+	pop	y
+	lret	0
+
+	$endif
+
+check_complete
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	check_complete
+	xorB	(00FFFF)
+	lret	0
+
+t_ibuffer
+	lx	s:tcp:rxbu_p
+	la	s:tcp:tbase
+
+	$if	HVSOCKET
+	jnza	g_ibuffer
+		
+	lb	HL_FLAGS		. bound but has no storage = hvsocket
+	andB	TCP_SYN++TCP_ACK,,xi
+	xorB	TCP_SYN,,xi		. has to be an incoming connect
+	la	0,,xi			. nonzero = zero
+	jnzb	ibufferx		. it's otherwise about a fictional connection
+
+	call	(hvsocket_storage)
+	jza	ibufferx		. already based, x already loaded
+	la	r			. bytes requested
+	j	ibuffer
+	$endif
+
+g_ibuffer
+	sabr	BSOCKET			. switch moment from port to connection block
+	la	r
+
+ibuffer	push	y
+	push	a
+	aa	1,,xi
+	sar	1
+	lcal	buy1
+	pop	b
+	pop	y
+
+	jza	ibufferx
+
+	sa	fp
+	dl	I_F_IDX			. and UPROTOCOL_BYTES
+	lb	UPROTOCOL_BYTES
+	ds	descriptor:i_f		. i_f : bytes
+
+	la	descriptor:frame
+	lb	HEADER_LONGWORDS
+	sbl	1
+	ab	a
+	ds	descriptor:dgram	. dgram : uproto
+
+	la	fp
+ibufferx
+	lret	0
+

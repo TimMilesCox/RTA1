@@ -1,0 +1,91 @@
+
+base_read_pointer:
+	mov	rdi, rax		; keep EA for +words reads
+					; straddling storage blocks
+	ror	ecx, 16			; conserve designator / word counts
+
+	ror	eax, 18
+	test	al, 63
+	jnz	read_address18
+	rol	eax, 6
+	movzx	cx, al
+	shr	eax, 32-12
+					; advise caller address 6.12
+	jmp	resolve_read_tag	; this path is  most storage reads
+	
+read_address18:
+	movzx	cx, al
+	shr	eax, 32-18
+
+resolve_read_tag:
+
+	and	cl, 63
+	jz	read_window_free	; everyone may read B0
+	test	cl, 56
+	jnz	read_window_free
+	xor	cl, 8+7			; [ 1 2 3 4 5 6 7 ] -> 8 + [ 6 5 4 3 2 1 0]
+	bt	word ptr [rsi+PSR], cx	; in memory bytes ffff f00c 0xxx xxxx
+	jnc	read_application_window	; x86 bus read -> 0xxx xxxx ffff f00c
+	or	cl, 64
+
+read_application_window:
+	xor	cl, 8+7			; [ 1 2 3 4 5 6 7 ] <- 8 + [ 6 5 4 3 2 1 0]
+
+read_window_free:
+	mov	rdx,rax
+	movzx	rax, cl
+	mov	eax, dword ptr [rsi+rax*4+IO_PORT]
+	mov	rsi, rdx
+
+	ror	ecx, 16
+	ret
+
+base_write_pointer:
+
+	mov	rdi, rax		; keep EA for +words writes
+	ror	ecx, 16			; straddling storage blocks
+					; protect designators in ecx
+	ror	eax, 18			
+
+	test	al, 63
+	jnz	write_address18
+	rol	eax, 6
+	movzx	cx, al
+	shr	eax, 32-12
+	jmp	resolve_write_tag	; this path is
+					; most storge writes
+write_address18:
+	movzx	cx, al
+	shr	eax, 32-18
+	
+resolve_write_tag:
+
+	and	cl, 63
+	jz	near guard_ii_authority	; no-one may write B0
+	test	cl, 56
+	jnz	write_window_free
+	xor	cl, 8+7			; [ 1 2 3 4 5 6 7 ] -> 8 + [ 6 5 4 3 2 1 0]
+	bt	word ptr [rsi+PSR], cx		; in memory bytes ffff f00c 0xxx xxxx
+	jnc	write_application_window	; x86 bus read -> 0xxx xxxx ffff f00c
+	test	dword ptr [rsi+PSR], 00800000h 
+	jz	near guard_ii_authority
+	or	cl, 64
+
+write_application_window:
+	xor	cl, 8+7			; [ 1 2 3 4 5 6 7 ] <- 8 + [ 6 5 4 3 2 1 0]
+
+write_window_known:
+	cmp	cl, 2			; application dnw vector page
+	jnz	write_window_free
+	test	dword ptr [rsi+PSR], 00800000h			; ISR ?
+	jz	near guard_ii_authority		; the unbalanced push is harmless
+						; stack is reset on faults
+write_window_free:
+	mov	rdx, rax
+	movzx	rax, cl
+	mov	eax, dword ptr [rsi+rax*4+IO_PORT]
+	mov	rsi, rdx
+
+	ror	ecx, 16		; restore designator information
+	ret
+

@@ -1,0 +1,148 @@
+
+	extern	_ultra
+	extern	_ultra1
+	extern	_ultra2
+	extern	_ultra3
+	extern	_ultra4
+	extern	_ultra5
+	extern	_ultra6
+	extern	_ultra7
+	extern	_core
+
+_save_ebp	equ	0
+_save_return	equ	4
+_1st_param	equ	8
+
+_leloup:
+	push	rbp
+
+	%if	0
+	push	rsi
+	push	rdi
+	push	rax
+	push	rcx
+	push	rdx
+	%endif
+
+	push	rbx
+
+	mov	rsi, rdi			; structure smp ->
+
+	push	r15
+	push	r14
+	push	r13
+	push	r12
+
+	mov	r12, qword ptr [rsi+APC]
+	mov	rbp, qword ptr [rsi+REGISTER_SET]
+	mov	r13, qword ptr [rsi+APCZ]
+	mov	r14, qword ptr [_breakpoint]
+	mov	r15, qword ptr [_touchpoint]
+						; balance core state pointer
+	push	rsi				; on stack top
+	movq	mm7, rsi			; refresh source
+
+loup:	cmp	r12, r13			; [rsi+APCZ]
+	ja	off_limits
+
+	%if	__MOVBE
+	movbe	eax, dword ptr [r12]
+	%else
+	mov	eax, dword ptr [r12]
+	bswap	eax
+	%endif
+
+	add	r12, 4
+
+	call	_execute
+
+	mov	rsi, qword ptr [rsp] 		; core pointer needed all the way round
+
+	%if	TSLICE
+	test	dword ptr [rsi+PSR], 00870000h	; not while ISR or interrupt mask
+	jnz	louping
+	test	dword ptr [rsi+RT_CLOCK], 00FFFFFFh
+	jz	louping
+
+	dec	dword ptr [rsi+RT_CLOCK]
+	jnz	louping
+
+	mov	eax, II_YIELD
+
+	mov	ecx, LP_TIMESLICE
+	call	_ii
+
+	%endif
+
+	jmp	louping
+
+off_limits:
+	mov	eax, II_GUARD
+	call	_ii
+
+louping:
+	cmp	r12, r14			; [ _breakpoint ]
+	jnz	loup_count
+
+	or	byte ptr [_general_indication], LOCKSTEP
+	or	byte ptr [rsi+INDICATION], LOCKSTEP
+	or	byte ptr [_flag+'s'-'a'], 1
+	jmp	indicated
+
+loup_count:
+	dec	dword ptr [rsi+283*4]		; decrement from quantity RATIO
+	jns	loup_away
+	or	word ptr [rsi+INDICATION], TIME_UPDATE
+loup_away:
+
+	mov	ax, word ptr [rsi+INDICATION]
+	mov	cl, byte ptr [rsi+PSR+2]
+	and	cl, 7				; highest interrupt mask?
+	xor	cl, 7
+
+	jz	internal_indications?		; maskable interrupts are masked
+
+        test	ax, INDICATIONS|EXTERNAL_INDICATIONS	; 1 or both of internal++external
+	jz	loup					; indications? No?
+	test	ax, EXTERNAL_INDICATIONS	; external indications among the yes?
+
+	jz	indicated			; external indications there are not
+						; therefore internal indications there are
+;	push	rsi				; therefore raise their interrupts
+	call	_xi
+	mov	rsi, qword ptr [rsp]
+
+	and	byte ptr [rsi+INDICATION], 127
+	jmp	louping				; keep going intil pending flags are off
+
+internal_indications?:
+	test	ax, INDICATIONS			; just read from esi->INDICATION
+	jz	loup
+
+indicated:
+	and	byte ptr [rsi+INDICATION], LOCKSTEP^255
+
+	mov	qword ptr [rsi+REGISTER_SET], rbp
+	mov	qword ptr [rsi+APC], r12
+	mov	qword ptr [rsi+APCZ], r13
+
+	pop	rdi				; take core pointer off stack
+						; was passed in rdi, should not matter
+	pop	r12
+	pop	r13
+	pop	r14
+	pop	r15
+
+	pop	rbx				; caller values
+
+	%if	0
+	pop	rdx
+	pop	rcx
+	pop	rax
+	pop	rdi
+	pop	rsi
+	%endif
+
+	pop	rbp
+	ret
+

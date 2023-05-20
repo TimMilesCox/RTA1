@@ -1,0 +1,565 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+$(67::,y)
+ber_t	ber_template
+
+$(0)
+
+ber_edit_mojet
+	la	mo:type
+	sa	ber_t:ojet
+
+	anu, xi	SNMP_INT
+	jzb	ber_edit_integer
+	anu, xi	SNMP_COUNTER
+	jzb	ber_edit_integer	. manager does not like ber_edit_unsigned
+	anu, xi	SNMP_GAUGE
+	jzb	ber_edit_integer	. manager does not like ber_edit_unsigned
+	anu, xi	SNMP_TIMETICKS
+	jzb	ber_edit_integer	. manager does not like ber_edit_unsigned
+	anu, xi	SNMP_STRING
+	jzb	ber_edit_string
+	anu, xi	SNMP_NETWORKADDRESS
+	jzb	ber_edit_string
+	anu, xi	SNMP_OID
+	jzb	ber_edit_oid
+	lret	0
+
+ber_edit_integer
+	lb	mo:data
+	la	mo:bytes
+	aa, xi	-4
+	jc	ber_edit_long	. stored value > 1 word
+
+	push	0, b		. stored value 1 word
+	lsc	0, sp		. count signs
+	ab, xi	-1		. leave at least one sign
+	andB,xi	-8		. suppress a whole number
+	pop	a		. of leading octets if any
+	sal	0, b		. suppress by shifting left
+	sa	ber_t:data
+	la, xi	24		. calculate the number
+	ana	b		. of unsuppressed octets
+	sar	3
+	sa	ber_t:bytes
+	aa, xi	2
+	lret	0
+
+ber_edit_long			. stored value 2 words
+	dpush	0, b
+	dlsc	0, sp		. count signs
+
+	la	6
+	aa, xi	-1		. leave at least one sign
+	and,xi	-8		. suppress a whole number
+	sa	6		. of leading octets if any
+
+	dpop	a
+	dsl	*6		. suppress by shifting left
+	ds	ber_t:data
+	la, xi	48		. calculate the number
+	ana	6		. of unsuppresed octets
+	sar	3
+	sa	ber_t:bytes
+	aa, xi	2
+	lret	0
+
+
+ber_edit_unsigned
+	lb	mo:data
+	la	mo:bytes
+	aa, xi	-4
+	jc	ber_edit_ul	. stored number > 1 word
+				. stored number = 1 word
+	push	0, b
+	lsc	0, sp		. calculate whole zero octets
+	andB,xi	-8		. to suppress
+	pop	a		. but 1s are not signs
+	jpa	ber_edit_rotate1
+	lb, xi	0		. force out 3 unsigned octets
+ber_edit_rotate1
+	sal	0, b
+	sa	ber_t:data
+	la, xi	24		. calculate output octets
+	ana	b
+	jnza	ber_edit_length1
+	la, xi	8		. force 1 byte out
+ber_edit_length1
+	sar	3
+	sa	ber_t:bytes
+	aa, xi	2
+	lret	0
+
+ber_edit_ul
+	dpush	0, b
+	dlsc	0, sp		. calculate whole zero octets
+	la	6		. to suppress
+	and, xi	-8
+	sa	6
+	dpop	a		. but 1s are not signs
+	jpa	ber_edit_rotate2
+	z	6		. force out 6 unsigned octets
+ber_edit_rotate2
+	dsl	*6
+	ds	ber_t:data
+	la, xi	48		. calculate output octets
+	ana	6
+	jnza	ber_edit_length2
+	la, xi	8		. force 1 byte out
+ber_edit_length2
+	sar	3
+	sa	ber_t:bytes
+	aa, xi	2
+	lret	0
+	
+
+
+ber_edit_oid
+	la	mo:bytes
+	sa	ber_t:bytes
+	lb	mo:data
+	sb	ber_t:storage
+	aa, xi	2
+	lret	0
+
+ber_edit_string
+	la	mo:bytes
+	sa	ber_t:bytes
+	lcal	ber_edit_cluster
+	lb	mo:data
+	sb	ber_t:storage
+	lret	0
+
+ber_release_protocol_i
+	la, xi	SNMP_INT
+	j	ber_release_moi
+
+ber_release_mo
+	la	ber_t:ojet
+
+	anu, xi	SNMP_SEQUENCE
+	jzb	ber_release_cluster
+	anu, xi	SNMP_STRING
+	jzb	ber_release_string
+	anu, xi	SNMP_NETWORKADDRESS
+	jzb	ber_release_netaddress
+	anu, xi	SNMP_OID
+	jzb	ber_release_oid
+
+	push	a
+	lcal	ber_release_identifier
+	pop	a
+
+ber_release_moi
+	sal	16
+	wsr	8
+	la	ber_t:bytes
+	lr	a
+	sal	16
+	wsr	8
+
+	dl	ber_t:data
+	j	ber_release_ioctet?
+
+ber_release_ioctet!
+	wsr	8
+	sar	8
+	dsl	8
+ber_release_ioctet?
+	jdr	ber_release_ioctet!
+
+	lret	0
+
+
+ber_release_xlength
+	anu, xi	128
+	jc	ber_xlength2?
+	sal	16
+	wsr	8
+	lret	0
+ber_xlength2?
+	anu, xi	256
+	jc	ber_xlength3!
+	or, xi	08100
+	sal	8
+	wsr	16
+	lret	0
+ber_xlength3!
+	and	(65535)
+	or	(0820000:s)
+	wsr	8
+	wsr	16
+	lret	0
+
+ber_release_identifier
+	la	ber_t:oidl
+	dsr	1
+	push	ber_t:oid
+	pop	q
+	lr	a
+	z	RDATAC
+	j	ber_release16?
+
+ber_release_protocol_s
+	la, xi	SNMP_STRING
+	j	ber_release_svalue
+
+ber_release_oid
+ber_release_netaddress
+ber_release_string
+
+	push	a
+	lcal	ber_release_identifier
+	pop	a
+
+ber_release_svalue
+	sal	16	. output the type code
+	wsr	8
+
+	la	ber_t:bytes
+	lcal	ber_release_xlength
+
+	la	ber_t:bytes
+	dsr	1
+
+	push	ber_t:storage
+	pop	q
+
+	lr	a
+	z	RDATAC
+	off	b$stream16r
+
+	j	ber_release16?
+
+ber_release16!
+	rsr	16
+	sal	8
+	wsr	16
+ber_release16?
+	jdr	ber_release16!
+
+	jpb	ber_string_released
+	rsr	8
+	sal	16
+	wsr	8
+ber_string_released
+	lret	0
+
+
+
+ber_load_oid
+	rsr	8
+ber_load_oid?
+	anu, xi	SNMP_OID
+	jnzb	ber_load_oidx
+	sa	0, x
+	lx, i	2, x
+	sx	6		. save the start of the string
+				. itself
+	lk, xi	127
+
+	rsr	8		. read the octets length
+	lr	a
+
+	lb	BYTES
+	anb, i	2, a
+	sb	BYTES
+
+	lb, xi	0
+
+	j	ber_load_oid_octet?
+ber_load_oid_octet!
+	rsr	8
+	mlb	a		. place 7 bits in the token
+	and, xi	128		. flagged for more?
+	jza	ber_store_oid_token
+	sbl	7		. shift to take 7 more bits
+
+ber_load_oid_octet?
+	jdr	ber_load_oid_octet!
+ber_load_oidx
+	lret	0		. OID badly formed, still
+				. expecting completion of
+				. a token
+
+				. if there is an agent
+				. which wants this result
+				. then the last token is
+				. in b and */7 positions
+
+				. and the count of tokens
+				. up to there is
+				. p minus ber_t:storage
+
+ber_store_oid_token
+	sb	0, x
+	ax, xi	1
+	lb, xi	0
+	jdr	ber_load_oid_octet!
+
+	la	x
+	lb	6
+	ana	6		. return buffer in b
+	ab, xi	-2
+	sa	1, b		. and the word count in a
+
+				. the # tokens must be
+				. stored in the list
+				. because mib get next
+				. writes a new one there
+
+	lret	1		. well formed OID
+
+
+
+ber_woi	lr	1, x		. edit the list of integer tokens
+	z	WDATA		. to a transmission format oid
+	la, xi	16		. force 16 zero bits out first
+	sa	WDATAC
+	la	p
+	sa	7		. save 1st word address
+	z	6		. start the octets count
+
+	j	ber_woi_token?
+
+ber_woi_token!
+	lb	2, x
+	ax, xi	1
+
+	dsl	3
+	and, xi	7
+	jza	ber_woi21?
+	or, xi	128
+	sal	16
+	wsr	8
+	inc	6
+
+	dsl	7
+ber_woi21!
+	or, xi	128
+	sal	16
+	wsr	8
+	inc	6
+
+	dsl	7
+ber_woi14!
+	or, xi	128
+	sal	16
+	wsr	8
+	inc	6
+	j	ber_woi7
+
+ber_woi21?
+	dsl	7
+	jnza	ber_woi21!
+	dsl	7
+	jnza	ber_woi14!
+
+ber_woi7
+	dsl	7
+	sal	16
+	wsr	8
+	inc	6
+
+ber_woi_token?
+	jdr	ber_woi_token!
+
+	wsr	16		. force the last word out
+
+	dl	6
+	lr, i	2, a		. total octets with 06.LL
+	sr	ber_t:oidl
+	or, xi	SNMP_OID*/8
+	sal	8		. make room for the 1st token
+
+	or	0, b		. update the 1st string word written
+	sb	ber_t:oid
+	sa	0, b		. with SNMP_OID.# octets
+	lret	0
+
+
+ber_rl	rsr	8
+	lb	a
+	andB,xi	128
+	jnzb	ber_rll
+	dec	BYTES	. the command or data type or nest
+	dec	BYTES	. the length byte
+	lret	0
+
+ber_rll	and, xi	3
+	lb	BYTES
+	anb, i	2, a	. command/dtype + length bytes
+	sb	BYTES
+	ex	ber_rlx, a	
+	lret	0
+
+ber_rlx	rsr	0
+	rsr	8
+	rsr	16
+	lret	0	. too big error
+
+ber_swap_compare
+	lcal	ber_rl
+	lb	BYTES
+	sa	BYTES
+	anb	a
+	lret	0
+
+ber_read_data
+	rsr	8
+ber_read_datai
+	sa	ber_t:ojet
+
+ber_rs	lcal	ber_rl		. subtract encoding + field length 
+	lb	BYTES		. from capsule size
+	anb	a
+	sb	BYTES
+
+	lr	a
+	sa	ber_t:bytes	. record byte count in dynamic descriptor
+	lb	p		. and cache start location of savearea
+
+	z	WDATAC		. suppress residual store pending bit count
+	off	b$stream16w	. write 24 bits per storage word
+
+	j	ber_rs?
+ber_rs!	rsr	8		. read input stream
+	sal	16		. shift to high-order positions
+	wsr	8		. write store stream		
+ber_rs?	jdr	ber_rs!		. count down octet count
+
+	wsr	16		. store last containing word
+
+	$if	1		. numbers must have word count zero
+				. because word count field for strings
+				. is allowed ranges for numbers
+
+				. this is zero for network protocols
+				. unless they have a semantic for
+				. transmitting range tuples
+
+
+	la	ber_t:ojet	. data class
+	aa, xi	-SNMP_INT
+	jza	ber_rs_no_word_count
+	aa, xi	+SNMP_INT-SNMP_COUNTER
+	jza	ber_rs_no_word_count
+	aa, xi	+SNMP_COUNTER-SNMP_GAUGE
+	jza	ber_rs_no_word_count
+	aa, xi	+SNMP_GAUGE-SNMP_TIMETICKS
+	jza	ber_rs_no_word_count
+	$endif
+
+	la	p		. calculate word count
+	ana	b
+		.
+ber_rs_no_word_count
+	ds	ber_t:data	. store word count:location
+	lret	0
+
+ber_ri	rsr	8
+	anu, xi	SNMP_INT
+	jzb	ber_rii
+	lret	0		. not an integr
+
+ber_rii	lcal	ber_read_datai	. read a number in the headers
+	la, i	6
+	ana	ber_t:bytes
+	sal	3
+	lx	a
+	la	ber_t:storage
+	dl	0, a
+	dsa	0, x
+	ds	ber_t:data
+	lret	1		. an integer
+
+ber_edit_semantic_i		. write a number in the headers
+	la	ber_t:bytes
+	and, xi	7
+	lx	a
+	dl	ber_t:data
+	ex	ber_esi_shift, x
+	ds	ber_t:data
+	la	ber_esi_effect, x
+	sa	ber_t:bytes
+	aa, xi	2
+	lret	0
+
+ber_esi_shift
+	dsl	40
+	dsl	40
+	dsl	32
+	dsl	24
+	dsl	16
+	dsl	8
+	dsl	0
+	dsl	0
+
+ber_esi_effect
+	+	1
+	+	1
+	+	2
+	+	3
+	+	4
+	+	5
+	+	6
+	+	6
+
+
+ber_edit_cluster
+	push	a
+	lsc	0, sp
+	ab, xi	-16
+	jnb	$+2
+	ab, xi	7
+	sbr	3
+	la, xi	3
+	ana	b
+	popA	a
+	lret	0
+
+ber_release_cluster_p
+	la	ber_t:ojet
+ber_release_cluster
+	sal	16
+	wsr	8
+	la	ber_t:bytes
+	lcal	ber_release_xlength
+	lret	0

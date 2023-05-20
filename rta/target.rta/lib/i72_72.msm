@@ -1,0 +1,114 @@
+i72_72	$tree
+
+.	vector name im72_72
+
+multiply
+	$head_far	 params(multiplicandp,	int	;	pointer
+				multiplierp,	int	;	pointer
+				productp,	int)	;	write pointer
+							;
+			scalars(mguard,		int, fp$guard	;
+				muser_rkxy,	float,	r	;
+				multiplier,	float		)
+
+	la	0,,xi			. everything stays in integer range
+	ii	FP_GUARD$		. with no rounding
+					. scale return > 72 = lost significant bits
+	lx	multiplierp
+	call	(tripl2float)
+	qs	multiplier
+	lx	multiplicandp
+	call	(tripl2float)
+	fm	multiplier
+	call	(float2i72)
+	lx	productp
+	sb	0, x
+	dl	6
+	ds	1, x
+	qpop	0, sp
+	qpop	r
+	pop	a			. saved rounding guard
+	ii	FP_GUARD$
+	fret	0
+
+integer96	$equ	000173
+
+.	vector name id72_72
+
+divide	$head_far	 params(dividendp,	int	; pointer
+				divisorp,	int	; pointer
+				quotientp,	int	; write pointer
+				remainderp,	int)	; optional wpointer
+							;
+			scalars(guard,		int, fp$guard	;
+				duser_rkxy,	float,	r	;
+				dividend,	float		;
+				divisor,	float		)
+
+	la	0,,xi			. everything stays in integer range
+	ii	FP_GUARD$		. with no rounding
+					. scale return > 72 = lost significant bits
+	lx	divisorp
+	call	(tripl2float)
+	qs	divisor
+	lx	dividendp
+	call	(tripl2float)
+	qs	dividend
+	fd	divisor
+	qs	8
+
+	call	(float2i72)
+	lx	quotientp
+	sb	0, x
+	dl	6
+	ds	1, x
+
+	tnz	remainderp
+	j	xdivide
+
+	c	(integer96)	8,,float
+	fm	divisor			. integer part neither rounded up not down
+	n	a			. fraction is sometimes rounded down
+	n	b			. therefore dividend - quotient * divisor
+	n	mantissa2		. and never fraction * quotient
+	n	mantissa3
+
+	fa	dividend
+
+	call	(float2i72)
+	lx	remainderp
+	sb	0, x
+	dl	6
+	ds	1, x
+
+xdivide	qpop	0, sp			. floating divisor
+	qpop	0, sp			. floating dividend
+	qpop	r
+	pop	a			. saved rounding guard
+	ii	FP_GUARD$
+	fret	0
+	
+tripl2f	dl	1, x			. vector name tripl2float
+	ds	TRIPLE+1		. reads i72 returns float
+	la	0, x
+	dsa	24
+	sb	TRIPLE
+	sa	SIGNS
+	jpa	magnitude
+	n	TRIPLE			. change integer to positive magnitude
+	n	TRIPLE+1		. u72tofloat likes it that way for efficiency
+	n	TRIPLE+2
+
+	dl	(1d)			. 2s complement carry around
+	da	TRIPLE+1		. instead of changing - integers to 1s-complement
+	ds	TRIPLE+1		. also u72tofloat uses all 72 magnitude bits
+	sc	b			. it only gets 71 magnitude bits from here
+	ab	TRIPLE			. but is called from other routines
+	sb	TRIPLE
+
+magnitude
+	call	(u72tofloat)		. reads positive unsigned i72, returns signed float
+	ql	QUAD
+	fret	0
+	
+	$root

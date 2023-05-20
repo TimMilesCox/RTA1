@@ -1,0 +1,171 @@
+i72	$tree
+
+i_multiply				. vector name is i72_multiply
+
+	$if		1
+
+	$head_far	 params(multiplicand,	triple	;
+				multiplier,	int)	;
+							;
+			scalars(temp,		long	)
+
+	lb	multiplicand+2
+	mf	multiplier
+	sb	7
+	dsa	24
+	ds	temp
+	lb	multiplicand+1
+	mf	multiplier
+	da	temp
+	sb	6
+	dsa	24
+	ds	temp
+	lb	multiplicand
+	m	multiplier
+	da	temp
+
+	$ret
+
+
+	$else
+
+	$head_far	 params(multiplicand,	triple	;	. 3 data words
+				multiplier,	int	;	. 1 data word
+				product,	int )	;	. address pointer
+							;
+			scalars(user_x,		int,	x)
+
+	lb		multiplicand
+	m		multiplier
+	dsl		24
+	ds		6
+
+	lb		multiplicand+1
+	mf		multiplier
+	da		6
+	ds		6
+
+	lb		multiplicand+2
+	mf		multiplier
+						. no more words to read
+	lx		product			. pointer for product write
+	sb		2, x			. write
+
+	dsa		24			. align
+	da		6
+
+	ds		0, x			. write
+
+	pop		x			. hand x back to the caller
+	fret		0
+
+	$endif
+
+i_divide				. vector name is i72_divide
+
+	$head_far	 params(dividend,	triple	;	. 3 data words
+				divisor,	int	;	. 1 data word
+				quotient,	int	;	. address pointer
+				remainder,	int )	;	. address pointer optional
+							;
+			scalars(caller_x,	int,	x)
+
+	lx		dividend,,i
+
+	lcal		magnitude		. signs returned in a
+
+	lb		divisor
+	xor		b
+	saa		24			. calculate final sign
+	sa		7
+
+	jpb		divisor_plus
+	n		divisor
+	inc		divisor
+divisor_plus
+
+	$if		1			. long quotient from d instruction
+						. is necessary for inline 48-bit signed arithmetic
+	dl		dividend		. and saves cycles here as well
+	d		divisor
+	sa		dividend+1		. save quotient bits 47..24
+
+	la		b
+	lb		6			. save quotient bits 71..48
+	sb		dividend
+
+	lb		dividend+2
+	d		divisor			. a <- quotient bits 23..0
+						. b <- remainder
+	$else
+						. this all works but takes longer
+	la		dividend		. it doesn't exploit the payoff of
+	dsr		24			. the long quotient from d instruction
+
+	d		divisor
+	sa		dividend
+	la		b
+
+	lb		dividend+1
+	d		divisor
+	sa		dividend+1
+	la		b
+
+	lb		dividend+2
+	d		divisor
+
+	$endif
+
+	tp		7
+	lcal		reverse			. x still points to dividend	
+
+	lx		remainder
+	tz		x
+	sb		0, x
+
+	lx		quotient
+	sa		2, x
+
+	dl		dividend
+	ds		0, x
+
+	pop		x			. hand x back to caller
+	fret		0
+
+
+magnitude
+	la		0, x
+	jpa		magnitudex
+	
+	push		a
+	n		2, x
+	n		1, x
+	n		0, x
+	push		1,,xi
+	popA		2, x
+	sc		b
+	la		0,,xi
+	da		0, x
+	ds		0, x
+	pop		a
+
+magnitudex
+	lret		0
+
+reverse	n		a
+	n		b
+	ab		1,,xi			. remainder
+	aa		1,,xi			. quotient 23..0
+	dpush		a
+	n		0, x
+	n		1, x
+	sc		b
+	la		0,,xi
+	da		0, x			. quotient 71..24
+	ds		0, x
+
+	dpop		a
+	lret		0
+
+	$root
+

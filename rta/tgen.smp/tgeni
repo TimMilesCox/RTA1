@@ -1,0 +1,163 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+PLATFORM=`uname`
+
+if      [ "$PLATFORM" == "Linux" ]
+then
+        OSPAN=-DLINUX
+        THREADS=-lpthread
+        echo    linux intel $OSPAN
+	SYSTEM=linux
+	CLIB=-no-cxxlib
+	RTA_BIN_SMP=../binary.smp/suse.x64
+
+elif    [ "$PLATFORM" == "Darwin" ]
+then
+        if      [ "$1" == "powerpc" ]
+        then
+                echo darwin powerpc
+        else
+#                OSPAN=-mmacosx-version-min=10.6.8
+                echo darwin intel $OSPAN
+		SYSTEM=macos
+		CLIB=-no-cxxlib
+		RTA_BIN_SMP=../binary.smp/osx.x64
+        fi
+	
+else
+	echo	platform $PLATFORM not resourced
+	exit
+fi
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+fi
+
+rm	../emulator.i64/*
+
+if	[ -z $RTA_SMP ]
+then
+	export	RTA_SMP=2
+fi
+
+rm ../emulator.i64/*
+rm ../engine.i64/*
+
+icc -O0 $CLIB -m64 -c -funsigned-char $IFLAG $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.i64/netbank.o netbank.c
+icc -O0 $CLIB -m64 -c -funsigned-char $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.i64/idisplay.o idisplay.c
+icc -O0 $CLIB -m64 -c -funsigned-char $OSPAN -DGCC -DRTA_SMP=$RTA_SMP -o ../emulator.i64/tzone.o tzone.c
+
+rm	$RTA_BIN_SMP/rta1_$RTA_SMP
+echo	emulated RTA cores $RTA_SMP banks image rta1_$RTA_SMP
+
+#	if	[ "$1" == "powerpc" ]
+#	then
+#		ARCHFLAG=-UX86
+#		echo	constructing for powerpc
+#	elif	[ "$1" == "x86" ]
+#	then
+#		ARCHFLAG=-DX86
+#		echo	constructing x86 specific
+#	else
+#		ARCHFLAG=-DLLVM_LE
+#		echo	constructing LLVM LE
+#	fi
+
+export	RATIO=72000			# 288000
+export	JTABLE=
+
+pushd	../engine.smp
+./genrel64i -D__X64 $OSPAN $JTABLE -DRTA_SMP=$RTA_SMP
+popd
+
+
+icc -O0 $CLIB -m64 -c -funsigned-char -DARGUMENTS=64		\
+			 $OSPAN				\
+		 	-o ../emulator.i64/argue.o	\
+			../netifx/argue.c
+
+icc -O0 $CLIB -m64 -c -funsigned-char -D__X64 -DRTA_SMP=$RTA_SMP -DGCC	\
+				 $OSPAN	-DGCC			\
+				-DRTA_SMP=$RTA_SMP		\
+				-DMETRIC -D_XINT		\
+			 	-o ../emulator.i64/console.o	\
+				console.c
+
+icc -O0 -m64 -D__X64 -DGCC -DRTA_SMP=$RTA_SMP -DMETRIC $THREADS	\
+				 $OSPAN -DRATIO=$RATIO		\
+				$JTABLE -Wl,-lc			\
+				-o $RTA_BIN_SMP/rta1_$RTA_SMP	\
+				../emulator.i64/argue.o		\
+				../emulator.i64/netbank.o	\
+				../emulator.i64/idisplay.o	\
+				../emulator.i64/tzone.o		\
+				../emulator.i64/console.o	\
+				../engine.i64/rta.o		\
+				../engine.i64/ii.o		\
+				../engine.i64/rw.o		\
+				../engine.i64/alu.o		\
+				../engine.i64/fpu.o		\
+				../engine.i64/sr.o		\
+				../engine.i64/rex.o		\
+				../engine.i64/csabr.o		\
+				../assembly.x64/$SYSTEM.x64/sabr.o	\
+				../assembly.x64/$SYSTEM.x64/ts.o	\
+				tipt64.c
+
+#	remove ../assembly.x64/$SYSTEM.x64/sabr.o
+#	../assembly.x64/$SYSTEM.x64/csabr.o 
+
+echo	binaries in $RTA_BIN_SMP
+ls -l $RTA_BIN_SMP
+echo
+echo	this script tgeni is for 64-bit Intel target platforms
+echo	and makes specific machine code inclusions
+echo	script tgenx constructs target platform ported emulators
+echo

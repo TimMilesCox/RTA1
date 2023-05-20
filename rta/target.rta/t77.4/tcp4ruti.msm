@@ -1,0 +1,802 @@
+tcp_event1_acknowledged?
+	dl	transmission:sequence_ackx
+	andB	(0FF0000s)			. ls 16 bits aren't used yet, but...
+	dan	6				. is the new remote ACK
+	lret	0
+
+tcp_restart_timer2
+	$if	TCP_TIMER2<32768
+	la	TCP_TIMER2,,xi
+	$else
+	la	(TCP_TIMER2)
+	$endif
+
+	$if	HVSOCKET
+	tp	*(BSOCKET*/12++tlist:flags)
+	lcal	tcp_stretch_timer2
+	$endif
+
+	aa	DAYCLOCK$
+	sa	transmission:timer(2)
+	lret	0
+
+	$if	HVSOCKET
+tcp_stretch_timer2
+	push	b
+	lb	tcp_superpages						. number of connection tanks
+	sbl	7
+	aa	b
+	lb	*(BSOCKET*/12++tlist:connection_block(1):timer(2))	. log of connections
+	sbl	2							. in this tank
+	aa	b
+	pop	b
+	lret	0
+	$endif
+
+tcp_start_timewait
+	$if	TCP_TIMEWAIT_MS<32768
+	la	TCP_TIMEWAIT_MS,,xi
+	$else
+	la	(TCP_TIMEWAIT_MS)
+	$endif
+
+	j	tcp_add_timer1
+
+tcp_restart_timer1
+	la	(TCP_TIMER1)			. something arrived
+tcp_add_timer1
+	aa	DAYCLOCK$			. restart the big timer
+.	jnza	tcp_store_timer1
+	or, xi	1				. but don't restart it to zero
+tcp_store_timer1
+	sa	transmission:timer(1)
+	lret	0
+
+tcp4_reset_dq_lx
+	lx	TP_HEADER
+tcp4_reset_dq
+	la	transfer:hl_code
+	and	TCP_RST,,xi
+	jnza	tcp4_reset_dqx			. don't answer a reset
+
+	ly	descriptor:dgram
+	lcal	tcp_reject
+tcp4_reset_dqx
+	lret	0
+
+	$if	HVSOCKET
+tcp4_net_free_txdatagram
+	lcal	readq
+	jza	tcp4_net_free_txdatagram_no_action
+	dpush	x
+	lcal	tcp_free_tx
+	dpop	x
+tcp4_net_free_txdatagram_no_action
+	lret	0
+	$endif
+
+tcp4_rxaction	$tree
+
+	$head_near	scalars(connection,	int,	x	;
+				ACK_AWAITED,	int		;
+				received_seq,	long		;
+				save_fp,	int,	fp	)
+
+	$if	TCP_NOQ
+
+	.	buffer acquire t_ibuffer writes descriptor to fp
+	.	fp is saved in case a buffer is bought for SYN_ACK.RST.ACK_FIN
+	.	and should be reloaded after
+
+	$else
+	sa	fp
+	dl	descriptor:sobdi
+	sabr	BSOCKET
+	la	s:tcp:tbase, b
+	sabr	BSOCKET
+	$endif
+
+	lcal	tcp_locate_connection
+	tz	x
+	j	tcp_connection_located	.
+
+					. so is it an incoming connect?
+	lx	descriptor:uproto
+	sx	TP_HEADER
+	la	transfer:hl_code, x
+	sa	HL_FLAGS
+
+	and, xi	TCP_SYN++TCP_ACK++TCP_RST
+	xor, xi	TCP_SYN
+	jza	tcp4_accept
+
+tcp_reset_dq_lx
+	lcal	tcp4_reset_dq_lx		. similar case to IP input loop
+	j	tcp_stepover_response		. nothing listening, but we must
+						. dq from tcpq and drop, send RST
+						. and continue in this loop here
+tcp_accept_fail2
+	sx	connection
+	j	tcp_ripdown_reset
+
+.	lcal	tcp4_ripdown_reset
+.	j	tcp_stepover_response
+						. either q the request to
+						. the listening socket owner
+						. or do this automatic accept
+tcp4_accept
+	lcal	tcp_auto_accept
+	j	tcp_reset_dq_lx			. connection not assigned
+	j	tcp_accept_fail2		. connection assigned but not working
+						. connection SYN_ACK, 3rd return
+	j	tcp_stepover_response		. SYN pdu consumed
+
+tcp_connection_located
+	sx	connection
+	tz	transmission:timer(1)		. restart the big timer
+	lcal	tcp_restart_timer1		. unless it's switched off
+
+	ly	TP_HEADER
+	la	transfer:hl_code, y
+	sa	HL_FLAGS
+	and	TCP_SYN++TCP_ACK,,xi
+	xor	TCP_SYN++TCP_ACK,,xi
+	jza	tcp_synsent?
+	
+	and	TCP_SYN,,xi
+	jnza	tcp_no2ndsyn
+	la	transmission:state
+ jpa $+2					. -STATE = awaiting transition
+ xor -1,,xi
+	ana, xi	TCP_SYNRECEIVED
+	jza	tcp_stepover_response
+	j	tcp_ripdown_reset
+
+tcp_synsent?
+tcp_no2ndsyn
+	la	HL_FLAGS
+	sar	11
+	and, xi	30
+
+	aa	y
+	sa	descriptor:apdata
+	sa	RX_APDATA
+
+						. is the ACK reasonable?
+
+	dl	transmission:remote_ack_window
+	andB	(255*/16:s)
+
+	ds	6				. remote ack so far
+
+	dl	transfer:ack, y
+	sbl	8
+	dsl	8
+	ds	8				. new ack proposed
+
+	dan	6				. remote ACK gone backwards?
+
+	$if	1
+						. new remote ack < stored remote ack ?
+	jna	tcp_compare_forward		. delayed in the post?
+						. not an advance. check delayed payload
+	dl	8				. an advance on what we knew
+	ds	6				. ack of reference updated
+	lk	(00FFFF)
+	mlb	transfer:window, y
+	ds	transmission:remote_ack_window
+
+tcp_compare_forward
+
+	$else
+
+	jna	tcp_ripdown_reset
+	$endif
+
+	dl	transmission:sequence_ackx
+	andB	(255*/16:s)
+
+	dan	8				. remote ACK beyond local SEQ?
+
+	$if	1
+	jpa	tc_no_problem_p
+	j	tcp_stepover_response		. or ii	GUARD$ to diagnose more deeply
+						. otherwise drop as a broken segment
+tc_no_problem_p
+	$else					. not best alternative
+	jna	tcp_ripdown_reset		. better to wait for resend
+	$endif
+
+	la	HL_FLAGS
+	and, xi	TCP_RST
+	jnza	tcp_ripdown_silently
+
+
+	.	0:	is the remote ACK possible?
+
+	.	0:5	is there a remote reset?
+
+	.	1:	cache remote ACK and window
+
+	.	2:1	send waiting segments as remote
+	.		window allows
+
+	.	2:2	release segments queued for ACK
+	.		according to remote ACK value
+	.		vs sequence + size of sent output
+
+	.	3:	compare remote sequence with local
+	.		ACK
+
+	.	4:	if less, shave the leading edge
+	.		of the input
+
+	.	5:	if more but sequence + length
+	.		within local ACK + window, deferq
+	.		and otherwise drop
+
+	.	6:	accept as much of the net input at 4:
+	.		as local window allowed. This avoids
+	.		accepting single bytes which are
+	.		sent to push the window open
+	.		and also avoids rejecting payload
+	.		for which we have advertised
+	.		window. Drop the segment if no
+	.		part of it is accepted, and shave
+	.		the trailing edge if part of it
+	.		is rejected
+
+	.		It might be unwise to accept beyond
+	.		window. A well behaved remote system
+	.		won't send beyond window (apart from
+	.		experimental 1-byters, and the response
+	.		to those is drop them and advertise
+	.		new window). A malicious remote system
+	.		might try to manipulate window
+
+	.	7:	Advance local ACK and reduce local
+	.		window according to the amount accepted
+
+	.	8:	generate new local window
+
+	.	9:	transmit segments queued for remote window
+	.		according to remote ACK + window,  and
+	.		if there is none, and no further input
+	.		segment after this has yet been received
+	.		for this connection, send an ACK, unless
+	.		the incoming segment is an ACK without
+	.		payload and its SEQ is not beyond local ACK
+
+	.		SYN and FIN have a payload weight of
+	.		1 byte
+
+	.		restart connection:timer(1)
+	.		maybe do this at an early point, depending
+	.		whether the attempt to communicate
+	.		counts as keepalive even if it is
+	.		out of range
+
+
+
+
+	.	1	is the remote ACK possible?
+
+
+	$if	0	. just done this
+	dl	6
+
+	lk	(65535)
+	mlb	transfer:window, y
+	ds	transmission:remote_ack_window
+	$endif
+
+
+	.	2:1	drop ACKed outputs
+	.		remote ACK is still in 6:7
+
+
+	lb	transmission:state
+ jpb $+2					. -STATE = awaiting transition
+ xorB -1,,xi
+	ab, xi	-TCP_ESTABLISHED
+	jzb	tcp_established
+
+	ab, xi	TCP_ESTABLISHED-TCP_SYNRECEIVED
+	jzb	tcp_synreceived
+
+	ab, xi	TCP_SYNRECEIVED-TCP_CLOSEWAIT
+	jzb	tcp_closewait
+
+	ab, xi	TCP_CLOSEWAIT-TCP_LASTACK
+	jzb	tcp_lastack
+
+	ab, xi	TCP_LASTACK-TCP_SYNSENT
+	jzb	tcp_synsent
+
+	ab, xi	TCP_SYNSENT-TCP_FINWAIT1
+	jzb	tcp_finwait1
+
+	ab, xi	TCP_FINWAIT1-TCP_FINWAIT2
+	jzb	tcp_finwait2
+
+	ab, xi	TCP_FINWAIT2-TCP_CLOSING	
+	jzb	tcp_closing
+
+	ab, xi	TCP_CLOSING-TCP_TIMEWAIT
+	jzb	tcp_timewait
+
+	ab, xi	TCP_TIMEWAIT-TCP_DELETETCB
+	jzb	tcp_deletetcb
+
+	ab, xi	TCP_DELETETCB-TCP_CLOSED
+	jzb	tcp_closed
+
+tcp_established
+tcp_closewait
+tcp_tx_segments_acked?
+
+	$if	1	. moved to state machine part tcp_process
+
+	tz	transmission:q4ack:head
+	lcal	tcp4_outstanding
+
+	$else
+
+	la	transmission:q4ack:head
+	jza	tcp_rx_in_range?
+
+
+	lb	descriptor:uproto, a	.	segment pointer
+	lx	b			.	segment pointer
+	ly	a			.	descriptor
+
+	anb	descriptor:apdata, y	.	zero minus header length
+	sbl	1			.	in bytes
+
+	la	transfer:hl_code	.	include weight of SYN or FIN if present
+	and	TCP_SYN++TCP_FIN,,xi	.	to avoid discard on ACK at exact sequence
+	jza	tcp_flags_weighed	.	not at all likely on SYN
+	ab	1,,xi			.	just possible on FIN
+tcp_flags_weighed			.	don't xmit a segment with both
+
+	ab	descriptor:bytes, y	.	-header+segment=payload length [+ SYN | FIN]
+
+	$if	1
+
+	dsl	32
+	dsr	16			.	proposed payload
+	ds	8
+
+	dl	transfer:seq		.	cache transfer:seq */ 16
+	sbl	8			.	of segment awaiting ACK
+	dsl	8			.
+
+	da	8			.	+ proposed payload */ 16
+	ds	8			
+
+	dl	6			.	cached remote ACK */ 16
+	dan	8
+	lx	connection
+	jna	tcp_promote_resends	.	beyond acknowledged
+					.
+	$else
+					.	       80FFFF
+	sbl	8			.	align, drop retain flag
+	sb	9
+	z	8			.	000000 FFFF00
+
+	dl	transfer:seq		.	sequence leading edge segment awaiting ACK
+	lx	connection		.	retrieve connection pointer
+	sbl	8			.	00FFFF FFFF00
+
+	da	8			.	sequence after trailing edge
+	dsl	8			.	FFFFFF FF0000
+
+	dan	6			.	minus received ACK
+
+	jdz	tcp_q4a_slip?
+	jpa	tcp_promote_resends	.	segment trailing edge
+					.	> remote ACK
+	$endif
+
+tcp_q4a_slip?				.	segment within received ACK
+
+	ly	transmission:q4ack,,i
+
+	$if	HVSOCKET
+	lcal	tcp4_net_free_txdatagram	.
+	$else
+	lcal	net_free_txdatagram
+	$endif
+
+	j	tcp_tx_segments_acked?
+
+	.	2:1	send waiting segments as
+	.		as remote window allows
+
+	
+        .       3 4 5 6         accept the input segment or not
+
+tcp_promote_resends
+
+	$endif		. moved to state machine part tcp_process
+
+tcp_rx_in_range?
+				. finally time to calculate the
+				. header length, payload address
+
+	dl	transmission:ack_window, x
+	sb	9		. save the window
+	andB	(255*/16:s)
+	ds	6		. exactly expected sequence?
+
+tcp_place_in_stream
+	lb	TP_HEADER
+	anb	RX_APDATA
+	sbl	1			. minus header length in bytes
+	ab	descriptor:bytes
+	sb	descriptor:bytes	. calculate payload length
+	sb	ACK_AWAITED
+
+	sb	11			. make a 48 bit payload byte count
+	sb	TPAYLOAD_BYTES
+	z	10
+
+
+	ly	TP_HEADER
+	dl	transfer:seq, y		. extract the incoming sequence
+
+	sbl	8
+	dsl	8
+
+	ds	received_seq
+
+	dan	6
+	jdz	tcp_rx_exact_sequence
+	jpa	tcp_rx_above_ack
+				. have you ACKED all this payload?
+
+				. comparison with expected sequence
+				. yields a negative #
+				. which reduces the net payload
+
+
+	$if	1
+
+.	dsl	24		. turn the minus figure
+.	anb	a		. into bytes-already-read
+.	aa	TPAYLOAD_BYTES		.
+.	jza	tcp_rx_already_acked	. all repeat bytes
+
+						. sequence - acked and it is negative
+	dsa	16				. was in high positions for circular compare
+	da	10				. payload + sequence - acked
+	jdz	tcp_rx_already_acked
+	jna	tcp_rx_already_acked
+
+	$else
+
+	dsa	16
+	da	10
+	jdz	tcp_rx_already_acked		. possibly to nothing or less
+	jna	tcp_rx_already_acked		. you need to ACK
+
+	sb	descriptor:bytes		. save the new net byte count
+	la	11				. calculate the difference in bytes
+	sb	11
+	ana	b
+	sar	1				. make that a difference in words
+	aa	RX_APDATA			. save the new payload address
+	sa	RX_APDATA
+	sa	descriptor:apdata
+
+	$endif
+
+tcp_rx_exact_sequence
+	sb	descriptor:readpoint
+
+	la	HL_FLAGS
+	and, xi	TCP_FIN
+
+	jza	tcp_rx_payload?
+
+	dl	received_seq
+	da	(1*/16:d)
+	ds	6
+	lk	(00FFFF)
+	mlb	9			. window
+	ds	transmission:ack_window, x
+
+	push,xi	TCP_CLOSEWAIT
+	pop	transmission:state
+
+	inc	ACK_AWAITED			. lcal	tcp_send_ack
+	j	tcp_rx_payload			. zero payload is queued as a signal
+						. to the application of remote close
+
+tcp_lastack
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_lastack2closed
+	la	DAYCLOCK$
+	aa	6000,,xi			. in case last ack gets lost
+	sa	transmission:timer(1)		. drop connection in a few seconds
+	j	tcp_stepover_response
+
+tcp_lastack2closed
+	push,xi	TCP_CLOSED
+	pop	transmission:state
+	j	tcp_stepover_response
+	
+tcp_rx_payload?
+	tz	TPAYLOAD_BYTES
+	j	tcp_rx_payload
+
+	$if	1
+	j	tcp_stepover_response
+	$else
+	.	to do it this way first update ack as below in rx_payload
+	.	there seem to be enough acks for intense flow control anyway
+
+	j	tcp_rx_ack_nopayload
+	$endif
+
+tcp_rx_payload
+						. now is the segment within window?
+	la	9				. for now, discard any segment not
+	and	(00FFFF)			. completely within window
+	ana	11				. down with window
+	jnc	tcp_rx_above_range
+	sa	9
+	dl	6				. ACK is */ 16
+
+	dsr	16
+	da	10				. up with ACK
+
+	ds	10				. cache the new ACK point
+
+	dsl	16
+	orB	9				. save new ACK++WINDOW
+	ds	transmission:ack_window
+
+	la	save_fp
+	lcal	tcp_write_rxq
+						. now see if deferq joins on
+
+
+	la, i	transmission:deferq.head, x
+	ly	a
+tcp_rx_rechain					. look for any deferred segment
+	lr	y				. which is no longer gapped
+	la	0, a
+	jza	tcp_ack_point
+	ly	a
+	la	descriptor:uproto, a
+	sa	TP_HEADER
+	dl	transfer:seq, a
+	sbl	8
+	dsl	8
+
+	dan	6
+	jna	tcp_rx_rechain
+
+	push	descriptor:next, y
+	pop	*r				. unchain the segment
+
+	sy	fp				. expected descriptor base
+	push	descriptor:apdata
+	pop	RX_APDATA
+	j	tcp_place_in_stream
+
+
+	. here you decide whether waiting segments
+	. can be transmitted. Any earlier, and the
+	. local ACK pointer would be out of date
+
+	. checksum must always be finalised at
+	. the moment of transmission, because local
+	. ACK is summed in the segment header
+
+tcp_ack_point
+	lx	connection
+	$if	1
+	tz	ACK_AWAITED
+	lcal	tcp_send_ack
+	lcal	tcp_ack_dropped			. return 0 = could not send ack
+	j	tcp4xreact			. go keep input data on connection chain
+	$else
+	tz	transmission:q4window
+	lcal	tcp_send_on_window		. should not be necessary here
+						. ACK may be carried on traffic
+						. then see if ACK is still needed
+	jnza	tcp4xreact			. tx traffic contained ACKs
+.	tz	ACK_AWAITED
+	lcal	tcp_send_ack
+	lcal	tcp_ack_dropped	. usually skipped on return
+	j	tcp4xreact
+	$endif
+
+tcp_rx_above_ack				. 48-bit positive difference SEQ > ACK is in A:B
+						. and window is in 9 but with some bits from ACK
+	da	10				. calculate SEQ - ACK + payload
+	ds	10
+
+	la	9
+	sal	8
+	dsr	32
+	dan	10
+
+	jnc	tcp_rx_above_range
+
+	ly	tcpq,,xi
+	la, i	transmission:deferq
+	lcal	net_transfer
+						. now fit this segment in deferq
+
+	j	tcp4xreact			. only stay for 1 segment
+						. the next one may be for any connection
+
+tcp_rx_already_acked
+	MIB_ICOUNT48	tcpDupDrops:i		. all this segment already rx
+tcp_rx_above_range
+.	la, xi	1
+.	sa	ACK_AWAITED
+.	lcal	tcp_send_ack
+
+tcp_rx_ack_nopayload
+	j	tcp_ack
+.	ly, xi	tcpq
+.	lcal	net_drop
+.	j	tcp_ack_point
+
+tcp_finwait1
+	la	HL_FLAGS
+	and, xi	TCP_FIN
+	jza	tcp_finwait1_acked?
+	dl	(1*/16d)
+	da	transmission:ack_window
+	ds	transmission:ack_window
+	push,xi	TCP_CLOSING
+	pop	transmission:state
+	lcal	tcp_send_ack
+	lcal	tcp_ack_dropped	. there are two comebacks
+				. and the ACK and FIN  may be together
+tcp_closing
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_close2timewait
+	j	tcp_stepover_response
+
+tcp_finwait1_acked?
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_finwait1tofinwait2
+	j	tcp_stepover_response
+
+tcp_finwait1tofinwait2
+	push,xi	TCP_FINWAIT2
+	pop	transmission:state
+	j	tcp_stepover_response
+
+tcp_close2timewait
+	push,xi	TCP_TIMEWAIT
+	pop	transmission:state
+	lcal	tcp_start_timewait
+	j	tcp_stepover_response
+	
+tcp_finwait2
+	la	HL_FLAGS
+	and, xi	TCP_FIN
+	jza	tcp_stepover_response
+	dl	(1*/16d)
+	da	transmission:ack_window
+	ds	transmission:ack_window
+	lcal	tcp_send_ack
+	lcal	tcp_ack_dropped
+	j	tcp_close2timewait
+	
+tcp_timewait
+	la	DAYCLOCK$
+	ana	transmission:timer(1)
+	jna	tcp_stepover_response
+	la, xi	TCP_CLOSED
+	sa	transmission:state
+	j	tcp_stepover_response
+
+tcp_synreceived
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_syn_ack_acked
+	j	tcp_ripdown_reset
+
+tcp_syn_ack_acked
+	la, xi	TCP_ESTABLISHED
+	sa	transmission:state
+
+        ly      transmission:q4ack,,i
+        $if     HVSOCKET
+        lcal    tcp4_net_free_txdatagram
+        $else
+        lcal    net_free_txdatagram
+        $endif
+
+        j	tcp_stepover_response
+
+tcp_ripdown_reset
+	lx	connection
+	la	transmission:state
+ jpa $+2				. -STATE = awaiting transition
+ xor -1,,xi
+	aa	-TCP_CLOSED,,xi
+	jza	tcp_stepover_response
+	aa	TCP_CLOSED-TCP_DELETETCB,,xi
+	jza	tcp_stepover_response
+	lcal	tcp_reset		. send a reset if possible
+	j	$+1			. there are two returns
+tcp_ripdown_silently
+	lx	connection
+
+	la	transmission:state
+ jpa $+2				. -STATE = awaiting transition
+ xor -1,,xi
+	aa	-TCP_DELETETCB,,xi
+	jza	tcp_stepover_response
+	aa	TCP_DELETETCB-TCP_CLOSED,,xi
+	jza	tcp_stepover_response
+
+	lcal	tcp_ripdown
+
+tcp_deletetcb
+	push,xi	TCP_CLOSED
+	pop	transmission:state
+tcp_closed				. the TCB may already be reassigned
+	j	tcp_stepover_response	. this PDU wasn't added to an input chain
+.	ly, xi	tcpq
+.	lcal	net_drop
+.	j	tcp4xreact
+
+tcp_synsent
+	lcal	tcp_event1_acknowledged?
+	jdz	tcp_synsent1
+	j	tcp_ripdown_reset
+tcp_synsent1
+	la, xi	TCP_ESTABLISHED
+	sa	transmission:state
+	ly	TP_HEADER
+	dl	transfer:seq, y
+	sbl	8
+	dsl	8
+	da	(1*/16d)
+	ds	transmission:ack_window
+
+	$if	HVSOCKET
+	tn	*(BSOCKET*/12++tlist:flags)
+	$endif
+	call	(tcp_agent_add)
+
+	ly	transmission:q4ack,,i
+
+	$if	HVSOCKET
+	lcal	tcp4_net_free_txdatagram
+	$else
+	lcal	net_free_txdatagram
+	$endif
+
+tcp_ack	lcal	tcp_send_ack
+	lcal	tcp_ack_dropped		. if you failed to send you get here
+					. maybe you will ack as required soon
+tcp_stepover_response
+
+	$if	TCP_NOQ
+	pop	fp			. activity at I / F  may have overloaded fp
+	j	tcp_escape
+
+
+	$else
+
+	ly	tcpq,,xi
+	lcal	net_drop
+
+	$endif
+	
+tcp4xreact
+	pop	fp
+"$$frame"	$set	$$frame-1
+	$ret
+	$root

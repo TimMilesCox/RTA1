@@ -1,0 +1,81 @@
+
+READ_STREAM_START* $proc
+
+	$if	COUNTED_STREAM
+	sa	BYTES
+	$else
+	z	BYTES
+	$endif
+
+	sb	q	. once per input buffer
+	z	RDATAC
+	READ_START
+	la	' ',,xi
+	sa	LAST_BYTE_READ
+	$end
+
+WRITE_STREAM_START* $proc
+	z	BYTES
+	sx	p
+	z	WDATAC
+	WRITE_START
+	$end
+
+READ_START* $proc	. once per input specification
+	$if	AQUIFORM_NET16
+	on	b$stream16r++b$streamZR
+	off	half$w
+	$else
+	on	b$streamZR
+	off	b$stream16r++half$w
+	$endif
+	$end		. it is up to the calling application
+			. to change b$stream16R back if it needs
+
+WRITE_START* $proc
+	$if	AQUIFORM_NET16
+	on	b$stream16w
+	off	half$w
+	$else
+	off	b$stream16w++half$w
+	$endif
+	$end
+
+READ_BYTE* $proc *
+	la	LAST_BYTE_READ
+	jza	thats_all
+	rsr	$byte
+	sa	LAST_BYTE_READ
+	tz	BYTES
+	lcal	counted_stream
+thats_all
+	$end
+
+p	$proc
+WRITE_BYTE* $name
+	sal	$word-$byte
+WRITE_UBYTE* $name
+	wsr	$byte
+	inc	BYTES
+	$end
+
+WRITE3_BYTES* $proc		. only works for 3 octets
+	wsr	16
+	wsr	8
+	push	3,,xi
+	popA	BYTES
+	$end
+
+WRITE_BYTES* $proc
+BITS	$set	WRITE_BYTES(1, 1)*$byte
+	$if	BITS>16
+	wsr	16
+	wsr	BITS-16
+	$else
+	wsr	BITS
+	$endif
+	push	BITS/$byte,,xi
+	popA	BYTES
+	$end
+
+

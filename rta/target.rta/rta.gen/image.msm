@@ -1,0 +1,1436 @@
+
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$list		0
+
+	$do		$o('k')=0,	;
+	$exit		assembly option -k required
+
+	$do		$o('z')=0,	;
+	$exit		assembly option -z required
+
+	$path		../def
+	$include	rta.def
+	$include	ii.def
+	$include	vector.def
+	$include	ringfest.def
+
+	$path		../def.sys
+	$include	tcb.def
+	$include	io.def
+	$include	base.def
+	$include	banks.def
+	$include	events.def
+	$path
+	$include	../timer/timer.def
+	$include	../fs/fs.def
+	$include	../fs/fs24.def
+	$include	../fs/ustream.def
+
+	$include	../language/stack.def
+	$include	../teraframe/device_a.def
+
+PRIORITIES		$equ	8
+ROM_IMAGE		$equ	1
+VECTOR_SEGMENT_INDEX	$equ	16384
+
+TRANSFER_PAGE		$equ	4096
+
+FREE_BASE		$equ	128+7
+
+MANAGER_BANKS           $equ    5
+MANAGER_TABLE           $equ    8-MANAGER_BANKS*/12
+SCALE_THRESHOLD		$equ	64*64	. the # system memory pages
+					. below which initial network
+					. buffer pool is < its maximum
+					. of 4 megawords
+					
+			$if	ROM_IMAGE
+RAM_LOAD_PAGES		$equ	0	. zero if all 
+					. the OS code
+					. is ROM
+			$else
+RAM_LOAD_PAGES		$equ	OS_HIGH+4095/*12
+			$endif
+					. otherwise
+					. the number
+					. of pages
+					. copied by
+					. the boot ROM
+
+
+	$list		2
+$(65:MANAGER_TABLE)
+
+new_dayclock	$res	2
+energy$advise	$res	1
+
+.	core2core_alert	$res	24		. parameter buffers for core2core interrupts
+
+	.	the rest of $(65) starts with memory management and scheduler data
+
+$(0:0:0/$p0)
+	j		engage		. normal start
+	j		restart		. ISR in error restart single step
+	j		external_interrupts
+	j		fpxpo_ii
+
+	j		i_timer		. TIMER$* incrementer overflow
+	j		alert_ii	. ATTENTION$
+	j		smp_pend	. start vector smp cores ...1111 1110
+
+	$do		63-$,	ir	0
+
+	j		anomaly		. analyse fault in ISR
+
+$(0:64)
+
+"$LOCK_SWITCH"	$equ	1		. thread switch under external interrupts lock
+
+engage	lx, xi		256-4
+	sx		sp_x
+	sx		fp_x
+
+	$if	0
+	ql	(4.5)			. to these can be switched
+	fd	(3.0)			. to see if floating instructions
+	fa	(6.0)			. operate correctly in interrupt mode
+	fan	(3.0)			. although no ISR ever uses fp
+	$endif
+
+	inA		ram$threshold
+	sa		FREE_BASE
+	tanu, xi	1
+	jnzb		image_in_rom
+
+	lcal		load_image
+
+			. this is an indirection literal pointing to a gate literal
+			. pointing past the interrupt vectors in TRANSFER_PAGE
+image_in_rom
+
+	go		(0800000++$p0(start, TRANSFER_PAGE/*12d)s)
+
+			. was [ go (TRANSFER_PAGE/*6) ] but an application could interrupt
+			. to there by mistake and accidentally reinitialise the system
+
+			. an application can only get to page TRANSFER_PAGE with ii instruction
+			. but this is also interrupt code and can go or call into ISR space
+
+anomaly	qs		32+128			. ISR faulted
+	ql		128			. save interrupt registers [ a b 6 7 ]
+	qs		28+128			. + [ r k x y ] for restart trace
+
+	lk		-1,,xi			. see if evidently a bad service call param did this
+	la		7, sp
+	mtane		(tag_ii_user_refp) 	. bad param to ISR?
+	ir		0			. go back and retire the process
+	mtane		(zeta_ii_user_refp)
+	ir		0
+
+
+	$if		0
+	mtane		(rtq_user_rfp)
+	ir		0
+	$endif
+
+	.	any more application causes of broken ISR above this line
+	.	below this line it has been decided to restart the system
+	.	but unknown the extent of system configuration taken place
+	.	working set interrupt registers are saved in interrupt stack registers
+	.	without assuming any storage assigned so to avoid nested faults
+
+	dl		fp_x			. [ fp sp ]
+	ds		128+26
+
+	ql		0, sp
+	qs		128+36
+
+	inB		65			. application TCB if any already loaded
+	sb		128+41
+
+	inA		66			. kernel vector list
+	inB		67			. kernel storage
+	ds		128+42
+
+	inA		68			. more kernel storage 
+	inB		69			. populated if system is large
+	ds		128+44
+
+	inA		70			. or very large
+	inB		71
+	ds		128+46
+						. deal with case interrupt frames too many
+	$if		0
+
+	lr		128+24+2,,xi		. architecture corrects minimally @ sp < 0
+	lx		sp_x			. keep it saner than that here
+	jxge		restart			. tendency is to get here if there are
+						. new contingencies in xrelay_reset
+	$endif
+
+	dl		(CHILLDOWN, REST_GRANULE:d)
+	outB		chill$down		. so cool it this much
+	outA		INDICATION$		. this way
+
+	$do	0,		j		engage			. reset without resynchronisation
+
+						. this is a broadcast only to core 0	
+restart
+	$if		1
+	lk		252,,xi			. prevent crash in network trunk reset
+	sk		fp_x			
+	sk		sp_x
+	$endif		
+
+	lk		-2,,xi			. all cores except core 0. This here must be core 0
+	la		SMP_PEND$,,xi		. latent param is subvector only
+	outA		MCAST_TO$		. other cores -> powersave.powersave.powersave...
+
+	call		(xrelay_reset)		. this is restart interrupt called from guard ISR
+	j		engage			. if a system-essential process faults: restart
+						. trace in interrupted TCB + 1024
+external_interrupts
+	qpush		a_x			. all external interrupts are allowed
+	qpush		r_x			. in overlapped time
+	on		see$1
+	dpush		ABT+WORKTANK_I
+
+	inA		XI_PENDING$
+	and		255,,xi			. only expecting 8 pins
+	jza		external_ixx
+	inB		CORE_SOCKET$		. this core index
+	sbl		3			.  positioned to OR device index
+
+	push		1,,xi			. pending pin position biased
+	push		-1,,xi
+	dpush		a_x
+
+external_next
+	off		carry$			. don't roll a random 1 into 3,sp
+						. any time around
+						. 3,sp contains 1 pin position bit
+	inc		2, sp			. interrupt source index [-1] -> 0..7
+	slc		3, sp			. ACK pin position biased by 1
+						. zero is now rolled into carry
+	src		0, sp			. PENDING pin shift to carry
+	jnc		external_next		. this won't roll 1 into 3,sp
+	
+	la		2, sp			. device index
+	inB		I$DATA, a
+
+	or		1, sp			. core index * 8
+	aa		1,,xi			. make the source index relative 1
+	ds		6+128			. zero is reserved
+
+	lb		3, sp			. 
+	sbr		1			. push out bias 
+	outB		XI_ACK$			. push the pending pins down
+
+	xor		-1,,xi			. subtract source relative 1 from address B3
+	aa		03001,,xi		. not concerned about carry here
+	on		see$all--see$1
+	la		0, a
+
+	jza		external_ix
+	lb		a_x
+	xorB		(0C00001s)		. more likely this than zero. Same effect
+	jzb		external_ix
+
+	sabr		WORKTANK_I		. obtain thread descriptor from thread control block
+	ly		*(WORKTANK_I*/12++TDESCRIPTOR-01000)
+
+	xor		3, y			. the same TCB ?
+	jnza		external_zx		. does not seem to be the same thread as before
+
+	la		2, y			. flags not on the way out ?
+	and		(EXIT++TRAP)
+	jnza		external_zx		. deconfigure thread from interrupt
+
+
+	lb		(WORKTANK_I*/12++XINTT-01000s)
+	tz		3, b			. external interrupt table?
+	lcal		write_xint_table	. yes, table the interrupt indication
+
+	z		2, y			. action, free the target thread to schedule
+	push		1,,xi			. force running thread to timeslice
+	pop		REALTIME$_CLOCK		. if it has nonzero imask it won't
+	j		external_ix		. and could be the target wake_up thread
+
+external_zx
+	z		0, x			. remove the thread from the kernel vector list
+						. it is not actual
+					. roll zero into low order position ACK flag
+external_ix	tz	0, sp
+		j	external_next
+
+external_ixx	qpop	0, sp
+
+		pop	a_x			. put windows 42, 43 back where you found them
+		sabr	WORKTANK_I
+		pop	a_x
+		sabr	WORKTANK_J
+
+		qpop	r_x
+		qpop	a_x
+
+	ir		0
+
+	
+$(69::,b)
+xitable	xint_table
+
+$(0)
+
+write_xint_table				. minimal preprocess ISR stub
+	push		MAX_INT_MASK,,xi	. data port read has already happened
+	sim		0, sp			. don't get interrupted with lock on
+
+	ts		xitable:lock_cell	. switch to driver affinity thread is immediate
+	j		$-1			. if interrupt source needs more I/O in realtime
+						. then more ISR preprocess is necessary
+	push		b_x
+	lx		xitable:wcursor		. read the write pointer
+	dl		6+128			. relative 1 interrupt source : received data
+	push		x_x			. save the structure-relative write pointer
+	ax		1, sp			. rezone it to the working window + table offset
+	ds		0, x			. write the data
+	pop		x_x			. save the structure-relative write pointer
+	pop		b_x
+
+	lr		xitable:limit		. read the table limit
+	ax		2,,xi			. advance the write pointer
+	jxge		write_xint_wrap		. wrap if necessary
+	j		write_xint_wcursor
+
+write_xint_wrap
+	$if		1
+	lx		4,,xi			. only the structure offet
+	$else
+	lx		xitable:xint,,i		. not the ea used to write
+	$endif
+
+write_xint_wcursor
+	sx		xitable:wcursor		. store updated write pointer
+
+	z		xitable:lock_cell	. free the structure lock
+	sim		0, sp			. change interrupt mask back
+	inc		sp_x
+	lret		0
+
+fpxpo_ii
+	la		1, sp		. saved PSR
+	and		fp$r,,xi	. isolate residue indication
+	lk		a_x
+	ql		(-0.0)		. default decision
+	qs		a		. write major result
+	tz		k_x		. 192-bit operation?
+	qs		$residue	. write minor result
+	on		see$1		. look into the thread control block
+	la		(0800000s)	. flag this happened
+	sa		FP_XPO		. in case the application likes to know
+	ir		0
+
+	$include	../timer/timer
+
+.	this may only be called for a thread with a core affinity
+.	it's broadcast as a simple way of filtering
+
+run_device_thread
+	lx		a_x
+	aa		-1,,xi		. [ 1..192 ] change to relative 0
+	dsr		3		. 
+	sbr		21
+	ds		6+128		. core index : device 0..7
+	inA		CORE_SOCKET$	. who am I ?
+	xor		6+128
+	jnza		run_device_wrongcore
+
+	la		0,,xi
+	ana		x_x
+	lx		03000-1,,xi
+	ax		a_x
+	la		0, x
+
+        and             (03FFFFF)
+        jza             run_device_nothread
+        lb              a_x
+        xorB            (0C00001s)
+        jzb             run_device_nothread
+
+	lcal	activate_thread
+
+run_device_wrongcore
+run_device_nothread
+	z		0, x		. bad thread
+	lret		0		. good thread
+
+	$if		1
+
+	. this does not need a broadast
+	. this is the same thing as EVENT_FREE$ event_free_ii
+	. which does not need broadcast
+
+activate_thread				. any kind of thread
+	on		see$all
+
+	push		ABT+WORKTANK_I	. save whatever active thread has for window 42
+	sabr		WORKTANK_I
+
+	ly		*(WORKTANK_I*/12++TDESCRIPTOR-01000)
+	xor		3, y		. does descriptor still match TCB?
+	jnza		inactive_thread
+	la		2, y
+	and		(EXIT++TRAP)
+	jnza		activate_exit
+
+	z		2, y		. thread to run
+					. reasons and information stored already
+activate_exit
+inactive_thread
+	pop		a_x
+	sabr		WORKTANK_I
+
+	lret		0
+
+	$endif
+
+
+alert_ii				. service request[s] from other core[s]
+	qpush		a_x		. may be a nested interrupt
+	qpush		r_x
+
+	la		8, sp		. latent param contains 2-bit subvector ++ page index
+					. or 22-bit subvector
+
+	dsr		22		. bitsplit 2.22
+	sbr		2
+	jza		alert_index22
+
+	j		$, a
+	j		device_activate	. broadcast to schedule on core of affinity
+	j		smp_activate	. broadcast to plant kernel vectors + storage on smps
+	j		thread_halt	. broadcast to arrest threads of closing processes
+
+
+alert_index22
+	tanuba		__ALERTS,,xi	. check don't guess
+	jc		alert_iix	. subvector out of range
+
+	j		alerts, b
+
+alerts	j		dayclock_u
+	j		smp_pend	. same as restart. Waits for core[0] to initialise system
+	j		1		. core[0] requested to restart everything
+					
+__ALERTS $equ		$-alerts
+
+dayclock_u
+	tp		128+24		. kernel storage not yet based
+	j		alert_iix	. do no try to read it
+	on		see$3
+	dl		new_dayclock
+	ds		DAYCLOCK$U
+	j		alert_iix
+
+device_activate
+	la		b_x
+	lcal		run_device_thread
+	j		alert_iix
+
+smp_activate
+	on		see$all
+	outB		66
+	la		APPLICATION_L,,xi
+	lb		kernel_B3	. kernel storage pointers for all cores
+	outA		application$L
+	outB		67
+	dl		kernel_B4
+	outA		68
+	outB		69
+	dl		kernel_B6
+	outA		70
+	outB		71
+
+	la		128,,xi		. core resume needs sp_x @ 128
+	sa		sp_x
+	lr		252,,xi		. schedule needs sp_x @ 252
+	sr		fp_x		. and fp_x now
+
+        go		(0800000++$p0(core_resume, TRANSFER_PAGE/*12d)s)	. does not return
+
+thread_halt
+.	lb		4, sp		. latent parameter is @ 8, sp and already in b
+.	andB		(03FFFFF)	. thread which must halt, already trimmed
+	inA		65		. I am running this thread?
+	xorB		a_x
+	jnzb		alert_iix	. request from another core?
+
+	la		1, fp		. zero application interrupt mask
+	and		(0807FFFs)	. or he jerst won't timeslice
+	sa		1, fp		. 2nd word application interrupt frame
+
+	la		1,,xi		. force thread to timeslice
+	sa		REALTIME$_CLOCK	. it's already marked stop
+
+alert_iix
+	qpop		r_x
+	qpop		a_x
+	ir		0
+
+load_image
+	.	if an image is to be loaded starting at
+	.	TRANSFER_PAGE, load it here from a local
+	.	file system
+
+	.	and adjust FREE_BASE to the first page
+	.	after the system image
+
+	.	otherwise a system is already in ROM
+	.	which is larger than just this
+	.	restart page
+
+	lret		0
+
+smp_pend
+	dl	(CHILLDOWN, 100000d)
+	lx	256,,xi
+	sx	sp_x
+	sx	fp_x
+
+smp_pendu
+	outB	chill$down	. for this microsecs
+	outA	INDICATION$	. powersave
+	j	smp_pendu
+
+	$do		$<256,$(0:256)
+
+$(0:0:TRANSFER_PAGE/$0p1)
+
+		ir	0	.	a spare, was the entry point from restart
+				.	but is addressable as an interrupt vector / system call
+
+		j		yield			. YIELD$*
+		j		spawn_ii		. SPAWN$*	
+		j		bank_ii			. BANK$*
+		j		array_ii		. ARRAY$*
+		j		bank_free_ii		. BANK$FREE*
+		j		exit_ii			. EXIT$*
+		j		thread			. THREAD$*
+		j		freetotal_ii		. TOTAL$FREE*
+		j		tag_ii			. TAG$
+		j		assign_xvector_ii	. ASSIGN_XVECTOR$
+		j		itable_ii		. I$TABLE
+		j		affinity_ii		. AFFINITY$
+		j		write_avector_ii	. WRITE_AVECTOR$
+
+	$do		14-$,	ir	0
+
+		j		fpxpo_read_clear_ii	. FP_XPO$FLAG*
+		j		xint_bind_ii		. XINT$BIND
+		j		handle_ii		. HANDLE$*
+		j		free_handle_ii		. FREE_HANDLE$*
+		j		read_handle_ii		. READ_HANDLE$*
+		j		read_xvector_ii		. READ_XVECTOR$*
+		j		write_xvector_ii	. WRITE_XVECTOR$*
+		j		read_socket_ii		. READ_SOCKET$*
+		j		usocket_c_ii		. USOCKET$C*
+		j		kernel_b1_ii		. KERNEL$B1*
+		j		b1_ii			. B1$*
+		j		kernel_b1_ii_1		. KERNEL$B1_1*
+		j		dayclock_w_ii		. DAYCLOCK$W*
+		j		twait_ii		. TWAIT$*
+		j		event_wait_ii		. EVENT_WAIT$*
+		j		event_free_ii		. EVENT_FREE$*
+		j		switch_fp_guard_ii	. FP_GUARD$*
+
+	$do		31-$,	ir	0
+
+		j		guard_ii		. GUARD$* this must stay at this address 1:31
+
+?	$do	XIOBASES,	j	xbase(32+?-1)
+
+	$do		44-$,	ir	0	
+
+CACHE_NETB$*	$vector	cache_standard_netbuf_ii
+ON_NETB$*	$vector	base_standard_netbuf_ii
+FREE_DEVB$*	$vector	unbase_deviceb_ii
+FREE_SOCKB$*	$vector	unbase_socketb_ii
+FREE_NETB$*	$vector	unbase_standard_netbuf_ii
+
+NET2SYM$*	$vector	net2sym_ii		. encode a connection handle
+						. and assign it to a process as stdin/out/err
+THREAD$STATE*	$vector	thread_state_ii		. is thread [application a] running?
+A$IDX*		$vector	storage_block_idxa_ii	. return in a 4K word block indentifier at base_table ABT+[a]
+B$IDX*		$vector	storage_block_idxb_ii	. return in b 4K word block indentifier at base_table ABT+[b]
+						
+RESTART_EI$	$vector		restart_ei
+ONETIME_SAVE$	$vector		one_time_save_ii
+TERAFRAME$*	$vector		teraframe:array_device_claim_ii	. ir		0
+
+USOCKET$*	$vector		usocket_ii
+FO$FRAME*	$vector		file_open_frame_ii
+FO$HEAP*	$vector		files_open_heap_ii
+FILE$HANDLE*	$vector		file_handle_ii
+"$ZETA"*	$vector		zeta_ii
+ENERGY$*	$vector		energy_ii
+
+"$SMP"*		$vector		smp_ii
+
+	$do		$>64,	$flag	compress page 1 vectors
+	$do		64-$,	ir	0
+
+__II_LOCK	$equ	0
+
+p	$proc
+II_LOCK* $name
+	$if	__II_LOCK
+	push	7,,xi
+	sim	0, sp
+	$endif
+	$end
+
+p	$proc
+II_FREE* $name
+	$if	__II_LOCK
+	sim	0, sp
+	inc	sp_x
+	$endif
+	$end
+
+freetotal_ii				. count up of all free memory banks
+
+STACKED_ITEST	$equ	0		. keep this at zero if you want to run
+					. it tests what happens if an ISR faults
+	$if	STACKED_ITEST		. ....................................
+	$if	STACKED_ITEST=1
+	la	*(31*/18)
+	$else	STACKED_ITEST
+	  $if	STACKED_ITEST=2
+	  dl	(1, 100d)
+	  $elseif STACKED_ITEST=3
+	  dl	(00FFFF, 100d)
+	  $else
+	  dl	(03FFFFF, 100d)
+	  $endif
+	ds	2, sp
+	ir	0
+	$endif
+	$endif				. ....................................
+
+	lcal		available_banks
+	dsr		24		. it may be larger than 24 bits
+	dsl		12		. when expressed in words
+	ds		4		. write to caller a:b
+	ir		0
+	
+bank_ii	II_LOCK
+	la		4
+	lcal		bank
+	sa		4
+
+	jza		nothing_gained
+	on		see$1
+	la		BANK_CHAIN
+	sa		0, b		. descriptor pointer
+	sb		BANK_CHAIN	. to front of chain
+nothing_gained
+	II_FREE
+	ir		0
+
+array_ii
+	II_LOCK
+	la		4
+	lcal		array
+	sa		4
+
+	jza		nothing_banked
+	on		see$1
+	la		BANK_CHAIN
+	sa		0, b		. descriptor pointer
+	sb		BANK_CHAIN	. to front of chain
+nothing_banked
+	II_FREE
+	ir		0
+
+bank_free_ii
+	II_LOCK
+	la		4		. bank ID value
+
+	on		see$all		. see TCB +
+	lb, xi		BANK_CHAIN	. descriptors in kernel memory
+
+	lk		(0400000)
+	mta		k_x		. either not big
+	j		bank_free_sysmem
+	lk		63,,xi		. or not device zero = executable space
+	mta		(0)
+	j		teraframe:array_device_free
+
+bank_free_sysmem
+	lk		(03FFFFF)	. 22-bit search mask
+	j		bank_freewheel	. start page index match will do	
+
+bank_freewheel
+	ly		b_x
+	lb		0, y
+	jzb		bank_freed
+	mta		1, b		. skip on equal bank ID value 
+	j		bank_freewheel
+
+	la		b_x		. bank free wants
+					. a descriptor pointer
+
+	lb		0, a		. take it out of
+	sb		0, y		. the chain
+
+	lcal		bank_free
+bank_freed
+	II_FREE
+	ir		0
+
+spawn_ii
+	II_LOCK
+	on		see$1	. you get here from an application
+
+	inB		65	. TCB in B65 and vector bank in B2
+	la		ABT+2	. are constructed in situ
+	dpush		a_x	. so save the caller's environment
+
+	ql		a	. read the 4 parameters from
+				. the application accumulators
+
+	lcal		spawn
+
+	on		see$2	. read the kernel vector bank
+	dl		rx_buffers
+
+	push		tcx_v4(1)
+	dpush		NFS_MOUNTS
+	off		see$2
+	pop		NFS_MOUNTS
+	pop		FILESHARE_TABLE
+	pop		tcx_v4(1)
+
+	ds		rx_buffers
+
+	pop		a_x	. retrieve the caller's B2
+
+	inB		65	. new B65 as result value
+	sb		a	. in the application A-Register
+	pop		b_x
+	outB		65	. restore the caller's PCT
+	sabr		2	. restore the caller's B2
+	II_FREE
+	ir		0
+
+
+
+start	la		APPLICATION_L,,xi
+	outA		application$L	. lower limit application code calls
+					. to avoid accidental jumps into interrupt code
+					. using application registers
+	lcal		measure
+	lcal		stem_link
+
+			. some manager tasks will
+			. get tabled here
+
+	ql		(networks, 0, NETWORK_D, -1:q)
+	lcal		spawn
+
+	la		ABT+2			. the IP vector bank
+	outA		66			. is the kernel vector bank
+						. kernel routines which need
+						. to find kernel data
+
+	on		see$2
+
+	inB		67			. take copies for SMPs
+	ds		kernel_B2
+
+	inA		68
+	inB		69
+
+	ds		kernel_B4
+
+	inA		70
+	inB		71
+
+	ds		kernel_B6
+
+	ql		(0q)
+	ds		NFS_MOUNTS		. + FILESHARE_TABLE
+	lr		256/4-1,,xi
+	ly		usockb(1),,xi
+
+unbind	qs		0, y			. remove old assignments
+	ay		4,,xi			. of port descriptors
+	jdr		unbind
+
+	lr		sp_x
+	lk, xi		128
+	sk		sp_x
+
+	$if		$LOCK_SWITCH		. prime saved interrupt mask
+	z		x$save2			. for restore at end of choose
+	$endif
+
+	lk		1,,xi			. just core[0] so far
+	sk		cores_active
+
+	j		choose
+
+	$include	memory
+.	middle_hit	call	(1*/6)		. lcal	middle_hit
+	$include	measure
+	$include	threadp
+
+.	xbase_u	j		guard_ii	. a bit unnecessary?
+
+	$include	xiobase
+	$include	events
+	$include	timer	. rta.gen/timer contains ISR TWAIT$
+
+.	each handle integer corresponds to a 48-bit encoding
+.	starting at handle(1)
+
+.	the index corresponds to a port number or to a
+.	TCP connection and is the encoded offset of the
+.	control block in the containing bank
+
+.	47	40 39		     24	 23				0
+.	_________________________________________________________________
+.	|hndl type|	 index 16 bits	| descriptor of containing bank	|
+.	|_________|_____________________|_______________________________|
+
+handle_ii
+	lx		free_handle
+	tnz		x_x
+	j		new_handle	
+	ly		1, x			. chain link is 2nd word
+	sy		free_handle
+	j		encode_handle
+
+new_handle
+	lx		handles			. add a new 48-bit encoding
+	lr, xi		HANDLES_MAX		. at the list end
+	jxge		no_handle		. if you can
+	ly		2,x,i			. increment handle obtain pointer
+	sy		handles
+
+encode_handle
+	la		a			. read application register a
+	and		(255*/16s)		. only allowed parameter = type
+	sa		0, x
+	z		1, x			. encoding complete
+
+	ax		-handle(1),,xi		. make handle # from encoding address
+	la		x_x
+	sar		1
+	sa		a			. write handle # to application register a
+	ir		0
+
+no_handle
+	la, xi		-1			. write regrets to application register a
+	sa		a
+	ir		0
+
+free_handle_ii
+	lcal		check_handle
+	jna		not_a_handle
+	z		0, x			. encode it off
+	z		1, x			. it shall be free chain last
+						. unless it's already in the chain
+	la		x_x			. address of encoding
+	lk		-1,,xi			. as search argument
+
+	lx		free_handle
+	tz		x_x
+	j		free_handle_test
+	sa		free_handle
+	ir		0			. chain link is 2nd word
+						. handle empty chain differently
+free_handle_test
+	mtane		x_x
+	j		handle_free_already
+
+	ly		x_x			. previous <- this
+	lx		1, x			. this <- next
+
+	tz		x_x
+	j		free_handle_test
+	sa		1, y			. add to end of chain
+
+handle_free_already
+not_a_handle
+	ir		0
+
+check_handle
+	la		a
+	lx, xi		handle(1)
+	sal		1
+	ax		a_x
+.	on		see$1		not any more. handles are in vector list
+	lr		handles
+	jxge		handle_out_of_range
+	la		0, x
+	lret		0
+handle_out_of_range
+	la, xi		-1
+	lret		0
+
+read_handle_ii
+	lcal		check_handle
+	sa		a
+	ir		0
+
+file_handle_ii
+	lcal		check_handle
+	jna		usocket_nane
+
+	lk		(255*/16s)
+	mtane		(AF_INET*/16s)	. more file types go here
+	j		fhandle_add_pointer
+	mtane		(FS$DEVICE$ARRAY*/16)
+	j		fhandle_add_pointer
+
+	la		-NO_FILE_TYPE,,xi
+	sa		a		. tell caller what happened
+	ir		0
+
+fhandle_add_pointer
+	lb		x		. application x -> file open descriptor
+	sb		1, x
+	ir		0
+
+usocket_c_ii
+	lcal		check_handle
+	jna		usocket_nane
+					. a_a = 1st handle word, x_x -> encoding tuple
+	lk		(255*/16s)
+	mta		(IPPROTO_TCP*/16s) . encoding must be TCP handle bound or not
+	j		usocket_nane
+	lb		x		. application x -> TCB
+					. value policed in kernel call routines or trouble
+	andB		(0FF8)
+	and		(00FFFF)
+	or		(TCP_TCB*/16s)
+	j		usocket
+
+usocket_ii
+	lcal		check_handle
+	jna		usocket_nane
+
+	lb		b		. port number in application b
+	andB		(00FFFF)	. value policed in kernel call routines
+					. or trouble
+	lk		-1,,xi		. handle must be a socket type
+	mtane		(IPPROTO_UDP*/16s)
+	j		usocket
+	mtane		(IPPROTO_TCP*/16s)
+	j		usocket
+
+usocket_no_protocol
+	la		-NO_PROTOCOL,,xi
+	sa		a
+	ir		0
+
+usocket	or		b_x
+	on		see$1		. look in the thread control block
+	lb		ABT+BSOCKET	. the connections block must be based there
+	ds		0, x
+	ir		0
+
+usocket_nane
+	la		-NO_HANDLE,,xi
+	sa		a
+	ir		0
+
+read_socket_ii
+	lcal		check_handle
+	jna		socket_out_of_range
+
+	dl		0, x
+	ds		a
+	ir		0		. return the whole 48-bit encoding
+					. and let application code verify it
+
+
+socket_out_of_range
+	z		a
+	ir		0
+				
+
+
+.	these are here to read or write
+.	a pointer in the kernel vector bank
+
+.	from routines which might be called
+.	from either a kernel task or an
+.	application
+
+.	see$2 makes the kernel vector bank
+.	visible instead of the application
+.	vector bank
+
+.	on return from ISR, see$2 is on or off
+.	whichever it was before
+
+
+xvector_in_range
+	lx		x
+	lr		02000,,xi
+	jxge		xvector_low_threshold	. test 1 passed
+xvector_outwith_range
+	lret		0
+xvector_low_threshold
+	lr		03000,,xi
+	jxge		xvector_outwith_range	. test 2 not passed
+	on		see$2			. kernel vector list
+	lret		1			. test 2 passed
+
+
+read_xvector_ii
+	z		a			. default answer no pointer
+	lcal		xvector_in_range
+	ir		0
+	la		0, x
+	sa		a
+	ir		0
+
+write_avector_ii
+	$ii_ringfest1	7
+	lcal		xvector_in_range
+	ir		0			. out of range
+	off		see$2			. application vector write
+	la		a
+	sa		0, x
+	ir		0
+
+write_xvector_ii
+	$ii_ringfest1	2 5
+	lcal		xvector_in_range
+
+	ir		0
+	la		a
+	sa		0, x
+	ir		0
+
+assign_xvector_ii
+	$ii_ringfest1	2 7
+	la		a			. read request words
+	z		a			. default answer no pointer
+	lcal		xvector_in_range
+	ir		0
+.	la		a
+	push		x_x
+	lcal		bank
+	pop		x_x
+	sa		0, x			. write storage block index to vector
+	sa		a			. report it to application
+	ir		0			. but not in application memory estate list
+
+kernel_b1_ii_1
+	$ii_ringfest1	2 7 5 4 10
+
+	on		see$2
+	la		VECTOR_B1(1)
+	outA		1
+	ir		0
+
+kernel_b1_ii
+	$ii_ringfest1	2 7
+
+	on		see$2
+	la		*a	. read the bank sought via user A register
+	outA		1
+	ir		0
+
+b1_ii	on		see$1	. ++see$2
+	la		*B1_P
+	outA		1
+	ir		0
+
+dayclock_w_ii
+	$ii_ringfest1	2
+
+	dl		a
+	ds		DAYCLOCK$U
+	ir		0
+
+switch_fp_guard_ii
+	push		fp$guard
+	push		a
+	pop		fp$guard
+	pop		a
+	ir		0
+
+fpxpo_read_clear_ii
+	on		see$1		. look into the thread control block
+	tn		FP_XPO
+	ir		1		. indicate clear
+	z		FP_XPO		. clear underflow / overflow flag
+	ir		0		. indicate not clear until here
+
+xint_bind_ii
+	on		see$1++see$2	. kernel vector list
+	lx		a		. read external interrupt number
+	tp		x_x		. minus means free it
+	j		xint_free	
+	lr		X$INTERRUPTS+1,,xi
+	jxge		xint_out	. interrupt source number too high
+	la		0,,xi		. negative displacement from vector list end
+	ana		a		. must be [  1 .. X$INTERRUPTS  ]
+	jpa		xint_out	. must be [ -1 .. -X$INTERRUPTS ]
+	lx		03000,,xi
+	ax		a_x
+	inA		65		. thread control block
+	sa		0, x		. claim this interrupt source
+xint_out	ir	0
+
+
+itable_ii	on	see$1
+	z		XINTT+4		. turn 1st entry off
+	ql		(0, 4, 4, 4+XINT_TABLE*2q)
+	qs		XINTT		. unlocked, r/w pointers initial, wrap limit
+	dsr		48
+	ds		6+128
+	lr		XINT_TABLE/2-1,,xi
+	lx		XINTT+4,,xi
+
+itable_write
+	qs		0, x
+	ax		4,,xi
+	jdr		itable_write
+	ir		0
+
+affinity_ii
+
+	$if		TDESCRIPTOR_WORDS>6	. = affinity supported
+	on		see$all--see$2
+	la		a
+	lb		TDESCRIPTOR
+	sa		6, b
+	$endif
+
+	ir		0
+
+zeta_ii	II_LOCK
+	la	a
+	lcal	thread_actual?
+	j	zeta_ii_no_op		. no thread
+					. thread_actual? opens TCB in window
+
+	la	*(BVOLATILE_I*/12++TAG-01000)	. 1st word of thread name
+	sar	$word-$byte		. protected?
+	aa	-'*',,xi
+	jza	zeta_ii_no_op		. protected, don't force exit
+
+	la	(TIME_WAIT++EXIT:s)	. force exit
+	sa	2, x
+
+zeta_ii_user_refp			. get-out point for fault on [ sa 2,x ]
+zeta_ii_no_op				. get-out point for no thread / protected
+	la	(0C00001s)		. thread_actual? opens window BVOLATILE_I
+	sabr	BVOLATILE_I		. on target TCB, but does not close window
+	II_FREE
+	ir	0
+
+	$if	0
+
+send_alert_ii
+	inA	CORE_SOCKET$
+	lx	core2core_alert,,xi
+	ax	a_x
+	on	see$3
+	dl	a
+	sa	0, x
+	outB	MCAST_TO$
+	ir	0
+
+	$endif
+
+xint_free
+	ax		03000,,xi	. negative displacement from here
+	lr		03000,,xi	. must not be as high as this
+	jxge		xint_free_out
+	lr		X_INTERRUPT(X$INTERRUPTS),,xi	. or any lower than this
+	jxge		xint_free_in
+xint_free_out	ir	0
+xint_free_in	z	0, x		. free this external interrupt
+	ir		0		. whoever had claimed it 
+
+net2sym_ii				. first address the destination
+	la		a		. primary threadcb is in application a
+	sabr		BVOLATILE_I	. that window is treated as volatile
+	la		*(BVOLATILE_I*/12++ABT-01000+2) . vector window of the target thread
+	sabr		BVOLATILE_I
+					. 6:12 address of transmission CB is in
+	la		x		. application x
+	lb		0,,xi
+	drl		12		. base tag in b, offset in a
+	sar		12+3		. isolate 9 bits
+	sal		3		. multiplied by 8
+	or		(TCP_TCB*/16s)	. transmission CB is exactly 24 words
+	on		see$1		. read your own ABT+BSOCKET
+	lb		ABT+BSOCKET	. read the bank ID of connection CBs
+
+	lx		(BVOLATILE_I*/12)
+	ds		handle(1)**0FFF,x	. stdin
+	ds		handle(2)**0FFF,x	. stdout
+	ds		handle(3)**0FFF,x	. stderr. process start should have reserved thse
+
+	la		(0C00001s)		. close the gate
+	sabr		BVOLATILE_I
+	ir		0
+
+thread_actual?			. subroutine called from ISR
+	sabr	BVOLATILE_I	. thread control block index must be in interrupt a
+				. ISRs calling here either directly or over thread_current?
+				. must themselves close address space window BVOLATILE_I
+				. before return
+
+	on	see$1++see$all**(see$7*/MANAGER_BANKS)-1
+
+	lb	ABT+BVOLATILE_I		. did the requested block get into window
+	xorB	(0C00001s)		. BVOLATILE_I ?
+	jzb	thread_not_actual	. no storage in window, don't try reading
+
+	lx	*(BVOLATILE_I*/12++TDESCRIPTOR-01000)
+
+	lr	next_tdescriptor_sp	. this changes
+	jxge	threads_threshold
+	j	thread_not_actual
+
+threads_threshold
+	lr	tdescriptor_high_index	. this is fixed
+				. descriptor stack is dynamic but check possible ranges
+				. or following tests could crash within ISR = inconvenient
+
+	jxge	thread_not_actual . thread control block does not correspond
+				. to a thread descriptor
+	
+	xor	3, x		. does descriptor point to this thread CB?
+	jnza	thread_not_actual
+
+	lret	1		. thread seems real
+
+thread_not_actual
+	lret	0
+
+
+thread_current?
+	lcal	thread_actual?
+	lret	0		. no thread
+
+	la	2, x
+	and	(TRAP++EXIT)	. and is the thread running?
+	jnza	thread_stopped
+
+	lret	1		. thread seems OK
+
+thread_stopped
+	lret	0		. thread seems gone
+
+thread_state_ii			. general purpose ISR is thread [application a] running?
+	la	a
+	lcal	thread_current?
+	j	thread_state_stopped	. no
+
+	la	(0C00001s)	. thread_current? opens window BVOLATILE_I
+	sabr	BVOLATILE_I	. on TCB but does not close the window
+	ir	1
+
+thread_state_stopped
+	la	(0C00001s)	. thread_current? opens window BVOLATILE_I
+	sabr	BVOLATILE_I	. on TCB but does not close the window
+	ir	0
+
+storage_block_idxa_ii		. return the storage block index at window [a]
+	lb	a
+	on	see$1		. address the thread control block
+	andB	63,,xi
+	orB	ABT,,xi
+	la	0, b
+	sa	a
+	ir	0
+
+storage_block_idxb_ii		. return the storage block index at window [b]
+	lb	b
+	on	see$1		. address the thread control block
+	andB	63,,xi
+	orB	ABT,,xi
+	la	0, b
+	sa	b
+	ir	0
+
+cache_netb* $proc
+	ql	ABT+48+4*?-4
+	qs	$NETB+4*?-4
+	$end
+
+cache_standard_netbuf_ii
+	$ii_ringfest1	2	. none but page 2 may make this service call
+
+	on	see$1++see$2
+?	$do	4,	cache_netb
+	ir	0
+
+retrieve_netb* $proc
+	la	$NETB+?-1
+	sabr	48+?-1
+	$end
+
+base_standard_netbuf_ii
+	$ii_ringfest1	2 7
+
+	on	see$2
+?	$do	16,	retrieve_netb
+	ir	0
+
+unbase_deviceb_ii
+	la	(0C00001s)
+	sabr	32
+	ir	0
+
+unbase_socketb_ii
+	la	(0C00001s)
+	sabr	BSOCKET
+	ir	0
+
+unbase_standard_netbuf_ii
+	la	(0C00001s)
+?	$do	16,	sabr	48+?-1
+	ir	0
+
+tag_ii	la	a			. optional thread name
+	jnza	$+2			. this thread if no other
+	inA	65
+	sabr	BVOLATILE_I
+
+	lk	255,,xi
+	ly	b			. name string must be in caller address space
+	lx	(BVOLATILE_I*/12++TAG-4096)
+	lr	36, x, i		. restrict to 100 characters or so
+
+tag_iiw	jxge	tag_iiz
+	la	0, y
+
+tag_ii_user_refp
+	sa	0, x
+	ax	1,,xi
+	ay	1,,xi
+	mta	(0)			. was at least 1 low-order octet of that word zero?
+	j	tag_iiw			. not yet
+
+tag_iiz	la	(0C00001s)		. prevent accidental access
+	sabr	BVOLATILE_I
+	ir	0
+
+
+file_open_frame_ii
+	$ii_ringfest1	7		. fs routines only to add to openfile blocks heap
+
+	lx	a
+	off	see$2
+	tz	FILE_OPEN_HEAPU
+	sx	FILE_OPEN_HEAPU
+	ir	0
+
+files_open_heap_ii			. necessarily application callable
+	lx	a
+	off	see$2
+	lcal	file_open_heap
+	ir	0
+
+file_open_heap
+	sx	FILE_OPEN_HEAP
+	sx	FILE_OPEN_HEAPU
+	lret	0
+
+restart_ei
+	la	a			. read application a into interrupt a
+	on	see$1			. look in app TCB
+	sa	ERROR_RESTART
+	ir	0			. that's it done
+
+one_time_save_ii			. frame save for IP RX
+	lx	sp
+	sx	ONE_TIME_SAVE1
+	ir	0
+
+smp_ii	$ii_ringfest1	2 5
+	on	see$2
+	la	cores_active
+	and	k			. cores mask in application k. Any already active?
+	xor	k			. just the cores not yet active thanks
+	lk	a_x
+	or	cores_active		. add to so-far string
+	sa	cores_active
+	inA	66			. kernel vector table
+	or	(SMP_ACTIVATE$:s)
+	outA	MCAST_TO$
+	ir	0
+
+irespite
+	dl	(CHILLDOWN, REST_GRANULE:d)
+	outB	chill$down
+	outA	INDICATION$
+	lret	0
+
+energy_ii
+	$ii_ringfest1	2
+
+	on	see$3
+	la	a
+	sa	energy$advise
+	
+	ir	0
+
+	$include	../teraframe/device_a
+
+TRANSFER_PAGE_HIGH
+
+	$trace		TRANSFER_PAGE_HIGH
+	$do	$zenith>4096,	$flag	kernel page oversize
+
+	$path		../t77.4
+	$include	t77
+	$path

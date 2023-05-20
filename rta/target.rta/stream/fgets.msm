@@ -1,0 +1,184 @@
+
+
+fgets_by_handle		. vector name fgets
+
+	$head_far	 params(handle1,	int		;
+				bufferp1,	int		;
+				bytes1,		int		)
+
+	la	handle1
+	ii	READ_SOCKET$
+	lk	(255*/16s)
+	mtane	(TCP_TCB*/16s)
+	go	(read)
+	mtane	(IPPROTO_UDP*/16s)
+	go	(read)
+	mta	(FS$DEVICE$ARRAY*/16s)
+	j	fgets_null
+
+	sb	handle1		. replace handle in arguments
+	j	fgets24		. with file open block pointer
+
+fgets_null
+	la	0,,xi		. null device
+	fret	0
+
+
+				. vector name fgets_datafile
+				. argument 1 is -> file open block
+				. not a handle
+
+FGETS_DIRECT	$equ	1
+
+fgets24	$tree
+
+	$head_far	 params(file_openp,	int		;
+				bufferp,	int		;
+				bytes,		int	)	;
+								;
+			scalars(data_sampled,	long		;
+				transfer,	int		;
+				final_count,	int		;
+				bytes_delivered,int		;
+				extentp,	int		;
+				share,		int		;
+				stream_registers,  float, RDATAC)
+
+	la	(B_FS2*/12)
+	lk	(63*/12)
+	mta	file_openp
+	j	noshare
+	call	(fileshare_space_open)
+	n	share
+noshare
+
+	lx	bufferp
+	call	(wstream_starta)
+
+	. the extent is in memory word addressable filestore or otherwise cached
+	. extent size is known to the file system
+	. only words split across read requests are accessed twice
+
+	c	(fs24_advance)	file_openp	(0L),,long	. describe current extent
+	jna	break
+	jdz	away			. a is just as zero as b is. Nothing more to read
+	
+sample	ds	data_sampled
+
+	.	fs24_window is zero-copy read on part of a file extent
+	.	at seek location per open / previous reads / fs24_advance
+
+	c	(fs24_window)	file_openp
+								
+	sb	extentp
+	dl	data_sampled
+
+					. b = words remaining in extent
+	mf	$word/$byte,,xi		. from actual position. Translate for bytes
+
+	la	bytes			. posit outstanding maximum bytes
+	sa	transfer		. are fewer that available cached bytes
+	sa	final_count		. then change that if necessary
+
+	lx	file_openp		. net of any part of 1st word already consumed
+	anb	fspaxq:o:column		. chip away bytes already taken from 1st word
+
+	la	b			. a = net bytes cached
+	ana	bytes			. b = net bytes - caller maximum
+	jc	transfer_decided	. transfer + final_count are already caller maximum
+	sb	transfer		. change them to available = less
+	sb	final_count		. this is the decrementing loop count
+
+transfer_decided
+
+	$if	FGETS_DIRECT
+	lb	extentp			. point to the extent
+	$else
+	lb	text,,i			. point to the pool	
+	$endif
+
+	call	(rstream_starta)	. this restarts RDATAC
+        off     b$stream16r
+	on	b$streamZR
+	lk	+(1*/$byte)-1,,xi
+
+	lx	file_openp		. are there some consumed bytes
+	ly	fspaxq:o:column		. in the 1st word?
+	ex	realign, y
+
+
+along	rsr	$byte
+	lb	a			. easy to interrogated in register b
+
+	sal	$word-$byte
+	wsr	$byte
+	dec	final_count
+
+	xorB	LF,,xi			. end of line ?
+	jzb	eoline
+
+	tz	final_count		. end of this cached sample?
+	j	along			. replace all of it if so
+
+	la	bytes
+	ana	transfer
+	sa	bytes
+	jza	eoline
+
+	lx	file_openp
+	z	fspaxq:o:column		. we want all the bytes of the next frame
+	c	(fs24_advance)	file_openp	data_sampled,,long
+	jdz	eoline			. no more data in the file
+	tz	bytes_delivered		. if bytes have been delivered report them
+	jna	break			. nothing read yet report any error from fs24_advance
+	jpa	sample			. this is normal, keep scanning
+
+eoline	lcal	pointerise
+	lx	file_openp
+	sa	fspaxq:o:column
+
+	la	q
+	ana	fspaxq:serialp:absolute_pointer+1	. pointerise already rounded q
+	and	(262143)		. remove window tag
+
+	lb	transfer		. the file advance is words delivered rounded down
+	anb	final_count		. this is the real byte count delivered
+
+	ab	bytes_delivered
+	sb	bytes_delivered
+
+	dsr	24			. data words advance
+
+	c	(fs24_advance)	file_openp	 a,,long
+
+away	lb	bytes_delivered		. this result goes back to the macro
+	jzb	deliver_eofs
+	la	0,,xi			. the macro changes it to pointer -> rx
+	wsr	24			. if it's good
+	la	b
+	j	break
+
+deliver_eofs
+	la	-1,,xi
+	 
+break	tp	share
+	call	(fileshare_space_close)
+
+	qpop	RDATAC			. stream registers need to be nonvolatile
+"$$frame" $set	$$frame-4
+	$ret				. return whatever result has been placed in a
+
+pointerise
+	la	RDATAC
+	jza	pointerised
+	la	24,,xi
+	ana	RDATAC
+	sar	3
+	dec	q			. read partially consumed word again
+pointerised
+	lret	0	
+
+realign
+?	$do	$word/$byte,	rsr	?*$byte-$byte
+
+	$root

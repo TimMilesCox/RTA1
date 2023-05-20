@@ -1,0 +1,314 @@
+	$path		../
+	$include	def/rta.def
+	$path
+
+ASIDE	$equ	8		. save registers for leading 48 bits
+				. of the cached data sample
+
+LINE2	$equ	10		. buffer for trailing 48 bits 
+				. of the cached data sample
+
+DELIMITER $equ	6		. result: pointer to matched search
+				. string descriptor in delimiter stack
+
+LIST	$equ	7		. argument: pointer to delimiter stack
+
+CACHE	$equ	x		. remaining bits cached in registers
+
+STREAM	$equ	d$save		. remaining bytes not yet cached
+POINTER	$equ	d$save1		. consumed columns relative zero
+COLUMNS	$equ	d$save2		. temp: bits size of matched search string
+ALL	$equ	d$save3		. temp: all flag in matched
+				.	search string descriptor
+
+.	strings manipulation library
+.	for size-determined string / search functions
+.	with large search / replace arguments
+.	up to 96 bits in size
+
+.	a faster version with search arguments
+.	up to 48 bits in size may be called
+.	on compiler / macro-text decision
+
+
+$(0:64)
+
+up	z	DELIMITER
+	ly	LIST
+
+up1	lk	0, y
+	tp	k
+	j	up2_24by1	. simplest path
+				. nonrepeat delimiter up to 24 bits
+	tnz	k
+	lret	1		. even simpler, end of delimiter list
+				. store 1 byte and advance
+	src	k
+	sc	ALL
+
+	tz	k
+	j	up2_48?
+
+	lk	1, y		. 2nd simplest path
+				. delimiter up to 24 bits, ALL may be set
+	mta	2, y		
+	j	up3
+
+	ds	ASIDE
+	lsc	k
+	sb	COLUMNS
+	sy	DELIMITER
+up2_more
+	lcal	along
+	ds	ASIDE
+
+	tnz	ALL
+	lret	0		. margin
+
+	tz	CACHE
+	tp	CACHE		. nonzero? positively?
+	lret	0		. reach here if zero or less
+
+	ly	DELIMITER
+	mta	2, y
+	lret	0		. margin
+	j	up2_more
+
+up3	ay, xi	3
+	j	up1
+
+
+up2_48?	dec	k
+	tz	k
+	j	up2_72?		. count in k started  > 1
+				. count in k started at 1
+	lk, xi	-1
+	mta	2, y
+	j	up4
+	ds	ASIDE
+	la	b
+	lk	1, y
+	mta	3, y
+	j	up4reload
+
+	lsc	k
+	lb, i	24, b
+	sb	COLUMNS
+	sy	DELIMITER
+
+up4_more
+	lcal	along
+	ds	ASIDE
+
+	tnz	ALL
+	lret	0		. margin
+
+	tz	CACHE
+	tp	CACHE		. nonzero? positively?
+	lret	0		. margin
+
+	ly	DELIMITER
+	lk, xi	-1
+	mta	2, y
+	lret	0		. margin, delimiter hit
+	la	b		. once at least already
+	lk	1, y
+	mta	3, y
+	j	up4_reload_return
+	j	up4_more	. calls along = reloads a
+
+up4_reload_return
+	la	ASIDE
+	lret	0
+
+up4reload
+	la	ASIDE
+up4	ay, xi	4
+	j	up1
+
+up2_72?	dec	k
+	tz	k
+	j	up2_96		. count in k started > 2
+				. count in k started at 2
+	lk, xi	-1
+	mta	2, y
+	j	up5
+	ds	ASIDE
+	xorB	3, y
+	jnzb	up5reload
+	la	LINE2
+	lk	1, y
+	mta	4, y
+	j	up5reload
+	lsc	k
+	lb	48, b, i
+	sb	COLUMNS
+	sy	DELIMITER
+up5_more
+	lcal	along
+	ds	ASIDE
+
+	tnz	ALL
+	lret	0		. margin no repeat
+
+	tz	CACHE
+	tp	CACHE
+	lret	0		. beyond field
+
+	lk, i	-1
+	mta	2, y
+	lret	0
+	xorB	3, y
+	jnzb	up5reload_return
+	lk	1, y
+	la	LINE2
+	mta	4, y
+	j	up5reload_return
+	dl	ASIDE
+	j	up5_more
+
+up5reload_return
+	dl	ASIDE
+	lret	0		. margin no more repeats
+
+up5reload
+	dl	ASIDE
+up5	ay, xi	5
+	j	up1
+
+up2_96	lk, xi	-1
+	mta	2, y
+	j	up6
+	ds	ASIDE
+	xorB	3, y
+	jnzb	up6reload
+	la	LINE2
+	xor	4, y
+	jnza	up6reload
+	la	LINE2+1
+	lk	1, y
+	mta	5, y
+	j	up6reload
+
+	lsc	k		. a hit
+	sb	COLUMNS
+	sy	DELIMITER
+
+up6_more
+	lcal	along
+	ds	ASIDE
+
+	tnz	ALL
+	lret	0		. not a repeat delimiter
+
+	tz	CACHE		. beyond field?
+	tp	CACHE
+	lret	0
+
+	lk, xi	-1		. repeat the compare for case ALL
+	mta	2, y
+	lret	0
+	xorB	3, y
+	jnzb	up6reload_return
+	la	LINE2
+	xor	4, y
+	jnza	up6reload_return
+	la	LINE2+1
+	lk	1, y
+	mta	5, y
+	j	up6reload_return
+	j	up6_more
+
+up6reload_return
+	dl	ASIDE
+	lret	0		. margin no more repeats
+
+up6reload
+	la	ASIDE
+up6	ay, xi	6
+	j	up1
+
+up2_24by1			. search string up to 24 bits nonrepeat
+	mta	1, y
+	j	up2
+	ds	ASIDE
+	lsc	k
+	sb	COLUMNS
+	sy	DELIMITER
+	lcal	along
+	ds	ASIDE
+	lret	0		. margin
+
+up2	ay, xi	2
+	j	up1
+	
+initial	ana	b		. reduce outstanding bytes by POINTER
+	ds	STREAM		. POINTER is relative zero here
+
+	ly, xi	96		. startup load CACHE
+	sy	CACHE		. after RDATA RDATAC are initialised
+				. with any subscripts, POINTER etc
+	lr, xi	96/$byte-1
+init1b	lcal	nexp		. do not advance POINTER
+	jdr	init1b		. this is caching input columns
+	lret	0		. not consuming them
+
+along	dl	ASIDE
+	ly	COLUMNS
+along1	lcal	next
+	ay, xi	-$byte		. count down delimiter width
+	tz	y
+	tp	y
+	lret	0		. reached zero or less
+	j	along1
+
+.	function to scope next input column after
+.	write from high-order positions of register a
+
+				. bytes are any size
+				. columnular comments show
+				. octets as an example
+
+
+next	inc	POINTER		. one column consumed
+	sar	$byte		.	00xxxx yyyyyy
+nexp	dsl	$byte		.	xxxxyy yyyy00
+	ds	ASIDE
+
+	dl	LINE2		.	mmmmmm nnnnnn
+	drl	$byte		.	mmmmnn nnnnmm
+	sa	LINE2
+
+	la	LINE2+1		.	       nnnnnn
+	tz	STREAM		. read no words outside the field
+	tp	STREAM
+	lcal	next_space	. arrive here at <= 0
+
+	dec	STREAM		. remaining unread columns
+	rsr	$byte		. 	       nnnnNN
+
+				. return here from next_space
+	sa	LINE2+1
+	andB,xi	+(1*/$byte)-1	.	       0000mm
+	orB	ASIDE+1		.	       yyyymm
+
+	la	ASIDE		.	xxxxyy yyyymm
+	lret	0
+
+next_space
+	$if	CACHE=x
+	ax, xi	-$byte
+	$else
+	push,xi	-$byte		. pay out cached bytes
+	popA	CACHE		. without read replenishment
+	$endif
+
+	sal	$byte		. 	       nnnn00
+
+	$do	$o('c')--$o('z')=0,	;
+	or, xi	' '		. depending programming language
+				. you may want to match trailing
+				. space on search arguments
+				. with shadow space outside field
+	lret	2		. skip two instructons on return
+

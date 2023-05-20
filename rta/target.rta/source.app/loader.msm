@@ -1,0 +1,358 @@
+	$include	../source.app/loader.def
+	$include	../table/lookup.def
+	$include	../lib/ascii.def
+
+	$set_option	"z"
+
+$(3)
+command1	$res	180/3	. application name like argv[0]
+				. only read once ahead of commands
+request1	$res	180/3	. entire fgets line
+request         $res	180/3	. 1st term on input line
+request2	$res	180/3
+request3	$res	180/3
+request4	$res	180/3	. potential last term last in
+suffix		$res	180/3	. to extract *suffix
+				. without overwriting request[2 3 4]
+arguments	0
+new_process	$res	1
+loadname	0p		. 4 + trailing zero word
+				. in case load file name is 12+ symbols
+
+APPS_MAXIMUM	$equ	48
+app_of_reference 0
+app_cache_free	+	app(1)
+apps_loaded	0
+
+?	$do	APPS_MAXIMUM,app(?)	file_image	app(?+1)
+
+$(67::,y)
+this_app	file_image
+
+$(0)
+
+	$base_d	$zenith(3)-03000 2048 2048
+	c	(seg$load)	0,,xi	(loader_data:d),,long
+
+
+load_request
+
+	$if	1
+	lx	request1,,xi
+	call	(retrieve_callstring)
+	$else
+	fgets	request1,,xi	180	stdin
+	$endif
+
+	z	suffix
+	z	request+1	. command search is 2 words and they aren't all
+	sscanf	request1,,xi	$3("%s %:":LF:0),,xi	command1,,xi	request,,xi
+.				request,,xi	request2,,xi	request3,,xi	request4,,xi
+
+	aa	-1,,xi		. command1 doesn't count. It's this application name load
+	jna	trial_new_prompt
+	jza	trial_new_prompt
+	sa	arguments
+
+	printf	$3("loader: %s":10:0),,xi	request1,,xi
+	
+next_request
+
+	la	request			. it's impossible for %s to cause leading space
+	sar	$word-$byte		. look at leading column of request field
+	
+	aa	-255,,xi		. ^D ?
+	jza	eof_signalled
+	aa	255-'/',,xi		. a load path?
+	jza	load_by_path
+	j	command
+
+load_by_path				. what shall be loaded?
+	z	suffix
+	sscanf	request,,xi	$3("%:*%s"),,xi	request2,,xi	suffix,,xi
+	c	(fspath)	request2,,xi
+	jza	trialu
+
+	ly	app_cache_free
+	tnz	y
+	j	no_slot
+
+	lr	this_app:next
+	sr	app_cache_free
+	sy	app_of_reference
+	lr	apps_loaded
+	sr	this_app:next
+	sy	apps_loaded
+
+	ds	this_app:fs_offset
+	z	this_app:user_count
+
+	qpush	8
+	qpush	8
+	qpop	this_app:leaf_name
+	qpop	loadname
+
+	c	(iframe_load)	a,,long	this_app:transfer_gate,,i
+	jna	trialy
+
+	printf	$3("[%lx:%lx]":10:0),,xi	a,,float
+
+find_and?
+	tz	suffix			. is there a ? token after *
+	j	load_and?		. yes, it's not just load-execute
+					. no, it's load-execute
+	ly	app_of_reference
+	ql	this_app:launch_profile
+
+	la	(0800000s)
+	or	this_app:transfer_gate,,i
+
+	ii	SPAWN$
+	jza	nonstarter
+	sa	new_process
+	ly	app_of_reference
+	lb	this_app:leaf_name,,i
+	ii	TAG$
+
+update_go
+	sabr	32			. look in new process TCB
+	ly	request,,xi
+	call	(forward_callstring)	. enable app to read its call line
+	la	*(32*/12++ABT-01000+2)	. read his vector list pointer
+	sabr	32
+
+	dl	handle(1)		. please use my stdin stdout stderr
+	ds	*(32*/12++handle(1)-02000)
+
+	ql	handle(2)
+	qs	*(32*/12++handle(2)-02000)
+
+	la	(0C00001s)
+	ii	XBASE$32
+
+	printf	$3("%x %s":10:0),,xi	new_process	loadname,,xi
+	ii	YIELD$
+
+trialx	la	new_process
+trialx1	ii	THREAD$STATE
+	j	trial_end_detect	. concluded or stopped
+
+	ii	YIELD$			. if this were encapsulated
+	j	trialx			. its name would be waitpid()
+
+load_and?
+	ql	suffix
+	lk	(-1*/$word-$byte)
+	mtane	('+'*/$word-$byte)	. load and don't execute?
+	j	trial_new_prompt	. it's done, ask me again
+					. it's an application in the loaded file
+	qs	loadname
+
+	lc	qapps	app_of_reference suffix,,xi	. group*application
+
+	jza	nonstarter
+	jna	start_error
+	sa	new_process
+	j	update_go
+
+no_slot	printf	$3("maximum dynamic apps loaded\n":10:0),,xi
+	j	trial_new_prompt
+
+trial_end_detect
+trial_new_prompt
+
+	printf	$3("load>":0),,xi
+	fflush	stdout
+
+	$if	1
+	z	request+1
+	fgets	request,,xi	180	stdin
+	jza	eof_signalled
+	j	next_request
+	$else
+
+	fgets	request1,,i	174	stdin
+	la	request1
+	jza	data_void
+	z	request+1	. command search is 2 words and they aren't all
+	z	request2
+	z	request
+	z	suffix
+	sscanf	request1,,xi	$3("%s %s %s %s":0),,xi	request,,xi	request2,,xi	request3,,xi	request4,,xi
+	jza	trial_new_prompt
+	sa	arguments
+	j	next_request
+	$endif
+
+trialu	printf	$3("%s not located":10:0),,xi	request,,xi
+	j	trial_new_prompt
+ 
+trialy	printf	$3("load error %d":10:0),,xi a
+	j	trial_new_prompt
+
+data_void
+	printf	$3("data void":10:0),,xi
+	j	trialz
+
+eof_signalled
+	printf	$3("eof signalled":10:0),,xi
+	j	trialz
+
+start_error
+	printf	$3("%d":10:0),,xi a
+
+nonstarter printf $3("process unassigned":10:0),,xi
+	j	trial_new_prompt
+
+command	z	request3+1
+	z	request2+1
+
+	sscanf	request,,xi	$3("%s %s":0),,xi	request3,,xi	request2,,xi
+
+.	la	arguments
+	jna	trial_new_prompt
+	jza	trial_new_prompt
+
+.	next the search for builtin commands
+
+	lookup	request3	@?, @eof, @run, ifsync, ifswap, @@stay
+
+.	next the search for dynamic loaded programs
+
+	lcal	find_in_loaded_list
+	j	notso
+
+	sy	app_of_reference
+
+	la	suffix
+	lk	(-1*/$word-$byte)
+	mta	('-'*/$word-$byte)
+	j	find_and?		. execute app or contained app
+					. unless suffix is delete *-
+	la	this_app:transfer_gate+1
+	and	(07FFFFF)		. brush off the flag
+	ii	BANK$FREE		. return storage to kernel
+
+	la	this_app:next
+	sa	*r			. previous pointer
+	la	app_cache_free
+	sa	this_app:next
+	sy	app_cache_free
+
+	j	trial_new_prompt
+
+notso	printf	$3("%s not loaded":10:0),,xi	request,,xi
+	j	trial_new_prompt
+
+@?	lcal	list
+	j	trial_new_prompt
+@run	ql	(runstart, 7, request2, THREAD_FP(2)q)
+	ii	THREAD$
+	j	trial_new_prompt
+
+ifsync	lx	5,,xi
+	ii	KERNEL$B1_1
+	call	(__ift2_align)
+	ii	B1$
+	j	trial_new_prompt
+
+ifswap	lx	5,,xi
+	ii	KERNEL$B1_1
+	call	(__ift2_mirror)
+	ii	B1$
+	j	trial_new_prompt
+
+@@stay	c	(__fd_zero_timeout)	stdin
+	j	trial_new_prompt
+
+@eof
+trialz	ii	YIELD$			. let the print proceed before EXIT$
+	fret	0
+
+.	asynchronous thread to run a script in background
+
+runstart	c	(run_start)	a
+	lret	0			. thread exit
+
+.	execute an app within a file of multiple apps
+
+qapps	$head_near	 params(appxp,		int	;
+				app_namep,	int )	;
+							;
+			scalars(startpx,	int	;
+				app_name_words,	int	)
+
+	c	(strlenx)	app_namep
+	sb	app_name_words
+
+	ly	appxp
+	ql	this_app:lookup_mount
+	lk	-1,,xi
+        mta     (MOUNT$,,3)
+        j       qappz		. no mount pointer, zero the result
+
+	la	this_app:transfer_gate+1
+	and	(07FFFFF)	. start page index
+	sa	startpx
+				. get directory block from directory descriptor
+	dl	6		. -> descriptor word offset application_templates
+        dsl     12		. separate relative page / offset
+        orB     32,,xi		. tag to general I/O window
+        aa      startpx		. add start page index to relative index
+        sabr    32		. open the window
+        rbr     12		. normalise the pointer
+        dl      2, b            . granule identifier directory block
+        dsl     6               . -> word offset in device
+
+        c       (qstart)        startpx					;
+                                a,,long					;
+                                app_name_words				;
+                                app_namep
+
+        jnza	qappx
+
+qappz	la	0,,xi
+qappx	$ret
+
+list	ly	apps_loaded
+	j	list?
+
+list!	push	y
+	ql	this_app:leaf_name
+	qs	loadname	. place the name before a 5th word of zero
+
+	printf	$3("%lx:%lx %s":10:0),,xi	this_app:transfer_gate,,float	;
+						loadname,,xi
+	pop	y
+	ly	0, y
+list?	tz	y
+	j	list!
+	lret	0
+
+
+find_in_loaded_list
+	z	9
+	z	10
+	z	11		. 4-word loaded file search argument
+	z	suffix		. by default no *suffix
+
+	sscanf	request,,xi    $3("%:*%s"),,xi    8,,xi    suffix,,xi
+
+	ly	apps_loaded,,xi
+
+find_it_then
+	lr	y		. we need a previous if suffix *- delete
+	ly	0, y
+	tnz	y
+	lret	0		. no
+	ql	this_app:leaf_name
+	dan	8
+	jnza	find_it_then
+	jnzb	find_it_then
+	dl	6
+	dan	10
+	jnza	find_it_then
+	jnzb	find_it_then
+	ql	8
+	qs	loadname
+	lret	1		. yes

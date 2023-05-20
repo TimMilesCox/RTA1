@@ -1,0 +1,140 @@
+
+.	vector name nfswrite
+.	arrived as go from socket wrote
+.	keeps params identical
+.	borrows some dynamic internal stack & gives it back
+.	READ_SOCKET$ has just happened and b -> file open state desciptor
+
+nfs_data_write	$tree
+	$head_far	 params(handle,			int	;
+				bufferp,		int	;
+				bytes,			int)	;
+								;
+			scalars(connectionp,	long,	openfile_bloc:socket, b	;
+				foblocp,	int,	b	;
+				result,		int		;
+				stream_registers,  float, RDATAC)
+
+	ii	ON_NETB$
+	la	connectionp
+	sabr	BSOCKET			
+
+	ly	foblocp
+	la	openfile_bloc:nfs_handle+1	. opaque16 byte count
+	lb	openfile_bloc:auth_blank+3		. opaque16 byte count
+	aa	bytes
+
+	lc	nfs:startrq	connectionp+1	;
+				24, a, i	; will need changing, output data
+				(xdri(NFSD)d),,long	;
+				(NFS_VERS:d),,long	;
+				(NFSPROC3_WRITE:d),,long	;
+				4*4, b, i		;
+				openfile_bloc:auth_blank,,i
+
+	. 1: handle
+
+	ly	foblocp
+	la	openfile_bloc:nfs_handle+1
+	lc	nfs:send_opaque16	connectionp+1	;
+					4, a, i		;
+					openfile_bloc:nfs_handle,,i
+
+	. 2: offset
+
+	ly	foblocp
+	lc	nfs:add_uhyper72	connectionp+1				;
+					openfile_bloc:quantum_pointer,,i	;
+					05000,,xi
+
+	. 3: count
+
+	ly	foblocp
+	lb	bytes
+
+	la	openfile_bloc:o:flags
+	and	O_OCTET,,xi
+	jnza	api_octets		. the API for a # octets
+	mf	3,,xi			. the API got a # words
+ 
+api_octets
+
+	lc	nfs:add_uinteger	connectionp+1	;
+					b		;
+					05000,,xi
+
+
+	. 4: stability guide
+
+	lc	nfs:add_uinteger	connectionp+1	;
+					1,,xi		;
+					05000,,xi
+
+	. 5: data
+
+
+	lc	nfs:counted_send_opaque	connectionp+1	;
+					bytes		;
+					bufferp		;
+					(05000++TCP_PSH++TCP_ACK)
+
+	lx	connectionp+1
+
+sense_response
+	ii	YIELD$
+	la	transmission:receiveq:head
+
+	jnza	unpack_response
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	sense_response
+	lr	-FILE_NOT_OPEN,,xi
+	sr	result
+	j	eoxmit
+
+$(66::,x)
+response3	xdr_write3res
+
+$(0)
+unpack_response
+	lx	descriptor:apdata, a
+	la	response:rstat+1, x
+	jnza	damaged
+	la	response:yes:astat+1, x
+	jnza	damaged
+	lx	response:yes:response, x, i
+
+	dl	response3:count
+	sbl	8
+	dsr	8
+	sb	result
+	ly	foblocp
+	da	openfile_bloc:quantum_pointer+1
+	ds	openfile_bloc:quantum_pointer+1
+	sc	b
+	ab	openfile_bloc:quantum_pointer
+	sb	openfile_bloc:quantum_pointer
+
+	ql	response3:after:attr:size
+	qs	openfile_bloc:dimensions:attr:size
+
+	j	clear
+
+damaged	la	-18,,xi
+	sa	result
+
+clear	lx	connectionp+1
+	call	(tcp_release_rxline)
+
+eoxmit	ii	FREE_NETB$
+	ii	FREE_SOCKB$
+.	la	(0C00001s)		. B32 won't have been opened 
+.	ii	XBASE$32		. for I/O that's all in TCP
+	la	result
+	qpop	RDATAC		. stream register need to be nonvolatile
+"$$frame" $set	$$frame-4
+
+.	USTREAM				. defaults -> b$stream / SIMD registers
+	$ret				
+
+	$root	

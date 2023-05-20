@@ -1,0 +1,534 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+p		$proc	*
+"$head_far"*	$name	3
+"$head_near"*	$name	2
+"$$list"	$set	p(0, 0)
+
+"$zero_stack"	$equ	1
+
+"$$zero_stack"*	$set	0
+		$do	p(0, 2)=$zero_stack,;
+"$$zero_stack"*	$set	1
+"$$call_space"*	$set	p(0,0)
+"$$params"*	$set	0
+
+"$$minimum"* $proc	$(0)
+	la	$$call_space-1, sp
+	ana, i	$$list, sp
+	jc	$+2
+	ii	95
+	$do	$o('V'), $note	check minimum arguments -O
+	$end
+
+"$$exact"* $proc	$(0)
+	la	$$call_space-1, sp
+	ana, i	$$list, sp
+	jza	$+2
+	ii	95
+	$do	$o('V'), $note	check absolute arguments -U
+	$end
+
+int	$equ		1
+long	$equ		2
+float	$equ		4
+floating_packed $equ	4
+triple	$equ		3
+float192 $equ		8
+
+params*	$func
+param*	$func
+
+	$if		$$zero_stack
+"param(1, 1)"*** $equf	$$list, fp
+	$else
+"param(1, 1)"*** $equf	$$list+dynamic_frame, sp
+	$endif
+lpointer* $proc	$(0)
+	lpointer(1, 1)	lpointer(2, 1)-$$frame
+	$end
+	$do	(param(1, 3)=lx)++;
+		(param(1, 3)=ly)++;
+		(param(1, 3)=la)++;
+		(param(1, 3)=lb),	lpointer	param(1, 3)	param(1, 1)
+	$return		param(1, 2)
+	$end
+
+?	$do		params(),"$$list"*	$set	$$list+param(params(?))
+"$$params"** $set	params()
+	$if	$$params
+	$do	$o('O'),	$$minimum
+	$do	$o('U'),	$$exact
+	$endif
+	$return		$$list
+	$end
+
+
+scalars* $func
+scalar*	$proc		$(0)
+floating_packed $equ	-4
+
+.	this is the fun-filled effect of 2-pass subassembly
+
+.	if you're pushing an item which is already in params() or scalars()
+.	i.e. you want a copy of a params() argument
+.	or you want to propagate a scalar with another copy of itself
+
+.	1. the displacement encoded in the instruction is the
+.	   operand displacement understood on the final assembly pass
+
+.	2. the params() and scalars() names already have their
+.	   final displacement value, but
+
+.	3. stack frame is getting pushed as the operand is referenced, so
+
+.	4. subtract a diminishing size called frame from the
+.	   displacement of the name, and everything is fine
+
+	  $if		($t(scalar(1, 3)=$equf)**(scalar(1, 4)=sp)
+"$$extra" $set		-temp_frame	.
+	  $else
+"$$extra" $set		0
+	  $endif
+
+f	$func
+"$a_part"* $name
+	$return	f(1, 1)
+	$end
+
+	$if		scalar(1, *3)
+temp_frame*	$set	temp_frame-scalar(1, 2)
+	lx	$a_part(scalar(1, 3))+$$extra, scalar(1, 4)
+	$do	scalar(1, 2)**1,	push	scalar(1, 2)**-2, x
+	$do     scalar(1, 2)**2^=0,	dpush	scalar(1, 2)**-4, x
+?	$do	scalar(1, 2)/4,		qpush	scalar(1, 2)/4*4-4*?, x
+
+	$elseif		scalar(1, 2)=floating_packed
+temp_frame*	  $set		temp_frame-4
+	  $if		scalar(1)>2
+		fpx	scalar(1, 3)+$$extra, scalar(1, 4)
+	  $else
+		qpush	(0.0)	. fpx	(-0.0:d)
+	  $endif
+	$else
+	  $if		scalar(1, 2)=int
+	    $if		scalar(1)>2
+		push	scalar(1, 3)+$$extra, scalar(1, 4), scalar(1, 5)
+	    $else
+		push,xi	0
+	    $endif
+	  $elseif		scalar(1, 2)=long
+	    $if		scalar(1)>2
+		dpush	scalar(1, 3)+$$extra, scalar(1, 4)
+	    $else
+		dpush	(0:d)
+	    $endif
+	  $elseif		scalar(1, 2)=float
+	    $if		scalar(1)>2
+		qpush	scalar(1, 3)+$$extra, scalar(1, 4)
+			   
+	    $else
+		qpush	(0.0)	. fpx	(-0.0:d)
+	    $endif
+	  $elseif		scalar(1, 2)=triple
+	    $if		scalar(1)>2
+"$$opart2"	$set	dpush   scalar(1, 3)+1+$$extra	. this covers a difficulty with (literal)+1
+		dpush	$$opart2, scalar(1, 4)
+		$do	scalar(1, 4)=sp,"$$extra"	$set	$$extra+2
+		push	scalar(1, 3)+$$extra, scalar(1, 4)
+	    $else
+		$do	3,	push,xi	0
+	    $endif
+	  $elseif		scalar(1, 2)=float192
+	    $if		scalar(1)>2
+"$$opart2"	$set	scalar(1, 3)+4+$$extra		. this covers a difficulty with (literal)+4
+		qpush	$$opart2, scalar(1, 4)
+		$do	scalar(1, 4)=sp,"$$extra"	$set	$$extra+4
+		qpush	scalar(1, 3)+$$extra, scalar(1, 4)
+	    $else
+		qpush	(0.0)	. fpx	(0.0:d)
+		qpush	0, sp
+	    $endif
+	  $elseif		(scalar(1, 2)>0)**(scalar(1, 2)<105)
+	    $if scalar(1)>2
+		$do	scalar(1, 2)**1,	push	scalar(1, 3)+scalar(1, 2)/2*2)
+		$do	scalar(1, 2)**2,	dpush	scalar(1, 3)+scalar(1, 2)/4*4)
+"$$quads"	$do	scalar(1, 2)/4,		qpush	scalar(1, 3)+scalar(1, 2)/4*4-$$quads*4
+            $else
+	    $do	scalar(1, 2)**3,	push, xi	0
+	    $do	scalar(1, 2)>3,		qpush	(0.0)	. fpx		(0.0:d)
+	    $do	scalar(1, 2)/4-1,	qpush		0, sp
+	    $endif
+.	  $elseif		(scalar(1, 2)>0)**(scalar(1, 2)<105)
+.	    push	-scalar(1, 2)+1,,xi
+.	    popA	sp
+	  $else
+	    $flag		internal stack item size out of range
+	    $return
+	  $endif
+temp_frame*	$set		temp_frame-scalar(1, 2)
+	$endif
+
+
+"scalar(1, 1)"***  $equf   temp_frame, sp
+	$return	temp_frame
+	$end
+
+
+temp_frame	$set		0
+?	$do	scalars(),temp_frame	$set	temp_frame+scalars(?, 2)
+
+dynamic_frame* $set temp_frame
+	$if		temp_frame
+	$do     $o('V'),	$note	buy internal $$frame
+
+$(71)
+?	$do	scalars(),	scalar	scalars(?)
+	$endif
+	$return	temp_frame
+	$end
+
+xframe*	$func
+
+p	$proc		$(70)
+load_string* $name
+
+word1	$set		$
+
+	$if		($t(p(1, 2))=$name)++($t(p(1, 2))=$proc)
+"p(1, 1)"***		p(1, 2)
+	$else
+"p(1, 1)"***	$res	p(1, 2)
+	$endif
+
+
+words	$set		$(70)-word1
+
+$(0)
+	$if		p(1)>2
+	  $if		words=1
+		$if	(p(1, 4)=0)**($t(p(1, 3))^=$equf)**(p(1, 3)<6)
+			sr+p(1, 3)	p(1, 1),, p(1, 6)
+		$else
+			push	p(1, 3), p(1, 4), p(1, 5)
+			pop	p(1, 1),, p(1, 6)
+		$endif
+	  $elseif	words=2
+		$if	(p(1)<4)**($t(p(1, 3))^=$equf)**(p(1, 3)=a)
+			ds	p(1, 1)
+		$else
+			dpush	p(1, 3), p(1, 4)
+			dpop	p(1, 1)
+		$endif
+	  $elseif	words=4
+		$if	(p(1)<4)**($t(p(1, 3))^=$equf)**(p(1, 3)=a)
+			qs	p(1, 1)
+		$else
+			qpush	p(1, 3), p(1, 4)
+			qpop	p(1, 1)
+		$endif
+	  $else
+		dpush	x
+		push	r
+		lx, i	p(1, 1)
+
+		ly, i	p(1, 3), p(1, 4)
+
+		$if	words/4
+		lr, xi	words/4-1
+		lcal	segment_ql
+		$endif
+		$if	words///4
+		lr, xi	words///4-1
+		lcal	segment_sl
+		$endif
+		pop	r
+		dpop	x
+	  $endif
+	$endif
+	 
+	$end
+
+
+$(70)
+	$do	$$params=0,"$$list"*	$set	$$list-1
+	$do	$$zero_stack,		$res	$$list
+$(0)
+	$do	$o('V'),	$note	buy external $$xframe
+	push, xi	-lframe
+	popA		fp
+
+	$if	$$zero_stack
+	$do     $o('V'),	$note	internal stack zero net demand
+.	$do	dynamic_frame^=0,	;
+.	$flag	scalars() not possible before xframe() with $zero_stack
+?	$do	$$list///4,	pop	+?-1, fp
+?	$do	$$list/4,	qpop	$$list///4+?*4-4, fp
+
+	$endif
+
+$(71)
+?	$do	xframe(),	load_string	xframe(?)
+	$return		$(70)
+	$end
+
+	
+
+$(70::,fp)
+
+$(71)
+
+	$do	$t(dynamic_frame)=0,dynamic_frame	$set	0
+?	$do	p(),part(?)*	$set	p(?, 1)
+
+lframe		$set	$(70)
+$(0)
+"$$frame"*	$set	dynamic_frame
+"$$xframe"*	$set	$(70)
+"$$list"*	$set	$$list
+	$end
+
+"$ret"* $proc
+	$if	$$frame
+	$do     $o('V'), $note	sell internal $$frame
+	push, i	$$frame, sp
+	pop	sp
+	$endif
+
+	$if	$$zero_stack
+	$do     $o('V'), $note	internal stack zero net use
+	$if	$o('S')**$$params
+	$do	$o('V'), $note	restore internal stack $$list -S
+?	$do	$$list/4,	qpush	$$list-?*4, fp
+	$do	$$list**2=2,	dpush   $$list**1, fp
+	$do	$$list**1,	push	0, fp
+	$else
+	$if	$$call_space=$head_near
+	$if	$$params
+	$do     $o('V'), $note	parameter list walkback
+	dpush	0, fp
+	$else	
+	push	0, fp
+	$endif
+	$elseif	$$call_space=$head_far
+	$if	$$params
+	$do     $o('V'), $note	parameter list walkback
+	push	2, fp
+	$endif
+	dpush	0, fp
+	$else
+	$flag	surely some mistake
+	$endif
+	$endif
+	$endif
+
+	$if	$$xframe
+	$do     $o('V'), $note	 sell external $$xframe
+	push, i	$$xframe, fp
+	pop	fp
+	$endif
+
+	$if	$$call_space=$head_near
+	$do	$o('V'), $note	near return
+	lret	$ret(1, 1)
+	$elseif	$$call_space=$head_far
+	$do	$o('V'), $note	far return
+	fret	$ret(1, 1)
+	$else
+	$flag	routine neither $head_near nor $head_far
+	ii	31
+	$endif
+	$end
+
+p	$proc
+c*	$name	1
+lc*	$name	0
+
+
+INT	$equ	101		. these keyword values
+LONG	$equ	102		. must not be the same as
+PACKED_FLOATING  $equ 103	. ,,i ,,xi ,,h1 ,,h2
+FLOATING $equ	104		. ,,t1 ,,t2 ,,t3
+STAC2P	$equ	105
+STAC4P	$equ	106
+STAC1P	$equ	107
+TRIPLE72 $equ	108
+STAC1X	$equ	110
+STAC2X	$equ	109
+STAC3X	$equ	111
+STAC4X	$equ	112
+STAC8X	$equ	114
+FLOAT192 $equ	192
+
+p	$proc
+vpush*	$name
+
+int     $equ    INT
+long    $equ    LONG
+floating_packed $equ PACKED_FLOATING
+float   $equ    FLOATING
+triple	$equ	TRIPLE72
+float192 $equ	FLOAT192
+	$if	p(1, 2)=sp
+"$$extra" $set	$$dispo
+	$else
+"$$extra" $set	0
+	$endif
+
+	$if	p(1, 3)=FLOATING
+	qpush	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+4
+	$elseif	p(1, 3)=PACKED_FLOATING
+	fpx	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+4
+	$elseif	p(1, 3)=LONG
+	dpush	p(1, 1)+$$extra, p(1, 2)
+"$$dispo"* $set	$$dispo+2
+	$elseif	p(1, 3)=TRIPLE72
+temp	$equf	p(1, 1)
+	dpush	temp+1+$$extra
+	$do	p(1, 2)=sp,"$$extra"	$set	$$extra+2
+	push	temp+$$extra
+"$$dispo"* $set $$dispo+3
+	$elseif	p(1, 3)=FLOAT192
+temp	$set	p(1, 1)
+	qpush	temp+4+$$extra, p(1, 2)
+	$do	p(1, 2)=sp,"$$extra"	$set	$$extra+4
+	qpush	temp+$$extra, p(1, 2)
+"$$dispo"* $set	"$$dispo"+8
+	$elseif	$t(p(1, 3))="$name"
+	$trace	p(1, 3)
+          $if		p(1, 3)=STAC2P
+	    p(1, 3)	p(1, 1),p(1, 2)
+	    dpush	a
+"$$dispo"* $set $$dispo+2
+	  $elseif	p(1, 3)=STAC2X
+	    p(1, 3)	p(1, 1),p(1, 2)	. macro pushes 2 words itself
+"$$dispo"* $set	$$dispo+2
+	  $elseif	p(1, 3)=STAC4X
+	    p(1, 3)	p(1, 1),p(1, 2)	. macro pushes 4 words itself
+"$$dispo"* $set $$dispo+4
+	  $elseif	p(1, 3)=STAC8X
+	    p(1, 3)	p(1, 1),p(1, 2)	. macro pushes 8 words itself
+"$$dispo"* $set $$dispo+8
+	  $elseif	p(1, 3)=STAC1X
+	    p(1, 3)	p(1, 1),p(1, 2)	. macro pushes 1 word itself
+"$$dispo"* $set $$dispo+1
+	  $elseif	p(1, 3)=STAC3X
+	    p(1, 3)	p(1, 1),p(1, 2)	. macro pushes 3 words itself
+"$$dispo"* $set $$dispo+3
+	  $elseif	p(1, 3)=STAC1P
+	    p(1, 3)	p(1, 1),p(1, 2)
+	    push	a
+"$$dispo"* $set $$dispo+1
+	  $elseif	p(1, 3)=STAC4P
+	    p(1, 3)	p(1, 1),p(1, 2)
+	    qpush	a
+"$$dispo"* $set $$dispo+4
+          $else
+	    $flag	latent $name value not accepted
+	  $endif
+	$else
+	push	p(1, 1)+$$extra, p(1, 2), p(1, 3)
+"$$dispo"* $set	$$dispo+1
+	$endif
+
+	$end
+
+alist	$set	p()
+
+"$$dispo" $set	0
+
+.	la	sp
+?	$do	alist-1,	vpush	p(alist+1-?)
+
+
+	$do	alist>1,	;
+	push	$$dispo, sp, i
+
+	$do	p(0, 0)=c,	call	p(1)
+	$do	p(0, 0)=lc,	lcal	p(1)
+
+	$do	alist>1,	;
+	pop	sp
+	$end
+
+
+"$vector"* $proc
+	$if	$o('v')
+*	$equ	$bank_index*/6++$
+	$else
+	$do	$bank_index**4095^=0,	$flag	instruction frame misaligned
+*	$equ	$bank_index/*6++$
+	$endif
+	$do	$>63,			$flag	vector outside frame locations 0..63
+	j	$vector(1)
+	$end
+
+SEGMENT_QL* $proc
+
+"segment_ql"*
+	qpush	0, y
+	qpop	0, x
+	ax, xi	4
+	ay, xi	4
+	jdr	segment_ql
+	lret	0
+
+segment_sl*
+	push	0, y
+	pop	0, x
+	ax, xi	1
+	ay, xi	1
+	jdr	segment_sl
+	lret	0
+
+	$end
+
+PUSHBACK* $proc
+	$do	PUSHBACK()^=0,	aa, xi	PUSHBACK(1, 1)
+	lb	RDATA
+	dsr	$byte
+	la	RDATAC
+	aa, xi	$byte
+	ds	RDATAC
+	$end
+
+"$stack_macro_remarks"	$set	0

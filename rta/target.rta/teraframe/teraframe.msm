@@ -1,0 +1,84 @@
+tframe	$tree
+
+.	vector name terabase
+
+base	$head_far	 params(window,		int		;
+				plus_windows,	int		;
+				cluster,	int		;
+				cluster_log,	int		;
+				vectorp,	int		;
+				limit,		int		;
+				word_offset,	long		)
+
+	dl	word_offset
+					. already done combined with __SCALE
+	$do	0,	dsl	6	. only for 262144w blocks (banks) 
+
+	orB	window			. prep the result
+	rbl	granule
+	sb	word_offset+1		. result in b -> data word
+
+	lr	limit			. highest block + 1 for comparison
+	tz	r			. optionally
+	lcal	range			. with actual block number
+	lx	cluster_log		. separate array index from block index
+
+	lb	0,,xi
+	dsr	0, x
+	aa	vectorp			. add vector list <- handle 1st array
+	sa	7			. set aside
+	
+	la	0,,xi			. pull cluster -> block index log back up
+	dsl	6, x			. plus 6 positions as in bank.device
+
+	aa	*7			. plus handle bank.device array start
+	lb	window			. 
+	sabr	0, b			. base a block in address space window
+
+	tnz	plus_windows		. either
+	j	no_more			. its a power 2 size object
+
+	lr	cluster			. or not, then view bucket is +window[s]
+
+more	lb	1, b, i			. b -> next address space window
+	call	(array_bind)		. next array block[0] and skip
+	la	64, a, i		. or ++ block
+	sabr	0, b			. and base it
+	dec	plus_windows
+	tz	plus_windows
+	j	more
+
+no_more	lb	word_offset+1		. result in b -> data word
+	$ret	0
+	
+
+range	lx	a
+	jxge	out_of
+	lret	0
+out_of	ii	GUARD$	
+
+
+.	vector name array_bind. Multi-arrays (large arrays made from several) : 
+.	ensure trailing windows in multi-window views
+.	are sequent or cleated to next associated array
+
+reflex	ax	1,,xi
+	jxge	flex
+	fret	0		. return and increment handle a
+
+flex	inc	7		. join next array
+	la	*7
+	lx	0,,xi		. start of
+	fret	1		. return and skip increment
+
+.	vector name array_round. Single arrays:
+.	ensure trailing windows in multi-window view are correct or closed
+
+review	ax	1,,xi
+	jxge	screen
+	fret	0		. return and increment handle a
+
+screen	la	0,,xi		. seal the window. It's over array end
+	fret	1		. return and skip increment
+				. sabr instruction turns 0 to 0C00001
+	$root

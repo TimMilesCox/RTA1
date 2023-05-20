@@ -1,0 +1,124 @@
+	$if	0
+
+	these are the states
+	____________________
+
+	static char	*category[] = { "zero",
+                                        "closed",
+                                        "listen",
+                                        "synsent",
+                                        "synreceived",
+                                        "established",
+                                        "finwait1",
+                                        "finwait2",
+                                        "closewait",
+                                        "lastack",
+                                        "closing",
+                                        "timewait",
+                                        "deletetcb",
+                                        "out of range" } ;
+
+	and this is how to report them
+	______________________________
+
+         for (x = 0; x < 14; x++) tcb_states.bucket[x] = 0;
+
+         y = established;
+         sscanf(request + 1, "%d", &y);
+         q = demand;
+
+         while (y--)
+         {
+            x = q->state;
+            if (x > 13) x = 13;
+            tcb_states.bucket[x]++;
+            q++;
+         }
+
+         for (x = 0; x < 14; x++)
+         {
+            if (tcb_states.bucket[x]) printf("%d %s\n", tcb_states.bucket[x], category[x]);
+         }
+
+         if (payload_segments)
+         {
+            printf("payload segments %lld payload %lld\n", payload_segments, payload);
+         }
+
+	$endif
+
+states	$tree
+
+$(3)
+
+bucket	$res	14
+
+$(0)
+
+	$head_near	 params(first_port,	int	;
+				limit_port,	int)	;
+							;
+			scalars(index,	int		)
+
+	dsr	48
+?	$do	14/2,	ds	bucket+?*2-2
+
+next	lx	first_port
+	inc	first_port
+	lr	limit_port
+	jxge	all_states_counted
+
+	la	x
+	call	(connection_array)
+	j	next			. wrong sort of connection table
+
+	lx	(BSOCKET*/18++tlist:connection_block(2)s)
+
+connection
+	lr	*(+(BSOCKET*/18++tlist:top)s)
+	jxge	next			. next port
+
+	ly	transmission:state
+	tp	y			. can momentarily be inverted
+	n	y			. when transitioning to close
+	lr	14,,xi			. saturation point+ = nonsense
+	jyl	in_range
+	ly	14-1,,xi
+
+in_range
+	ay	bucket,,xi
+	inc	0, y			. count[state]++
+
+	ax	24,,xi			. next connection
+	j	connection
+
+all_states_counted
+	lx	index
+	inc	index
+	lr	14,,xi
+	jxge	all_states_reported
+	ly	x
+	ax	bucket,,xi
+	la	0, x
+	jza	all_states_counted
+
+	printf	$3("%d %s":LF:0),,xi	a	(names	zero	closed 		;
+							listen	synsent		;
+							synreceived established	;
+							finwait1 finwait2	;
+							closewait lastack	;
+							closing	timewait	;
+							delete_tcb out_of_range), y
+	j	all_states_counted
+
+all_states_reported
+	dl	payload_segments
+	jdz	all_reported
+
+	printf	$3("%ld":LF:0),,xi	a,,long
+
+all_reported
+	$ret
+
+	$root
+

@@ -1,0 +1,90 @@
+
+$(1)
+calibrate_s	+	0
+calibrate_bound	-	1
+calibrate_slva	$res	1
+calibrate_cb	$res	1
+
+$(0)
+calibrate	$head_far	scalars(calibrate_request,	int	;
+					calibrate_response,	int)
+
+	dl	calibrate_s
+	jpb	calibrate?
+	jna	calibrate_e
+	jnza	calibrate_b
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	calibrate_s
+	jna	calibrate_e
+
+calibrate_b
+
+	c	(bind) a (CALIBRATE_PORT:d),,long
+
+.	lb, xi	CALIBRATE_PORT
+.	sb	7
+.	z	6
+.	call	(bind)
+	sa	calibrate_bound
+	jna	calibrate_e
+	dl	10
+	ds	calibrate_slva
+calibrate?
+	dl	calibrate_slva
+	sabr	BSOCKET
+
+calibrate_more?
+	lb	s:udp:socket_inq:head, b
+	jzb	calibrated
+	sb	calibrate_request
+
+	la, xi	8
+	call	(udp_rtxbuffer)
+	jza	calibrate_release
+	sa	calibrate_response
+
+	lb	calibrate_request
+	la	descriptor:bytes, b
+	sa	BYTES
+	la	descriptor:apdata, b
+	sa	q
+	z	RDATAC
+	call	(iscan_skip)
+	j	calibrate_nowrite
+
+	la, xi	0
+	ii	DAYCLOCK$W
+calibrate_nowrite
+
+	lr	(10000000:s)
+	jdr	$
+
+	la	calibrate_response
+	push	descriptor:apdata, a
+	pop	p	
+	z	BYTES
+	z	WDATA
+	z	WDATAC
+	la	DAYCLOCK$
+	call	(xdr_integer_edit)
+	la	(10*/16)
+	wsr	8
+	wsr	16
+	la	BYTES
+	la, i	1, a
+	lx	calibrate_response
+	sa	descriptor:bytes, x
+	call	(udp_acw_send)
+
+calibrate_release
+	lx	calibrate_cb
+	call	(release_udgram)
+	lb	calibrate_cb
+	j	calibrate_more?
+
+calibrate_e
+calibrated
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0

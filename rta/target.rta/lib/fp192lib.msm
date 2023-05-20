@@ -1,0 +1,233 @@
+
+fp192lib $tree
+
+	$list		3
+	$include	recipro1.msm
+
+_INTENSIFY	$set	0		
+
+
+load	$head_far	 params(from1, int)		;
+			scalars(l_user_x, int, x	)
+	lx	from1
+	ql	4, x
+	qs	8
+	ql	0, x
+	pop	x
+	fret	0
+
+load_negative $head_far	 params(from2, int)		;
+			scalars(lnuser_x, int, x	)
+	lx	from2
+	ql	4, x
+	qs	8
+	ql	0, x
+
+	n	a
+	n	b
+	n	mantissa2
+	n	mantissa3
+
+	n	$residue
+	n	$residue+1
+	n	$residue+2
+	n	$residue+3
+	pop	x
+	fret	0
+
+add	$head_far	 params(addend,	int)		;
+			scalars(target, float192, a	;
+				a_user_x, int, x	)
+
+.	vector name is fp192_add
+.	addends are in destination a:b:mantissa2:mantissa3:8:9:10:11
+.	and pointer at param *addend
+.	supernormalise separate
+
+	lx	addend
+	on	fp$r
+	fa	0, x
+	off	fp$r
+
+.	tp	fp$xpo			. is exponent overflow / underflow flagged?
+.	j	add_exit		. let application evaluate that
+					. target registers unchanged
+	qs	target
+	ql	target+4
+	fa	4, x
+	fa	$residue
+	qs	target+4
+add_exit
+	pop	x
+	qpop	a
+	qpop	8
+	lcal	supernormalise
+	fret	0
+
+
+add_negative $head_far	 params(subtrahend, int)	;
+			scalars(minuend, float192, a	;
+				anuser_x,int,x		)
+
+.	vector name is fp192_add_negative
+.	minuend is in destination a:b:mantissa2:mantissa3:8:9:10:11
+.	subtrahend is at pointer param *subtrahend
+.	supernormalise is separate
+
+	lx	subtrahend
+	on	fp$r
+	fan	0, x
+	off	fp$r
+
+.	tp	fp$xpo			. is exponent overflow / underflow flagged?
+.	j	add_negative_exit	. let application evaluate that
+					. target registers unchanged
+	qs	minuend
+	ql	minuend+4
+.	fa	$residue
+	fan	4, x
+	fa	$residue
+	qs	minuend+4
+add_negative_exit
+	pop	x
+	qpop	a
+	qpop	8
+	lcal	supernormalise
+	fret	0
+
+
+.	this way when multiplicand is in a:b:mantissa2:mantissa3:8:9:10:11
+.	vector name fp192_multiply
+
+multiply $head_far	 params(m_plier, int)		;
+			scalars(m_plicand, float192, a)
+
+	c	(fp192_mfa)	m_plicand,,i	m_plier
+
+	qpop	a
+	qpop	$residue
+	lcal	supernormalise
+	fret	0
+
+
+.	this way when multiplicand is in the internal stack
+.	vector name fp192_mfa
+
+heavy	$tree
+	$head_far	 params(mzand,int mzier,int)	;
+			scalars(caller_xy, long, x)
+	lx	mzand
+	ly	mzier
+	on	fp$r
+	ql	0, x
+	fm	0, y
+	off	fp$r
+
+	qpush	a
+	qpush	a
+	ql	4, x
+	fm	0, y
+	fa	8
+	qs	4, sp
+	on	fp$r
+	ql	0, x
+	fm	4, y
+	qs	0, x
+	off	fp$r
+	ql	4, x
+	fm	4, y
+	fa	8
+	qs	4, x
+	qpop	a
+	on	fp$r
+	fa	0, x
+	qs	0, x
+	off	fp$r
+	qpop	a
+	fa	4, x
+	fa	8
+	qs	4, x
+
+		$if	_INTENSIFY
+	 	ql	0, x
+		on	fp$r
+		fa	4, x
+		off	fp$r
+		qs	0, x
+		ql	8
+		qs	4, x
+		$endif
+
+	dpop	x
+	fret	0
+	$root
+
+divide	$head_far	 params(divisor,  int		)	;
+								;
+			scalars(usave,    float,	d$save	;
+				quotient, float192,	a	;
+				duser_x,  int,		x	)
+	
+
+.	vector name is fp192_divide
+.	dividend is in destination a:b:mantissa2:mantissa3:8:9:10:11
+.	divisor is at pointer parameter *divisor
+
+	lx	divisor
+	dl	4, x		. is low-order divisor normalised nonzero?
+	xor	b		. nonzero = normalising bit not a sign
+	jpa	quick_divide	. less heavy
+
+	lc	long_divide	 quotient,,i
+	j	divided
+
+quick_divide
+	ql	quotient
+	on	fp$r
+	fd	0, x
+	off	fp$r
+
+.	tp	fp$xpo
+.	j	divided		. exponent overflow / underflow flagged
+				. target registers unchanged
+				. application decides next action
+	qs	quotient
+	ql	quotient+4
+	fd	0, x
+	fa	$residue
+	qs	quotient+4
+
+divided	pop	x
+	qpop	a
+	qpop	8
+
+		$if	_INTENSIFY
+		lcal	supernormalise
+		$endif
+
+	qpop	d$save
+	fret	0
+
+long_divide $head_near	 params(dividend, int)		;
+							;
+			scalars(reciprocated, float192	;
+				caller_xy, long, x)
+
+	c	(reciprocal192)	0, x, float192
+	qs	reciprocated
+	ql	$residue
+	qs	reciprocated+4
+
+	c	(fp192_mfa) dividend	reciprocated,,i
+	lx	caller_xy
+	ly	caller_xy+1
+	$ret
+
+supernormalise
+	on	fp$r
+	fa	$residue
+	off	fp$r
+	lret	0
+
+	$root
+

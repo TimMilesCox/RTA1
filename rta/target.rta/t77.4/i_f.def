@@ -1,0 +1,152 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+INTERFACES $set	8
+RPAGEW	$equ	1024
+RPAGES	$equ	128
+
+RX_BASE	$equ	32
+TX_BASE	$equ	32
+
+ETHERNET_CSMACD  $equ	6
+SOFTWARELOOPBACK $equ	24
+PLATFORM_RELAY	 $equ	100
+PLATFORM_RELAY2	 $equ	101
+
+softwareLoopback $equ	SOFTWARELOOPBACK
+platform_relay	$equ	PLATFORM_RELAY
+ethernet_relay	$equ	ETHERNET_CSMACD
+platform_relay2	$equ	PLATFORM_RELAY2
+
+SOFTWARE_I_F $equ 1
+THRESHOLD_PACKETS	$equ	480*50	. in packets
+
+i_f*	$proc	*
+			. now a 2-pass proc to count bytes in
+			. interface name
+*	$tree		
+
+id	+	?
+flags	+	?=1
+address_list +	net_address(?)
+.	address_list + i_f(?, 1)
+type	+	i_f(?, 3)
+
+THISMTU	$set	i_f(?, 2)
+	$do	THISMTU=0,THISMTU	$set	1500
+
+mtu	+	THISMTU
+state	+	1
+
+bitrate +	1000000000000:d
+physa	+	i_f(?, 10:1),i_f(?, 10:2),i_f(?, 10:3),;
+		i_f(?, 10:4),i_f(?, 10:5),i_f(?, 10:6):d
+
+lastchange	+	0:d
+
+inoctets +	0:d
+outoctets +	0:d
+inpackets +	0:d
+outpackets +	0:d
+
+inmcast	+	0:d
+outmcast +	0:d
+
+indrops	+	0:d
+outdrops +	0:d
+
+inerrs	+	0:d
+outerrs	+	0:d
+
+inoproto +	0:d
+
+oqlen	+	THRESHOLD_PACKETS	. restart value packets allowed remaining until restart
+
+oqremaining +	THRESHOLD_PACKETS	. packets allowed remaining until restart
+threshold_time	0			. millisecond dayclock time restart packets allowed
+
+description_bytes + IF_DESCRIPTION_BYTES
+
+description	"i_f(?, 3)"
+	$do	$-description>8,	$flag	interface description too long
+	$do	description+8-$,	0
+
+IF_DESCRIPTION_BYTES $equ	$bits/$byte
+
+q2	+	0
+
+lock_cell_q1 +	0
+lock_cell_q2 +	0
+
+oq	dq
+oq2	hvdq
+
+initial		+	i_f(?, 4)
+rxtx_interface	+	i_f(?, 5)
+
+class		+	0
+llhl		+	0
+write_llh	+	0	. only called if ll headers constructed
+
+arp_rx		+	0	. only if ARP is gleaned for this i_f
+arp_tx		+	0
+arp_resolve	+	0
+xarp		+	0	. only if there are arp cache lines
+
+ift1	$branch
+
+rx_restart	0	. for ift2 because base_rx moves
+rx_limit	0	. for ift2 because base_tx moves
+
+tx_restart	0	. for ift2 because RX / TX are mirror-reversible
+tx_limit	0	. for for back-to-back traffic
+			. between 2 RTA1s on a platform
+base_rx	+	0
+rx_cursor +	RX_BASE*/18:s
+base_tx	+	0
+tx_cursor +	TX_BASE*/18++RPAGES*RPAGEW**262143:s
+	$root
+
+sif	$branch
+	$root
+
+	$root
+
+	$end
+

@@ -1,0 +1,232 @@
+teraframe	$tree
+
+$(67::,y)
+device_k	$array_key
+
+$(67::,y)
+canister	$array_index
+
+$(0)
+
+array_device_claim_ii
+	on	see$3
+	la	a			. pages desired - 1 in application a
+	and	(03FFFC0)		. banks sought - 1
+	sa	7+128			
+
+	ly	device_key(63),,xi	. highest device access descriptor
+	lb	63,,xi			. highest port number
+	lk	(0C00000:s)
+
+claim?	inA	128, b			. device port
+	mta	(0800000:s)		. memory array device?
+	j	claim_next		. no
+	ts	device_k:ts_cell
+	j	$-1
+
+	sy	6+128			. save pointer to key
+	tz	device_k:index
+	j	index_constructed
+	
+	and	(03FFFC0)		. bank high index from device port
+	or	(0400000)		. device flag
+	or	b_x			. device index
+	sa	device_k:index		. configured
+
+	sabr	BVOLATILE_I
+	ly	(BVOLATILE_I*/18:s)	. canister start address
+
+	lr	(__TERA_BANKS-1)
+	lx	canister:free(1),,i
+
+zchain	z	0,x
+	ax	1,,xi
+	jdr	zchain
+					. currently based highest device bank
+	orB	(0400000)		. 0400000++device = 1st bank of device
+	la	0,,xi
+	lx	(BVOLATILE_I*/18++262142:s)	. -> 1st descriptor at top of canister
+	ds	0, x
+	sx	canister:next		. 1st available for assignment
+	ly	6+128
+
+index_constructed
+	la	device_k:index		. bank name of canister
+	lr	64, a, i		. and bank limit + 1 for assigment
+	sabr	BVOLATILE_I
+	ly	(BVOLATILE_I*/18:s)	. canister start address
+
+	lx	canister:free(1)-1,,i	. index into free chains. ie lx y
+	la	7+128			. banks desired - 1 from application a
+	sar	6
+	ax	a_x
+
+	lb	0, x			. read chain head
+	jzb	claim_new		. if none ready for use
+
+	push	0, b			. next pointer
+	pop	0, x			. to freelist head
+	la	1, b
+	j	return_buffer
+
+claim_new
+	lb	canister:next		. result container
+	la	1, b			. result
+	lx	64, a, i		. construct new next bank name
+	ax	7+128			. banks required */ 6
+	jxge	key_free		. higher than control tables
+
+	ly	b_x
+	ay	-2,,xi			. new next descriptor
+	sy	*(BVOLATILE_I*/18++canister:next:s)
+	sx	1, y			. new next bank name
+
+return_buffer
+	ly	128+6			. reload device key address
+	z	device_k:ts_cell	. free device
+
+	j	deliver
+
+key_free
+	ly	128+6			. reload device key address
+	z	device_k:ts_cell
+
+claim_next
+	ay	-2,,xi
+	lb	r_x			. copy limit encoding from r
+	andB	63,,xi			. and isolate device index in it
+	dec	b_x
+	lr	device_key(3),,xi
+	jyge	claim?
+
+					. high index page request
+	la	7+128
+	lcal	array_high_ix
+	jza	deliver
+
+	on	see$1			. last choice, preference was array devices
+	push	BANK_CHAIN
+	pop	0, b
+	sb	BANK_CHAIN		. add to thread memory estate chain
+	or	(0400000)		. it's big
+
+deliver	sa	a
+
+	la	(0C00001:s)
+	sabr	BVOLATILE_I
+	ir	0	
+
+array_device_free			. not an _ii .. you get here from BANK$FREE
+	on	see$3
+	la	a			. from application a
+	lb	a			. read bank name
+
+	andB	63,,xi
+
+	ly	device_key(1)-2,,xi
+	sbl	1			. 2 word descriptor
+	ay	b_x
+
+	lk	(0400000++63)		. match the device number
+	mta	1, y
+	j	bad_descriptor
+
+	lk	(03FFFC0)
+	mtane	1, y			. cannot free the control page
+	j	bad_descriptor
+
+	ts	device_k:ts_cell
+	j	$-1
+
+
+	push	y_x
+
+	la	device_k:index
+	sabr	BVOLATILE_I		. access device structures
+	la	a			. retrieve bank name
+
+	lb	a			. from application a
+	ly	(BVOLATILE_I*/18:s)
+	lx	canister:next
+	xorB	3, x
+
+	lr	(BVOLATILE_I*/18++262142:s)
+	sy	7+128
+	jnzb	free_list_insert
+
+	
+	ax	2,,xi			. you're gone
+
+shave	sx	canister:next
+	jxge	stack_freed
+	lb	3, x
+	ana	b_x
+
+	sar	6
+	and	63,,xi
+	ly	7+128			. *canister = canister:free(1)-1,,i
+	ay	a_x
+
+	la	b_x			. update the subject name
+	ax	2,,xi			. and the forward pointer of reference
+
+alongout				. cycle until pointer x_x >= next in chain y_x
+
+	sy	6+128			. previous = @list on 1st pass
+	ly	0, y
+	lb	x_x
+
+	anb	y_x			. chain instance - candidate descriptor
+	jnc	alongout		. chain instance lower = buffer higher
+	jnzb	not_in_free_chain	. includes case y = 0 = end of chain
+
+	ly	0, y			. next
+	sy	*6+128			. <- previous
+
+	ly	7+128			. *canister
+.	lx	canister:next
+	j	shave
+
+free_list_insert			. find its descriptor
+	jxge	not_in_stack
+	ax	2,,xi
+	lb	a_x
+	anb	1, x
+	jnc	free_list_insert	. if it's less it's nearer stack root
+	jnzb	not_in_stack		. if not > and not = it's not there
+
+	ly	x_x
+	ay	-2,,xi			. x is the forward pointer
+	lb	1, y			. attached to candidate descriptor
+	anb	a_x
+	sbr	6
+	andB	63,,xi
+	ly	7+128			. *canister = canister:free(1)-1,,xi
+	ay	b_x
+					. <- ** qhead
+alongin	sy	6+128
+	ly	0, y			. down pointers = up handles
+
+	lb	x_x			. subtract chain pointer y
+	anb	y_x			. from candidate forward pointer x
+	jnc	alongin			. until candidate pointer is not less
+	jzb	chained_already		. includes case y = 0 = end of chain
+					
+into_chain				. descriptor y is higher, its buffer is lower
+	sy	0, x		. 	. insert in front of it
+	sx	*6+128
+
+chained_already
+not_in_stack
+stack_freed
+not_in_free_chain
+	pop	y_x
+	z	device_k:ts_cell
+
+bad_descriptor
+	la	(0C00001:s)
+	sabr	BVOLATILE_I		. screen where you were working
+
+	ir	0
+
+	$root

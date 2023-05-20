@@ -1,0 +1,55 @@
+p	$proc
+m2_fp96* $name
+	burst_read4 __T			. s.exponent.mantissa : mantissa.mantissa
+
+	SLL	__T, 8			. s.exponent.00 : mantissa1:00
+	STOREL	__T, __T+2
+	SAAL	__T+2, 63
+	STOREL	__T+2, __T+3		. 128s
+	LOADB	__T+2, __T+1		. ssssssss ssssssLL
+	RRL	__T+2, 8		. LLssssss ssssssss
+
+	SL	__T+1, 8		. 00MMMMMM MMMMLL00
+	RLL	__T+1, 16		. MMMMMMMM LL0000MM
+	LOADB	__T, __T+1		. s.exponent.00 MMMMMMMM
+	STORE	__T, __T+1		. LLLLLLLL HHHHHHHH
+	RRL	__T+1, 32		. HHHHHHHH LLLLLLLL
+
+	SAAL	__T, 40			. 41s : exponent23
+	XOR	__T, __T+3		. magnitude exponent
+	RRL	__T, 32			. xmagnitude : ssssssss
+	$end
+
+
+
+p	$proc
+m2_fp192_168* $name
+	burst_read8	__T		. exponent.mantissa | mantissa.mantissa
+					. mantissa.mantissa | mantissa.mantissa
+
+	SLL	__T, 8			. s.exponent23:00:mantissa1:00
+	L	__TEMP, __T+3		.	   	      00LLLLLL
+
+	SL	__T+3, 8		. 00HHHHHH LLLLLL00
+	RLL	__T+3, 8+8		. HHHHLLLL LL0000HH
+	SL	__T+2, 8
+	LB	__T+2, T+3		. 00HHHHHH LLLLLLLL
+	SLL	__T+2, 8		. HHHHHHLL LLLLLL00
+	LB	__T+2, __T+1		. HHHHHHLL LLLLLLHH
+	RRL	__T+2, 8		. HHHHHHHH LLLLLLLL
+	SL	__T+1, 8		. 00HHHHHH LLLL..00
+	RLL	__T+1, 8+8		. HHHHLLLL ..0000HH
+	LB	__T, __T+1		. xponen00 HHHHHHLL
+	L	__T+1, __T		. LLLLLLLL HHHHHHHH
+	RRL	__T+1, 32
+
+
+	SAAL	__T, 40			. signs41 : exponent23
+	L	__T+3, __T		. signs9  : exponent23
+	SAA	__T+3, 24		. signs32
+	XOR	__T, __T+3		. exponent -> magnitude
+	RRL	__T, 32			. magnitude exponent : signs32
+	LB	__T+3, __TEMP		. HHHHHHHH ssssssLL
+	RR	__T+3, 8		. HHHHHHHH LLssssss
+
+	$end

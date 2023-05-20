@@ -1,0 +1,140 @@
+
+uframe	$tree
+
+load	$head_far	 params(extent1,	long	;
+				profilep,	int)	;
+							;
+			scalars(transfer_gate,	float	;
+				accessw,	6	)
+
+	la	accessw,,i
+	sa	fs_pac
+
+	c	(fs24_open)	accessw,,i	extent1,,long
+
+	lx	profilep
+	lcal	geometry
+	qs	transfer_gate
+
+	la	6			. read group storage size
+	sa	storage_size
+	ii	BANK$
+	jza	trialz
+	sa	storep
+	aa	transfer_gate+1
+	sa	transfer_gate+1
+					. now rewind the file
+	c	(fs24_open)	accessw,,i	extent1,,long
+
+tuple	lcal	load_string
+	j	trialx
+	j	tuple
+
+trialz	la	-NO_STORAGE,,xi
+	sa	transfer_gate
+
+trialx	ql	transfer_gate
+	lx	profilep
+	qs	0, x
+	$ret	0
+
+geometry				. a special case of load_string
+	push	x			. delivery pointer
+	lr	sp
+	sr	save_sp
+
+lean_in	qpush	(0.0)
+	c	(fs24_read)	fs_pac	0,sp,i	4,,xi
+	tp	0, sp			. a fixup tuple?
+	j	lean_in
+
+	c	(fs24_advance)	fs_pac	(64d),,long
+	lx	-12,,xi
+	ax	sp
+	sx	sp
+	c	(fs24_read)	fs_pac	0,sp,i	12,,xi
+
+	qpop	a
+	lx	*save_sp		. delivery pointer
+	qpop	4, x
+	qpop	8, x
+
+	lr	save_sp
+	sr	sp
+	pop	x			. delivery pointer
+	lret	0
+
+storage_size $equ 11
+save_sp	$equ	d$save3
+fs_pac	$equ	d$save2
+window_bias $equ d$save1
+storep	$equ	d$save
+
+load_string
+	lr	sp
+	sr	save_sp
+
+stack_tuple
+	qpush	(-0.0)
+	c	(fs24_read)	fs_pac	0,sp,i	4,,xi
+	jza	clear
+	tp	0, sp			. a fixup tuple?
+	j	stack_tuple
+
+	la	3, sp			. calculate write address adjustment
+	xor	-4096,,xi		. minus target start page plus 7
+	and	-4096,,xi
+	aa	(08000)
+	sa	window_bias
+
+	la	0, sp			. window the target pages of this string
+	dsr	24
+	da	2, sp
+	lr	storage_size
+	lx	b
+	jxge	too_much
+	dsr	12
+	lr	1, b, i			. relative high_index page + 1 -> limit
+	dl	2, sp
+	dsl	12
+	lx	a			. relative absolute start page -> x
+	aa	storep
+	lb	0,,xi
+
+window	jxge	window_open
+	sabr	7, b
+	la	1, a, i
+	lb	1, b, i
+	ax	1,,xi
+	j	window
+
+window_open
+	
+
+	lx	3, sp
+	ax	window_bias
+
+	c	(fs24_read)	fs_pac	x 	0, sp
+
+	lr	save_sp
+fixup?	qpop	0, sp			. add the load page index
+	lx	sp			. to a pointer constant
+	jxge	fixed
+
+	lx	3, sp
+	ax	window_bias
+	la	0, x
+	aa	storep
+	sa	0, x
+	j	fixup?
+
+fixed	sr	sp
+	lret	1			. good return
+
+too_much
+	la	-BAD_ARGUMENT,,xi
+clear	lr	save_sp
+	sr	sp
+	lret	0			. less good return
+
+	$root

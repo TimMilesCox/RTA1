@@ -1,0 +1,152 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+fi
+
+if	[ -z $RTA_MBANKS ]
+then
+export	RTA_MBANKS=8
+fi
+
+if	[ -z $RTA_SMP ]
+then
+export	RTA_SMP=2
+fi
+echo	SMP $RTA_SMP
+
+PLATFORM=`uname`
+if [ "$PLATFORM" == "Linux" ]
+then
+	echo	Linux
+	THREADS=-lpthread
+	ICORE=../assembly.x86/linux86.smp/rta_x86M.o
+	OSFLAG=-DLINUX
+	OSPAN=-DLINUX_ASM
+	echo	constructing for some _imports
+	pushd ../assembly.x86/smp.i
+	./imakelf
+	popd
+	RTA_SMP_X86=../binary.smp/suse.x86
+else
+	ICORE=../assembly.x86/osx_x86.smp/rta_x86M.o
+	OSPAN=-mmacosx-version-min=10.6.8
+	echo	OSX $OSPAN
+	pushd ../assembly.x86/smp.i
+	./iamacho
+	popd
+	RTA_SMP_X86=../binary.smp/osx.x86
+fi
+
+rm      $RTA_SMP_X86/rta1_$RTA_SMP.$RTA_MBANKS
+echo    emulated RTA executable space $RTA_MBANKS banks image rta1_$RTA_SMP.$RTA_MBANKS
+
+if	[ "$1" == "powerpc" ]
+then
+	ARCHFLAG=-UX86
+	echo	constructing for powerpc
+else
+	ARCHFLAG=-DX86
+	echo	constructing x86 specific
+fi
+
+rm	../emulator.i32/*
+rm	../engine.i32/rwk.o
+rm	../engine.i32/memory.o
+
+#	pushd   ../netifx
+gcc -m32 -c -funsigned-char $IFLAG $OSFLAG $OSPAN -DRTA_SMP=$RTA_SMP	\
+	-o ../emulator.i32/netbank.o netbank.c
+
+pushd	../engine.smp
+gcc -m32 -funsigned-char -c -DMBANKS=$RTA_MBANKS $1 $2 -DRTA_SMP=$RTA_SMP \
+	$OSFLAG $OSPAN	\
+	 -o ../engine.i32/memory.o memory.c
+
+popd
+
+gcc -m32 -c -funsigned-char $OSPAN -o	\
+	 ../emulator.i32/time32.o ../rta.run/time32.c
+gcc -m32 -c $OSFLAG $OSPAN -DRTA_SMP=$RTA_SMP	\
+	-o ../emulator.i32/tzone.o tzone.c
+
+gcc -m32 -c -funsigned-char $OSFLAG $OSPAN -DRTA_SMP=$RTA_SMP	\
+	-o ../emulator.i32/idisplay.o idisplay.c
+
+gcc -m32 -c -funsigned-char -DARGUMENTS=64 $OSPAN	\
+	-o ../emulator.i32/argue.o ../netifx/argue.c
+
+gcc -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS $OSPAN		\
+	-DRTA_SMP=$RTA_SMP -DMETRIC $OSFLAG -D_XINT		\
+	-o ../emulator.i32/console.o console.c
+
+gcc -m32 -funsigned-char -c -DMBANKS=$RTA_MBANKS -UGCC		\
+		-DRTA_SMP=$RTA_SMP -DLLVM_LE $OSFLAG $OSPAN	\
+			 -o 	../engine.i32/rwk.o		\
+				../engine.smp/rw.c
+
+ls -l $ICORE
+
+gcc -m32 -DMBANKS=$RTA_MBANKS -DMETRIC -DRATIO=72000		\
+	-DRTA_SMP=$RTA_SMP $THREADS $OSFLAG $OSPAN 		\
+	-o $RTA_SMP_X86/rta1_$RTA_SMP.$RTA_MBANKS		\
+				$ICORE				\
+				../emulator.i32/argue.o		\
+				../emulator.i32/netbank.o	\
+				../emulator.i32/time32.o	\
+				../emulator.i32/tzone.o		\
+				../emulator.i32/idisplay.o	\
+				../emulator.i32/console.o	\
+				../engine.i32/rwk.o		\
+				 tipt64.c			\
+				../engine.i32/memory.o
+
+echo	binaries in $RTA_SMP_X86
+ls -l $RTA_SMP_X86

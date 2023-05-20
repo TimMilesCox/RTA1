@@ -1,0 +1,212 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.	code must not be generated at kernel
+.	assembly, so all the fields are $RES
+
+.	spawn routine writes VECTOR(1..64)
+.	application entry points, BASE_VECTOR,
+.	Automatic Data Page pointers
+.	VECTOR_B1(1..63), data section pointer
+.	VECTOR_D
+
+.	but application assembly adds external
+.	reference literals in the literal pool
+.	at the end of this list:
+
+.		$2(external_name)
+
+.	this can't go in a ROM image because spawn
+.	plugs the other data page pointers into it
+
+.	this is loaded near the front of the
+.	RAM pages collection which spawn finds
+.	for the new task
+
+.	the entry point literals added to it in
+.	assembly can't have a literal load string
+.	address. Assembly doesn't know where the
+.	vector page is going, even if the vector
+.	targets are in known ROM addresses
+
+.	starting a task from ROM image involves
+.	copying the initialised parts of vector
+.	page b2 as all the other data bank parts
+.	with initial values
+
+
+$(2:02000/$2)
+
+?	$do	64,;
+VECTOR(?)	$res	1
+
+?	$do	52,;
+VECTOR_B1(53-?)	$res	1
+
+kernel_B2	$res	1
+kernel_B3	$res	1
+kernel_B4	$res	1
+kernel_B5	$res	1
+kernel_B6	$res	1
+kernel_B7	$res	1
+
+NFS_MOUNTS	$res	1
+FILESHARE_TABLE	$res	1
+
+FILE_OPEN_HEAP	$res	1
+FILE_OPEN_HEAPU	$res	1
+BASE_VECTOR	$res	1
+VECTOR_D	$res	1
+.	VECTOR_FS	$res	1
+
+?	$do	128,;
+usockb(?)	$res	1
+
+?	$do	128,;
+tsockb(?)	$res	1
+
+rx_buffers	$res	1
+tx_buffers	$res	1
+
+BANKSV	$set	4
+?	$do	BANKSV,tcx_v4(BANKSV+1-?) $res	1
+
+free_handle	$res	1	. points to a free chain start
+handles	$res		1       . this contains the address + 2 of the
+                                . highest 48-bit handle encoding written
+HANDLES	$equ	4
+?       $do     HANDLES,handle(?)	$res	2
+
+	$res	028FC-$
+
+HANDLES_MAX			. = the highest write address + 2
+				. allowed for new 48-bit handle encodings
+
+RESTART_FRAME	$res	1
+cores_active	$res	1
+		$res	2	. spare
+
+?	$do	33,vpointer(?)	$res	1
+"$NETB"	$equ	vpointer(1)	. pointers to base network default buffers
+				. for threads not of ip process
+	$res	03000-$
+"$VECTOR_HIGH"	$equ	03000
+X$INTERRUPTS	$equ	24*8	. only used in kernel vectors
+?	$do	X$INTERRUPTS,X_INTERRUPT(?)	$equ	$VECTOR_HIGH-?
+DATA_SHARES	$equ	8
+?	$do	DATA_SHARES,DATA_SHARE_VECTOR(?)	$equ	$VECTOR_HIGH-X$INTERRUPTS-?
+
+p	$proc
+"$base_d"* $name
+
+base*	$proc
+	la, i	1, a
+	sabr	3+?
+	$end
+
+?	$do	p()-1,external_stack_size(?)	$set	p(?+1, 1)
+
+
+	$if	p()>1
+ALL_EXTERNAL_STACKS** $set	p(2, 1)
+?	$do	p()-2,ALL_EXTERNAL_STACKS**	$set	ALL_EXTERNAL_STACKS+p(?+2, 1)
+	$else
+ALL_EXTERNAL_STACKS $set 0
+	$endif
+
+D0_WORDS $set	p(1, 1)+ALL_EXTERNAL_STACKS		. argument 2+ = external stacks
+	
+FREE_WORDS $set	D0_WORDS**4095
+	$do	FREE_WORDS^=0,;
+FREE_WORDS $set	4096-FREE_WORDS
+
+	$if	$o('c')
+STATIC_START $equ 0x003000
+	$else
+STATIC_START $equ 03000
+	$endif
+
+	$do	p()=0,	;
+	$flag	"$base_d  STATIC_DATA_WORDS [process external stack words]"
+
+	la	VECTOR_D
+	sabr	3
+
+?	$do	D0_WORDS-1*/-12,	base
+
+THREAD_FP(1)* $set STATIC_START+D0_WORDS+4095**-4096
+
+_HIGHEST $set	p()
+
+?	$do	external_stack_size()-1,THREAD_FP(?+1)*	$set	THREAD_FP(?)-p(_HIGHEST-?+1, 1)
+
+	$if	p(2, 1)		. external stack?
+
+ITHREAD_FP**  $set $(3)-$(3)+THREAD_FP(1)
+
+	la	(SUMMIT$3)
+	$do	p(1, 2)+FREE_WORDS<1280,	;
+	$note	external stack may be too small for printf + automatic file-open frames
+
+	$else
+
+	la	(SUMMIT$3)
+
+	$do	FREE_WORDS<1024,	;
+	$note	add 2nd $base_d argument if printf is required
+
+	$do	FREE_WORDS<300,	;
+	$note	space for automatic file-open frames not guaranteed add external stack argument
+	$endif
+
+	ii	FO$HEAP
+
+	$if	THREAD_FP(1)<32768
+	la, xi	THREAD_FP(1)
+	$else
+	la	(THREAD_FP(1):s)
+	$endif
+
+	sa	fp	. initialise the external stack
+			. in case that is required
+
+?	$do	$base_d()-1,THREAD_FP(?+1)*	$set	THREAD_FP(?)-$base_d(?+1, 1)
+
+	$end
+

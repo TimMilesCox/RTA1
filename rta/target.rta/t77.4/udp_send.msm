@@ -1,0 +1,181 @@
+.	vector name	udp_send
+.	default netbuffers must be based before arriving here
+
+UDP_CHECK_WRITE	$equ	0	. no because (udgram_acw_send) can do it faster
+				. and duplicating functionality is boring and shabby
+
+udp_tx	$tree
+	$head_far	 params(addresses,	float	;
+				bytes,		int	;
+				udatap,		int	;
+				flags,		int	;
+				application_;
+				header_words,	int	;
+				ap,		int)	;
+							;
+			scalars(caller_fp,	int,fp	;
+				caller_y,	int,y	;
+				caller_x,	int,x	;
+				txbytes_total,	int	;
+				unpacked_addresses,	float	)
+
+	dl	addresses+2
+	dsr	8
+	sbr	8
+	ds	6
+	dl	addresses
+	dsr	8
+	sbr	8
+	jdz	pre_route
+	j	assemble
+
+pre_route
+	lcal	route_outward_interface
+	j	no_path
+	lx	this_if:address_list
+	dl	ifaddr:net
+
+assemble
+	qs	unpacked_addresses
+	la	flags
+	and	(APPLICATION_HEADER_WORDS)
+	jza	app_header_counted
+
+	lr	addresses-1		. stack walkback word
+	lx	ap,,i			. address of pointer
+	jxge	bad_argument		. you lied to me
+					. these arguments aren't in the stack
+	la	application_header_words
+	sal	1			. extra octets count
+
+app_header_counted
+	aa	bytes
+	sa	txbytes_total		. and cache the updated count
+	call	(udp_txbuffer)
+	jza	no_can
+
+	sa	fp
+	la	txbytes_total
+	tp	flags			. keepie flag?
+	or	(0800000s)		. keepie flag! i/f not to drop on TX
+	sa	descriptor:bytes
+
+	lx	TX_DATAGRAM
+	ql	unpacked_addresses
+	qs	dgram:ipsource, x
+
+	$if	UDP_CHECK_WRITE
+	da	6
+	ds	6			. seed the checksum
+	$endif
+
+	ly	TP_HEADER
+
+	la	addresses+1		. source port
+	lb	addresses+3		. destination port
+	and	(00FFFF)
+	andB	(00FFFF)
+	ds	uugram:sourcep, y
+
+	$if	UDGRAM_CHECK_WRITE
+	da	6
+	ds	6
+
+	la	descriptor:bytes
+	la	8, a, i			. transmission PDU octets
+	lb	0,,xi
+	ds	uugram:udgraml, y
+	lb	IPPROTO_UDP, a, i	. needed in checksum
+	da	6
+	ds	6
+	$endif
+
+	ly	8/2, y, i			. apdata
+	la	flags
+	and	(APPLICATION_HEADER_WORDS)
+	jza	payout_apdata
+
+	lx	ap			. argument already checked present
+aheadrw	la	0, x			. before output buffer request
+
+	$if	UDP_CHECK_WRITE
+	ab	a			. keep the checksum seed in line
+	$endif
+
+	sa	0, y
+	ax	1,,xi
+	ay	1,,xi
+	dec	application_header_words
+	tz	application_header_words
+	j	aheadrw
+
+	$if	UDP_CHECK_WRITE
+	sb	7
+	$endif
+
+payout_apdata
+	la	udatap
+	sa	q
+
+	$if	UDP_CHECK_WRITE
+
+	la	bytes
+	lb	flags
+	andB	(UDP_NO_CHECKSUM)
+	jzb	send_checked
+	lcal	ugram_write
+	j	usend
+
+send_checked
+	lcal	w2buffer
+
+	xor	(00FFFF)
+	jza	$-1
+	lx	TP_HEADER
+	sa	uugram:checksum
+
+usend	lx	fp			. buffer descriptor
+	call	(udgram_acw_send_nocheck)
+					. return is from ipsend
+					. expected AXW in a : bytes / status in b
+	j	udp_txz
+
+	$else
+
+	la	bytes
+	lcal	udgram_write
+	lx	fp			. buffer descriptor
+
+	lb	flags
+	andB	(UDP_NO_CHECKSUM)
+
+	jzb	send_checked
+
+	call	(udgram_acw_send_nocheck)
+	j	udp_txz
+					. return is from ipsend
+					. expected AXW in a : bytes / status in b
+send_checked
+	call	(udp_acw_send)
+	j	udp_txz
+					. return is from ipsend
+					. expected AXW in a : bytes / status in b
+	$endif
+
+bad_argument
+	la	-BAD_ARGUMENT,,xi
+	j	udp_txz
+
+no_can	la	-NO_STORAGE,,xi
+	j	udp_txz
+
+no_path	la	-NO_PATH,,xi
+	
+udp_txz	qpop	0, sp
+	pop	0, sp
+
+	dpop	x
+
+	pop	fp
+	fret	0
+	$root

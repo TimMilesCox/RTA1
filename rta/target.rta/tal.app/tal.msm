@@ -1,0 +1,952 @@
+
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	def/vector.def
+	$include	def.sys/events.def
+	$include	def.sys/tcb.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	fs/fs24.def
+	$include	stream/stream.def
+	$include	table/lookup.def
+	$include	array.app/array.def
+	$include	lib/compress.def
+	$include	lib/ascii.def
+	$include	lib/register.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+__BASE	$equ	TAL_LOADP
+
+SUMMIT_3(1)     $equ    SUMMIT$3
+ITHREAD_HIRAM(1) $equ   ITHREAD_FP
+
+	$set_option	"z"
+
+$(3:03000/$3)
+what	$res	4
+how	$res	72//3
+left	$res	72//3
+right	$res	72//3
+capture	$res	36//3
+
+gate	200, 03FFFFF:d
+return	03FFFFF, 200d
+relay	0L
+fields	0
+offset	+	right
+
+inputd	$res	144/3
+
+ra_thread_id	0
+xtarget	0
+
+$(0:0/$0)
+
+	catalog
+
+start	$base_d	$zenith(3)-03000  0400
+
+	on	see$1
+	lr	ABT+3
+	inB	65
+	tz	ABT+3
+	tp	ABT+3
+	ii	GUARD$
+	off	see$1
+
+	c	(seg$load)	0,,xi	(tal_data:d),,long
+
+input	z	what+1
+	z	how+1
+
+	fgets	inputd,,xi	144	stdin
+	sscanf	inputd,,xi	$3("%s %s %s %s":0),,xi	what,,xi how,,xi left,,xi right,,xi
+
+	sa	fields
+.	jza	leave		. stdin eof
+	jna	leave		. stdin disconnected
+	jnza	input1
+	ii	YIELD$
+	j	input
+
+input1	aa	-3,,xi
+	jna	input2
+
+	sscanf	left,,xi	$3("%x":0),,xi	offset,,xi
+
+
+input2
+	la	what
+	sar	$word-$byte
+	lk	255,,xi
+	mtane	k
+	j	leave		. ctrl-D 
+	mtane	('.')
+	j	leave		. leave command
+
+	lookup	what					;
+		inform, format, length, catena,		;
+		hw, tw, time, test, formax, d72
+
+
+	prompt	inform, format, length, catena, hw, tw, time, test, formax, d72
+
+	j	input
+
+leave	fret	0
+
+inform	sscanf	left,,xi how,,xi capture,,xi			. input -> [specification] -> capture
+
+	lc	display		capture,,xi	capture+8,,xi
+	j	input
+
+
+format	printf	how,,xi	capture,,float192			. maximum size display object
+	printf	$3("":10:0),,xi
+	j	input
+
+formax	printf	$3("%lf":10),,xi capture,,floating_packed	. promoted by fpx instruction
+        j	input
+
+catena	c	(strcat)	how,,xi	left,,xi
+	lc	display		how,,xi	how+72//3,,xi		. falls thru and reports new length
+
+length	c	(strlen)	how,,xi
+	printf	$3("%d":10:0),,xi	a
+	j	input
+
+swivel*	$proc
+	la	swivel(1, 1),,swivel(1, 3)+?-1
+	sa	0, x, 4-?				. show inserted value
+	sa	?, x					. show register value
+	z	4+?*2-2, x
+	z	4+?*2-2+1, x
+	n	4+?*2-2+1, x
+	sa	4+?*2-2, x, swivel(1, 3)+?-1		. show insert to zero
+	sa	4+?*2-2+1, x, swivel(1, 3)+?-1		. show insert to FFFFFF
+	$end
+
+hw	sscanf	how,,xi		$3("%qx":0),,xi	capture,,xi
+
+	on	half$w
+	lx	offset
+
+?	$do	2,	swivel	capture+3,,h1
+	
+	off	half$w
+
+	lc	display		x	3,x,i
+	lx	offset
+	lc	display		4,x,i	4+2*2,x,i
+	j	input
+
+tw	sscanf	how,,xi		$3("%qx":0),,xi	capture,,xi
+
+	lx	offset
+?	$do	3,	swivel	capture+3,,t1
+
+	lc	display		x	4,x,i
+	lx	offset
+	lc	display		4,x,i	4+2*3,x,i
+	j	input
+
+time	c	(date_timef1)	0,,xi	how,,xi
+	c	(date_timef2)	0,,xi	left,,xi
+	c	(date_timef3)	0,,xi	right,,xi
+	printf	$3("%s":10:"%s":10:"%s":10:0),,xi	how,,xi	left,,xi right,,xi
+	call	(dayclock_ydsm)
+	printf	$3("%d.%d:%d.%d":10:0),,xi	8	9	10	11
+	call	(dayclock_ydsm_gmt)
+	printf	$3("%d.%d:%d.%d":10:0),,xi	8	9	10	11
+	j	input
+
+d72	sscanf	inputd,,xi $3("%s %jd %d":10:0),,xi what,,xi left,,xi left+3,,xi
+	dl	left
+	d	left+3
+	tp	left
+	lcal	quicku
+	lr	6
+	sa	7
+	la	b
+	lb	left+2
+	d	left+3
+	printf	$3("%jd %d":10:0),,xi	r 7 a b
+	j	input
+
+quicku	aa	-1,,xi
+	jc	quickux
+	dec	6
+quickux	lret	0
+
+test	sscanf	left,,xi	$3("%x:%x":0),,xi	return,,xi return+1,,xi
+	dl	return
+	drr	24
+	ds	gate
+
+	lookup	how								;
+		ref, j, go, call, 		fret, ir, sir, barg,		;
+		bats, bang, base, load, 	store, push, pop, lcal,		;
+		lret, lretched, popA, ii,	gii, xint, sim, ireqs,		;
+		launch, outA, outB, activate,	xerc, on, off, aa,		;
+		r_mta, dte, r_dte, rex,		range, d__, xor, xtend,		;
+		clam, r_tz, r_tp, rex_vector,	overlap				;
+		dothat
+
+	$if	1
+	prompt	test								;
+		ref, j, go, call,		fret, ir, sir, barg,		;
+		bats, bang, base, load,		store, push, pop, lcal,		;
+		lret, lretched, popA, ii,	gii, xint, sim, ireqs,		;
+		launch,	outA, outB, activate,	xerc, on, off, aa,		;
+		r_mta, dte, r_dte, urex,	range, d__, xor, xtend,		;
+		clam, r_tz, r_tp, rex_vector,	overlap
+	$endif
+
+	j	input
+
+dothat	ex	doso, x
+	j	input
+
+doso	la	*(31*/18)
+	j	*(31*/18)
+	go	(1*/23++gate:s)
+	call	(1*/23++gate:s)
+
+	lcal	refret
+	lcal	refire
+	z	128+32
+	lcal	barg
+
+	lcal	bats
+	lcal	bang
+	lcal	base
+	lcal	load
+
+	lcal	store
+	lcal	upush
+	lcal	upop
+	lcal	ulcal
+
+	lcal	ulret
+	lcal	ulretch
+	lcal	upopa
+	lcal	uii
+
+	lcal	ugii
+	lcal	uxint
+	sim	return
+	lcal	uireqs
+
+	lcal	ulaunch
+	lcal	uoutA
+	lcal	uoutB
+	lcal	uactivate
+
+	lcal	uxerc
+	on	000300
+	off	000300
+	lcal	uaa
+
+	lcal	ur_mta
+	lcal	udte
+	lcal	ur_dte
+	lcal	urex
+
+	lcal	urange
+	lcal	ud
+	lcal	uxor
+	lcal	uxtend
+	lcal	uclam
+	lcal	ur_tz
+	lcal	ur_tp
+	lcal	urex_vector
+	lcal	overlap
+
+refret
+		dpush	return
+		fret	0
+	lret	0
+
+refire
+		dpush	return
+		dpush	(0:d)
+		ir	0
+	lret	0
+
+barg	dl	(0, 31*/18d)
+	ii	TAG$
+	lret	0
+
+bats	la	fields
+	aa	-3,,xi
+	jna	bats_device1
+
+	tnz	offset
+	lret	0
+
+	lx	offset
+	ts	0, x
+	lret	0
+	lret	0
+
+bats_device1
+	la	(0400001)
+	ii	XBASE$35
+	ts	*(35*/18++03FFFF:s)
+	lret	0
+
+bang		dl	gate
+		ab	-32-12,,xi
+		jc	no_bang
+		ab	12,,xi
+		jnc	no_bang
+		ex	please_base, b
+no_bang	lret	0
+
+please_base
+?	$do	12,	ii	XBASE$32+?-1
+
+base		dl	gate
+		sabr	0, b
+	lret	0
+
+load		la	return
+		lx	return+1
+		lk	7,,xi
+
+	mta	(8)
+		j	r4?
+		ql	0, x
+		qs	capture
+		ql	4, x
+		qs	capture+4
+	lret	0
+
+r4?	mta	(4)
+		j	r2?
+		ql	0, x
+		qs	capture
+	lret	0
+
+r2?	mta	(2)
+		j	r1
+		dl	0, x
+		ds	capture
+	lret	0
+
+r1		la	0, x
+		sa	capture
+	lret	0
+		
+
+store		la	return
+		lx	return+1
+		lk	7,,xi
+
+	mta	(8)
+		j	w4?
+
+		ql	capture
+		qs	0, x
+		ql	capture+4
+		qs	4, x
+	lret	0
+
+
+w4?	mta	(4)
+		j	w2?
+
+		ql	capture
+		qs	0, x
+	lret	0
+
+w2?	mta	(2)
+		j	w1
+
+		dl	capture
+		ds	0, x
+	lret	0
+
+w1		la	capture
+		sa	0, x
+	lret	0
+
+upush	lr	return
+	lx	capture,,xi
+	tz	return+1
+	lx	return+1
+
+upushmo	qpush	0, x
+	jdr	upushmo
+
+	lr	return+1
+	j	upopsum
+
+	lret	0
+
+upop	lr	return
+upopsum	lx	left,,xi
+
+upopmor	qpop	0, x
+	ax	4,,xi
+	jdr	upopmor
+	qpush	capture
+	lret	0
+
+ulcal	pop	24
+	lx	24,,xi
+	sx	sp
+	lcal	$+1
+	lret	0
+
+ulret	push	(60*/12)
+	lret	0
+
+ulretch	la	129,,xi
+	sa	sp
+	lret	0
+
+upopa	lx	return
+	push	100,,xi
+	popA	0, x
+	lret	0
+
+uii	dl	return		. illegal ii from application to restarts page
+	sbl	18
+	dsr	10
+	la	ii*/3++xi,,xi	. ii instruction
+	dsr	8
+	sb	xtarget		. can't ex register
+	ex	xtarget
+	lret	0		. so it shouldn't come to here
+
+ugii	ii	64		. to a legal but spare slot
+	lret	0		. should just ir
+
+uxint
+take_on* $proc
+	la	?,,xi
+	ii	XINT$BIND
+	$end
+
+	
+	ii	I$TABLE		. start thread interrupts table
+				. for postprocess
+
+?	$do	8,	take_on
+
+	la	XINT,,xi
+	ii	EVENT_WAIT$
+	lret	0
+
+uireqs	on	see$1
+	lx	XINTT+1		. read cursor
+	lr	XINTT+3		. limitof
+uirnext	dl	0, x
+	jza	uireqx
+
+	printf	$3("%lx":10:0),,xi	a,,long
+
+	ax	2,,xi
+	jxge	ufirst
+	
+ulast?	la	x
+	xor	XINTT+2		. next write
+	jza	uireqx
+	j	uirnext
+
+ufirst	lx	XINTT+4,,xi
+	j	ulast?
+
+uireqx	off	see$1
+	lret	0
+
+ulaunch	ql	(ra_thread, 1, 0, 0q)
+	ii	THREAD$
+	sa	ra_thread_id
+	lb	$3("application space interrupt handler"),,xi
+	ii	TAG$
+	printf	$3("ra thread %x":10:0),,xi	ra_thread_id
+	lret	0
+
+uoutA	la	return
+	lb	return+1
+	outA	0, b
+	lret	0
+
+uoutB	lb	return
+	la	return+1
+	outB	0, a
+	lret	0
+
+uactivate
+	dl	return
+	or	(0400000)
+.	ii	ALERT$		. dn exist
+	lret	0
+
+uxerc	lb	return
+	mf	return+1
+	printf	$3("%x:%x":10:0),,xi	a,,long
+	lret	0
+
+urange
+?	$do	20,	qpush	(1.0*+?)
+	SIMD_CONTROL	(-1, 4, 40, 0q)
+	rex	(fa	(1.0))
+	lret	0
+
+ur_mta
+	lx	(0333333, 0555555, 0777777, 0AAAAAA, 0CCCCCC, 0EEEEEE, 0111111, 0BBBBBB:o),,xi
+	la	(0EEEEEE:s)
+	lk	-1,,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(mta	0, x)
+	xor	-1,,xi		. ya got none
+	lret	0		. unless rex skipped to here
+
+udte	lx	("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"),,xi
+	dl	("WXYZ01")
+	lr	60/6,,xi
+	j	udte_next?
+udte_next!
+	dte	0, x
+	j	$+2
+	lret	0
+	ax	2,,xi
+udte_next?
+	jdr	udte_next!
+	lret	0
+
+ur_dte
+	lx	("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567"),,xi
+	dl	("WXYZ01")
+	SIMD_CONTROL	(-1, 0, 60/6-1, 2q)
+	rex	(dte	0, x)
+	lret	0
+	lret	0
+
+urex	
+ur_fan	qpush	(16384.0)
+	rex	(fa	(-8192.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+ur_fa
+?       $do     20,     qpush   (1.0*+?)
+        SIMD_CONTROL    (-1, 4, 20-1, 0q)
+        rex     (fa     (1.0))
+	$do	20,	qpop	8
+        printf	$3("%f ":10:0),,xi	8,,float
+
+ur_fm	SIMD_CONTROL	(-1, 0, 0, 0q)
+	qpush	(12.0)
+	rex	(fm	(0.33333333333333333333333333))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_fd	qpush	(24*+1250000)
+	rex	(fd	(3.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_d	dpush	(1000000000000)
+	rex	(d	3,,xi)
+	dpop	a
+	printf	$3("%ld":10:0),,xi	a,,long
+
+	push	0,,xi
+	dpush	(-1000000000000)
+	on	fp$r
+	rex	(d	-3,,xi)
+	off	fp$r
+	dpop	a
+	pop	r
+	printf	$3("%ld %d":10:0),,xi	a,,long	r
+
+ur_m	dpush	(0033333333333)
+	rex	(m	7,,xi)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sar	push	21*/3,,xi
+	rex	(sar	3)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_sbr	push	(42*/19s)
+	push	-1,,xi
+	rex	(sbr	*(20))
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_dsr	dpush	(99*/41d)
+	rex	(dsr	41)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sal	push	33,,xi
+	rex	(sal	17)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_sbl	push	20,,xi
+	push	0,,xi
+	rex	(sbl	19)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_dsl	dpush	(99d)
+	rex	(dsl	18)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_rar	push	0444,,xi
+	rex	(rar	9)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_rbr	push	0444,,xi
+	push	0,,xi
+	rex	(rbr	17)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_drr	dpush	(000AAAAAA000)
+	rex	(drr	25)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_ral	push	0AAA,,xi
+	rex	(ral	*(8+11))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_rbl	push	0AAA,,xi
+	push	0,,xi
+	rex	(rbl	4+11)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_drl	dpush	(000AAAAAA000)
+	rex	(drl	23)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_saa	push	-16384,,xi
+	rex	(saa	1)
+	pop	a	sp
+	printf	$3("%x":10:0),,xi	a
+
+ur_sba	SIMD_CONTROL	(-1, 2, 6-1, 1q)
+?	$do	6,	dpush	(-16384+?:d)
+	ly	0,,xi
+	rex	(sba	3, y)
+	qpop	a
+	qpop	8
+	qpop	d$save
+	printf	$3("%x %x %x %x %x %x":10:0),,xi	b 7 9 11 d$save1 d$save3
+
+ur_dsa	SIMD_CONTROL	(-1, 0, 0, 0q)
+	dpush	(-16384*/24)
+	rex	(dsa	16)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	a,,long
+
+ur_sa	push	47,,xi
+	rex	(sa	8)
+	inc	sp
+	printf	$3("%x":10:0),,xi	8
+
+ur_sb	push	49,,xi
+	push	-1,,xi
+	rex	(sb	9)
+	dpop	a
+	printf	$3("%x":10:0),,xi	9
+
+ur_la	push	-1,,xi
+	lb	('inb')
+	rex	(la	b)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_lb	push	-1,,xi
+	push	0,,xi
+	la	('ina')
+	rex	(lb	a)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_or	push	(020202)
+	rex	(or	(050505))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_orB	dpush	(0a0a0a:d)
+	rex	(orB	(040404))
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_and	push	(0e0e0e)
+	rex	(and	1++-256,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a	
+
+ur_andB	dpush	(0FFFFFF070707:d)
+	rex	(andB	3++-256,,xi)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_xor	push	(0e0e0e)
+	rex	(xor	(0c0c0c))
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_xorB		dpush	(0e0e0e:d)
+	rex	(xorB	(0443322))
+	dpop	a	
+	printf	$3("%x":10:0),,xi	b
+
+ur_aa	push	90,,xi
+	rex	(aa	9,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_ab	push	90,,xi
+	push	0,,xi
+	rex	(ab	11,,xi)
+	dpop	a
+	printf	$3("%x":10:0),,xi	b
+
+ur_ana	push	90,,xi
+	rex	(ana	-9,,xi)
+	pop	a
+	printf	$3("%x":10:0),,xi	a
+
+ur_anb	SIMD_CONTROL	(-1, 2, 3-1, 0q)
+?	$do	3,	dpush	(87+?:d)
+	rex	(anb	-11,,xi)
+	qpop	a
+	dpop	8
+	printf	$3("%x %x %x":10:0),,xi	b 7 9
+
+ur_mf	SIMD_CONTROL	(-1, 1, 4-1, 1q)
+	qpush	(-10, -8, -6, -4q)
+	lx	(-3, 4, -5, 6q),,xi
+	rex	(mf	0,x)
+	qpop	a
+	printf	$3("%d %d %d %d":10:0),,xi	a b 6 7
+
+ur_ds	SIMD_CONTROL	(-1, 0, 0, 0q)
+	dpush	("abcdef")
+	rex	(ds	6)
+	dpop	a
+	printf	$3("%lx":10:0),,xi	6,,long
+
+ur_dl	dpush	(-10d)
+	dl	("ghijkl")
+	rex	(dl	a)
+	dpop	6
+	printf	$3("%lx":10:0),,xi	6,,long
+
+ur_qs	qpush	(-1*+10)
+	rex	(qs	8)
+	qpop	a
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_ql	qpush	(-1*+1)
+	rex	(ql	(10.3))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+
+ur_da	dpush	(10d)
+	rex	(da	(-5d))
+	dpop	a
+	printf	 $3("%lx":10:0),,xi	a,,long
+	
+ur_dan	SIMD_CONTROL	(-1, 2, 4-1, 0q)
+?	$do	4,	dpush	(-10-1+?:d)
+	rex	(dan	(-20d))
+	qpop	a
+	qpop	8
+	printf  $3("%lx %lx %lx %lx":10:0),,xi	a,,long 6,,long 8,,long 10,,long
+
+$(3)
+masks32
+	$do	32,	-1
+$(0)
+
+ur_z	push	(0123456)
+	pop	q
+	lx	masks32,,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+
+	rex	(z	0, x, t3)
+	rex	(z	0, x, t1)
+	rex	(z	0, x)
+	rex	(z	0, x, t2)
+
+	printf	$3("%x":10:0),,xi	q
+	printf	$3("%x %x %x %x %x %x %x %x":10:0),,xi	masks32,,float192
+	printf	$3("%x %x %x %x %x %x %x %x":10:0),,xi	masks32+8,,float192
+	printf	$3("%x %x %x %x %x %x %x %x":10:0),,xi	masks32+16,,float192
+	printf	$3("%x %x %x %x %x %x %x %x":10:0),,xi	masks32+24,,float192
+
+	SIMD_CONTROL	(-1, 0, 0, 0q)	. change to default
+	lret	0
+
+uaa	lx	return+1
+	la	return
+	aa	0, x
+	lret	0
+
+ud	sscanf	$3("%ld:%d":0),,xi	relay,,xi	return+1,,xi
+	dl	(1000000000000)
+	d	3,,xi
+	printf	$3("%ld %d":10:0),,xi 6 a b
+	lret	0
+
+uxor	la	return
+	lx	return+1
+	xor	0, x
+	lret	0
+
+uxtend	SIMD_CONTROL	(-1, 0, 8000000-1, 0q)
+	qpush	(1.0*+1250000)
+	rex	(fd	(10.0))
+	qpop	8
+	printf	$3("%f":10:0),,xi	8,,float
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+
+uclam	pop	x
+	dpush	(1000000000000)
+	on	fp$r
+	rex	(fd	(3))
+	off	fp$r
+	j	0, x
+
+ur_tz	lx	(-6, -5, -4, -3, -2, -1, 0, 1o),,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(tz	0, x)
+	lret	0
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+
+ur_tp	lx	(-6, -5, -4, -3, -2, -1, 0, 1o),,xi
+	SIMD_CONTROL	(-1, 0, 8-1, 1q)
+	rex	(tp	0, x)
+	lret	0
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	lret	0
+
+overlap	qpush	p
+	dpush	fp
+	dpop	fp
+	qpop	p
+	lret	0
+
+zlist*	$proc
+?	$do	zlist(1),	+	zlist(1, ?)
+	$end
+
+urex_vector
+
+$(3)
+count	$res	1
+count1	$res	1
+outline	$res	24*24/3
+
+$(0)
+	push	-95,,xi				. 96-word frame
+	popA	sp
+
+	SIMD_CONTROL	(-1, 4, 24-1, 4q)	. default vector is frame of 24 floats
+
+	lx	(zlist	1.0, 2.0, 3.0, 4.0, 5.0, 6.0,		;
+			7.0, 8.0, 9.0, 10.0, 11.0, 12.0,	;
+			13.0, 14.0, 15.0, 16.0, 17.0, 18.0,	;
+			19.0, 20.0, 21.0, 22.0, 23.0, 24.0),,xi
+
+	rex	(ql	0, x)		. load SIMD Frame 24 * 96-bit float
+					. register increment and ea increment are both 1 float
+					. 12 floats in storage to add
+
+	lx	(zlist	20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0),,xi
+
+						. vector is 12 floats (48 words)
+	SIMD_TARGET	6*4,sp	12-1		. @ frame + 6 floats (24 words)
+	rex	(fa	0, x)			. 12 floating operations
+
+	lx	outline,,xi			. start print stream
+	call	(wstream_starta)		. this overwrites SIMD control registers
+						. but SIMD default controls are restored after
+
+	lr	4-1,,xi				. 4 lines
+
+publish_line
+	sr	count1	
+	lr	6-1,,xi				. * 6 floats
+
+publish	sr	count
+	la	(' '*/16)
+	wsr	$byte
+	inc	BYTES
+	qpop	a				. take a float off the internal stack top
+	call	(feditia)			. compose it into the display line
+	lr	count
+	jdr	publish
+
+	la	(LF*/16)
+	wsr	$byte
+	inc	BYTES
+	lr	count1
+	jdr	publish_line
+
+	wsr	$word-$byte			. push out last bytes
+
+	c	(write)	stdout	outline,,xi	BYTES
+	c	(fsync)	stdout
+
+	SIMD_CONTROL	(-1, 0, 0, 0q)		. restore SIMD default controls
+	lret	0
+
+ra_thread
+	la	1,,xi
+	ii	AFFINITY$
+	ii	I$TABLE
+
+?	$do	8,	take_on
+
+
+ra_thread_onward
+	la	XINT,,xi
+	ii	EVENT_WAIT$
+	j	ra_thread_onward
+	
+	
+		
+display	$head_near	 params(where,		int	;
+				how_much,	int	)
+
+more	lr	how_much
+	lx	where
+	inc	where
+	jxge	curtail
+
+	printf	$3(" %x":0),,xi	0, x
+	ax	1,,xi
+	j	more
+
+curtail	c	(write)	stdout	$3("":10),,xi	1,,xi
+	c	(fsync)	stdout
+	$ret
+
+	$do	$<256,$(0:256)
+
+FS_BASE*        $set    $zenith+63**-64
+FS_SAFE_LIMIT*  $set    4096			. _NEXTP*/12
+

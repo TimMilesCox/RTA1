@@ -1,0 +1,52 @@
+
+;	devices
+
+;	storage modelling each device has a 32-bit or 64-bit pointer platform depending
+;	in sub-architectural pointer table _devices[]
+
+;		 63			 31		       0
+;		_________________________________________________
+;		|			|			|
+;		|_______________________|_______________________|
+
+			
+;	RTA1 24-bit I/O ports 128..191 contain 2 flag bits for memory type
+;	and a page or block high index
+
+;	flags	00	no device		    21                         0
+;						_________________________________
+;		10	24-bit system memory	|10|	highest page index	|
+;						|__|____________________________|
+;		01	16-bit network trunk	|01|	highest bank index	|
+;						|__|____________________________|
+;		11	24-bit filestore	|11|	highest bank index	|
+;						|__|____________________________|
+
+;		24-bit system memory is stored big endian
+;		in the low order 3 octets of platform memory words
+
+;		16-bit network data is relayed RTA <----> networks in network byte order
+;		and reads out to RTA1 with eight high order zero bits added
+
+;		24-bit filestore is a packed array of octets
+;		with one RTA1 word represented in three octets
+
+;	storage block descriptor is in I/O port [0..63, 65..71] per thread address space window
+;	copies of ports 1..63 are tabled in the thread control block for reload on switch
+;	you get here with the storage block descriptor in eax and word offset in esi
+
+;	storage block descriptor		bit  22    = 0400000 meaning device
+;						bits 21..6 = index of 262144-word bank
+;						bits  5..0 = device index
+;
+;						    21			  5    0
+;						_________________________________
+;						|01|	  bank index	 |device|
+;						|__|_____________________|______|
+
+;						________________________________
+;	if descriptor bits 23..22 = 11 -------> |11|
+;	and device is nonzero
+;	you interrupted and didn't get here	C00001 means the thread has no storage
+;						in this address space window
+

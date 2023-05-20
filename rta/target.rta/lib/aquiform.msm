@@ -1,0 +1,441 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+	$if	0
+
+	$if	AQUIFORM_NET16
+AQUIFORM_BITS $set	16
+	$else
+AQUIFORM_BITS $set	24
+	$endif
+
+
+$(0)
+
+	$if	COUNTED_STREAM
+	inc	BYTES
+	$endif
+
+	lret	0
+
+read_stream_start
+	push	' ',,xi
+	pop	LAST_BYTE_READ
+	READ_STREAM_START
+	READ_START
+	fret	0
+
+write_stream_start
+	WRITE_STREAM_START
+	WRITE_START
+	fret	0
+
+	$endif
+
+fedit_start
+		. WRITE_START in write_stream_start
+	qs	8
+	la, xi	'+'
+	tn	8
+	j	write_sign
+	n	8
+	n	9
+	n	10
+	n	11
+	la, xi	'-'
+write_sign
+	WRITE_BYTE
+	lret	0
+
+fedit_integral_digit
+	la	8
+	and, xi	15
+	lx	a
+	la, xi	0
+	lb	9
+	dsl	0, x
+
+	push	a
+
+	la	10
+	sbr	0, x
+	drl	0, x
+	sb	9
+
+	lb	11
+	sar	0, x
+	dsl	0, x
+	ds	10
+
+	pop	a
+
+	or, xi	'0'
+	WRITE_BYTE
+	lret	0
+
+fediti	lcal	fedit_start		. edit placing integral digits
+	call	(scale_integrate)	. before point
+	j	fedit1			. if feasible
+
+	lcal	iedit72_u
+	z	SCALE
+	lb	11
+	j	fedit_fraction
+
+
+fedit	lcal	fedit_start
+fedit1	ql	8
+	jnb	fedit_nonzero
+fedit_z1
+	z	SCALE
+	z	8
+	z	9
+	z	10
+	z	11
+	j	fedit_zero
+fedit_nonzero
+	call	(scale_out)
+fedit_zero
+	lcal	fedit_integral_digit
+
+fedit_fraction
+	la, xi	'.'
+	WRITE_BYTE
+
+	call	(fraction3)
+	
+	la	table, a
+	WRITE3_BYTES
+
+	call	(fraction6)
+
+	tz	11
+	j	edit18
+	tz	10
+	j	edit12
+	tz	9
+	j	edit6
+	j	edit_scale?
+
+edit18	la	9
+	lcal	allsix
+	la	10
+	lcal	allsix
+	la	11
+	lcal	up2six
+	j	edit_scale?
+
+edit12	la	9
+	lcal	allsix
+	la	10
+	lcal	up2six
+	j	edit_scale?
+
+edit6	la	9
+	lcal	up2six
+edit_scale?
+	tz	SCALE
+	lcal	edit_scale
+	fret	0
+
+allsix	dsr	24
+	d, xi	1000
+	la	table, a
+	WRITE3_BYTES
+	la	table, b
+	WRITE3_BYTES
+	lret	0
+
+up2six	dsr	24
+	d, xi	1000
+	la	table, a
+	WRITE3_BYTES
+	jzb	only3
+	la	table, b
+	WRITE3_BYTES
+only3	lret	0
+
+
+.	these are genteel column-oriented translates
+.	so far they have only been needed unsigned
+.	not much trouble however to push sign-handling
+.	onto the start of them
+
+
+iedit	jpa	ieditp
+	dsr	24
+	la	('-'*/$word-$byte:s)
+			. WRITE_START in write_stream_start
+	WRITE_UBYTE
+	ana	b
+ieditp	lcal	iedit_u
+	fret	0
+
+iedits			. WRITE_START in write_stream_start
+	sa	b
+	la	('+'*/$word-$byte:s)
+	jpb	ieditsp
+	la	('-'*/$word-$byte:s)
+	n	b
+	ab, xi	1
+ieditsp	WRITE_UBYTE
+	la	b
+	lcal	iedit_u
+	fret	0
+
+ieditu	lcal	iedit_u
+	fret	0
+
+iedit48	jpa     iedit48p
+        ds	6
+        la      ('-'*/$word-$byte:s)
+        		. WRITE_START in write_stream_start
+        WRITE_UBYTE
+        lb, xi	0
+	dan	6
+iedit48p
+	lcal    iedit48_u
+        fret    0
+
+iedit48s
+			. WRITE_START in write_stream_start
+        ds	6
+	jpa	iedit48sp
+        la      ('-'*/$word-$byte:s)
+        WRITE_UBYTE
+	dsr	48
+	dan	6
+	j	iedit48si
+iedit48sp
+	la	('+'*/$word-$byte:s)
+	WRITE_UBYTE
+        dl	6
+iedit48si
+        lcal    iedit48_u
+        fret    0
+
+iedit48u
+	lcal	iedit48_u
+	fret	0
+
+iedit72	jpa     iedit72p
+			. WRITE_START in write_stream_start
+	la	('-'*/$word-$byte:s)
+	WRITE_UBYTE
+	call	(n72comp2)
+iedit72p
+	lcal    iedit72_u
+        fret    0
+
+iedit72s
+			. WRITE_START in write_stream_start
+        la      ('+'*/$word-$byte:s)
+        jpb     iedit72sp
+	call	(n72comp2)
+        la      ('-'*/$word-$byte:s)
+iedit72sp WRITE_UBYTE
+        lcal    iedit72_u
+        fret    0
+
+iedit72u
+	lcal	iedit72_u
+	fret	0
+
+
+iedit_u			. WRITE_START in write_stream_start
+
+	dsr	24
+	d	(1000000)
+	dpush	a
+	lr, xi	2-1
+	j	izeditugo
+
+iedit48_u
+			. WRITE_START in write_stream_start
+
+	sb	9		. it may be unsigned all 48 bits
+	dsr	24		. divide it as positive
+	d	(1000000)
+	sa	8		. 1st quotient upper
+	la	b
+	lb	9		. dividend 2nd word
+	d	(1000000)
+	push	b		. 1st remainder	
+	sa	b		. 1st quotient lower
+	la	8		. 1st quotient upper
+	d	(1000000)
+	dpush	a
+
+	lr, xi	3-1
+	j	izeditugo
+
+
+iedit72_u
+			. WRITE_START in write_stream_start
+				. you can't start with 1st word in a
+				. because this is unsigned positive
+				. maybe all of 72 bits
+	la, xi	0
+	push	6		. you don't need the ms quotient word
+				. but you get it
+
+	d	(1000000)	. 
+	push	a		. first quotient word
+	la	b
+	lb	1, sp		. 2nd input word
+	d	(1000000)
+	push	a		. second quotient word
+	la	b
+	lb	7		. 3nd input word
+	d	(1000000)
+	push	a		. 3rd quotient word
+	sb	3, sp		. lowest remainder word
+
+	la	2, sp		. first quotient ms word
+	lb	1, sp		. and 2nd word
+	d	(1000000)
+	sa	1, sp
+	la	b
+	lb	0, sp		. first quotient ls word
+	d	(1000000)
+	sb	2, sp		. second lowest remainder word
+	lb	a
+	la	1, sp
+	d	(1000000)
+	ds	0, sp
+
+	lr, xi	4-1
+
+izeditugo
+	z	7		. significance off
+izeditugo_next
+	pop	b
+	tp	7
+	j	izeditudo
+	jzb	izeditudont
+	n	7
+	lcal	izedit6
+	j	izeditudid
+izeditudo
+	lcal	iprint6
+izeditudont
+izeditudid
+	jdr	izeditugo_next
+	
+	tz	7		. significance on?
+	j	izexit
+
+	la, xi	'0'
+	WRITE_BYTE
+
+izexit	lret	0
+
+izeditn	la	'-',,xi
+	n	b
+	ab	1,,xi
+	lret	0
+
+edit_scale
+	la	'e',,xi
+	WRITE_BYTE
+	lb	SCALE
+
+izedits	la	'+',,xi
+	tp	b
+	lcal	izeditn
+	WRITE_BYTE
+iedit7	d	(1000000)
+	jza	izedit6
+	or	'0',,xi
+	WRITE_BYTE
+	j	iprint6
+
+izedit6	la, xi	0
+	d, xi	1000
+	jza	izeditu
+	lcal	izedit3
+	la	table, b
+	WRITE3_BYTES
+	lret	0
+
+izeditq* $proc
+	sal	$byte
+	mta	('0'*/$word-$byte)
+	j	iz3out($word/$byte-?)
+	$end
+
+izeditp* $proc
+	WRITE_BYTES	?
+	lret
+	$end
+
+izeditu	la	b
+izedit3	la	table, a
+	lk	(-1*/16)
+	mta	('0'*/16:s)
+	j	iz3out($word/$byte)
+
+?	$do	$word/$byte-1,	izeditq
+
+?	$do	$word/$byte,iz3out(?)	izeditp
+	
+	.	fear not, there is an lret instruction
+	.	in izeditp macro
+
+iprint6	la, xi	0
+	d, xi	1000
+	la	table, a
+	WRITE3_BYTES
+	la	table, b
+	WRITE3_BYTES
+	lret	0
+
+texto	lk	+(1*/$byte)-1,,xi
+nexto	la	0, y
+	ay	1,,xi
+	mtane	(0)		. is any byte in this word zero?
+	j	trail
+	WRITE3_BYTES
+	j	nexto
+
+trail	lk	(-1*/$word-$byte)
+trail?	mtane	(0)		. is the high order byte zero?
+	fret	0		. yes, finish
+	wsr	$byte		. no, shift into staging register
+	inc	BYTES
+	j	trail?

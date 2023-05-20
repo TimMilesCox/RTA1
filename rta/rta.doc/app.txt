@@ -1,0 +1,428 @@
+<div	style="font-size:14pt">
+<h2	style=2"color:0000FF">Sample Application Structures</h2>
+
+This application called view is included as part of a collection of utilities in the supplied system image
+
+<p>
+It is shown here as an example of building a standalone application
+
+<p>
+Some simpler examples of application construction are
+
+<ul     type="square">
+        <li><a href="array.html">array and 1off</a> are a load group of SIMD demonstrations</li>
+        <li><a href="scripts.html#source">hello.msm</a> is a simple loadable application</li>
+        <li><a href="iframe.html">gate.msm</a> is a large loadable application consisting multiple iframes</li>
+        <li><a href="scripts.html#_app4kq">simple.msm</a> is a simple ROM application</li>
+</ul>
+
+Applications are built with a command <a href="scripts.html">amake</a>
+
+<p>
+The directory containing build commands <a href="scripts.html">rta/target.rta/image.app</a> must be in $PATH
+
+<p>
+The simplest example of an application in ROM system image is
+<ul	type="square">
+
+<li><a href="scripts.html#_app4kq">simple.msm</a> in target.rta/simple.app</li>
+
+
+</ul>
+<p>
+target.rta/viewfile.app is a slightly more complex example
+
+<br><br>
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+The small wrapper shown here includes the view application as another file. This is because there are other ways of having this application
+
+<p>
+In fact viewfile.msm is built a different way into the supplied system image and is already available, so viewfile.app is not switched for inclusion
+
+<p>
+There's a lot of $list 0 here which will stop too much kernel material appearing in any name list you might choose to generate
+
+<p>
+At the same time, the wrapper is printed out to show what kind of system headers an application is likely to need. That's those .def files at the top
+
+
+<p>
+The application is assembled straight into absolute code starting address zero, and that's the simplest way of constructing applications in RTA1. Very small applications as this one is can be linked into packed iframes containing many applications
+
+<p>
+There is a <a href="#vector">$vector</a> jump pad with just one entry at the start of the memory page containing viewfile application
+
+<p>
+<a href="#vector">$vector</a> macro exports the entry point view* and jumps to the application
+</div>
+
+<pre	style="font-size:12pt">
+
+$ cat viewfile.msm
+	$list		0			. keep system names from crowding your listings
+        $path           ../
+        $include        def/rta.def		. define the machine
+        $include        def/vector.def		. some startup and environment
+        $include        def/ii.def		. some service calls
+        $include        language/stack.def	. function call sequence macros
+	$include	fs/file_io.def
+        $include        stream/stream.def	. macros for stdin / stdout / filestreams
+	$include	language/catalog.def	. making the application callable
+	$include	def.app/iframes.def	. system image slots if not dynamic load
+	$include	image.app/imports.def	. kernel exports
+	$path
+        $list					. names after here are in your listings
+
+__BASE	$equ	APPLICATION(3)/*12
+
+$(0:0/$0)
+
+view*	$vector	viewfile
+
+	catalog
+
+viewfile
+	$list		2
+	$include	../source.app/viewfile.msm
+
+	$do	$<256,$(0:256)	. force literals into operand memory space
+				. operand addresses 0..255 are registers
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier">
+Next is what you see if you assemble this wrapper
+
+<p>
+Blocks called $(3) and $(1) appear. They are data
+
+<p>
+Many automatic constants called literals appear at the end of the code
+
+<p>
+Some literals are forced into $3() data space. That's so a different $(0) instruction frame can address these literals as arguments. This is an important matter to understand. RTA1 only addresses one iframe at one time. So if you are calling library, scalars and pointers are in the internal stack, and that's just fine. If a pointer in the internal stack is pointing to something larger, like a string, that string has to be somewhere the called iframe can see it. Like your $(3) data space
+
+<p>
+
+This application displays local or remote files
+
+<p>
+C-language number/string style has been opted in order to show escape sequences in a way most developers recognise them
+
+<p>
+Macro <a href="#base_d">$base_d</a> places data storage assigned to the process in address window $(3) 003000<sub>16</sub>
+
+<p>
+Kernel routine <a href="#seg_load">seg$load</a> is called to unpack initial data values from a read-only file system embedded in the application image. All RTA1 code is shared code
+</div>
+
+<pre	style="font-size:12pt">
+
+$ masmx -lnke viewfile
+MASMX 7r3A Build 12
+3/viewfile.msm
+*EOF*
+  :                            13         $list					. names after here are in your listings
+  :                            14 
+  :                            15 __BASE*	$equ	APPLICATION(3)/*12
+  :                            16 
+  :                            17 $(0:0/$0)
+  :                            18 
+00:000000  B60050              +19 view*	$vector	viewfile
+  :                            20 
+[+0000]18
+00:000040  000050 00000B 001000 000000
+                              +21 	catalog
+00:000044  4D0003              +21 
+00:000045  000000              +21 
+[+0001]30
+00:000046  000000 000000        +21 
+[+0000]18*/48
+00:000048  800040 000007 001000 FFFFFF 000000 000000 000050 00000B
+                              +21 
+  :                            22 
+  :                            23 viewfile
+  :                            24 	$list		2
+  :                            25: 	$include	../source.app/viewfile.msm
+  :                            1 
+  :                            2 $(1:01000/$1)
+01:001000  000000 000000        +3 cursor		0L
+  :                            4 
+  :                            5 $(3:03000/$3)
+  :                            6 
+  :                            7 BUFFER	$equ	32
+  :                            8 
+03:003000  FFFFFF              +9 handle  -1
+  :                            10 
+  :                            11 command		$res	8
+  :                            12 path		$res	120/3
+  :                            13 host		$res	8
+  :                            14 file		$res	72
+  :                            15 
+  :                            16 
+  :                            17 request $res    72/3
+  :                            18 buffer  $res    BUFFER
+  :                            19 
+  :                            20 $(0)
+  :                            21 
+  :                            22 	$set_option	"c"		. that makes escape sequences easier to read
+  :                            23 					. it means C Language number and string syntax
+  :                            24 
+00:000050  60207F              +25 	$base_d	$zenith(3)-0x003000 1024*2
+00:000051  340003              +25 
+00:000052  600123              +25 
+00:000053  75007A              +25 
+00:000054  654000              +25 
+00:000055  20000E              +25 
+  :                            26 
+00:000056  9F0124              +27 	c	(seg$load)	0,,xi	(viewfile_data:d),,long
+00:000057  FD0000              +27 
+00:000058  FCF003              +27 
+00:000059  FF0126              +27 
+00:00005A  38000F              +27 
+  :                            28 .	call	(dialplan_online)
+  :                            29 
+  :                            30 
+00:00005B  FD00AC              +31 	fgets	request,,i 172 stdin
+00:00005C  FC3081              +31 
+00:00005D  FD0000              +31 
+00:00005E  FCF003              +31 
+00:00005F  FF0127              +31 
+00:000060  38000F              +31 
+00:000061  160018              +31 
+00:000062  1D0018              +31 
+00:000063  EE0066              +31 
+00:000064  CE0066              +31 
+00:000065  643081              +31 
+00:000066  FD3081              +32 	printf	$3("file viewer: %s\n\0"),,xi request,,xi
+00:000067  FD30C5              +32 
+00:000068  FD0001              +32 
+00:000069  FCF003              +32 
+00:00006A  FF0128              +32 
+00:00006B  38000F              +32 
+  :                            33 
+00:00006C  FD3031              +34 	sscanf	request,,xi $3("%s %:@%s":0),,xi command,,xi path+6,,xi host,,xi
+00:00006D  FD300F              +34 
+00:00006E  FD3001              +34 
+00:00006F  FD30CB              +34 
+00:000070  FD3081              +34 
+00:000071  FCF005              +34 
+00:000072  FF0129              +34 
+00:000073  38000F              +34 
+  :                            35 
+00:000074  C5FFFD              +36 	aa	-3,,xi			. field @ field acquired?
+00:000075  7E0084              +37 	jc	remote_open
+00:000076  FD3009              +38 	sscanf	request,,xi $3("%s %s":0),,xi command,,xi path,,xi
+00:000077  FD3001              +38 
+00:000078  FD30CE              +38 
+00:000079  FD3081              +38 
+00:00007A  FCF004              +38 
+00:00007B  FF0129              +38 
+00:00007C  38000F              +38 
+00:00007D  FD3009              +39 	printf	$3("display %s\n":0),,xi path,,xi
+00:00007E  FD30D0              +39 
+00:00007F  FD0001              +39 
+00:000080  FCF003              +39 
+00:000081  FF0128              +39 
+00:000082  38000F              +39 
+00:000083  B60091              +40 	j	open_view
+  :                            41 
+  :                            42 remote_open
+00:000084  FD3031              +43 	printf	$3("speed dial %s@%s\n":0),,xi	path+6,,xi	host,,xi
+00:000085  FD300F              +43 
+00:000086  FD30D4              +43 
+00:000087  FD0001              +43 
+00:000088  FCF004              +43 
+00:000089  FF0128              +43 
+00:00008A  38000F              +43 
+  :                            44 
+00:00008B  FD3009              +45 	c	(speed_dial)	host,,long	path,,xi
+00:00008C  9F3031              +45 
+00:00008D  FCF003              +45 
+00:00008E  FF012A              +45 
+00:00008F  38000F              +45 
+  :                            46 
+00:000090  E600CF              +47 	jna	neverdid
+  :                            48 
+  :                            49 	$if	0
+  :                            50 	ql	0, x
+  :                            51 	qs	path
+  :                            52 	dl	4, x
+  :                            53 	ds	path+4
+  :                            54 
+  :                            55 	c	(strlenx) path+6,,xi	. count the filename bytes -> a containing words -> b
+  :                            56 
+  :                            57 	sal	8			. insert name byte count in path preamble header word
+  :                            58 	or	path
+  :                            59 
+  :                            60 	aa	b			. add containing words of name to path structure length
+  :                            61 	sa	path			. update the path preamble
+  :                            62 	$endif
+  :                            63 
+  :                            64 open_view
+                                	c	(open)	path,,xi	;
+00:000091  FD0000              +66 			O_RDONLY,,xi
+00:000092  FD3009              +66 
+00:000093  FCF002              +66 
+00:000094  FF012B              +66 
+00:000095  38000F              +66 
+  :                            67 
+00:000096  203000              +68 	sa	handle
+00:000097  E600CF              +69 	jna	neverdid
+  :                            70 
+00:000098  FD0020              +71 more	c	(read)	handle	buffer,,xi	 BUFFER,,xi
+00:000099  FD3099              +71 
+00:00009A  F83000              +71 
+00:00009B  FCF003              +71 
+00:00009C  FF012C              +71 
+00:00009D  38000F              +71 
+00:00009E  E600C8              +72 	jna	didsome
+  :                            73 
+00:00009F  553099              +74 	lx	buffer,,xi		. calculate display limit pointer
+00:0000A0  800004              +75 	ax	a			. = &buffer + data words
+00:0000A1  400002              +76 	lr	x
+00:0000A2  553099              +77 	lx	buffer,,xi
+  :                            78 
+00:0000A3  F600A6              +79 owrite	jxge	ocomplete
+00:0000A4  3E00EB              +80 	lcal	writealine
+00:0000A5  B600A3              +81 	j	owrite
+  :                            82 ocomplete
+  :                            83 	
+  :                            84 
+00:0000A6  FD0064              +85 	fgets	request,,i 100 stdin
+00:0000A7  FC3081              +85 
+00:0000A8  FD0000              +85 
+00:0000A9  FCF003              +85 
+00:0000AA  FF0127              +85 
+00:0000AB  38000F              +85 
+00:0000AC  160018              +85 
+00:0000AD  1D0018              +85 
+00:0000AE  EE00B1              +85 
+00:0000AF  CE00B1              +85 
+00:0000B0  643081              +85 
+00:0000B1  E600D6              +86 	jna	leave_orderly		. if stdin has disconnected just drop out
+00:0000B2  603081              +87 	la	request
+00:0000B3  E600D6              +88 	jna	leave_orderly		. CTRL_D detected, treat as EOF
+00:0000B4  060010              +89 	sar	16
+00:0000B5  C5FFD2              +90 	aa	-'.',,xi		. a period means stop
+00:0000B6  C600D6              +91 	jza	leave_orderly
+00:0000B7  C5FFF4              +92 	aa	'.'-'0'-10,,xi		. a number entered in either decimal or hex
+00:0000B8  7E0098              +93 	jc	more			. means reposition within the target file
+00:0000B9  C5000A              +94 	aa	10,,xi			. leading zero = hex, 1..9 = decimal
+00:0000BA  5E0098              +95 	jnc	more			. anything else means carry on
+  :                            96 
+00:0000BB  FD1000              +97 	sscanf	request,,xi	$3("%li":0),,xi	cursor,,xi	. read 48-bit number
+00:0000BC  FD30DA              +97 
+00:0000BD  FD3081              +97 
+00:0000BE  FCF003              +97 
+00:0000BF  FF0129              +97 
+00:0000C0  38000F              +97 
+00:0000C1  FD0000              +98 	c	(lseek)	handle	cursor,,long	SEEK_SET,,xi
+00:0000C2  9F1000              +98 
+00:0000C3  F83000              +98 
+00:0000C4  FCF004              +98 
+00:0000C5  FF012D              +98 
+00:0000C6  38000F              +98 
+00:0000C7  B60098              +99 	j	more
+  :                            100 
+00:0000C8  F80004              +101 didsome	printf	$3("read failed %d\n":0),,xi a
+00:0000C9  FD30DC              +101 
+00:0000CA  FD0001              +101 
+00:0000CB  FCF003              +101 
+00:0000CC  FF0128              +101 
+00:0000CD  38000F              +101 
+00:0000CE  B600D6              +102 	j	leave_orderly
+  :                            103 
+  :                            104 neverdid
+00:0000CF  F80004              +105 	printf	$3("bad open %d\n":0),,xi a
+00:0000D0  FD30E2              +105 
+00:0000D1  FD0001              +105 
+00:0000D2  FCF003              +105 
+00:0000D3  FF0128              +105 
+00:0000D4  38000F              +105 
+00:0000D5  B600D6              +106 	j	leave_orderly
+  :                            107 
+  :                            108 
+  :                            109 leave_orderly
+00:0000D6  F83000              +110 	c	(close)	handle		. terminate process
+00:0000D7  FCF001              +110 
+00:0000D8  FF012E              +110 
+00:0000D9  38000F              +110 
+00:0000DA  3D0000              +111 	fret	0			. dialogue continues in telnet stub
+  :                            112 					. if stdin socket is still connected
+  :                            26 
+  :                            27 	$do	$<256,$(0:256)	. force literals into operand memory space
+  :                            28 				. operand addresses 0..255 are registers
+  :                            29 
+*EOF*
+00:000123+[0000]18:000000
+00:000124+[0002]30:000000000000
+00:000126+0001CD
+00:000127+0001E4
+00:000128+0001DB
+00:000129+0001D8
+00:00012a+0001EF
+00:00012b+0001D2
+00:00012c+0001D3
+00:00012d+0001D5
+00:00012e+0001D7
+00:00012f+000221
+00:000130+0001D4
+00:000131+0001D6
+00:000132+000000
+00:000133+600000
+03:0030c5+66696C65207669657765723A2025730A0000
+03:0030cb+257320253A40257300
+03:0030ce+257320257300
+03:0030d0+646973706C61792025730A00
+03:0030d4+7370656564206469616C2025734025730A00
+03:0030da+256C69000000
+03:0030dc+72656164206661696C65642025640A000000
+03:0030e2+626164206F70656E2025640A000000
+:$(00):000000:000134 :$(01):001000:001002 :$(02):002000:003000 :$(03):003000:0030E7 
+viewfile.msm: object code 2914 bytes: 0 errors: 3 undefined labels
+
+</pre>
+
+<div    style="border-radius:10px;width:500pt;background-color:#EFEFEF;font-family:courier"><a	name="image.app"/>
+$RTA_BINARY and <a href="scripts.html">rta/target.rta/image.app</a> are required in $PATH for <a href="masmx7r3.html#binary_utilities">binary utilities</a> and build commands
+</div>
+
+<pre	style="font-size:12pt">
+
+	cd rta/target.rta/viewfile.app
+	amake viewfile
+
+</pre>
+Directory viewfile.app has a text file <a style="color:#0000FF">loadfs</a> used by <a style="color:#0000FF">amake</a>
+<pre>
+
+	$ cat loadfs
+	file viewfile_data lsegment
+	tree application_templates
+	link glimpse launch_gate G 
+
+</pre>
+The application has a new callname <a style="color:#0000FF">glimpse</a> instead of <a style="color:#0000FF">view</a>, because this application is already in the supplied system image with the name <a style="color:#0000FF">view</a>
+
+<p>
+These build materials are present as an example. <a style="color:#0000FF">view</a> or <a style="color:#0000FF">glimpse</a> application does not need adding to the system image a second time
+
+<p>
+There is also  a script <a style="color:#0000FF">amass</a> in directory viewfile.app which appends an application linearly to a new system image
+
+<p>
+<a style="color:#0000FF">amass</a> file is not present for dynamic load applications
+
+<pre>
+
+	$cat amass
+	insert viewfile ../initial.app/sysimage.rom
+
+</pre>
+The supplied system image includes the 200 instruction words of application viewfile together with other <a href="scripts.html#group">applications in one iframe</a>
+
+<p>
+That optimises instruction memory. Iframes are assigned the containing number of blocks of 4096 words
+
+</div>

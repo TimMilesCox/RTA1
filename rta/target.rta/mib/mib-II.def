@@ -1,0 +1,137 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+SNMP_INT	$equ	2
+SNMP_OID	$equ	6
+SNMP_STRING	$equ	4
+SNMP_NETWORKADDRESS $equ 64
+SNMP_COUNTER	$equ	65
+SNMP_GAUGE	$equ	66
+SNMP_TIMETICKS	$equ	67
+
+MIB_FUNCTION_RETRIEVE $equ 99
+MIB_FUNCTION	$equ	100
+
+SNMP_NULL	$equ	5
+
+SNMP_SEQUENCE	$equ	'0'
+
+SNMP_GETREQ	$equ	160
+SNMP_GETNEXTREQ $equ	161
+SNMP_GETRESP	$equ	162
+SNMP_SETREQ	$equ	163
+SNMP_TRAPREQ	$equ	164
+
+SNMP_GENERIC_TRAP_6  $equ 6
+
+SNMP_TOOBIG	$equ	  1
+SNMP_NOSUCHNAME	$equ	  2
+SNMP_BADVALUE	$equ	  3
+SNMP_READONLY	$equ	  4
+SNMP_GENERR	$equ	  5
+
+
+
+SNMP_PORT	$equ	161
+SNMP_TRAP_PORT	$equ	162
+
+MIB		$equ	8192
+
+MIB_READ_ALLOWED  $equ	1
+MIB_WRITE_ALLOWED $equ	2
+
+p	$proc
+mobjet*	$name
+*	$tree
+along	+	p(1, 1)
+data
+down	+	p(8, 1)
+seq	+	p(2, 1)
+type	+	p(3, 1)
+
+.	the tree joins only have those
+.	leading 4  words
+
+bytes	+	p(4, 1)	. length used in BER
+flags	+	p(5, 1)
+
+bucket
+ranges	+	p(6)
+range
+
+.	bucket is for strings / OIDs
+.	is the maximum write size
+.	is only set on first write
+
+.	ranges is for numbers
+.	is the number of following tuples
+.	which each indicate an allowed
+.	upper/lower value range on writes
+
+.	# ranges and the range tuples
+.	are only stored on first write
+
+.	ranges are pairs of 24-bit limits
+.	        or pairs of 48-bit limits
+.	and must match the size of
+.	the integer to which they apply
+
+	$root
+	$end
+
+p	$proc
+MIB_ICOUNT48* $name
+	MIB_ACOUNT48	p(1)	1,,xi
+	$end
+
+p	$proc
+MIB_ACOUNT48*	$name
+	push	p(2)
+
+	$if	p(1, 2)=sp
+	popA	p(1, 1)+2, p(1, 2)
+	$note	mib object in internal stack? popA displacement adjusted
+	$else
+	popA	p(1, 1)+1, p(1, 2)
+	$endif
+
+	jnc	$+2			. add to the high-order word
+	inc	p(1, 1), p(1, 2)	. of the counter happens less
+
+	$end

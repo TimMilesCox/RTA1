@@ -1,0 +1,535 @@
+
+_rextable_1
+	dd	0, 0, 0, 0,		r_sa, r_sb, r_z, 0
+	dd	0, 0, 0, 0,		r_la, r_lb, r_tz, r_tp
+	dd	0, 0, r_or, r_orB,	r_and, r_andB, r_xor, r_xorB
+	dd	r_aa, r_ab, r_ana, r_anb, r_m, r_mf, r_d, 0
+
+_rextable_6
+	dd	r_sar, r_sbr, r_dsr, 0, r_sal, r_sbl, r_dsl, 0
+	dd	r_rar, r_rbr, r_drr, 0, r_ral, r_rbl, r_drl, 0
+	dd	r_saa, r_sba, r_dsa, 0, 0, 0, 0, 0
+	dd	0, 0, 0, 0, 		0, 0, 0, 0
+
+_rextable_7
+	dd	0, 0, 0, 0,		0, 0, 0, 0
+	dd	r_qs, r_ql, r_dte, 0,	r_fa, r_fan, r_fm, r_fd
+	dd	0, 0, 0, 0, 		0, r_mta, 0, 0
+	dd	r_ds, r_dl, r_da, r_dan, 0, 0, 0, 0
+
+
+_rex:	test	byte ptr [_psr+2], 128
+	js	near _rex_z				; ISRs can't do this
+
+	call	memory_read				; ea -> instruction for repeat	
+	mov	dword ptr [__register+286*4], eax	; save instruction word
+	call	__ea					; get initial ea of repeated  instruction
+	movzx	ebx, ch					; spin-off is opcode index in ch
+							; and operand type in cl
+	cmp	cl, 6
+	jb	_rex_itable1
+	ja	_rex_itable7
+							; instruction list 6
+	mov	ebx, dword ptr [_rextable_6+ebx*4]	; shifts and jumps
+	jmp	_rex_evaluate
+
+_rex_itable7:						; instruction list 7
+	mov	ebx, dword ptr [_rextable_7+ebx*4]	; large arithmetic
+	jmp	_rex_evaluate
+
+_rex_itable1:						; instruction list 1
+	mov	ebx, dword ptr [_rextable_1+ebx*4]	; single integer arithmetic
+
+_rex_evaluate:
+	and	ebx, ebx				; instruction for repeat execute?
+	jz	near _rex_z				; no
+	mov	dword ptr [__register+285*4], ebx	; yes: save execution logic pointer
+
+							; if repeat instruction is indexed:
+							; quick lookup tag for index increment
+	mov	dword ptr [__register+284*4], 0		; default no index register referenced
+	mov	ebx, dword ptr [__register+286*4]	; identify any index register tag
+	and	bx, bx					; in the instruction word
+	jns	_rex_ready				; by testing bit 15
+	shr	bx, 12
+							; must be > indirection tags *B0+ *B1+
+	cmp	bl, 10					; pointers in storage not incremented
+	jb	_rex_ready				; index registers may increment
+	cmp	bl, 14
+	jnb	_rex_indexed				; [   fp sp ]  registers   [ 14 15 ]
+	and	bl, 7					; [ x y a b ]  registers [ 2 3 4 5 ]
+
+_rex_indexed:
+	and	ebx, 15					; make 32-bit index value
+	mov	dword ptr [__register+284*4], ebx	; write quick lookup
+
+_rex_ready:
+	mov	ebx, dword ptr [__register+Q]		; default target register [ q ] ->	
+	call	dword ptr [__register+285*4]		; execute logic ->
+
+	mov	eax, dword ptr [__register+284*4]	; index register tag?
+	and	ax, ax
+	jz	_rex_count				; no
+
+	mov	ecx, dword ptr [__register+WDATA]
+	and	ecx, 00FFFFFFh				; index register increment configured?
+	jz	_rex_count				; no
+
+	add	ecx, dword ptr [__register+eax*4]	; calculate index + increment
+	and	ecx, 00FFFFFFh				; 
+	mov	dword ptr [__register+eax*4], ecx	; write back to tagged index register
+
+_rex_count:
+	mov	eax, dword ptr [__register+RDATAC]
+	dec	eax
+	and	eax, 00FFFFFFh
+
+	mov	dword ptr [__register+RDATAC], eax
+	test	eax, 00800000h
+	jnz	_rex_z					; reached -1 end
+
+	test	word ptr [_indication], EXTERNAL_INDICATIONS
+	jz	_rex_along
+
+	add	edx, -4					; restart after
+	jmp	_rex_z					; yielding to interrupt
+
+_rex_along:
+	mov	eax, [__register+286*4]			; instruction encoding
+	call	__ea
+	mov	ebx, [__register+285*4]			; command pointer
+	jmp	_rex_ready
+_rex_z:	ret
+
+_rex_prime_final_count:
+	test	dword ptr [ebp+RDATAC], 00800000h
+	jz	_rex_primed
+	mov	ebx, dword ptr [ebp+WDATAC]
+	mov	dword ptr [ebp+RDATAC], ebx
+	ret
+
+_rex_prime:
+	test	dword ptr [ebp+RDATAC], 00800000h
+	jz	_rex_primed
+	mov	ebx, dword ptr [ebp+WDATAC]
+	mov	dword ptr [ebp+RDATAC], ebx
+	mov	ebx, dword ptr [ebp+S_P]
+	and	ebx, 00FFFFFFh
+	mov	dword ptr [ebp+Q], ebx
+_rex_primed:
+	ret
+
+_rex_accumulate:
+	mov	ebx, dword ptr [ebp+RDATA]
+	add	ebx, dword ptr [ebp+Q]
+	and	ebx, 00FFFFFFh
+	mov	dword ptr [ebp+Q], ebx
+	ret
+
+_rex_chex_127:
+	call	_rex_prime
+	cmp	ebx, 127
+	jna	_rex_chex_low
+	jmp	_rex_chexit
+
+_rex_chex_126:
+	call	_rex_prime
+	cmp	ebx, 126
+	jna	_rex_chex_low
+	jmp	_rex_chexit
+
+_rex_chex_124:
+	call	_rex_prime
+	cmp	ebx, 124
+	ja	_rex_chexit
+_rex_chex_low:
+	cmp	ebx, 24
+	jb	_rex_chexit
+	ret
+
+_rex_chexit:
+	jmp	guard_ii_authority
+
+;	eax = EA
+;	q -> target register selected
+
+r_fa:	call	_rex_chex_124
+	call	_far
+	jmp	_rex_accumulate
+
+r_fan:	call	_rex_chex_124
+	call	_fanr
+	jmp	_rex_accumulate
+
+r_fm:	call	_rex_chex_124
+	call	_fmr
+	jmp	_rex_accumulate
+
+r_fd:	call	_rex_chex_124
+	call	_fdr
+	jmp	_rex_accumulate
+
+r_tz:	call	_rex_prime_final_count
+	cmp	cl, 4			; may not be [ i xi ]
+	jnb	r_noskip		; but pointers are updated on no_op
+	call	_operand_read
+	and	eax, 00FFFFFFh
+	jnz	r_noskip
+
+	jmp	r_skipout		; stop search repeat
+
+r_tp:	call	_rex_prime_final_count
+	cmp	cl, 4			; may not be [ i xi ]
+	jnb	r_noskip		; but pointers are updated on no_op
+	call	_operand_read
+	test	eax, 00800000h
+	jnz	r_noskip
+
+	jmp	r_skipout		; stop search repeat
+
+r_noskip:	ret
+
+r_sb:	call	_rex_chex_126
+	inc	ebx			; starboard lane
+	jmp	r_s
+r_sa:	call	_rex_chex_127
+r_s:	cmp	cl, 4			; may not be [ i xi ]
+	jnb	r_no_op_s		; but pointers are updated 
+	mov	ebx, dword ptr [ebp+ebx*4]
+	call	_operand_write
+r_no_op_s:
+	jmp	_rex_accumulate
+	ret
+
+r_z:	call	_rex_prime_final_count
+	cmp	cl, 4			; may not be [ i xi ]
+	jnb	r_no_op_z		; but pointers are updated
+	xor	ebx, ebx
+	jmp	_operand_write
+r_no_op_z:
+	ret
+
+r_lb:	call	_rex_chex_126
+	inc	ebx			; starboard lane
+	jmp	r_l
+r_la:	call	_rex_chex_127
+r_l:	push	ebx
+	call	_operand_read
+	pop	ebx
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_orB:	call	_rex_chex_126
+	inc	ebx			; starboard lane
+	jmp	r_OR
+r_or:	call	_rex_chex_127
+r_OR:	push	ebx
+	call	_operand_read
+	pop	ebx
+	or	eax, dword ptr [ebp+ebx*4]
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_andB:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_AND
+r_and:	call	_rex_chex_127
+r_AND:	push	ebx
+	call	_operand_read
+	pop	ebx
+	and	eax, dword ptr [ebp+ebx*4]
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_xorB:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_XOR
+r_xor:	call	_rex_chex_127
+r_XOR:	push	ebx
+	call	_operand_read
+	pop	ebx
+	xor	eax, dword ptr [ebp+ebx*4]
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_ab:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_a
+r_aa:	call	_rex_chex_127
+r_a:	push	ebx
+	call	_operand_read
+	pop	edi
+	add	eax, dword ptr [ebp+edi*4]
+	jmp	r_store_carry
+
+r_anb:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_an
+r_ana:	call	_rex_chex_127
+r_an:	push	ebx
+	call	_operand_read
+	pop	edi
+	xor	eax, 00FFFFFFh
+	inc	eax
+	add	eax, dword ptr [ebp+edi*4]
+	jmp	r_store_carry
+
+r_mf:	call    _rex_chex_127
+	push	edx
+	push	ebx
+	call	_operand_read
+	pop	edi
+	imul	eax, dword ptr [ebp+edi*4]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+edi*4], eax
+	pop	edx
+	jmp	_rex_accumulate
+
+; use the platform unsigned multiply
+; work in positive magnitude
+; adjust the final sign after offset-adding products
+
+r_m:	call	_rex_chex_126
+	push	edx
+	push	ebx			; register stack cursor
+	call	_operand_read
+	pop	edi			; recover register stack cursor
+
+	xor	ecx, ecx		; final sign
+	test	eax, 00800000h		;
+	jz	r_msigu?		; negative multiplier?
+	not	ecx			; final sign reverse
+	xor	eax, 00FFFFFFh
+	inc	eax			; 2s complement
+	and	eax, 00FFFFFFh
+
+r_msigu?:
+	mov	ebx, eax		; multiplier 2b used twice
+	mov	eax, dword ptr [ebp+edi*4]
+	test	eax, 00800000h		; multiply high order part 1st
+	jz	r_mgoferit_yall
+
+	not	ecx			; final sign reverse
+	mov	edx, dword ptr [ebp+edi*4+4]
+	xor	edx, 00FFFFFFh
+	inc	edx			; 2s complement
+	rol	edx, 8
+	movzx	esi, dl
+	shr	edx, 8
+	mov	dword ptr [ebp+edi*4+4], edx
+	xor	eax, 00FFFFFFh		; ms register long multiplicand
+	add	eax, esi
+	and	eax, 00FFFFFFh
+
+r_mgoferit_yall:
+	mul	ebx			; multiply high order part
+	mov	dword ptr [ebp+edi*4], eax	; save lower half of product
+	mov	eax, dword ptr [ebp+edi*4+4]	; multiply low order part
+	mul	ebx
+	shl	edx, 8			; 8 bits of eax must shift up to edx
+	rol	eax, 8
+	mov	dl, al
+	shr	eax, 8			; leaving 8 zeros in eax high end
+	add	edx, dword ptr [ebp+edi*4]	; add2 lower half of 1st product
+	and	ecx, ecx		; final sign?
+	jns	r_m_writeback
+
+	xor	edx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	inc	eax			; 2s complement
+	rol	eax, 8			; carried out single bit?
+	movzx	esi, al			; must add to edx
+	shr	eax, 8
+	add	edx, esi
+
+r_m_writeback:
+	and	eax, 00FFFFFFh
+	and	edx, 00FFFFFFh
+	mov	dword ptr [ebp+edi*4+4], eax	
+	mov	dword ptr [ebp+edi*4], edx
+	pop	edx
+	jmp	_rex_accumulate
+
+r_d:	call	_rex_chex_126
+	mov	edi, ebx		; register cursor
+	call	_divide
+	mov	dword ptr [ebp+edi*4+4], ebx
+	mov	dword ptr [ebp+edi*4], eax
+	test	byte ptr [_psr], FP_R
+	jz	_rex_accumulate
+	cmp	edi, 125
+	ja	_rex_accumulate
+	mov	dword ptr [ebp+edi*4+8], ecx
+r_dnor:	jmp	_rex_accumulate
+
+r_sbr:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_lsr
+r_sar:	call	_rex_chex_127
+r_lsr	mov	cl, al
+	mov	eax, dword ptr [ebp+ebx*4]
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_dsr:	call	_rex_chex_126
+	mov	cl, al
+	mov	edi, ebx
+	mov	eax, dword ptr [ebp+edi*4]
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	call	dsr
+	mov	dword ptr [ebp+edi*4], eax
+	mov	dword ptr [ebp+edi*4+4], ebx
+	jmp	_rex_accumulate
+
+r_sbl:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_lsl
+r_sal:	call	_rex_chex_127
+r_lsl:	mov	cl, al
+	mov	eax, dword ptr [ebp+ebx*4]
+	shl	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_dsl:	call	_rex_chex_126
+	mov	cl, al
+	mov	edi, ebx
+	mov	eax, dword ptr [ebp+edi*4]
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	call	dsl
+	mov	dword ptr [ebp+edi*4], eax
+	mov	dword ptr [ebp+edi*4+4], ebx
+	jmp	_rex_accumulate
+
+r_rbr:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_rr
+r_rar:	call	_rex_chex_127
+r_rr:	mov	edi, ebx
+	mov	ebx, dword ptr [ebp+edi*4]
+	call	rr
+	mov	dword ptr [ebp+edi*4], ebx
+	jmp	_rex_accumulate
+
+r_drr:	call	_rex_chex_126
+	mov	cl, al
+	mov	edi, ebx
+	mov	eax, dword ptr [ebp+edi*4]
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	call	drr
+	mov	dword ptr [ebp+edi*4], eax
+	mov	dword ptr [ebp+edi*4+4], ebx
+	jmp	_rex_accumulate
+
+r_rbl:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_rl
+r_ral:	call	_rex_chex_127
+r_rl:	mov	edi, ebx
+	mov	ebx, dword ptr [ebp+edi*4]
+	call	rl
+	mov	dword ptr [ebp+edi*4], ebx
+	jmp	_rex_accumulate
+
+r_drl:	call	_rex_chex_126
+	mov	cl, al
+	mov	edi, ebx
+	mov	eax, dword ptr [ebp+edi*4]
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	call	drl
+	mov	dword ptr [ebp+edi*4], eax
+	mov	dword ptr [ebp+edi*4+4], ebx
+	jmp	_rex_accumulate
+
+r_sba:	call	_rex_chex_126
+	inc	ebx		; starboard lane
+	jmp	r_asr
+r_saa:	call	_rex_chex_127
+r_asr:	mov	cl, al
+	mov	eax, dword ptr [ebp+ebx*4]
+	shl	eax, 8
+	sar	eax, cl
+	shr	eax, 8
+	mov	dword ptr [ebp+ebx*4], eax
+	jmp	_rex_accumulate
+
+r_dsa:	call	_rex_chex_126
+	mov	cl, al
+	mov	edi, ebx
+	mov	eax, dword ptr [ebp+edi*4]
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	call	dsa
+	mov	dword ptr [ebp+edi*4], eax
+	mov	dword ptr [ebp+edi*4+4], ebx
+	jmp	_rex_accumulate
+
+r_qs:	call	_rex_chex_124
+	call	_burst_write4	; eax -> ea / ebx -> register cursor
+	jmp	_rex_accumulate
+
+r_ql:	call	_rex_chex_124
+	call	_burst_read4	; eax -> ea / ebx -> register cursor
+	jmp	_rex_accumulate
+
+r_dte:	call	_rex_prime_final_count
+	call	_burst_read2
+	xor	eax, dword ptr [ebp+A]
+	jnz	r_mtax
+	xor	ebx, dword ptr [ebp+B]
+	jnz	r_mtax
+	jmp	r_skipout		; stop search repeat
+
+r_mta:	call	_rex_prime_final_count
+	mov	cl, 0		; operand size 1 word
+	call	_operand_read
+	xor	eax, dword ptr [ebp+A]
+	and	eax, dword ptr [ebp+K]
+	jnz	r_mtax
+
+r_skipout:				; stop search repeat
+	add	edx, 4
+	mov	esp, dword ptr [ebp+287*4]
+r_mtax:	ret
+
+r_ds:	call	_rex_chex_126
+	call	_burst_write2	; eax -> ea / ebx -> register cursor
+	jmp	_rex_accumulate
+
+r_dl:	call	 _rex_chex_126
+	push	ebx
+	call	_burst_read2
+	pop	edi
+	mov	dword ptr [ebp+edi*4+4], ebx
+	mov	dword ptr [ebp+edi*4], eax
+	jmp	_rex_accumulate
+
+r_dan:	call	 _rex_chex_126
+	push	ebx
+	call	_burst_read2
+	pop	edi
+	xor	ebx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	inc	ebx
+	jmp	r_danad
+
+r_da:	call	 _rex_chex_126
+	push	ebx
+	call	_burst_read2
+	pop	edi
+
+r_danad:
+	add	ebx, dword ptr [ebp+edi*4+4]
+	shl	ebx, 8
+	adc	eax, 0
+	shr	ebx, 8
+	mov	dword ptr [ebp+edi*4+4], ebx
+	add	eax, dword ptr [ebp+edi*4]
+
+r_store_carry:
+	call	_alu_carry
+	mov	dword ptr [ebp+edi*4], eax
+	jmp	_rex_accumulate
+	

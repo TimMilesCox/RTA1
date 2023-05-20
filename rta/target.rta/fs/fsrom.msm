@@ -1,0 +1,308 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+fsrom_direct		. set caller state pointing to the first extent descriptor
+			. retrieve also an absolute word pointer to the start of first
+			. extent data
+			. vector name fsrom_da
+
+		$head_far	 params(fspp,			int	;
+					fsrom_start_bank,	int	;
+					fsrom_direct_name,	long)
+
+			lx	fspp
+			la	fsrom_start_bank
+			sa	fspax:bank, x
+
+			dl	fsrom_direct_name	. word offset 48 bit just in case
+			dsl	12			. turn it into a long pointer
+			orB	B_FS1,,xi
+			rbr	12
+			aa	fsrom_start_bank	. add on the start pointer
+			ds	fspax:extent, x
+
+			sabr	B_FS1
+			dl	fsys:e:granule, b
+
+			dsl	6			. word offset pointer 1st extent
+							. within  micro file system
+			ds	fspax:absolute_pointer, x
+
+			$ret	0
+
+
+fsrom_words		$head_far	 params(fsp,			int	;
+						buffer,			int	;
+						words_requested,	int)	;
+										;
+					scalars(absolute_pointer,	long)
+
+			. vector name fsrom_read
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fsrom_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsp
+			dl	fspax:absolute_pointer
+			ds	absolute_pointer
+			dl	fspax:extent
+			z	8			. words delivered count
+
+
+			sabr	B_FS1
+							. calculate pointer 
+			la	fsys:e:granules, b	. beyond this extent
+			ly	b
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6			. word pointer extent + 1
+							. = relative limit pointer
+			dan	absolute_pointer 	. remaining words in extent
+fsrom_repoint		jna	fsrom_anomaly1
+			jdz	fsrom_next_extent?	. you've read this extent
+			la	words_requested
+			ana	b			. subtract it from outstanding
+			jc	fsrom_transferinb	. transfer remaining words in extent 
+			lb	words_requested		. transfer remaining words in request
+
+fsrom_transferinb	la	words_requested		. subtract transfer from outstanding
+			ana	b
+			sa	words_requested
+
+			sb	7
+			la, xi	0
+			
+			da	absolute_pointer
+			ds	fspax:absolute_pointer
+
+			dl	absolute_pointer
+							. turn device-relative pointer to
+			dsl	12			. long address then to based address
+			orB	B_FS1,,xi
+			rbr	12
+			aa	fspax:bank
+			sabr	B_FS1
+
+			ly	b
+			la	7
+
+			lb	8
+			ab	a
+			sb	8
+
+			lx	buffer
+			lcal	fs_xfer
+			sx	buffer
+
+fsrom_next_extent?	tz	words_requested
+			j	fsrom_next_extent!
+			j	fsrom_exit
+
+
+fsrom_next_extent!	lx	fsp
+			dl	fspax:extent
+			sabr	B_FS1
+			
+			ly	b
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fsrom_exit
+
+			dsl	6		. extent offset to word offset
+			da	6
+
+			dsl	12
+			orB, xi	B_FS1
+			rbr	12
+
+			aa	fspax:bank
+			ds	fspax:extent
+
+			sabr	B_FS1		. now get the new data word pointer
+			ly	b
+			dl	fsys:e:granule, b . in the micro file_system
+			dsl	6
+			ds	absolute_pointer
+			la	fsys:e:granules, y . granules in the extent
+			dsr	24
+			dsl	6		. and the remaining words in the
+						. new extent = all of them
+			j	fsrom_repoint
+
+fsrom_anomaly1		la, xi	-1
+			j	fsrom_exit1
+fsrom_exit		la	8		. result = data words transferred
+fsrom_exit1		$ret	0
+
+
+
+.	get the file offset within FS
+.	in return for the directory offset and name
+.	vector name fsrom_find
+
+fsrom_locate	$head_far	 params(fsromloc_fpaxp,		int	;
+					fsromloc_fsid,		int	;
+					fsromloc_doffset,	long	;
+					fsromloc_typesought,	int	;
+					fsromloc_words,		int	;
+					fsromloc_namep,		int	)
+
+		c	(fsrom_da)	fsromloc_fpaxp		;
+					fsromloc_fsid		;
+					fsromloc_doffset,,long
+
+		ly	fsromloc_fpaxp
+		ly	fspax:extent+1, y		. should be directory granule page head
+		lk	(255*/16:s)
+
+		la	fsys:e:rfw
+		mta	(PAGE$CONTROL*/16)
+		j	fsrom_locate_miss
+
+fsrom_locate_search
+		and	255,,xi
+		ay	1, a, i
+fsrom_locate_next
+		la	0, y
+		jna	fsrom_locate_miss		. end of entries and we have no extending directory blocks
+		mtane	(0)				. another end of directory case?
+		j	fsrom_locate_miss
+
+
+		mtane	(FILE$*/16)
+		j	fsrom_locate_typef
+		mtane	(TREE$*/16)
+		j	fsrom_locate_typed
+		mtane	(VOLUME$*/16)
+		j	fsrom_locate_typev
+
+		mta	(LINK$*/16)			. last of types being considered
+		j	fsrom_locate_search		. it's not
+
+		$if	0
+		j	fsrom_locate_search		. it is, but there aren't any
+		$else
+
+
+fsrom_locate_typel
+		lx	LINK_NAME_OFFSET$, y, i
+		j	fsrom_locate_typex
+
+		$endif
+
+
+fsrom_locate_typev
+		lx	VOLUME_NAME_OFFSET$, y, i
+		j	fsrom_locate_typex
+
+fsrom_locate_typed
+		lx	DIRECTORY_NAME_OFFSET$, y, i
+		j	fsrom_locate_typex
+fsrom_locate_typef
+		lx	DATAFILE_NAME_OFFSET$, y, i
+
+fsrom_locate_typex
+		tnz	fsromloc_typesought		. does the caller care what entry type?
+		j	fsrom_locate_testl		. no
+		mta	fsromloc_typesought		. yes
+		j	fsrom_locate_search
+
+fsrom_locate_testl
+		and	255,,xi
+		aa	1, y, i				. -> next entry
+		lb	y				. keep the entry start
+
+		ly	fsromloc_namep
+		lr	a				. and limit
+		ana	x				. words in name
+		xor	fsromloc_words			. if it's not the same length
+		jza	fsrom_locate_string		. it'a not the same name
+
+fsrom_locate_forward
+		ly	r				. the limits pointer -> next entry
+		j	fsrom_locate_next
+
+fsrom_locate_string
+		jxge	fsrom_locate_hit		. all words compared?
+		la	0, x				. not yet
+		xor	0, y
+		jnza	fsrom_locate_forward		. jump to next entry if unequal
+		ax	1,,xi				. advance next word
+		ay	1,,xi
+		j	fsrom_locate_string
+
+fsrom_locate_miss
+		dsr	48				. report no hit
+		j	fsrom_locate_deliver
+
+fsrom_locate_hit					. deliver information
+		ly	b				. pointer to record format word
+		dl	fsys:e:granule, b
+		dsl	6
+
+fsrom_locate_deliver
+		lx	fsromloc_fpaxp
+		ds	fspax:absolute_pointer, x		
+
+		$ret
+
+romfs_offsetw	$head_near	 params(paxp,	int)	. pointer to 6 word control
+		lx	paxp				. saved directory entry pointer
+		lb	fspax:absolute_pointer+1, x
+		anb	(32*/12)
+		la	fspax:extent, x
+		ana	fspax:device, x
+		sbl	12
+		dsr	12				. offset word
+		ds	fspax:absolute_pointer, x
+		$ret

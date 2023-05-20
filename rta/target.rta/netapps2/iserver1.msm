@@ -1,0 +1,406 @@
+
+	$path		../
+.	$include	def/rta.def
+.	$include	def/ii.def
+.	$include	def.sys/banks.def
+.	$include	def.sys/base.def
+.	$include	language/stack.def
+.	$include	lib/alib.def
+.	$include	lib/register.def
+	$include	lib/aquiform.def
+.	$include	t77.4/dq.def
+.	$include	t77.4/ip.def
+.	$include	t77.4/socket.def
+	$path
+
+. AQUIFORM_NET16	$equ	1
+. COUNTED_STREAM	$equ	1
+ISERVER_PORT	$equ	129
+
+iserve	$tree
+
+$(0)
+integer_serve
+	ql	(iserve:i_server1,,,:q)
+	ii	THREAD$
+	jza	iserver_zstart
+	lb	$3("*iserver":0),,xi
+	ii	TAG$
+iserver_zstart
+	fret
+
+$(1)
+socketi	+	0
+i_bound -	1
+portcb_lva	0
+portcb		0
+
+$(70::,fp)
+descriptor	acw
+
+$(66::,x)
+so	$socket
+
+$(0)
+i_server1	$head_near	scalars(response_axw,	int	;		
+					operator,	int	;
+					left,		float	;
+					right,		float	;
+					xtra,		float	;
+					signs1,		int	;
+					signs,		long	)
+
+.	tz	socketi
+.	j	i_rx
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socketi
+	jna	i_error
+
+	c	(bind) a (ISERVER_PORT:d),,long
+
+.	lb, xi	ISERVER_PORT
+.	sb	7
+.	z	6
+.	call	(bind)
+
+	sa	i_bound
+	jna	i_error
+
+	dl	10
+	ds	portcb_lva
+
+. i_rx
+	tp	i_bound
+	j	i_error
+
+	dl	portcb_lva
+	sabr	BSOCKET
+
+	on	b$stream16r++b$streamZR++b$stream16w
+
+.	la	(0000000s)
+.	ii	FP_GUARD$
+
+i_rx1	lb	so:udp:socket_inq.head, b
+	jzb	i_no_traffic
+
+	$if	1
+
+	sb	fp
+	la	5+23+8
+	call	(udp_rtxbuffer)
+	jza	i_release
+	sa	response_axw
+	la	descriptor:bytes
+	lb	descriptor:apdata
+	call	(rstream_start_net)
+
+	$else
+
+	la	descriptor:bytes, b
+	sa	BYTES
+
+	z	RDATAC
+
+	push	descriptor:apdata, b
+	pop	q
+
+	la, xi	5+23+8
+	call	(udp_rtxbuffer)
+	jza	i_release
+
+	ly	descriptor:apdata, a
+	sa	response_axw
+	sy	p
+	z	WDATAC
+	z	WDATA
+
+	$endif
+
+	call	(iscan72)
+	qs	left
+
+	call	(symbol_scan)
+	sa	operator
+
+	call	(iscan72)
+	qs	right
+
+
+	lr, xi	0
+	la	LAST_BYTE_READ	.	LAST_BYTE_READ
+	aa, xi	-','
+
+	jnza	i_again
+	call	(iscan_skip)
+	lb, xi	1		.	nothing scanned
+	ab, xi	-1
+	jnb	i_again
+	lr	b
+
+i_again
+	la	operator
+
+	anu, xi	'+'
+	jzb	i_add
+	anu, xi	'-'
+	jzb	i_add_negative
+	anu, xi	'*'
+	jzb	i_multiply
+	anu, xi	'/'
+	jzb	i_divide
+	j	i_nop
+
+i_add
+i_add_again
+	dl	left+2
+	da	right+2
+	ds	left+2
+	sc	a
+	lb	left+1
+	ab	right+1
+	ab	a
+	sb	left+1
+	jdr	i_add_again
+	j	i_edit
+
+i_add_negative
+i_add_negative_again
+	dl	left+2
+	dan	right+2
+	ds	left+2
+	sc	a
+	aa, xi	-1
+	lb	left+1
+	ab	a
+	anb	right+1
+	sb	left+1
+	jdr	i_add_negative_again
+	j	i_edit
+
+i_multiply
+i_multiply_again
+
+	$if	1
+
+	c	(im72_72)	left+1,,i	right+1,,i	left+1,,i
+
+	$elseif	0
+
+	i72m	left+1		;	. multiplicand
+		right+3		;	. multiplier
+		left+1			. product
+
+	$else
+
+	lb	left+3
+	mf	right+3
+	sb	left+3
+	dsa	24
+	ds	6
+	lb	left+2
+	mf	right+3
+	da	6
+	sb	left+2
+	sa	7
+	lb	left+1
+	m	right+3
+	ab	7
+	sb	left+1
+
+	$endif
+
+	jdr	i_multiply_again
+	j	i_edit
+
+	$if	1
+				. integer divide instruction executed
+				. simply and once gives 48-bit signed
+				. quotient and 24-bit signed remainder
+				. from 48-bit dividend and 24-bit divisor
+
+				. quotient high order bits are in register 6
+				. quotient low-order bits are in a
+				. remainder is in b
+
+				. this sequence produces 72-bit signed
+				. quotient from 72-bit dividend
+i_divide
+i_divide_again
+
+	$if	1
+
+	c	(id72_72)	left+1,,i	right+1,,i	left+1,,i	xtra+1,,i
+
+	$elseif	0
+
+	i72d	left+1 		;	. dividend
+		right+3		;	. divisor
+		left+1		;	. quotient
+		left			. remainder
+
+	$else
+
+	dl	left+1		. read first 48 dividend bits
+	d	right+3		. only 24 divisor bits can be used
+				. with integer divide instruction
+				. for more than that use floating point
+				. or program a bit-race routine
+
+	sb	7		. set aside the first remainder
+	sa	b		. reassemble the first 48-bit quotient
+	la	6		. recover the ms 24 quotient bits
+	ds	left+1		. store the upper 48 quotient bits
+	la	7		. recover 1st remainder
+	lb	left+3		. zone with 3rd dividend word
+	d	right+3		. divide stage 2
+	sb	left		. store final remainder
+	sa	left+3		. store third quotient word
+
+	la	6		. add ms word 2nd quotient to 1st quotient
+	dsa	24		. this part is important in decrementing
+	da	left+1		. the 2s complement effect on 
+	ds	left+1		. the 1st 2 words of a negative quotient
+
+	$endif
+
+i_div_dont
+
+	jdr	i_divide_again
+
+	j	i_edit
+
+	$else
+				. this is a cautious method until
+				. the efficient sign-handling version
+				. above is checked for all cases
+
+				. it flips everything to positive
+				. magnitude and flips the results
+				. back to intended polarities
+
+				. temporary measure while examining
+				. the effects to successive divides
+				. in 2s complement
+i_divide
+	ql	right
+	z	right
+	jpb	i_divide_p2
+	n	right
+	call	(n72comp2)
+	la	right
+	qs	right
+i_divide_again
+i_divide_p2
+	ql	left
+	la	b
+	saa	24
+	sa	left
+	jpb	i_divide_p1
+	call	(n72comp2)
+	la	left
+	qs	left
+i_divide_p1
+	dl	left+1
+	d	right+3
+	sb	7
+	sa	b
+	la	6
+	ds	left+1
+	la	7
+	lb	left+3
+	d	right+3
+	sa	left+3
+
+	la	left	.	read the dividend sign
+	jzb	i_store_remainder
+	jpa	i_store_remainder
+	xorB,xi	-1	.	if 1s flip the remainder
+	ab, xi	1	.	and add 1 to it
+i_store_remainder
+	sb	left
+
+	xor	right	.	record mixed or equal signs
+	sa	signs	.	
+	ql	left
+	tp	signs
+	call	(n72comp2)
+	la	left	.	retrieve the remainder
+	qs	left
+
+	jdr	i_divide_again
+	j	i_edit
+
+	$endif
+
+i_nop
+i_edit
+	$if	1
+	lx	response_axw
+	lx	descriptor:apdata, x
+	call	(wstream_start_net)
+	$else
+	z	BYTES
+	$endif
+
+	ql	left
+	call	(edit72s)
+
+	la	operator
+	aa, xi	-'/'			. operation was divide?
+	jnza	i_ecomplete		. no
+
+	$if	1
+
+	lb	xtra+1
+	orB	xtra+2
+	orB	xtra+3
+	jzb	i_ecomplete
+	la	(" ":0:0)
+	wsr	$byte
+	inc	BYTES
+	ql	xtra
+	call	(edit72s)
+
+	$else
+
+	lb	left			. remainder?
+	jzb	i_ecomplete		. no
+	la	(" ":0:0)
+	wsr	$byte			. it's a counted stream 
+	inc	BYTES			. but we haven't set macro settings for it
+	la	b
+	call	(edits)			. sprint the remainder
+
+	$endif
+
+i_ecomplete
+	la	("":10:0:0)
+	wsr	$byte*2			. LF + 8 bits to flush
+	WRITE_UBYTE
+	inc	BYTES			. count LF but not the 8 flushing bits
+	
+	lx	response_axw
+	la	BYTES
+	sa	descriptor:bytes, x
+
+
+	call	(udp_acw_send)
+
+i_release
+	lx	portcb			. port structure in scalar frame
+	call	(release_udgram)
+	lb	portcb			. port structure in scalar frame
+	j	i_rx1
+i_no_traffic
+	ii	YIELD$
+	lb	portcb
+	j	i_rx1
+i_error
+
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+	$root

@@ -1,0 +1,89 @@
+
+RXROTARY_OVERSTEP $equ	0
+
+$(66::,sp)
+sockets	$socket_array
+
+$(0)
+rx_thread
+	$head_near	scalars(total_rxp,	int,	a	;
+				payloadsegs,	long		;
+				response_segs,	long		;
+				sox,		6		)
+
+TOTAL_RX	$equf	RX_THREADS*2, x
+TOTAL_TX	$equf	RX_THREADS*2*2, x
+
+	sa	total_rxp
+
+	dl	0, a			. param -> start of struc aocket_array	
+	ds	sockets:first
+	sa	sockets:actual
+	anb	a			. limit - 1st
+	$do	RXROTARY_OVERSTEP^=0,	ab	RXROTARY_OVERSTEP,,xi
+	sb	sockets:span
+	sb	sockets:span_restart
+
+	c	(hvsocket_xbind)	sockets:first	sockets:limit	0,,xi
+
+	la	ACTIVATE,,xi
+	ii	EVENT_WAIT$		. up to here is inital
+					. and from here is process loop
+next	lc	socket_respond	sockets:actual
+	jza	forward
+
+	$if	total_tx()
+	sa	6
+	la	0,,xi
+	da	response_segs
+	ds	response_segs
+	la	6
+	$endif
+
+	dsr	24
+	da	payloadsegs
+	ds	payloadsegs
+
+	la	sockets:span_restart	. + results so circulate
+	sa	sockets:span		. at least to here before chilling
+
+forward	lx	sockets:actual
+	ax	1,,xi
+	lr	sockets:limit
+	jxl	span?
+
+	lx	sockets:first		. restart table pointer
+	
+span?	sx	sockets:actual		. completely circled + a few slots
+	dec	sockets:span		. without + results?
+	tz	sockets:span	
+	j	next			. no
+
+	$if	RX_THREADS>1
+	dl	payloadsegs
+	jdz	quiet
+	lx	total_rxp
+	da	TOTAL_RX
+	ds	TOTAL_RX
+
+	$if	total_tx()
+	dl	response_segs
+	da	TOTAL_TX
+	ds	TOTAL_TX
+	$endif
+
+	lc	summarise	payloadsegs,,long
+
+	dsr	48
+	ds	payloadsegs
+	ds	response_segs
+
+	$else	
+	lcal	summarise
+	$endif
+
+quiet	dl	(ACTIVATE++TIME_WAIT, 50d)		. yes
+	ii	EVENT_WAIT$
+	la	sockets:span_restart
+	sa	sockets:span
+	j	next

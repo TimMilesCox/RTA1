@@ -1,0 +1,168 @@
+files		$tree
+
+open	$head_far	 params(opath,		int	;
+				oflags,		int	)
+	
+	lb	opath
+	la	0, b
+	lk	(255*/16s)
+	mtane	(AF_INET*/16s)
+	go	(nfsopen)
+	mtane	('/'*/16s)
+	go	(fspath_open)
+
+	fret	0
+
+read_by_handle	$head_far	 params(rhandle,	int	;	. vector name read
+					rbufferp,	int	;
+					rbytes,		int	)
+	la	rhandle
+	ii	READ_SOCKET$		. read both handle encoding words
+	lk	(255*/16s)
+	mtane	(TCP_TCB*/16:s)
+	j	read_socket
+	mtane	(IPPROTO_UDP*/16)
+	j	read_socket
+	mtane	(AF_INET*/16s)
+	go	(nfsread)
+	mtane	(FS$DEVICE$ARRAY*/16)
+	j	fs24_handle_read
+
+					. more file system types go here
+	la	-NO_FILE_TYPE,,xi
+	fret	0
+
+fs24_handle_read
+					. open state block pointer in place of handle
+					. place to insert checks for octet-oriented open
+					. 1. is the descriptor at least 8 words?
+					. where word 7 is flags word 6 octet column
+					. 2. is flag O_OCTET on?
+
+	sb	rhandle			. you want that afterwarde
+
+	c	(fs24_read)	b rbufferp rbytes
+	jna	fs24_handle_readx
+	dsr	24
+	lx	rhandle			. this block was assigned to a handle
+	da	fspaxq:quantum_pointer	. and has all components
+	ds	fspaxq:quantum_pointer	. update the file position
+	la	8			. words result cached there
+fs24_handle_readx
+	fret	0
+
+read_socket
+	c	(recv)	rhandle		;
+			rbufferp	;
+			rbytes		;
+			0,,xi		.	flags default
+
+	fret	0			.	status is whatever revc answered
+
+write_by_handle	$head_far	 params(whandle,	int	;	. vector name write
+					wbufferp,	int	;
+					wbytes,		int	)
+	la	whandle
+	ii	READ_SOCKET$
+	lk	(255*/16s)
+	mtane	(TCP_TCB*/16:s)
+	j	write_socket
+	mtane	(IPPROTO_UDP*/16)
+	j	write_socket
+
+	mtane	(AF_INET*/16s)
+	go	(nfswrite)
+					. more file system types go here
+
+	la	-NO_FILE_TYPE,,xi
+	fret	0			. 	status is whatever ISR answered
+
+write_socket
+	c	(send)	whandle		;
+			wbufferp	;
+			wbytes		;
+			0,,xi		. 	flags default
+
+	fret	0			. 	status is whatever send answered
+
+
+seek_by_handle	$head_far	 params(seek_handle,	int	;
+					seek_position,	long	;
+					seek_from,	int	)	. vector name lseek
+
+	la	seek_handle
+	ii	READ_SOCKET$
+	lk	(255*/16s)
+	mtane	(AF_INET*/16)
+	go	(nfs_seek)
+	mtane	(FS$DEVICE$ARRAY*/16)
+	j	fs24_handle_seek
+	
+					. more file system types go here	
+	la	-NO_FILE_TYPE,,xi
+	fret	0
+
+fs24_handle_seek
+	sb	seek_handle		. file open status block in place of handle
+	go	(fs24_lseek)
+
+sync_by_handle	$head_far	 params(sync_handle,	int	)	. vector name fsync
+
+	la	sync_handle
+	ii	READ_HANDLE$
+	lk	(255*/16s)
+	mtane	(TCP_TCB*/16:s)
+	j	sync_socket
+	mtane	(IPPROTO_UDP*/16)
+	j	sync_ok			.	UDP is written thru
+
+					.	more file types go here
+
+	fret	0			.	status is whatever handle ii answered
+
+sync_socket
+	c	(send)	sync_handle	;
+			0,,xi		;
+			0,,xi		;	no bytes from nowhere
+			TCP_PSH,,xi
+	fret	0
+
+sync_ok	la	0,,xi			.	status is good before you even ask
+	fret	0
+
+close_by_handle	$head_far	 params(close_handle,	int	)
+	la	close_handle
+	jna	close_return_open_status	. handle was bad, just say so
+	ii	READ_HANDLE$
+	lk	(255*/16s)
+	mtane	(TCP_TCB*/16:s)
+	go	(__net_disengage)
+	mtane	(IPPROTO_UDP*/16)
+	go	(__net_disengage)
+	mtane	(IPPROTO_TCP*/16)
+	go	(__net_disengage)
+	mtane	(AF_INET*/16s)
+	go	(nfsclose)
+close_return_open_status
+	fret	0
+
+no_timeout	$head_far	 params(zero_timeout_handle,	int)
+	la	zero_timeout_handle
+	ii	READ_SOCKET$
+	lk	(255*/16s)
+	mta	(TCP_TCB*/16:s)
+	j	no_timeout_no_action
+	drr	24
+	sabr	BSOCKET
+	sbl	8
+	orB	BSOCKET*/2,,xi
+	rbr	8
+	z	transmission:timer(1), b	
+	la	0,,xi				. this translates -> C00001 = nowhere
+	sabr	BSOCKET
+	
+no_timeout_no_action
+	fret	0
+
+	$root
+

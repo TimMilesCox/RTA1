@@ -1,0 +1,222 @@
+"$bind"	$tree
+
+.	subroutines of bind() and __bind()
+
+construct_port_block
+	sabr	BSOCKET			. initialise a new block of storage
+	ly	(BSOCKET*/12s)		. for modeling ports
+
+	push	b
+	push	r
+
+	lr	4096/8-1,,xi
+	ql	(0q)
+
+zero_port_block
+	qs	0, y
+	qs	4, y
+	ay	8,,xi
+	jdr	zero_port_block
+		
+	pop	r
+	pop	b
+	lret	0			. end initialise
+
+bind_in_block				. retrieve or assign port structure
+	jnza	ports_block_up		. assigning its initial 
+	la	4096,,xi
+	ii	ASSIGN_XVECTOR$		. this must not go in caller's 
+					. memory estate list
+					. it's therefore different from BANK$
+
+	jza	bind_show_random_result	. which is zero = not found
+	sa	d$save
+	lcal	construct_port_block
+	j	ports_block_online
+
+ports_block_up
+	sa	d$save
+	sabr	BSOCKET
+ports_block_online
+	ly	(BSOCKET*/12s)
+	lr	(BSOCKET+1*/12)
+	la	0,,xi			. default result
+
+seek_random_free_port
+	jyge	bind_show_random_result
+	tz	s:socket_address+1,y
+	j	another_random_port
+
+	ax	-usockb(1),,xi		. points to [ut]sockb(3) or [ut]sockb(4)
+	la	x			. 0000 0000 0010 0000 Pppp pppp
+	sal	17			. pppp ppp0 0000 0000 0000 0000
+	sar	24-7-9			. 0000 0000 pppp ppp0 0000 0000
+	lb	y			. 0000 0010 1111 PPPP PPPP P000
+	sbl	12
+	sbr	15			. plus offset / 8
+	or	b			. 0000 0000 pppp pppP PPPP PPPP
+	sa	s:socket_address+1,y
+	j	bind_show_random_result
+
+another_random_port
+	ay	8,,xi
+	j	seek_random_free_port
+
+bind_show_random_result
+	lret	0
+
+find_in_blocks_range
+	lr	2, x, i			. set the limit at block(5)
+	ii	READ_XVECTOR$
+	lcal	bind_in_block
+	jnza	find_in_blocks_exit	. a successful end
+	ax	1,,xi
+	jyge	find_in_blocks_exit	. an unsuccessful end
+	j	find_in_blocks_range
+find_in_blocks_exit
+	lret	0
+
+.	end subroutines of bind() and __bind()
+
+
+.	vector name (bind)
+
+.	this is bind called from application space
+.	inputs are an unbound handle number and an address:port
+.	port may be wildcard zero. A targeted port must be previously unbound
+ 
+network_bind
+	$head_far		 params(handle,			int	;
+					sockaddress,		long	)	
+
+
+	la	handle
+	ii	READ_HANDLE$
+
+	c	(__bind)	a	sockaddress,,long
+
+	jna	network_bindz
+
+	la	handle
+	ii	USOCKET$		. update the handle encoding in vectors list 
+	la	0,,xi			. status
+
+network_bindz
+	ii	FREE_SOCKB$		. mask the block of kernel memory from application window
+	fret	0
+
+
+.	vector name (__bind)
+.	this is bind called without using a handle
+.	for example from outgoing TCP connect
+
+.	a value like a handle encoding should be in 1st argument
+.	either IPPROTO_UDP.0.0 or IPPROTO_TCP.0.0
+
+autobind
+	$head_far		 params(encoding,		int	;
+					sockad,			long)	;
+									;
+				scalars(connections_tablep,	int)
+
+	lk	-1,,xi
+	la	encoding
+	mta	(IPPROTO_UDP*/16)
+	j	net_bind_tcp?
+	lx	usockb(1),,xi
+	j	assign_port
+
+net_bind_tcp?
+	mta	(IPPROTO_TCP*/16)
+	j	net_bind_no_protocol
+	lx	tcx_v4(1),,xi
+	ii	READ_XVECTOR$
+	jza	net_bind_no_storage
+	sa	connections_tablep	. a TCP port must have this
+	lx	tsockb(1),,xi
+
+assign_port
+	la	sockad+1		. read the port number
+	and	(00FFFF)
+	jza	assign_wildcard_socket
+
+	.	x -> usockb{1} or -> tsockb(1)
+
+	$if	1
+	lcal	protocol_socket
+	$else
+
+	lb	BSOCKET*/9,,xi
+	dsr	9
+	rbr	12
+	ax	a
+	ii	READ_XVECTOR$
+
+	$endif
+
+	jnza	net_bind_memory_up
+	la	4096,,xi
+	ii	ASSIGN_XVECTOR$
+	jza	net_bind_no_storage
+	sa	d$save
+	lcal	construct_port_block
+	j	net_bind_memory_online
+
+net_bind_memory_up
+	sabr	BSOCKET
+	sa	d$save
+net_bind_memory_online
+	ly	b
+	la	s:socket_address+1, y
+	and	(00FFFF)
+	jnza	already_bound
+	dl	sockad
+	j	assign_socket
+
+assign_wildcard_socket
+	ax	2,,xi			. move from block(1) to block(3)
+	
+	lcal	find_in_blocks_range
+	jza	net_bind_no_storage
+
+	lr	a
+	lk	(00FFFF)		. wildcard bind
+	dl	sockad			. catenate network address
+	mlb	r			. + acquired port #
+
+assign_socket
+	ds	s:socket_address, y	. address setting in port
+
+	la	d$save			
+	lb	y
+	ds	10			. results 7:8 long address of port descriptor
+
+	lb	connections_tablep	. connections block if any
+	lk	(255*/16s)
+	la	encoding
+	mta	(IPPROTO_TCP*/16s)
+	j	net_nontcp
+	sb	s:tcp:tbase, y		. default connections table
+	dl	rx_buffers
+	ds	s:tcp:rxbu_p, y		. default rx buffer pool
+
+net_nontcp
+	la	0,,xi			. 72-bit result
+	j	net_bind_z
+
+net_bind_no_protocol
+	la	-NO_PROTOCOL,,xi
+	j	net_bind_z
+
+already_bound
+	la	-PORT_ALREADY_BOUND,,xi
+	j	net_bind_z
+
+net_bind_no_storage
+	la	-NO_STORAGE,,xi
+
+net_bind_z
+	inc	sp
+	fret	0
+
+	$root

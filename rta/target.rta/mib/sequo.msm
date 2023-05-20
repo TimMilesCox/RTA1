@@ -1,0 +1,151 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+ber_sequence_scan	;
+	$head_near	 params(ber_inbytes,	int		;
+				ber_oid_array,	int)		;
+								;
+			scalars(ber_akku,	int		;
+				ber_savebytes,	int,	BYTES	;
+				ber_transientp,	int,	y	)
+
+	la, xi	SNMP_SEQUENCE
+	sa	ber_t:ojet
+
+	la	ber_inbytes
+	sa	BYTES
+
+ber_sequence_scan_cluster
+.	ay, xi	BER_TRANSIENT_SIZE
+	la	BYTES
+	jna	ber_sequence_scanx
+	jza	ber_sequence_scanx
+
+	rsr	$byte
+	anu, xi	SNMP_SEQUENCE
+	jnzb	ber_sequence_variable?
+
+	lcal	ber_rl
+	lb	BYTES
+	anb	a
+	sb	BYTES
+
+	ay, xi	BER_TRANSIENT_SIZE
+
+	lc	ber_sequence_scan	a	ber_oid_array
+
+	jnza	ber_sequence_scanz
+.	sb	ber_t:bytes
+
+	ab	ber_akku
+	sb	ber_akku
+	j	ber_sequence_scan_cluster
+
+ber_sequence_variable?
+	inc	a2_ix
+	lx	ber_oid_array
+	lcal	ber_load_oid?		. SNMP_OID is already read
+	j	ber_sequence_generr	. it wasn't a good oid
+
+	ay, xi	BER_TRANSIENT_SIZE
+
+	lcal	ber_read_data
+
+	la	ber_command
+	sy	8			. save the transient descriptor
+					. mib walk will overwrite y
+
+	anu, xi	SNMP_GETNEXTREQ
+	jzb	ber_sequence_getnext
+
+	anu, xi	SNMP_SETREQ
+	jzb	ber_sequence_set
+
+ber_sequence_scan_get
+	c	(mib_get)	ber_oid_array	a2_permission
+	jnza	ber_sequence_scanz
+	j	ber_sequence_represent
+
+ber_sequence_getnext
+	c	(mib_getnext)	ber_oid_array	a2_permission
+	jnza	ber_sequence_scanz
+	j	ber_sequence_represent
+
+ber_sequence_set
+	c	(mib_set)	ber_oid_array	a2_permission	;
+				ber_t:ojet	ber_t:bytes	;
+				ber_t:storage	ber_t:data	;
+				0,,xi
+
+	jnza	ber_sequence_scanz
+
+.	j	ber_sequence_represent
+
+ber_sequence_represent
+	ly	8	.	transient descriptor
+	sb	8	.	MIB object descriptor
+	lx	ber_oid_array
+	lcal	ber_woi
+
+	lx	8	.	MIB object descriptor
+	lcal	ber_edit_mojet
+
+	aa	ber_t:oidl
+	aa	ber_akku
+	sa	ber_akku
+
+	j	ber_sequence_scanx
+
+ber_sequence_generr
+	la, xi	SNMP_GENERR
+	j	ber_sequence_scanz
+
+ber_sequence_scanx
+	la	ber_savebytes
+	sa	BYTES
+	la	ber_akku
+	lb	ber_transientp
+	sa	ber_t:bytes, b
+	lcal	ber_edit_cluster
+	dsr	24
+
+ber_sequence_scanz
+	lx, i	$$frame, sp
+	sx	sp
+	lret	0

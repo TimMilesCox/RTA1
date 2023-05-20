@@ -1,0 +1,104 @@
+;	check and write to I/O port <- storage base index in range [ 2..63 ]
+;	write a copy to reload base table in thread control block
+;	values out of memory range are replaced with trap device C00001
+;	which causes GUARD$ exception if the sindow is accessed
+
+;	anauthorised actions
+;
+;		attempt to write window base < 2 or > 63
+;		application selecting ISR space
+;		application selecting NVRAM
+;
+;	are not carried out and a GUARD$ exception is raised
+;	ISRs write the trap device C00001 to close memory windows
+
+_sabr_guard:
+	jmp	guard_ii_authority
+
+_sabr:	test	eax, 03Eh		; ea not < 2
+	jz	_sabr_guard
+	test	eax, 0FFFFC0h		; ea not > 63
+	jnz	_sabr_guard
+
+	mov	ecx, dword ptr [rbp+A]
+
+	test	ecx, 00400000h
+	jz	memory_page
+	test	ecx, 63
+	jz	large_memory_page
+
+	test	ecx, 00800000h
+	jz	array_attribute
+
+	test	dword ptr [rsi+PSR], 0800000h
+	jz	_sabr_guard
+	jmp	unthru			; ISR write illegal device thru
+					; closes the address space window
+
+					; application may not write device
+					; but may zero -> sabr  with same effect
+array_attribute:
+
+	shl	rcx, 2
+	movzx	rbx, cl			; cl = device * 4
+
+	mov	ebx, dword ptr [rsi+rbx+IO_PORT+_DEVICE]
+					; platform address + device descriptor
+
+
+	%if	0
+	mov	dword ptr [rsi+eax*8+DATAFRAME], rbx	; rapid recall
+	mov	dword ptr [rsi+eax*8+DATAFRAME+4], rdi	; device information
+	%endif						; via window tag
+
+	shr	rcx, 6+2		; lose previous shift + device code
+	test	ebx, 00400000h
+	jnz	peripheral_array
+	test	ebx, 00800000h
+	jnz	memory_array
+
+	jmp	_sabr_guard		; no device code
+
+peripheral_array:			; device types 00C00000 00400000
+	test	dword ptr [rsi+PSR], 00800000h
+	jz	_sabr_guard
+
+	and	ecx, 0000FFFFh		; have # large blocks in low 16 bits
+	and	ebx, 0000FFFFh
+	sub	ebx, ecx
+	jns	thru
+	jmp	_sabr_safeguard
+
+memory_array:
+	shl	ecx, 6			; block * 64
+	jmp	memory_array_bound?
+
+large_memory_page:
+	and	ecx, 00BFFFFFh		; remove 00400000 bit for lower bound check
+
+memory_page:
+	mov	ebx, dword ptr [rsi+IO_PORT+_DEVICE]	; device zero memory attribute
+	cmp	ecx, dword ptr [rsi+IO_PORT+_APP_THRESHOLD]	; ISR / application boundary
+	jb	_sabr_safeguard
+
+memory_array_bound?:
+	and	ecx, 00BFFFFFh		; bit 00800000 is a bad accident
+	and	ebx, 003FFFFFh		; stop it here
+	sub	ebx, ecx
+	jns	thru
+
+_sabr_safeguard:
+	mov	ecx, 00C00001h
+	jmp	unthru
+
+thru:	mov	ecx, dword ptr [rbp+A]		; i.e. correct as supplied
+unthru:	mov	dword ptr [rsi+rax*4+IO_PORT], ecx
+
+	mov	rdi, _memory
+	mov	ebx, dword ptr [esi+IO_PORT+65*4] ; thread control block
+
+	shl	rbx, 12			; multiply to TCB size
+	add	rbx, rax		; ea is target base index
+	bswap	ecx			; for this is a big endian memory write
+	mov	dword ptr [rdi+rbx*4+64*4], ecx
+	ret				; save TCB reload copy of loaded pointer

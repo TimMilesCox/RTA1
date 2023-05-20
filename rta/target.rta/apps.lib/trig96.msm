@@ -1,0 +1,190 @@
+trig96	$tree
+
+	$if	1
+_RADIAN_FACTOR $equ 1.7453292519943295769236907684886127134428719*-2
+	$else
+_RADIAN_FACTOR $equ 0.01745329252	. generated as 96-bit float
+	$endif
+
+_PASSES	$equ	11
+
+.	vector name sine96
+
+sine	$tree								. quadrant looks after itself
+	$head_far	 params(angle,	float)			;	. trim to % 360 degrees here
+			scalars(u_8,	float,	8		;
+				u_rkxy,	float,	r		)
+
+	lc	trig96:_sine	angle,,i
+	qpop	r
+	qpop	8
+	fret	0
+	$root
+
+cosine	$tree
+	$head_far	 params(angle,	float)			;
+			scalars(u_8,	float,	8		;
+				u_rkxy,	float,	r		)
+	ql	(90.0)							. trim to % 360 degrees 
+	fan	angle							. before this step
+	qs	angle
+
+	lc	trig96:_sine	angle,,i
+	qpop	r
+	qpop	8
+	fret	0
+	$root
+
+tangent	$tree
+	$head_far	 params(angle,	float)			;
+								;
+			scalars(cosine,	float			;
+				u_8,	float,	8		;
+				u_rkxy,	float,	r		)
+
+	c	(cosine96)	angle,,float			. angle is copied not referenced
+	qs	cosine
+	lc	trig96:_sine	angle,,i			. angle is referenced and changed to a radian
+	fd	cosine
+	qpop	r
+	qpop	8
+	qpop	0, sp
+	fret	0
+	$root
+
+cotangent $tree
+	$head_far	 params(angle,	float)			;
+								;
+			scalars(sine,	float,	angle		;
+				u_8,	float,	8		;
+				u_rkxy,	float,	r		)
+
+	lc	trig96:_sine	sine,,i				. separate copy of angle, updated
+	qs	sine
+	c	(cosine96)	angle,,float
+	fd	sine
+	qpop	r
+	qpop	8
+	qpop	0, sp
+	fret	0
+	$root
+
+_sine	$head_near	 params(anglep, int)			;
+								;
+			scalars(power,	float			;
+				square,	float			;
+				factorial, float, 	(6.0)	;
+				factor,	float,		(3.0)	)
+
+	lc	encircle	anglep
+
+	lx	anglep
+	ql	0, x
+	fm	(_RADIAN_FACTOR)
+	qs	0, x
+
+	fm	0, x
+	qs	square
+	fm	0, x
+	qs	power		. initially power is cube
+
+	lr	_PASSES,,xi
+	j	_nomial		. the minus kick
+
+_NEXT_FACTORIAL* $proc
+	ql	factor
+	fa	(1.0)
+	qs	8
+	fa	(1.0)
+	qs	factor
+	fm	factorial
+	fm	8
+	qs	factorial
+	$end
+
+_NEXT_POWER* $proc
+	ql	power
+	fm	square
+	qs	power
+	$end
+
+_poly	qs	0, x		. the plus kick
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+	fd	factorial
+	fa	0, x
+	qs	0, x
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+_nomial	fd	factorial
+	n	a
+	n	b
+	n	6
+	n	7
+	fa	0, x
+	jdr	_poly
+
+	lcal	eliminate_microdust
+	lcal	trim
+
+	$ret
+
+	$if	1		. if 64 mantissa bits are nonsign
+trim	push	a		. make all 72 bits nonsign
+	saa	24
+	xor	-1,,xi
+	lk	-1,,xi
+	mta	b		. test mantissa bits 71..48
+	j	trimmed
+	mta	6		. test mantissa bits 47..24
+	j	trimmed
+	lk	-256,,xi
+	mta	7		. test mantissa bits 23..8
+	j	trimmed
+	sa	7
+trimmed	pop	a
+	lret	0
+	$endif
+
+eliminate_microdust
+	lk	(0800000s)
+	mta	b
+	lcal	eliminate_normalised
+	lret	0
+
+eliminate_normalised
+	qpush	a
+	dsa	24
+	xorB	a
+	anb	(0400000-35)
+	jc	eliminated
+	sa	b
+	ds	0, sp
+	ds	2, sp
+eliminated
+	qpop	a
+	lret	0
+
+encircle	$head_near	 params(degreep,	int	)
+
+	lx	degreep
+	dl	0, x
+	jpa	magnitude_found
+
+	xor	-1,,xi
+	xorB	-1,,xi
+
+magnitude_found
+	dan	(360.0)		. we'll use both halves of that constant later
+	jnc	encircled
+
+	ql	(2.777777777777777777777777777777777777777778e-3)
+	fm	0, x
+	c	(fraction96)	a,,float
+	fm	(360.0)
+	qs	0, x
+
+encircled
+	lret	0
+
+	$root

@@ -1,0 +1,274 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	def.sys/events.def
+	$include	def.sys/tcb.def
+	$include	def.sys/base.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	stream/stream.def
+	$include	image.app/minimal.def
+	$include	t77.4/dq.def
+	$include	t77.4/ipv4.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	t77.4/socket.def
+	$include	t77.4/hvsocket.def
+	$include	t77.4/pointers.def
+	$include	drivers/soc_data.def
+	$include	table/names.def
+	$include	table/lookup.def
+	$include	lib/ascii.def
+	$path
+	$list
+
+RX_THREADS	$equ	8
+PORTS	$equ	8000
+DISTRO	$equ	PORTS/RX_THREADS
+
+	$set_option	"z"
+
+$(1:01000)
+$(3:03000/$3)
+
+	$if	1
+
+?	$do	RX_THREADS,supersockets(?)	+	10240+?*DISTRO-DISTRO, 10240+?*DISTRO:L
+?	$do	RX_THREADS,total_rx(?)	0L
+?	$do	RX_THREADS,total_tx(?)	0L
+
+	$else
+
+?	$do	RX_THREADS,;
+supersockets(?)	$socket_array	10240+?*DISTRO-DISTRO:10240+?*DISTRO
+	$endif
+
+	$if	0	. moved to threads internal stacks
+bytes	$res	1
+connection $res	1
+	$endif
+
+payload_segments 0L
+payload_response 0L
+.	total_rx	0L
+obuffer	$res	20
+idata	$res	600/3
+response	" aye thanks yons awfy nice":10
+RESPONSE_BYTES	$equ	$bits/8
+
+spring_page	0
+rx_descriptor		0
+actual		0
+
+$(66:0:0,x)
+transmission	tcp_connection
+
+$(67:0:0,y)
+tlist		tbank
+
+$(70:0:0,fp)
+descriptor	acw
+
+$(71:0:0,sp)
+dgram		datagram
+
+$(0:0/$0)
+
+ROTARY		$equ	1
+
+__BASE	$equ	PROTO_P
+__PRIORITY $equ	5
+
+	catalog
+
+	$base_d	$zenith(3)-03000	1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	1024	1024
+
+	c	(seg$load)	0,,xi	(proto_data:d),,long
+
+	$if	ROTARY
+
+uthread* $proc
+	ql	(rx_thread,	0,	supersockets(?),	THREAD_FP(2+?)q)
+	ii	THREAD$
+
+	$if	1
+	lb	$3("proto_rx(":'0'+?///10:")":0),,xi
+	$else
+	lb	?-1+$0(names	proto_rx(1) proto_rx(2) proto_rx(3) proto_rx(4)	;
+				proto_rx(5) proto_rx(6) proto_rx(7) proto_rx(8)	)
+	$endif
+
+	ii	TAG$
+
+	$end
+
+?	$do	RX_THREADS,	uthread
+
+	j	control_plane
+
+socket_respond
+	$list	2
+	$include	respond
+	$include	summary
+	$list
+
+
+.	thread for interactive commands
+
+$(3)
+respo	$res	72/3
+
+fields	0
+request		0L
+
+arguments
+argument1	0
+argument2	0
+port_id_temp	0
+
+$(0)
+control_plane
+	printf	$3("proto>":0),,xi
+	fflush	stdout
+
+	fgets	respo,,xi	72,,xi	stdin
+	sscanf	respo,,xi	$3("%s %d %d":0),,xi	request,,xi	argument1,,xi	argument2,,xi
+	sa	fields
+	jza	control_plane
+	jna	problem
+
+	lookup	request		range, walk, state, @eof
+	prompt	range, walk, state, @eof
+	j	control_plane
+
+range	la	fields
+	aa	-3,,xi
+	jnc	too_few
+	la	argument1
+	aa	-3072,,xi
+	jnc	too_low
+	la	argument2
+	anu	argument1
+	jnb	too_bad
+	anu	(65536)
+	jpb	too_high
+	dl	arguments
+	ds	sockets
+	j	control_plane
+
+too_few	printf	$3("walk FROM TO within [ 3072..65535 ]":LF:0),,xi
+	j	control_plane
+too_low	printf	$3("1st port number may not be < 3072":LF:0),,xi
+	j	control_plane
+too_bad	printf	$3("2nd port number may not be < 1st":LF:0),,xi
+	j	control_plane
+too_high
+	printf	$3("2nd port number may not be > 65535":LF:0),,xi
+	j	control_plane
+
+problem
+	printf	$3("stdin pipe broken status %d control plane exit":LF:0),,xi	a
+	fflush	stdout
+	j	@eof1
+
+walk	lx	10240,,xi
+	sx	port_id_temp				. cursor
+
+walk1	lr	10240+PORTS,,xi				. limit pointer
+	jxge	walk_out				. arrived?
+	inc	port_id_temp				. cursor++
+
+	la	x
+	call	(connection_array)
+	j	walk_on					. not a socket array / not primed
+
+	ly	(BSOCKET*/12++tlist:chain(1))		. address of address in chain head 1
+	lr	CHAINS, y, i				. limits pointer + chain heads
+
+walk_up	lx	y					. hand address of address
+	j	walk_in					. to traverse 1st chain
+
+walk_test
+	tz	transmission:q4window.head
+	lcal	segment_pending		. ->	segment_waiting	$3("UNTRANSMITTED":0),,xi q4window
+	tz	transmission:q4ack.head
+	lcal	segment_waiting_ack	. ->	segment_waiting	$3("awaiting TCP_ACK":0),,xi q4ack
+
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	walk_in
+	aa	TCP_ESTABLISHED-TCP_CLOSEWAIT,,xi
+	jza	walk_in
+	lcal	display_connection
+walk_in	lx	transmission:next
+	tz	x					. pointing to anything?
+	j	walk_test				. yes, examine that
+	ay	1,,xi					. no, next chain head
+	jyge	walk_on					. + CHAINS chain heads?
+	j	walk_up					. no, next chain
+							. yes
+walk_on	lx	port_id_temp				. cursor already incremented
+	j	walk1					. next port
+
+walk_out
+	j	control_plane
+
+state	lc	states	10240,,xi	10240+PORTS,,xi
+	j	control_plane
+	
+@eof	on	see$1					. @eof at terminal ->
+	la	WALKUP					. take proto process down
+	ii	$ZETA
+
+@eof1	fret	0					. contingency error ->
+							. just take this thread down
+							. proto control plane
+
+segment_pending
+	lc	segment_waiting	$3("UNTRANSMITTED":0),,xi	transmission:q4window:head
+	lret	0
+
+segment_waiting_ack
+	lc	segment_waiting	$3("awaiting TCP_ACK":0),,xi	transmission:q4ack:head
+	lret	0
+
+segment_waiting	$tree
+	$head_near	 params(reason_p,	int		;
+				q_p,		int	)	;
+								;
+			scalars(save_rkxy,	float,	r	;
+				save_bsocket,	int		)
+
+	on	see$1
+	la	ABT+BSOCKET
+	off	see$1
+	sa	save_bsocket
+	
+	printf	$3("":LF:"connection %x:%x has segment[s] %s":LF:0),,xi	save_bsocket	;
+									x		;
+									reason_p
+	la	save_bsocket
+	sabr	BSOCKET
+
+	lc	display_segment	q_p
+	lx	save_rkxy+2
+	lcal	display_connection
+
+	pop	a
+	qpop	r
+
+	lret	0
+	$root
+
+	$list		2
+	$do	ROTARY,	$include	../proton.app/rxrotary
+	$include	../proton.app/states
+	$include	../proton.app/cdisplay
+	$include	../proton.app/sdisplay
+
+	$do	$<256,$(0:256)

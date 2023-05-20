@@ -1,0 +1,879 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+$(66::,x)
+mo	mobjet
+
+$(67::,y)
+om	mvoi
+
+$(3)
+mib*	$res	MIB
+
+$(1)
+mib_floor	+	mib
+mib_root	mobjet	0 0 SNMP_NULL	
+
+$(0)
+
+mib_read $head_far	 params(rlist,	int	;
+				rflags,	int)
+
+	la	rlist
+	lb	0, a
+	anb, xi	SNMP_OID
+	jnzb	mib_rr_badvalue
+
+	lr	1, a
+	ly, i	2, a
+	lx, xi	mib_root
+
+	j	mib_rr?
+
+mib_rr!	la	mo:type
+	anu, xi	MIB_FUNCTION
+	jzb	mib_rr_function
+	anu,xi	SNMP_NULL
+	jnzb	mib_rr_nosuchname
+	lx	mo:down
+mib_rr_seq?
+	la	mo:seq
+	jza	mib_rr_token_pass	. zero is wild card
+	ana	0, y
+	jza	mib_rr_token_pass
+	jc	mib_rr_nosuchname
+	lx	mo:along
+	tz	x
+	j	mib_rr_seq?
+
+mib_rr_token_pass
+	ay, xi	1
+mib_rr?	jdr	mib_rr!
+
+	la	mo:type
+	anu, xi	MIB_FUNCTION
+	jzb	mib_rr_function
+	ana,xi	SNMP_NULL
+	jza	mib_rr_nosuchname
+
+	lb	x
+	la, xi	0
+	j	mib_rr_x
+
+mib_rr_badvalue
+	la, xi	SNMP_BADVALUE
+	lb, xi	0
+	j	mib_rr_x
+
+mib_rr_nosuchname
+	la, xi	SNMP_NOSUCHNAME
+	lb, xi	0
+	j	mib_rr_x
+
+mib_rr_function
+	c	mo:down	rlist	rflags	SNMP_GETREQ,,xi
+	tz	b
+	z	a
+
+mib_rr_x
+	fret	0
+
+mib_walk $head_far	 params(slist,	int	;
+				sflags,	int)	;
+						;
+			scalars(slevel,	20	;
+				sdepth,	int)
+
+
+	la	slist
+	lb	0, a
+	anb,xi	SNMP_OID
+	jnzb	mib_ww_badvalue
+
+	lr	1, a
+	ly, i	1, a
+	lx, xi	mib_root
+.	z	sdepth
+
+
+mib_ww!	la	sdepth
+	ana	r
+	jc	mib_ww?
+
+	la	mo:type			. seek down or across
+	ana, xi	SNMP_NULL
+	jza	mib_ww_down
+
+	la	mo:seq			. bottomed out on equal
+	ana	0, y			. but longer string
+	jza	mib_ww_seek_peer
+	j	mib_ww_peer
+mib_ww_down
+	la	mo:down
+	jza	mib_ww_seek_peer
+
+	lb, i	slevel
+	ab	sdepth
+	sx	0, b
+
+	lx	a
+	inc	sdepth
+	inc	y
+	j	mib_ww_peer
+
+
+mib_ww_seek_peer
+	lx	mo:along		. it has no down if it
+	tz	x
+	j	mib_ww_peer		. is an mo = tree leaf
+
+	dec	sdepth
+	tp	sdepth
+	j	mib_ww_nosuchname
+	lx, i	slevel
+	ax	sdepth			. contains pointer to pointer!
+
+	lx	0, x			. this is the above and you want
+					. the along of the above
+	dec	y
+	j	mib_ww_seek_peer
+
+
+mib_ww_peer
+	la	mo:seq
+	jza	mib_ww!			. zero is wild card
+	ana	0, y
+	jnc	mib_ww_seek_peer
+
+	jnza	mib_ww_ruano?
+
+.	la	mo:type
+.	aa, xi	-SNMP_NULL
+.	jza	mib_ww_seek_peer
+
+	j	mib_ww!
+
+.	jza	mib_ww!
+
+					. one search never goes back
+					. above this line
+.	j	mib_ww_ruano?
+
+mib_ww?	la	mo:type
+	ana, xi	SNMP_NULL
+	jnza	mib_ww_along?
+
+
+				
+mib_ww_ruano?
+	la	mo:type		. you now want the next object at all
+	anu, xi	MIB_FUNCTION
+	jzb	mib_ww_function
+	anu, xi	SNMP_NULL
+	jnzb	mib_www
+
+	la	mo:down
+	jza	mib_ww_along?
+
+	lb, i	slevel
+	ab	sdepth
+	sx	0, b
+	inc	sdepth
+
+	lx	a
+	j	mib_ww_ruano?
+
+mib_ww_function
+	c	mo:down slist sflags SNMP_GETNEXTREQ,,xi
+	jzb	mib_ww_up
+	lx	b
+	j	mib_www
+
+mib_ww_along?
+	la	mo:along
+	jnza	mib_ww_along!
+mib_ww_up
+	dec	sdepth
+	tp	sdepth
+	j	mib_ww_nosuchname
+	lx, i	slevel
+	ax	sdepth
+	lx	0, x
+	j	mib_ww_along?
+
+mib_ww_along!
+	lx	a
+	j	mib_ww_ruano?
+
+mib_ww_nosuchname
+	la, xi	SNMP_NOSUCHNAME
+	lb, xi	0
+	j	mib_ww_x
+	
+mib_ww_badvalue
+	la, xi	SNMP_BADVALUE
+	lb, xi	0
+	j	mib_ww_x
+
+mib_www	la	sdepth
+	aa, i	slevel
+	sx	0, a
+
+	ly	slist
+	lb, i	slevel+1
+	lr	sdepth
+	sr	1, y
+	j	mib_ww_slingback?
+
+mib_ww_slingback!
+	la	0, b
+	la	mo:seq, a
+	jza	mib_ww_slungback	. it's in the string already
+	sa	2, y
+mib_ww_slungback
+	lb, i	1, b
+	ay, xi	1	
+
+mib_ww_slingback?
+	jdr	mib_ww_slingback!
+
+	lb	x
+	la, xi	0
+
+mib_ww_x
+
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+mib_write $head_far	 params(olist,	int	;
+				oflags,	int	;
+				oclass,	int	;
+				obytes,	int	;
+				odata,	int	;
+				orules, int	;
+				orange, int)	;
+						;
+			scalars(mibw_floorb4,	int,	mib_floor	;
+				mibw_parent,	int			;
+				mibw_first,	int			;
+				mibw_prior,	int)
+
+
+	la	olist
+	lb	0, a
+	anb, xi	SNMP_OID
+	jnzb	mib_nowrite
+	lr	1, a
+
+	ly, i	2, a
+	lx, xi	mib_root
+	j	mib_wlocate?
+
+
+mib_wlocate!
+
+	lb	mo:type
+	anb, xi	SNMP_NULL
+	jnzb	mib_wbadvalue
+
+	lb	0, y
+	ay, xi	1
+
+	sb	6		.	sequence
+
+	la	mo:down
+	jnza	mib_downpathw
+
+	la	mib_floor
+	sa	mo:down
+
+	z	mo:down, a
+	sb	mo:seq, a
+	z	mo:along, a
+
+	lb, xi	SNMP_NULL
+	sb	mo:type, a
+	lb, i	4, a
+	sb	mib_floor
+
+mib_downpathw
+	sx	mibw_parent
+	lx	a
+	sx	mibw_first
+	z	mibw_prior	. automatically zero
+
+mib_rightwardw
+	la	mo:seq
+	ana	6		. seq
+	jc	mib_right_awayw	. new seq not > encountered
+				. seq
+
+	la	mo:along
+	jnza	mib_right_onw
+	la	mib_floor
+	sa	mo:along
+	z	mo:down, a
+	lb	6
+	sb	mo:seq, a
+	z	mo:along, a
+	lb, xi	SNMP_NULL
+	sb	mo:type, a
+
+	lb, i	4, a
+	sb	mib_floor
+
+mib_right_onw
+	
+	sx	mibw_prior
+	lx	a
+	j	mib_rightwardw
+
+mib_right_awayw
+
+	la	6	. seq
+	anu	mo:seq
+	jc	mib_wlocate?
+
+	lb	mib_floor
+	z	mo:down, b
+	sa	mo:seq, b
+	la, xi	SNMP_NULL
+	sa	mo:type, b
+	sx	mo:along, b
+
+	lx	b
+	la, i	4, b
+	sa	mib_floor
+
+	la	mibw_prior
+	jza	mib_firstinroww
+	sx	mo:along, a
+	j	mib_setinroww
+
+mib_firstinroww
+	la	mibw_parent
+	sx	mo:down, a
+	la	mibw_first
+	sa	mo:along
+	
+mib_setinroww
+mib_wlocate?
+	jdr	mib_wlocate!
+
+	.	the header has been found or inserted
+	.	found = update
+	.	inserted = new
+
+	la	mib_floor
+	anu	mibw_floorb4
+
+	jzb	mib_modify
+
+.	here is a large difference between
+.	first and subsequent store of any
+.	managed object
+
+.	when you first store a managed object
+.	you store its rules and the address
+.	where its data is
+
+.	when you subsequently store the same
+.	managed object, you write new data
+.	at the address in the descriptor
+.	and the rules initially stored apply
+
+	la	oclass
+	sa	mo:type
+
+	lb	odata
+	sb	mo:data
+
+	lb	obytes
+	sb	mo:bytes
+
+	lb	oflags
+	sb	mo:flags
+
+	lb	orules
+	sb	mo:ranges
+
+	sx	8
+	ax, xi	7
+
+	lr	b		. a list of allowed size ranges?
+
+	anu,xi	SNMP_NETWORKADDRESS
+	jzb	mib_store_new_x1
+	anu,xi	SNMP_STRING
+	jzb	mib_store_new_x1
+	anu,xi	SNMP_OID
+	jzb	mib_store_new_x1 . none of those has number ranges
+				 . but a maxcopy bucket size instead
+
+	anu, xi	MIB_FUNCTION
+	jzb	mib_store_new_x
+
+	lb	orules
+	jzb	mib_store_new
+
+	ly	orange		. pointer to tuple list
+
+	la	obytes
+
+	jza	mib_wgenerr
+	anu, xi	7
+	jc	mib_wtoobig
+
+	ana, xi	4
+	jc	mib_store_long_range?
+	j	mib_store_range?
+
+.	the method of having signed and unsigned range checks
+.	without noticing too much
+
+.	firstly, if the high-order bit of the upper and lower limit
+.	are identical, just do unsigned compares, and that will give
+.	the right result whether the candidate integer is meant to
+.	be signed or not
+
+.	secondly, if the high order bits of the two limits are 
+.	different, then
+
+.	if the upper limit interpreted as unsigned is greater than
+.	the lower limit interpreted as unsigned (the high order bit
+.	of the upper limit is on, and not the high order bit of the
+.	lower limit), just do an unsigned compare, because the
+.	low-high difference cannot be a negative difference between
+.	two signed integers. It can only be a lower limit in the
+.	lower half of the number space, and an upper limit in the
+.	upper half of the unsigned number space
+
+.	in all the above cases, the candidate integer is within
+.	the range tested, if both carry is generated from the
+.	subtraction of the lower limit from the integer, and also
+.	carry is generated from the subtraction of the integer from
+.	the upper limit
+
+.	this depends upon carry being consistent with adding the
+.	minus of one number to the plus of another
+
+.	RTA1 is logically correct for this. The result and carried
+.	result of
+
+.		ana	THIS
+.		anb	THAT
+.		dan	THE_OTHER
+
+
+.	are identical to the result and carried result of
+
+.		aa	MINUS_THIS
+.		ab	MINUS_THAT
+.		da	MINUS_THE_OTHER
+
+.	carry$ set after ana anb dan means the unsigned number in
+.	the accumulators was at least as large as the number
+.	subtracted from it
+.		
+.
+.	if the high-order bit of the lower limit is on and not the
+.	high order bit of the upper limit, this is a signed range
+.	which includes the value zero between its upper and lower
+.	bounds. Then the candidate integer is within the range
+.	tested if both the result of the integer minus the lower limit
+.	is of positive polarity, and also the result of the upper limit
+.	minus the integer is positive polarity
+
+.	polarity (and zero) are tested in the registers holding the
+.	results, because the only condition flag in RTA1 is carry$
+
+.	examples of instructions testing results other than carry are
+
+.		jpa	here
+.		jnb	there
+.		jdz	everywhere
+.		jzb	b_is_zero
+.		jpe	a_has_even_parity
+
+.		tp	location_a_few_million
+.		j	the_word_at_location_a_few_million_is_negative
+
+.		tz	2, sp
+.		j	the_third_register_in_the_internal_stack_is_nonzero
+
+
+mib_store_long_range!
+	qpush	0, y
+	qpop	0, x
+	ax, xi	4
+	ay, xi	4
+mib_store_long_range?
+	jdr	mib_store_long_range!
+	j	mib_store_new
+	
+mib_store_range!
+	dl	0, y
+	ds	0, x
+	ax, xi	2
+	ay, xi	2
+mib_store_range?
+	jdr	mib_store_range!
+	j	mib_store_new
+
+mib_store_new_x
+	la	obytes		. a function may have a table
+	jza	mib_store_new	. row repeat for GETNEXT
+	la	mibw_first
+	lb	8
+	sa	mo:along, b
+	j	mib_store_new
+
+mib_store_new_x1		. strings must have a bucket size
+	la	orules		.
+	jza	mib_wgenerr	.
+
+				. but they can store zero
+				. length string in a bucket
+				. of nonzero size, whereas
+				. numbers always squeeze
+				. a byte out
+
+mib_store_new
+	lb	8		. managed object header
+	sx	mib_floor
+	j	mib_storeb
+
+mib_modify
+	la	oflags
+	or	mo:flags
+	and, xi	MIB_WRITE_ALLOWED
+	jza	mib_wreadonly
+
+	la	oclass
+	anu	mo:type
+	jnzb	mib_wbadvalue
+
+	anu, xi	MIB_FUNCTION
+	jzb	mib_wreadonly
+
+	anu, xi	SNMP_NETWORKADDRESS
+	jzb	mib_checkwlen
+	anu, xi	SNMP_STRING
+	jzb	mib_checkwlen
+	anu, xi	SNMP_OID
+	jzb	mib_checkwlen
+
+	z	7		. we say, unsigned
+	anu, xi	SNMP_GAUGE
+	jzb	mib_wnumber
+	anu, xi	SNMP_COUNTER
+	jzb	mib_wnumber
+	anu, xi	SNMP_TIMETICKS
+	jzb	mib_wnumber
+	anu, xi	SNMP_INT
+	jnzb	mib_wbadvalue	. well what else is it then?
+	n	7		. _INT is the only signed one
+
+mib_wnumber
+	la	mo:bytes	. start measuring
+
+	anu, xi	4
+	sb	6		. target > 24 bits or not
+
+	anu	obytes		. more data than the target number?
+	jnc	mib_wtoobig
+
+	sbl	3		. calculate the shift count
+	lr	mo:ranges
+	ly, i	mo:range
+
+	tp	6
+	j	mib_store1
+
+	sb	6
+	lb	odata		. get the input at last
+	dl	0, b
+
+	tp	7
+	j	mib_long_signed	. signed
+
+	dsr	*6		. unsigned
+
+	tz	r		. ranges allowed
+	lcal	mib_checkunsigned_l
+	j	mib_store_l
+	j	mib_wbadvalue
+
+mib_long_signed
+	dsa	*6		. signed
+
+	tz	r		. ranges allowed
+	lcal	mib_checksigned_l
+	j	mib_store_l
+	j	mib_wbadvalue
+
+mib_store1
+	la	odata
+	la	0, a
+	
+	tp	7		. signed?
+	j	mib_single_signed
+
+	sar	0, b		. unsigned
+
+	tz	r		. ranges allowed
+	lcal	mib_checkunsigned_s
+	j	mib_store_s
+	j	mib_wbadvalue
+
+mib_single_signed
+	saa	0, b
+
+	tz	r		. ranges allowed
+	lcal	mib_checksigned_s
+	j	mib_store_s
+	j	mib_wbadvalue
+
+mib_store_s
+	lb	mo:data
+	sa	0, b
+	j	mib_store
+
+mib_store_l
+	ly	mo:data
+	ds	0, y
+	j	mib_store
+
+mib_checkwlen
+	la	mo:bucket
+	ana	r
+	jnc	mib_wtoobig
+	ly	odata
+	la	mo:data
+	j	mib_warray?
+
+mib_warray!
+	lb	0, y
+	ay, xi	1
+	sb	0, a
+	la, i	1, a
+mib_warray?
+	jdr	mib_warray!
+	
+	j	mib_store
+
+mib_wtoobig
+	la, xi	-SNMP_TOOBIG
+	j	mib_nowrite
+
+mib_wgenerr
+	la, xi	-SNMP_GENERR
+	j	mib_nowrite
+
+mib_wbadvalue
+	la, xi	-SNMP_BADVALUE
+	j	mib_nowrite
+
+mib_wreadonly
+	la, xi	-SNMP_READONLY
+mib_nowrite
+	lb, xi	0		. result no pointer in b
+	j	mib_writex	. problem -index in a
+
+mib_store
+	lb	x
+mib_storeb
+	la, xi	0
+mib_writex
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+mib_initial
+	ly, xi	sysDescr
+
+mib_initial_next
+	la	om:words
+	jza	mib_initial_x
+	call	(mib_line)
+	la	om:words
+	and, xi	255
+	ay	a
+	j	mib_initial_next
+mib_initial_x
+	fret	0
+
+mib_wline 	$head_far	scalars(invoi,	int	;
+					ityp,	int	;
+					safety,	4	;
+					ilist,	24)
+						
+	lx	om:o			. pointer to oid string
+	sy	invoi
+
+	dsr	16
+	sbr	16
+	sa	ityp
+
+	ly, i	ilist
+	la, xi	SNMP_OID
+	ds	0, y
+
+	ab	2, y, i			. high index of store y ->
+	lr	b
+
+load_oid?
+	jyge	oid_loaded		. until y >= r
+	lcal	mib_unpack		. decode oid string
+	j	load_oid?		. into internal stack
+
+oid_loaded
+
+	ly	invoi
+
+	c	(mib_set)	ilist,,i	om:flags	;
+				ityp		om:l		;
+				om:data		om:ranges	;
+				om:range,,i
+
+
+	ly	invoi	
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+
+mib_unpack
+	lk, xi	128
+	lb	0, x
+	ax, xi	1
+
+	lcal	mib_decode
+	lcal	mib_decode
+	lcal	mib_decode
+	lret	0
+
+mib_decode
+	la, xi	0
+	dsl	8
+	mta	k
+	j	mib_decode_simple
+	and, xi	31
+	jza	mib_decoded
+mib_space
+	z	2, y
+	ay, xi	1
+	aa, xi	-1
+	jnza	mib_space
+mib_decoded
+	lret	0
+mib_decode_simple
+	sa	2, y
+	ay, xi	1
+	lret	0
+
+mib_checkunsigned_s
+	j	mib_checkunsigned_s?
+mib_checkunsigned_s!
+	anu	0, y
+	jnc	mib_checkunsigned_snext
+	lb	1, y
+	anb	a
+	jc	mib_check_good
+
+mib_checkunsigned_snext
+	ay, xi	2
+mib_checkunsigned_s?
+	jdr	mib_checkunsigned_s!
+	lret	1	. counter_intuitively the bad result
+
+mib_checksigned_s
+	j	mib_checksigned_s?
+mib_checksigned_s!
+	anu	0, y
+	jnb	mib_checksigned_snext
+	lb	1, y
+	anb	a
+	jpb	mib_check_good
+
+mib_checksigned_snext
+	ay, xi	2
+mib_checksigned_s?
+	jdr	mib_checksigned_s!
+	lret	1
+
+mib_checkunsigned_l
+	ds	6
+	j	mib_checkunsigned_l?
+mib_checkunsigned_l!
+	dl	6
+	dan	0, y
+	jnc	mib_checkunsigned_lnext
+	dl	2, y
+	dan	6
+	jc	mib_check_double_good
+mib_checkunsigned_lnext
+	ay, xi	4
+mib_checkunsigned_l?
+	jdr	mib_checkunsigned_l!
+	lret	1
+
+
+mib_checksigned_l
+	ds	6
+	j	mib_checksigned_l?
+mib_checksigned_l!
+	dl	6
+	dan	0, y
+	jna	mib_checksigned_lnext
+	dl	2, y
+	dan	6
+	jpa	mib_check_double_good
+mib_checksigned_lnext
+	ay, xi	4
+mib_checksigned_l?
+	jdr	mib_checksigned_l!
+	lret	1
+
+mib_check_double_good
+	dl	6
+mib_check_good
+	lret	0
+

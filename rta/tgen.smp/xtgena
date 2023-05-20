@@ -1,0 +1,163 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+#	OSPAN=-mmacosx-version-min=10.6.8
+	echo	$OSPAN
+fi
+
+if	[ -z $RTA_MBANKS ]
+then
+export	RTA_MBANKS=8
+fi
+
+if	[ -z $RTA_SMP ]
+then
+export	RTA_SMP=1
+fi
+echo	SMP $RTA_SMP
+
+BASIS=$PWD
+
+PLATFORM=`uname`
+if [ "$PLATFORM" == "Linux" ]
+then
+	echo	Linux
+	THREADS=-lpthread
+	ICORE=../assembly.x64/linux64.smp/rta_x86M.o
+	OSFLAG=-DLINUX
+	OSPAN=-DLINUX_ASM
+	echo	constructing for Intel x64 Linux
+	cd	../assembly.x64/smp.x64/
+	./imakelf
+	cd	$BASIS
+	RTA_SMP_X64=../binary.smp/suse.x64
+else
+	echo	constructing for Intel x64 macOS
+	OSPAN=-mmacosx-version-min=10.6.8
+	ICORE=../assembly.x64/osx_x64.smp/rta_x86M.o
+	cd	../assembly.x64/smp.x64
+	./iamacho
+	cd	$BASIS
+	RTA_SMP_X64=../binary.smp/osx.x64
+	
+fi
+
+
+rm      $RTA_SMP_X64/rta1_$RTA_SMP.$RTA_MBANKS
+echo    emulated RTA executable space $RTA_MBANKS banks image rta1_$RTA_SMP.$RTA_MBANKS
+
+if	[ "$1" == "powerpc" ]
+then
+	ARCHFLAG=-UX86
+	echo	constructing for powerpc
+else
+	ARCHFLAG=-DX86
+	echo	constructing x86 specific
+fi
+
+rm	emulator.i64/*
+rm	engine.i64/memory.o
+rm	engine.i64/rwk.o
+
+#	pushd   ../netifx
+gcc -m64 -c -funsigned-char $IFLAG -DRTA_SMP=$RTA_SMP		\
+	$OSFLAG $OSPAN -D__X64					\
+	-o ../emulator.i64/netbank.o ../tgen.smp/netbank.c
+
+cd	../engine.smp
+echo	$PWD
+gcc -m64 -funsigned-char -c -DMBANKS=$RTA_MBANKS $1 $2		\
+	$OSFLAG $OSPAN -D__X64 -DRTA_SMP=$RTA_SMP -o ../engine.i64/memory.o memory.c
+cd	$BASIS
+echo	$PWD
+
+# gcc -m64 -c -funsigned-char $OSFLAG $OSPAN -D__X64		\
+#	 -o ../emulator.i64/time32.o ../rta.run/time32.c
+
+gcc -m64 -c $OSFLAG $OSPAN -DRTA_SMP=$RTA_SMP -D__X64		\
+	-o ../emulator.i64/tzone.o ../tgen.smp/tzone.c
+
+gcc -m64 -c -funsigned-char $OSFLAG $OSPAN -DRTA_SMP=$RTA_SMP	\
+						-D__X64		\
+	-o ../emulator.i64/idisplay.o ../tgen.smp/idisplay.c
+
+gcc -m64 -c -funsigned-char -DARGUMENTS=64 $OSPAN -D__X64	\
+	-o ../emulator.i64/argue.o ../netifx/argue.c
+
+gcc -m64 -c -funsigned-char -DMBANKS=$RTA_MBANKS $OSPAN		\
+				-DRTA_SMP=$RTA_SMP -D__X64	\
+                                -DMETRIC $OSFLAG -D_XINT        \
+                                -o ../emulator.i64/console.o    \
+                                ../tgen.smp/console.c
+
+gcc -m64 -funsigned-char -c -DMBANKS=$RTA_MBANKS -UGCC -D__X64	\
+		-DRTA_SMP=$RTA_SMP -DLLVM_LE $OSFLAG $OSPAN	\
+			 -o 	../engine.i64/rwk.o		\
+				../engine.smp/rw.c
+
+ls -l $ICORE
+
+gcc -m64 -DMBANKS=$RTA_MBANKS -DMETRIC -DRATIO=72000		\
+	-DRTA_SMP=$RTA_SMP $THREADS $OSFLAG $OSPAN -D__X64	\
+		-o $RTA_SMP_X64/rta1_$RTA_SMP.$RTA_MBANKS	\
+				$ICORE				\
+				../emulator.i64/argue.o		\
+				../emulator.i64/netbank.o	\
+				../emulator.i64/tzone.o		\
+				../emulator.i64/idisplay.o	\
+				../emulator.i64/console.o	\
+				../engine.i64/rwk.o		\
+				 ../tgen.smp/tipt64.c		\
+				../engine.i64/memory.o
+
+echo	binaries in $RTA_SMP_X64
+ls -l $RTA_SMP_X64

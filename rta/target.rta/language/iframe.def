@@ -1,0 +1,132 @@
+
+_FRAMES	$set	0
+
+f	$func
+ifrap*	$name
+	$do	f(1, 1)>"f(1, 1:1):_OMAX",	$flag	offset > iframe
+	$return	$4(0800000+$4(f(1, 1)+("f(1, 1:1):_M"/*24), "f(1, 1:1):_M"+__BASE:d)s)
+	$end
+
+p	$proc
+"$xvector"* $name	1
+"$xname"*   $name	2
+*	$set	p(1, 1)+$net($*/24)
+	$do	p(0,0)=$xvector,	;
+	j	p(2, 1)
+	$end
+
+p	$proc	$(0)
+"$application"* $name	1
+
+p	$proc
+"$launch_gate"* $name
+
+	$do	$t(ITHREAD_HIRAM(?))=0,	$flag	APPLICATION HIGH RAM not known
+	$do	$t(SUMMIT_3(?))=0,		$flag	APPLICATION STATIC SIZE not known
+
+	$if	$t(p(1,1:1))
+	+	0800000++$+6, _PRIORITY, ITHREAD_HIRAM(?)-03000, -1, ;
+		SUMMIT_3(?), 0, p(1, 1:2)+("p(1, 1:1):_M"/*24), "p(1, 1:1):_M"+__BASE:o
+
+	$else
+	+	0800000++$+6, _PRIORITY, ITHREAD_HIRAM(?)-03000, -1, ;
+		SUMMIT_3(?), 0, p(1, 1:2)+(_M/*24), p(1, 1:1)+_M+__BASE:o
+
+	$endif
+
+	$end
+
+"$iframe"*      $name	2
+
+_P	$equ	$bank_index/*12
+
+	$if	0
+	$if	_FRAMES
+_P	$equ	_NEXTP
+	$else
+_P	$equ	$bank_index+$zenith+4095/*12
+	$endif
+	$endif
+
+_Q	$set	p(0, 2)
+_F	$set	0
+	$do	_Q^=0,_F	$set	0800000
+_OMAX*	$equ	4096*_Q+4095
+_M*	$equ	_F++_P++_Q*/42
+
+_FRAMES* $set	_FRAMES+1
+_FRAME(_FRAMES)* $set	_Q*4096+4096
+
+_IMAGE_WORDS $set	0
+?	$do	_FRAME(),_IMAGE_WORDS $set _IMAGE_WORDS+_FRAME(?)
+
+.	$(0::4096*_P)
+_B	$equ	$bank_index
+
+	$if	_P>_B/*12
+	$flag	frame restarted 1 page higher: forward references slipped
+	$trace	_P
+	$trace	_B
+	$endif
+	
+_NEXTP* $set	_P+_Q+1
+
+_XHI	$equ	$zenith-1/*12
+	$do	_Q<_XHI,	;
+	$flag	actual page high index > $iframe,EXPECTED_PAGE_HIGH_INDEX
+
+	$if	_FRAMES=1
+FS_BASE**	$set	$zenith(0)+8+63**-64
+	$do	$zenith(4)>$zenith(0),FS_BASE**	$set	$zenith(4)+8+63**-64
+FS_SAFE_LIMIT** $set	_NEXTP*/12
+	$endif
+
+_PRIORITY $set	7
+	$do	p(0)>2,	$do	p(0,3)**-8=0,;
+_PRIORITY $set	p(0, 3)
+
+	$do	$>64,	$flag	macro '$application/$iframe' must be within $(0:0..64)
+	
+	$list	0
+	$do	64-$,	fret	0
+	$list
+
+	+	_M+__BASE+(p(1, 1:2)*/24):d		. muster gate
+	+	_IMAGE_WORDS
+	$if	p(0, 0)=$application
+	+	SUMMIT_3(1)
+mount	$mount	application_templates			. mount / link to lookup tree
+
+?	$do	p(),"_launch_gate_p(?, 1:2)"**	$launch_gate	p(?)	?-1
+
+	$else
+	0p
+	0q
+	$endif
+	$end
+
+p	$proc
+"$lits4"* $name
+
+"$4"*	$lit	4
+
+_INDEX	$set	$bank_index
+$(4::_INDEX)
+$(4:256)
+$(0:256)
+_LITERALS4* $set	20
+	$do	p()^=0,_LITERALS4*	$set	p(1, 1)
+	$res	_LITERALS4
+	$end
+
+p	$proc	$(4)
+"$check4"* $name
+spare	$set	_LITERALS4+256-$zenith(4)
+	$do	spare<0,	;
+	$flag	$lits4 argument needs to be at least
+	$do	spare>0,	;
+	$note	$lits4 argument can be reduced to
+	$do	spare^=0,	;
+	$trace	$zenith-256
+	$end
+

@@ -1,0 +1,164 @@
+timetext $tree
+
+ydsm	jza	ydsm_local
+	call	(dayclock_ydsm_gmt)
+	lret	0
+
+ydsm_local
+	call	(dayclock_ydsm)
+	lret	0
+
+
+mmdd	la	31+28,,xi	. days in jan + feb = 59
+	ana	7		. or 60 if register 7 is -1 
+	lb	9		. day of year zero-relative
+	anb	a
+	jc	march_december
+	lb	9
+	ab	-31,,xi
+	sc	x		. month 0 or 1
+	jc	mmddx
+	ly	9		. it was january
+	j	mmddy
+
+				. the last 10 months in the year
+march_december			. are two equal sets of
+				. [ 31 30 31 30 31 ]
+	la	0,,xi
+	d	31+30+31+30+31,,xi
+	lx	(2, 7d),a	. start point march or august
+	la	0,,xi
+	d	31+30,,xi
+	ax	(0, 2, 4t),a
+	la	0,,xi
+	d	31,,xi
+	ax	a
+mmddx	ly	b
+mmddy	lret	0
+
+format_time $head_near	 params(timestring,	int)	;
+			scalars(caller_x,	int, x	)
+	
+	lx	timestring
+	lb	10
+	la	0,,xi
+	d	3600,,xi
+	la	format1_numerals, a
+	sa	0, x
+	la	0,,xi
+	d	60,,xi
+	la	format1_numerals, a
+	lb	format1_numerals, b
+	ds	1, x
+	la	11
+	la	table, a
+	sa	3, x
+
+	pop	x
+	lret	0
+
+format__yyyy
+	la	8
+	dsr	24
+	d	1000,,xi
+	lb	table, b
+	or	('  0's)
+	lret	0
+
+format1_names
+	   ".01.02.03.04.05.06.07.08.09":;
+	".10.11.12.13.14.15.16.17.18.19":;
+	".20.21.22.23.24.25.26.27.28.29.30.31"
+
+format1_numerals
+	"00:01:02:03:04:05:06:07:08:09:":;
+	"10:11:12:13:14:15:16:17:18:19:":;
+	"20:21:22:23:24:25:26:27:28:29:":;
+	"30:31:32:33:34:35:36:37:38:39:":;
+	"40:41:42:43:44:45:46:47:48:49:":;
+	"50:51:52:53:54:55:56:57:58:59:"
+
+format2_names_e
+	   "01 02 03 04 05 06 07 08 09 ":;
+	"10 11 12 13 14 15 16 17 18 19 ":;
+	"20 21 22 23 24 25 26 27 28 29 30 31 "
+
+format3_names
+	   "01.02.03.04.05.06.07.08.09.":;
+	"10.11.12.13.14.15.16.17.18.19.":;
+	"20.21.22.23.24.25.26.27.28.29.30.31."
+
+format2_months_e	"JanFebMarAprMayJunJulAugSepOctNovDec"
+
+	$root
+
+timetext_f1*	$tree
+	 $head_far	 params(gmt,		int		;
+				textp,		int	)	;
+								;
+			scalars(caller_xyab,	float,	x	)
+
+	la	gmt
+	lcal	timetext:ydsm
+	lcal	timetext:mmdd
+	la	8				. year
+	dsr	24
+	d	10,,xi
+	la	table, a
+	orB	'0',,xi
+	sbl	16
+	lk	(00FFFF)
+	mlb	timetext:format1_names, x
+	lx	textp
+	ds	0, x
+	la	timetext:format1_numerals+1, y	. force relative 1 for day
+	sa	2, x
+	lc	timetext:format_time	3, x, i
+
+	qpop	x
+	fret	0
+	$root
+
+timetext_f2*	$tree
+	$head_far	 params(gmt,		int		;
+				textp,		int	)	;
+								;
+			scalars(caller_xyab,	float,	x	)
+
+	la	gmt
+	lcal	timetext:ydsm
+	lcal	timetext:mmdd
+	la	timetext:format2_names_e, y
+	lb	timetext:format2_months_e, x
+	lx	textp
+	ds	0, x
+	lcal	timetext:format__yyyy
+	drl	8
+	ds	2, x
+	lc	timetext:format_time	4, x, i
+	
+	qpop	x
+	fret	0
+	$root
+
+timetext_f3*	$tree
+	$head_far	 params(gmt,		int		;
+				textp,		int	)	;
+								;
+			scalars(caller_xyab,	float,	x	)
+
+	la	gmt
+	lcal	timetext:ydsm
+	lcal	timetext:mmdd
+	la	timetext:format3_names, y
+	lb	timetext:format3_names, x
+	lx	textp
+	ds	0, x
+	lcal	timetext:format__yyyy
+	drl	16
+	ds	2, x
+	lc	timetext:format_time	4, x, i
+
+	qpop	x
+	fret	0
+	$root

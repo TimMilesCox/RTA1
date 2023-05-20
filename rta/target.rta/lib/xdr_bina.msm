@@ -1,0 +1,203 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+.	____________________________________________________________
+
+
+.	these are used in conjunction with
+.	hard TCP / RPC / XDR / which handle
+.	segments fragmented over IP plus messages
+.	fragmented over segments with record
+.	marks
+
+.	external data is 24-bit in application
+.	space typically in scratch registers or
+.	internal stack
+
+
+ieee754_64_2f
+	fret	0
+f2_ieee754_64
+	fret	0
+
+.	below this line routines are available
+.	for very simple UDP socket user programs
+.	which access the 16-bit data in socket
+.	buffers
+
+.	user datagrams have to be very short or DNF
+.	so that no-fragments is assured for these
+.	routines to be used safely
+
+
+xdr_ieee754_64:float
+	la	0, y
+	lb, xi	0
+	dsr	4
+	push	b
+	lb, xi	0
+	dsr	10
+	jao	ieee754_midpoint
+	orB, xi	4095
+ieee754_midpoint
+
+	rbr	12
+	dsr	2
+	ab, xi	2
+	la	b
+	dsa	24
+	sa	SIGNS
+	pop	a
+	andB	(07FFFFF)
+	dpush	a
+	lb	SIGNS
+	sbl	5	. signs -> b18..0 mantissa
+	la	3, y
+	xor	SIGNS
+	dsr	5	. b4..0 ieee mantissa -> 23..19
+	sb	7
+	dsr	11	. b15..5 ieee mantissa -> 34..24
+	la	2, y
+	xor	SIGNS
+	dsr	13	. b28..16 ieee mantissa -> 47..35
+	sb	6
+	dsr	3	. b31..29 ieee mantissa -> 50..48
+	la	1, y
+	xor	SIGNS
+	dsr	16	. b47..32 ieee mantissa -> 66..51
+	pop	a
+	sar	20
+	or, xi	16
+	xor	SIGNS
+	dsr	5	. [1]:b51..48 ieee mantissa -> 71..67
+	pop	a
+	xor	SIGNS	
+	ay, xi	4
+	fret	0
+
+xdr_float:ieee754_64
+	jpa	xdr_float_upright
+	xor	(07FFFFF)	. leave only the sign at 1
+	n	b
+	n	6
+	n	7
+
+xdr_float_upright
+	dpush	a
+	dl	6
+	da	(10*/16:d)	. slightly over-rounding but
+				. that agrees with x86 PC
+				. 8*/18 is more precise
+	ds	6
+	sc	b
+	ab	1, sp
+	jnc	xdr_float_around
+	src	1, sp
+	src	6
+	src	7
+	inc	0, sp
+xdr_float_around
+	dpop	a		. that's enough rounding
+
+	aa, xi	-2		. change from midpoint to bias
+	push	b
+	dsr	10
+	sar	12		. destroy 12 exponent bits
+	dsl	10
+	pop	b		. recover the high order mantissa
+	sbl	1		. destroy the normalising bit
+	dsl	4		. put 4 fraction bits in 1st word
+	sa	0, y
+	la, xi	0
+	dsl	16		. put 16 fraction bits in 2nd word
+	sa	1, y
+	la, xi	0
+	dsl	3		. there are 3 fraction bits left
+	lb	6
+	dsl	13		. put 16 fraction bits in 3rd word
+	sa	2, y
+	la, xi	0
+	dsl	11		. put 16 fraction bits in 4th word
+	lb	7
+	dsl	5
+	sa	3, y
+	ay, xi	4
+	fret	0
+
+rx16to24			. vector name xdr_inopaque24*
+	sx	p
+	lx	q
+	la	BYTES
+	la	1, a, i
+	sar	1
+	lr	a
+	z	WDATAC
+	z	WDATA
+	off	b$stream16w
+	j	rx16to24?
+
+rx16to24!
+	la	0, x
+	ax	1,,xi
+	sal	8
+	wsr	16
+
+rx16to24?
+	jdr	rx16to24!
+	wsr	16
+	fret	0
+
+tx24to16			. vector name xdr_outopaque24*
+	sr	BYTES
+	sx	p
+	sy	q
+	z	RDATAC
+	z	RDATA
+	off	b$stream16r
+	on	b$stream16w
+	j	tx24to16?
+
+tx24to16!
+	rsr	8
+	sal	16
+	wsr	8
+	
+tx24to16?
+	jdr	tx24to16!
+	fret	0
+

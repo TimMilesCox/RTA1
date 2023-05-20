@@ -1,0 +1,208 @@
+_on:	or	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+	ret
+
+_off:	xor	ax, 0000FFFFh
+	and	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+	ret
+
+RELOAD_SMPP	equ	1
+III_TRACE	equ	0
+
+_xi:
+	%if	RELOAD_SMPP
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+	%endif
+
+	and	ah, ah				; 8 external interrupts?
+	jz	_xix_beat?			; nane
+
+	xor	cl, cl
+
+_xi_next:					; external interrupt pending signals[8]
+	mov	byte ptr [rsi+IO_PORT+_XI_PENDING], ah	; position for inA|B from port XI_PENDING$	LL.mm.hh.zz
+	mov	byte ptr [rsi+INDICATION+1], 0	; clear from platform indications fabric	ll.MM.hh.zz
+	xor	ecx, ecx			; clear latent param
+	mov	eax, II_XINT			; select external interrupt
+
+	jmp	_ii_
+	
+_xix_beat?:
+	test	al, TPULSE
+	jz	_xix
+
+	mov	rdi, _core			; i.e. &core[0]
+	mov	rbx, qword ptr [rdi+REGISTER+DAYCLOCK_U]
+	mov	qword ptr [rsi+REGISTER+DAYCLOCK_U], rbx
+	mov	ebx, dword ptr [rdi+IO_PORT+_TZONE]
+	mov	dword ptr [rsi+IO_PORT+_TZONE], ebx
+	and	byte ptr [esi+INDICATION], TPULSE^255
+
+_xix:	test	al, ATTENTION			; core2core interrupt
+	jz	near _xiy
+
+	mov	ebx, dword ptr [esi+IO_PORT+_MCAST_PENDING]
+	and	ebx, dword ptr [esi+IO_PORT+_CORES_MASK]
+	mov	edx, -2
+	mov	rdi, _core
+
+_xi_atn_sources:
+	shr	ebx, 1						; source pending
+	jnc	_xi_atn_source_next				; no
+								; yes
+	and	[esi+IO_PORT+_MCAST_PENDING], edx		; unpend
+	mov	ecx, dword ptr [edi+IO_PORT+_MCAST_TO]		; latent parameter from other core
+
+	mov	eax, II_ATTENTION				; no
+	jmp	_ii_						; _ii_ takes ecx for
+								; latent parameter
+_xi_atn_source_next:
+	add	rdi, CORE_SIZE					; next core
+	rol	edx, 1						; next flag reset position
+	and	ebx, ebx					; any next attention flags left?
+	jnz	_xi_atn_sources
+								; any attention flags set anew?
+	test	dword ptr [esi+IO_PORT+_MCAST_PENDING], 00FFFFFFh
+	jnz	_xi_atn_new_sources				; if so keep ATTENTION request
+								; for next pass
+	and	byte ptr [esi+INDICATION], ATTENTION^255	; otherwise quiet request
+
+_xi_atn_new_sources:
+	
+
+_xiy:	mov	eax, dword ptr [rsi+INDICATION]			; case we did _xix in the same sweep
+	test	byte ptr [rsi+INDICATION], INCREMENTER_CARRY	; nanosecond or other counter 
+	jz	_xiz						; from minus to carrry on zero
+								; to feed millisecond dayclock
+	and	byte ptr [rsi+INDICATION], INCREMENTER_CARRY^255
+	mov	eax, II_MSECOND
+	xor	ecx, ecx
+	jmp	_ii_
+
+_xiz:	ret
+
+_ii_instruction:
+	mov	ebx, eax
+	shr	ebx, 6
+	sub	ebx, dword ptr [esi+IO_PORT+_APP_THRESHOLD]	; application threshold
+	jns	guard_ii_authority	; must have executed a character string
+					; like 757575
+	test	eax, -64
+	jnz	_ii			; not in restart page OK
+	test	dword ptr [rsi+PSR], 00800000
+	jnz	_ii			; ISR may interrupt to restart page
+
+					; service call application to restart page not allowed
+					; most likely to be an accident
+					; drop thru and be quelled
+
+guard_ii_authority:
+	mov	ecx, LP_AUTHORITY
+guard_ii_escape:
+	mov	eax, II_GUARD
+_ii_escape:
+	%if	RELOAD_SMPP
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]	; read register 152 or 280
+	%endif						; depending ebp -> application / ISR registers
+
+	mov	rsp, qword ptr [rsi+REGISTER+286*4]	; read esp at start of _execute
+
+_ii:	cmp	eax, II_GUARD
+	jnz	_ii_
+	test	byte ptr [_uflag+'Z'-'A'], 1	; break to debug console?
+	jz	_ii_					; not if not opted
+	or	byte ptr [rsi+INDICATION], LOCKSTEP
+	or	byte ptr [_general_indication], LOCKSTEP
+	
+_ii_:	lea	rbp, [rsi+128*4] 
+
+	mov	qword ptr [rsi+REGISTER_SET], rbp
+	mov	dword ptr [rsi+ISELECT], 128
+
+	mov	ebx, dword ptr [rbp+S_P]
+	cmp	ebx, 256
+	ja	near guard_stack
+	add	ebx, -4
+
+	cmp	ebx, 128+24+2
+	jb	near guard_stack
+	mov	dword ptr [rbp+S_P], ebx
+
+	sub	r12, qword ptr [rsi+B0P]		; platform-relative absolute program counter
+	shr	r12, 2
+	mov	dword ptr [rsi+rbx*4+REGISTER+3*4], r12d	; save PC offset
+	mov	edx, dword ptr [rsi+B0_NAME]
+	mov	dword ptr [rsi+rbx*4+REGISTER+2*4], edx	; save bank ID
+	mov	edx, dword ptr [rsi+PSR]
+	mov	dword ptr [rsi+rbx*4+REGISTER+4], edx	; saved PSR
+	mov	dword ptr [rsi+rbx*4+REGISTER], ecx	; latent parameter
+	test	edx, 00800000h				; nested interrupt ?
+	jnz	_ii_ii
+	mov	dword ptr [rbp+FP], ebx			; if not, mark interrupted
+							; application stack frame
+_ii_ii:
+	or	edx, 00800000h				; ISR active
+	mov	dword ptr [rsi+PSR], edx
+
+	mov	edx, eax				; get to the operand
+	and	edx, 63					; vector offset
+	shr	eax, 6					; vector start page index
+	and	eax, 000003FFh				; eax -> page containing ISR ; edx  -> vector
+	xor	ebx, ebx				; single page ISR
+	jmp	_go2_frame
+
+;	_ir	sign extended ea is in eax
+
+_ir:	test	dword ptr [esi+PSR], 00800000h		; eax = EA = variation on return offset
+	jz	guard_ii_authority			; not good to do Interrupt Return from application space
+
+							; r12 stays the same until return is finalised
+							; in case the operation interrupts itself
+	mov	edx, eax				; +- displacement operand, offset in stack added later
+
+	call	stack_read4				; [rbp+rbx*4] -> interrupt stack frame
+							; interrupt stack pointer is already updated ebx+4
+
+	mov	eax, dword ptr [rsi+rbx*4+2*4]		; interrupted b0_name
+
+	mov	ecx, dword ptr [rsi+rbx*4+1*4]		; interrupted psr
+
+	add	edx, dword ptr [rsi+rbx*4+3*4]		; add interrupted iframe offset to EA
+	and	edx, 03FFFFFh				;
+
+	xor	ebx, ebx				; iframe default page high index  
+	test	eax, 00800000h				; +page[s] flag on b0_name ?
+	jz	ir_4k_iframe				; 1-page iframe return target
+
+	mov	ebx, eax
+	shl	ebx, 2+8				; drop the flag bit from iframe name
+	shl	rbx, 12-10				; complete the multiplication * page 
+
+	%if	__MOVBE
+	movbe	ebx, dword ptr [rbx*4+64*4+_memory]
+	%else
+	mov	ebx, dword ptr [rbx*4+64*4+_memory]	; read the embedded gate table
+	xor	al, al
+	bswap	ebx
+	%endif
+
+	shr	rbx, 18					; <- iframe page high index
+
+ir_4k_iframe:
+	mov	dword ptr [rsi+PSR], ecx
+	test	ecx, 00800000h				; returning ISR -> ISR ?
+	jz	ir_application				; no
+
+	lea	rbp, [rsi+REGISTER+128*4]		; for nested interrupts
+	mov	qword ptr [rsi+REGISTER_SET], rbp	; interrupt register set. presumably already so
+	mov	dword ptr [rsi+ISELECT], 128		; interrupt register set
+	jmp	_go2_frame				; yes
+
+ir_application:
+	mov	rbp, rsi				; application register set
+	mov	qword ptr [rsi+REGISTER_SET], rbp
+	mov	dword ptr [rsi+ISELECT], 0
+	jmp	_go2_frame				; eax <- reload iframe name
+							; ebx <- reload iframe page high index
+							; edx <- return word offset

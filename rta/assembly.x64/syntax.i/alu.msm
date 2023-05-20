@@ -1,0 +1,949 @@
+
+
+_ax:	call	_operand_read
+	add	eax, dword ptr [ebp+X]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+X], eax
+	ret
+
+_ay:	call	_operand_read
+	add	eax, dword ptr [ebp+Y]
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+Y], eax
+	ret
+
+_or:	call	_operand_read
+	or	dword ptr [ebp+A], eax
+	ret
+
+_orB:	call	_operand_read
+	or	dword ptr [ebp+B], eax
+	ret
+
+_and:	call	_operand_read
+	and	dword ptr [ebp+A], eax
+	ret
+
+_andB:	call	_operand_read
+	and	dword ptr [ebp+B], eax
+	ret
+
+_xor:	call	_operand_read
+	xor	dword ptr [ebp+A], eax
+	ret
+
+_xorB:	call	_operand_read
+	xor	dword ptr [ebp+B], eax
+	ret
+
+_aa:	call	_operand_read
+	jmp	_aa_
+_ana:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+_aa_:	add	eax, dword ptr [ebp+A]
+	call	_alu_carry
+
+	%if	0
+	rol	eax, 8
+	and	al, 1
+	and	byte ptr [_psr], 254
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	%endif
+
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_ab:	call	_operand_read
+	jmp	_ab_
+_anb:	call	_operand_read
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+_ab_:	add	eax, dword ptr [ebp+B]
+	call	_alu_carry
+
+	%if	0
+	rol	eax, 8
+	and	al, 1
+        and     byte ptr [_psr], 254
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	%endif
+
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_m:	push	edx			; 80386 platform has it ready made, so
+	call	_operand_read
+	shl	eax, 8			; prepare multiplier to be multiplicand 
+	sar	eax, 8			; sign it in eax
+	mov	ebx, dword ptr [ebp+B]	; this is register side multiplicand but
+					; it makes no difference which is which
+	shl	ebx, 8			; so use it as multiplier if that is OK
+	sar	ebx, 8			; sign it first
+
+	imul	ebx
+
+	rol	eax, 8			; move 8 bits up from eax to edx
+	shl	edx, 8
+	mov	dl, al
+	shr	eax, 8
+	mov	dword ptr [ebp+B], eax	; product bits 23..0
+	shl	edx, 8
+	shr	edx, 8
+	mov	dword ptr [ebp+A], edx	; product high order bits
+	pop	edx
+	ret
+
+_mf:	push	edx		; the multiplier is signed the multiplicand unsigned
+	call	_operand_read
+	mov	ecx, eax	; just to remember the multiplier sign
+	test	eax, 00800000h
+	jz	_mfplusplus
+	xor	eax, 00FFFFFFh
+	add	eax, 1
+_mfplusplus:
+	mov	ebx, dword ptr [ebp+B]	; this is the multiplicand, unsigned
+	mul	ebx		; two 24-bit unsigned values should be OK here
+	rol	eax, 8
+	shl	edx, 8
+	mov	dl, al
+	shr	eax, 8
+	shl	edx, 8
+	shr	edx, 8
+	test	ecx, 00800000h	; was the multiplier signed?
+	jz	_mfstore
+	xor	eax, 00FFFFFFh
+	xor	edx, 00FFFFFFh
+	add	eax, 1
+	rol	eax, 8
+	movzx	ecx, al
+	shr	eax, 8
+	add	edx, ecx
+	and	edx, 00FFFFFFh
+_mfstore:
+	mov	dword ptr [ebp+B], eax
+	mov	dword ptr [ebp+A], edx
+	pop	edx
+	ret
+
+_d:	mov	edi, a
+	call	_divide
+	mov	dword ptr [ebp+A], ebx
+	mov	dword ptr [ebp+MANTISSA2], eax
+	mov	dword ptr [ebp+B], ecx
+	ret
+
+	%if	1
+
+;	this divide made from 2 Intel divides should be a better method
+;	than the procession of 1-bit shifts and test subtracts
+;	which is the %else which it replaces. That also works
+
+;	this converts to and from positive magnitude
+;	because zoning the 2nd divide with a zero 1st remainder
+;	can't tell +0 from -0 in platform 2s complement
+
+;	polarity conversions before and after need no explanation
+
+;	1st dividend is 48 zero bits and high order 16 data bits
+;	of the the 48-bit RTA1 dividend
+
+;	2nd dividend is 1st remainder and the remaining 32 bits
+;	the the RTA1 dividend
+
+;	input is compressed from 24-bit words and output unpacked
+;	to 24-bit words
+
+;	64-bit dividend in 386 mode is high order bits in edx, low in eax
+;	platform faults if quotient carries from eax. Remainder in edx
+
+;	RTA1 quotient is 48 bits so it takes 2 divides in 32-bit mode
+
+_divide:
+	push	edx
+	push	edi
+	call	_operand_read	; read divisor
+	pop	edi
+	xor	ecx, ecx	; final sign
+	test	eax, 00800000h
+	jz	_dsig?
+	xor	eax, 00FFFFFFh
+	not	ecx		; reverse final sign
+	inc	eax
+_dsig?:	and	eax, 00FFFFFFh	; check zerodiv here mebbes
+	mov	ebx, eax	; eax will be used twice as divisor LS word
+	jz	_d_ont		; zero results in eax ebx already
+
+	mov	eax, dword ptr [ebp+edi*4+4]
+	mov	edx, dword ptr [ebp+edi*4]
+	shl	eax, 8		; pack two 24-bit words to 64 bits 
+	mov	al, dl
+	ror	eax, 8
+	shl	edx, 8
+	shr	edx, 16
+	mov	cx, dx		; save dividend sign
+	and	dx, dx		; bit 47 on?
+	jns	_dive_in
+
+	xor	ecx, 0FFFF0000h	; reverse final sign
+	not	eax
+	not	dx
+	add	eax, 1
+	adc	dx, 0
+
+_dive_in:
+	mov	esi, eax	; reserve 2nd dividend
+	mov	eax, edx	; position 1st dividend
+	xor	edx, edx	; with leading zero
+	div	ebx
+	xchg	eax, esi	; save 1st quotient
+	div	ebx		; generate 2nd quotient
+
+	and	cx, cx		; dividend negative?
+	jns	_d_remainder_plus
+	not	edx
+	inc	edx
+
+_d_remainder_plus:
+	and	edx, 00FFFFFFh
+	xchg	edx, ecx	; remainder -> ecx / final sign -> edx
+
+	mov	ebx, eax	; low order quotient
+	mov	eax, esi	; high order quotient
+
+	and	edx, edx	; final sign?
+	jns	_d_quotient_plus
+
+	not	ebx		; invert + increment quotient
+	not	ax		; RTA1 integer is also 2s complement
+	add	ebx, 1
+	adc	ax, 0
+
+_d_quotient_plus:
+	movzx	eax, ax		; unpack from 32-bit words to 24-bit words
+	shl	eax, 8		; move 8 bits up
+	rol	ebx, 8
+	mov	al, bl
+	shr	ebx, 8		; quotient in eax:ebx
+
+_d_ont:	pop	edx		; give back the emulated program counter
+	ret
+
+	%else
+
+_divide:
+	xor	ebx, ebx
+	push	ebx		;
+	push	ebx		; quotient
+	push	ebx		; dividend[b]
+	push	ebx		; dividend[a]
+	push	ebx		; trailing divisor
+	push	ebx		; divisor
+	push	ebx		; signs2 
+	push	ebx		; signs1
+	mov	ebx, 24
+	push	ebx		; beats
+
+
+_D_BEATS	equ	0
+_D_SIGNS1	equ	1*4
+_D_SIGNS2	equ	2*4
+_D_DIVISORU	equ	3*4
+_D_DIVISORL	equ	4*4
+_D_DIVIDENDU	equ	5*4
+_D_DIVIDENDL	equ	6*4
+_D_QUOTIENTU	equ	7*4
+_D_QUOTIENTL	equ	8*4
+
+	push	edi
+	call	_operand_read
+	pop	edi
+
+	test	eax, 00800000h
+	jnz	_d_nmagnitude1			; must be stored negative
+	xor	eax, 00FFFFFFh
+	jmp	_d_nmagnitude2
+_d_nmagnitude1:
+	add	eax, -1				; if it's already negative
+	mov	dword ptr [esp+_D_SIGNS2], 0FFFFFFFFh
+_d_nmagnitude2:
+	call	qscale
+	cmp	bl, 24
+	jz	_d_allsigns
+	add	dword ptr [esp+_D_BEATS], ebx
+_d_allsigns:
+	mov	ebx, 00FFFFFF00h ; make the divisor 48 bits contiguous	
+	mov	bl, al
+	ror	ebx, 8
+	shl	eax, 8
+	mov	ax, 65535
+	ror	eax, 16
+
+	mov	dword ptr [esp+_D_DIVISORL], ebx
+	mov	dword ptr [esp+_D_DIVISORU], eax
+
+	mov	ecx, 1				; precarry
+
+;	mov	ebx, dword ptr [ebp+B]	; dividend
+;	mov	eax, dword ptr [ebp+A]
+
+	mov	ebx, dword ptr [ebp+edi*4+4]
+	mov	eax, dword ptr [ebp+edi*4] 
+
+	test	eax, 00800000h
+	jz	_d_pmagnitude			; must be stored positive
+	mov	dword ptr [esp+_D_SIGNS1], 00FFFFFFFFh
+	xor	ebx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	add	ecx, ebx
+	mov	ebx, ecx
+	and	ebx, 00FFFFFFh
+	shr	ecx, 24
+	add	eax, ecx
+	and	eax, 00FFFFFFh
+
+_d_pmagnitude:
+	shl	ebx, 8
+	mov	bl, al
+	ror	ebx, 8
+	shl	eax, 8
+	shr	eax, 16
+	mov	dword ptr [esp+_D_DIVIDENDL], ebx
+	mov	dword ptr [esp+_D_DIVIDENDU], eax
+
+	mov	ecx, dword ptr [esp+_D_BEATS]
+
+	add	ecx, -1
+_d_beat:			; iterative part as quick as possible
+				; could study doing a pair of Intel divides here
+	stc
+	rcr	dword ptr [esp+_D_DIVISORU], 1
+	rcr	dword ptr [esp+_D_DIVISORL], 1
+
+	stc
+	adc	ebx, dword ptr [esp+_D_DIVISORL]
+	adc	eax, dword ptr [esp+_D_DIVISORU]
+
+	jc	_d_carried
+	mov	ebx, dword ptr [esp+_D_DIVIDENDL]
+	mov	eax, dword ptr [esp+_D_DIVIDENDU]
+	jmp	_d_carried_or_not
+
+_d_carried:
+	mov	dword ptr [esp+_D_DIVIDENDL], ebx
+	mov	dword ptr [esp+_D_DIVIDENDU], eax
+
+_d_carried_or_not:
+	rcl	dword ptr [esp+_D_QUOTIENTL], 1
+	rcl	dword ptr [esp+_D_QUOTIENTU], 1
+	
+	add	ecx, -1
+	jc	_d_beat
+
+	pop	ecx		; BEATS
+	pop	ecx		; SIGNS1
+	pop	eax		; SIGNS2
+	pop	ebx		; DIVISORU
+	pop	ebx		; DIVISORL
+	pop	ebx		; DIVIDENDU
+	pop	ebx		; DIVIDENDL
+
+	xor	ebx, ecx	; set remainder to sign of dividend
+	jns	_d_remplus
+	inc	ebx		; set -remainder 2s complement
+
+_d_remplus:
+	and	ebx, 00FFFFFFh	; store remainder
+;	mov	dword ptr [ebp+B], ebx
+
+	xor	ecx, eax	; set sign of quotient to difference of signs
+	mov	ecx, ebx	; remainder for return
+	pop	eax		; QUOTIENTU
+	pop	ebx		; QUOTIENTL
+
+	jns	_d_quotient_plus		; cc set from xor of signy
+
+	not	eax
+	not	ebx
+	add	ebx, 1
+	adc	eax, 0
+
+_d_quotient_plus:
+	shl	eax, 8
+	rol	ebx, 8
+	mov	al, bl
+	shr	ebx, 8
+	shl	eax, 8
+	shr	eax, 8
+
+;	mov	dword ptr [ebp+A], ebx
+;	mov	dword ptr [ebp+MANTISSA2], eax
+	ret
+
+	%endif
+
+
+_sar:	mov	cl, al			; platform shift radix is 32
+	mov	eax, dword ptr [ebp+A]	; that does all that is required
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sbr:	mov	cl, al
+	mov	eax, dword ptr [ebp+B]
+	shr	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+B], eax
+	ret
+
+
+_dsr:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	dsr
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sal:	mov	cl, al			; shift radix x86 is 32, fine for here
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, cl
+	and	eax, 00FFFFFFh		; write back to registers only 00000000 thru 00FFFFFF
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sbl:	mov	cl, al
+	mov	eax, dword ptr [ebp+B]
+	shl	eax, cl
+	and	eax, 00FFFFFFh
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_dsl	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	dsl
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_rar:	mov	ebx, dword ptr [ebp+A]
+	call	rr
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+_rbr:	mov	ebx, dword ptr [ebp+B]
+	call	rr
+	mov	dword ptr [ebp+B], ebx
+	ret
+
+_drr:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	drr
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+
+dsr:	shl	eax, 8
+	shl	ebx, 8
+dsru:	add	cl, -24
+	jnc	dsrl
+	mov	ebx, eax
+	xor	eax, eax
+	jmp	dsru
+dsrl:	add	cl, 16
+	jnc	dsr7
+dsr8:	shr	eax, 8
+	mov	bl, al
+	ror	ebx, 8
+	add	cl,-8
+	jc	dsr8
+dsr7:	and	cl, 7
+	shr	eax, cl
+	mov	bl, al		; bits from al in high-order positions bl
+	rol	bl, cl		; roll them to low-order positions
+	ror	ebx, cl
+	shr	ebx, 8
+	shr	eax, 8
+	ret
+
+dsl:	shl	eax, 8
+	shl	ebx, 8
+dslu:	add	cl, -24
+	jnc	dsll
+	mov	eax, ebx
+	xor	ebx, ebx
+	jmp	dslu
+dsll:	add	cl, 16
+	jnc	dsl7
+dsl8:	rol	ebx, 8
+	mov	al, bl
+	xor	bl, bl
+	shl	eax, 8
+	add	cl, -8
+	jc	dsl8
+dsl7:	and	cl, 7
+	rol	ebx, cl
+	mov	al, bl		; bits from bl in low-order positions al
+	ror	al, cl		; roll them to high-order positions
+	shl	eax, cl
+	shr	ebx, 8
+	shr	eax, 8
+	ret
+
+dsa:	shl	eax, 8
+	shl	ebx, 8
+dsa24:	add	cl, -24
+	jnc	dsa16
+	mov	ebx, eax
+	sar	eax, 24
+	jmp	dsa24
+dsa16:	add	cl, 16
+	jnc	dsa7
+dsa8:	sar	eax, 8
+	mov	bl, al
+	ror	ebx, 8
+	add	cl, -8
+	jc	dsa8
+dsa7:	and	cl, 7
+	sar	eax, cl
+	mov	bl, al		; bits from al in high-order positions bl
+	rol	bl, cl		; roll them to low-order positions
+	ror	ebx, cl
+	shr	eax, 8
+	shr	ebx, 8
+	ret	
+
+
+rr:	mov	cl, al
+	shl	ebx, 8
+	test	cl, 24		; bits 16:8 are self-cancelling
+	jpe	rr7
+	test	cl, 16
+	jz	rr8		; 16 is off so 8 is on
+	rol	ebx, 8		; 8 left in 24-bit ring = 16 right
+	mov	bh, bl		; compress 32-bit ring to 24-bit
+	jmp	short rr7
+rr8:	mov	bl, bh		; extend 24-bit ring to 32-bit
+	ror	ebx, 8
+rr7:	and	cl, 7		; isolate remaining count bits
+	mov	bl, bh		; don't ask, just do it
+	ror	ebx, cl
+	shr	ebx, 8
+	ret
+
+rl:	mov	cl, al
+	shl	ebx, 8
+	test	cl, 24		; bits 16:8 are self-cancelling
+	jpe	rl7
+	test	cl, 16
+	jz	rl8		; 16 is off so 8 is on
+	mov	bl, bh		; extend 24-bit ring to 32-bit
+	ror	ebx, 8		; 8 right in 24-bit ring = 16 left
+	jmp	short rl7
+rl8:	rol	ebx, 8
+	mov	bh, bl		; compress 32-bit ring to 24-bit	
+rl7:	and	cl, 7
+	xor	bl, bl
+	rol	ebx, cl
+	or	bh, bl
+	shr	ebx, 8
+	ret
+
+drr:	shl	eax, 8
+	shl	ebx, 8
+
+	test	cl, 48		; bits 32:16 are self-cancelling
+	jpo	drr24		; rotate 48 = zero or 56 = 8 positions
+	test	cl, 8		; parity = pe dans le pays d'Intel
+	jz	drr7
+	jmp	drr_cdrr8
+
+drr24:	xchg	eax, ebx	; rotate 24 right or left as you wish
+	test	cl, 24
+	jpe	drr24_32	; pattern is 100xxx or 011xxx
+	test	cl, 8		; pattern is 010xxx or 101xxx
+	jz	drrl8		; pattern is 010
+	xchg	eax, ebx	; swap back, pattern 101 = 40 right = 8 left 
+drrl8:	call	near drl8	; pattern is 010
+	jmp	short drr7 	; already rotated 24 right, now 8 left
+
+drr24_32:
+	jnz	drr7		; pattern is 011 = rotate 24. We did
+drr_cdrr8:
+	call	near drr8	; pattern is 100 = rotate 32
+drr7:	and	cl, 7
+	jz	drrx
+	mov	bl, ah		; rotate low bits ebx 31:8 to eax high positions
+	mov	al, bh		; rotate low bits eax 31:8 to ebx high positions
+	ror	eax, cl		; bits from bh in low order positions al
+	ror	ebx, cl		; bits from ah in low order positions bl
+drrx:	shr	eax, 8
+	shr	ebx, 8
+	ret
+
+drr8:   mov     bl, ah          ; cross 8 bits from one 32-bit ring to another
+        mov     al, bh		
+        ror     eax, 8
+        ror     ebx, 8
+        ret
+
+drl8:   rol     eax, 8
+        rol     ebx, 8
+        mov     ah, bl          ; cross 8 bits from one 32-bit ring to another
+        mov     bh, al
+        ret
+
+drl:	shl	eax, 8
+	shl	ebx, 8
+	test	cl, 48		; values 32:16 cancel each other
+	jpo	drl24
+	test	cl, 8
+	jz	drl7
+	jmp	short drl_cdrl8
+
+drl24:	xchg	eax, ebx
+	test	cl, 24
+	jpe	drl24_32	; pattern is 011xxx or 100xxx
+	test	cl, 8		; pattern is 010xxx or 101xxx
+	jz	drlr8		; pattern is 010 = 16 left = 8 right
+	xchg	eax, ebx	; swap back, pattern = 101 = 40 left = 8 right
+drlr8:	call	drr8
+	jmp	short drl7
+
+drl24_32:
+	jnz	drl7		; pattern is 011 = rotate24. We did
+drl_cdrl8:			; pattern = 100xxx or 001xxx, rotate 8 more
+	call	drl8
+drl7:	and	cl, 7		; rotate positions 0..7
+	xor	al, al
+	xor	bl, bl
+	rol	eax, cl
+	rol	ebx, cl
+	or	ah, bl
+	or	bh, al
+	shr	eax, 8
+	shr	ebx, 8
+	ret
+
+_ral:	mov	ebx, dword ptr [ebp+A]
+	call	rl
+	mov	dword ptr [ebp+A], ebx
+	ret
+
+_rbl:	mov	ebx, dword ptr [ebp+B]
+	call	rl
+	mov	dword ptr [ebp+B], ebx
+	ret	
+
+_drl:	mov	cl, al
+	mov	eax, dword ptr [ebp+A]
+	mov	ebx, dword ptr [ebp+B]
+	call	drl
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_saa:	mov	cl, al
+	mov	eax, dword ptr [ebp+A]
+	shl	eax, 8
+	sar	eax, cl
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_sba:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	shl	ebx, 8
+	sar	ebx, cl
+	shr	ebx, 8
+	mov	dword ptr [ebp+B], ebx
+	ret
+
+_dsa:	mov	cl, al
+	mov	ebx, dword ptr [ebp+B]
+	mov	eax, dword ptr [ebp+A]
+	call	dsa
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_n:	call	memoreg
+	xor	eax, 00FFFFFFh
+	jmp	memoreg_writeback
+
+_inc:	call	memoreg
+	inc	eax
+	jmp	memoreg_writeback
+
+_dec:	call	memoreg
+	dec	eax
+	jmp	memoreg_writeback
+
+_src:	call	memoreg
+	shl	eax, 8
+	mov	al, byte ptr [_psr]
+	ror	eax, 1
+	rol	al, 1
+	mov	byte ptr [_psr], al
+	shr	eax, 8
+	jmp	memoreg_writeback
+
+_slc:	call	memoreg
+	shl	eax, 8
+	mov	al, byte ptr [_psr]
+	ror	al, 1
+	rol	eax, 1
+	mov	byte ptr [_psr], al
+	shr	eax, 8
+	jmp	memoreg_writeback
+
+_popA:	push	eax			; EA
+	call	memoreg			; register or system memory, no peripheral bus
+	call	stack_read1
+	add	eax, dword ptr [ebp+ebx*4]
+	mov	ebp, dword ptr [_register_set]
+	shl	eax, 7
+	rol	eax, 1
+	and	byte ptr [_psr], 254
+	or	byte ptr [_psr], al
+	shr	eax, 8
+;	mov	ebx, eax
+	pop	ebx			; EA
+	jmp	memoreg_writeback
+	
+_da:	call	_burst_read2
+	jmp	_da_
+
+_dan:	call	_burst_read2
+	xor	ebx, 00FFFFFFh
+	xor	eax, 00FFFFFFh
+	inc	ebx			; carry from bit 23 
+					; remains in bit 24 for now
+	%if	0
+
+_da_:	add	ebx, dword ptr [ebp+B]
+	mov	dword ptr [ebp+B], ebx
+	and	dword ptr [ebp+B], 00FFFFFFh
+	shr	ebx, 24			; zone carry value from bit 23
+	add	eax, ebx
+	add	eax, dword ptr [ebp+A]
+	mov	dword ptr [ebp+A], eax
+	and	dword ptr [ebp+A], 00FFFFFFh
+	shr	eax, 24
+	mov	ebx, dword ptr [_psr]
+	and	bl, 254
+	or	bl, al
+	mov	dword ptr [_psr], ebx
+	ret
+
+	%else
+
+_da_:	add	ebx, [ebp+B]
+	shl	ebx, 8
+	adc	eax, 0
+	shr	ebx, 8
+	mov	[ebp+B], ebx
+	add	eax, [ebp+A]
+	call	_alu_carry
+	mov	[ebp+A], eax
+	ret
+
+_alu_carry:
+	rol	eax, 8
+	and	al, 1
+	and	byte ptr [_psr], 254
+	or	byte ptr [_psr], al
+	shr	eax, 8
+	ret
+
+	%endif
+
+scalex	db	4,3,2,2, 1,1,1,1, 0,0,0,0, 0,0,0,0
+
+field_scale:			; examine 24-bit integer in 8-position steps
+	rol	eax, 8		; until high-order 8 bits are not all signs
+	mov	ah, al
+	xor	al, ch
+	jnz	not8signs
+	add	cl, 8
+	cmp	cl, 24
+	jb	field_scale
+	ret			; 24 signs = the RTA1 computer word
+not8signs:			; al = 0 indicates it
+	test	al, 240		; move back some positions but keep counting up
+	jnz	scale_u
+	add	cl, 4
+	rol	al, 4
+scale_u:
+	shr	al, 4
+	movzx	esi, al		; add to count-up 1..7
+	add	cl, [cs:esi+scalex]
+	push	cx		; roll back 7..1 positions
+	and	cl, 7
+	xor	cl, 7
+	add	cl, 1
+	mov	al, ah
+	ror	eax, cl
+	pop	cx
+	ret
+
+qscale:	shl	eax, 8		; 1.2.3
+	sar	eax, 8		; s.1.2.3
+	rol	eax, 8		; 1.2.3.s
+	xor	cx, cx
+	mov	ch, al		; keep 8 sign bits
+	call	field_scale
+;	call	scale8
+;	mov	al, ah		; reverse 8 rotate positions
+;	ror	eax, 8
+	movzx	ebx, cl
+;	and	cl, 7		; last part rotate
+;	xor	al, al
+;	rol	eax, cl
+;	or	ah, al
+	shr	eax, 8
+	ret
+
+_lsc:	call	_operand_read
+	call	qscale
+	mov	dword ptr [ebp+B], ebx	; store the scale
+	mov	dword ptr [ebp+A], eax	; store the rotated value
+	ret
+
+_dlsc:	call	_burst_read2
+	mov	dword ptr [ebp+A], eax		; keep original 1st word
+	shl	eax, 8
+	sar	eax, 8
+	rol	eax, 8
+	xor	cx, cx
+	mov	ch, al				; keep 8 sign bits
+	call	field_scale
+	and	al, al
+	jz	_dlsc24				; if the first word is all signs
+;	call	scale8
+	movzx	eax, cl
+	mov	dword ptr [ebp+MANTISSA2], eax	; store the scale
+	mov	eax, dword ptr [ebp+A]		; retrieve the input high order word
+	call	drl				; scale the two input words per cl
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax  	; store the rotated value
+	ret
+
+_dlsc24:				; different when high order word is all signs
+	shr	eax, 8			; one result word of signs
+	mov	dword ptr [ebp+B], eax	; into the low-order result word
+	mov	eax, ebx		; scale the low-order input
+	shl	eax, 8
+	xor	cl, cl			; restart the scale count-up
+	call	field_scale
+	add	cl, 24			; restore the early part of the count-up
+;	call	scale8
+	movzx	ebx, cl
+	mov	dword ptr [ebp+MANTISSA2], ebx	; store the scale
+;	mov	al, ah
+;	ror	eax, 8			; reverse the last 8 rotation positions
+;	and	cl, 7			; do the last part of the rotate
+;	xor	al, al
+;	rol	eax, 7
+;	or	ah, al
+	shr	eax, 8
+	mov	dword ptr [ebp+A], eax	; store the rotated value
+	ret
+
+	%if	0
+
+_fpx:	call	_burst_read2		; data read in eax ebx
+	push	ebx			; ebx is used in RTA1 stack frame
+	call	stack4			; construct RTA1 stack frame
+
+	shl	eax, 4			; move 12 mantissa bits out of eax
+	movsx	ecx, ax			; and extend the normalising bit
+
+	rol	eax, 4+1		; shelter sign in eax bit 0
+	shl	ax, 12			; better still in eax bit 12
+	sar	eax, 12			; propagate the value at midpoint position
+	ror	eax, 1			; have the sign back
+	shr	eax, 8			; clear eax 31..24
+	xor	eax, 003ffc00h		; reverse the 12 copies of midpoint bit
+					; yon's ra complicated bit done
+	mov	dword ptr [ebp+ebx*4], eax
+
+	xor	eax, ecx		; is the normalising bit opposite to signs ?
+	test	eax, 00800000h
+	jz	_fpx_allsigns		; no so unnormalised = zero
+
+	pop	eax			; the 2nd operand word, ya remember?
+	shl	eax, 4			; get them 2 halves over the centre
+
+	shr	cx, 4			; zero quartets at high order of 16 bits
+	shr	ax, 4
+
+	xchg	ax, cx			; low-order mantissa bits with unsigns in ecx
+					; high-order mantissa bits with middle part in eax
+
+	shl	eax, 4			; LLLz | HHHz
+	shr	ax, 4			; LLLz | zHHH
+	rol	eax, 12			; zzHH | HLLL
+
+	mov	dword ptr [ebp+ebx*4+1*4], eax
+	rol	ecx, 12
+	xor	ecx, 0FFFh		; 12 normalising bits = 12 inverted signs
+	mov	dword ptr [ebp+ebx*4+2*4], ecx
+	not	ecx			; convert high order quartet to signs
+	sar	ecx, 20			; 24 of them
+	shr	ecx, 8
+	mov	dword ptr [ebp+ebx*4+3*4], ecx
+	mov	ebp, dword ptr [_register_set]
+	mov	dword ptr [ebp+S_P], ebx	; update whichever sp that is
+	ret
+
+_fpx_allsigns:
+	add	esp, 4			; take saved operand word back from stack
+	sar	ecx, 8			; 16 unnormalised normalising bits
+	shr	ecx, 8			; = 24 sign bits
+
+	mov	dword ptr [ebp+ebx*4], ecx
+	mov	dword ptr [ebp+ebx*4+1*4], ecx
+	mov	dword ptr [ebp+ebx*4+2*4], ecx
+	mov	dword ptr [ebp+ebx*4+3*4], ecx
+
+	mov	ebp, dword ptr [_register_set]
+	mov	dword ptr [ebp+S_P], ebx	; update whichever sp that is
+	ret
+
+_fpp:	call	stack_read4
+	push	eax				; thats EA
+
+	mov	eax, dword ptr [ebp+ebx*4]	; s + 23 exponent bits
+	rol	eax, 8+2			; save sign and midpoint
+	shl	eax, 12				; squeeze out 12 exponent bits
+	shr	ax, 12				; bring sign + midpoint back
+	ror	eax, 2				; and roll them back in
+	shr	eax, 4				; position 12 bits low in 16 bits
+	mov	ecx, dword ptr [ebp+ebx*4+1*4]	; take 1st mantissa word from the stack
+	ror	ecx, 12				; rotate 12 bits down
+	shl	cx, 4				; position 12 bits high in 16 bits
+	mov	ax, cx				; merge
+	shr	eax, 4				; position 24 bits low in 32 bits
+	mov	dword ptr [ebp+ebx*4], eax	; place back in RTA1 stack frame
+						; next 12 mantissa bits in ecx 31..20
+
+	mov	eax, dword ptr [ebp+ebx*4+2*4]	; read 24 more
+	shr	eax, 12-4			; position 12 bits at ax 15..4
+	shr	ecx, 4				;				
+	mov	cx, ax				; juxtapose with mantissa 23..12
+	shr	ecx, 4				; wirraff
+
+	mov	dword ptr [ebp+ebx*4+1*4], ecx	; making 2nd and final output word
+
+	pop	eax				; recover EA
+	mov	ebp, dword ptr [_register_set]	; do this after all stack_readX
+	jmp	_burst_write2
+
+	%endif

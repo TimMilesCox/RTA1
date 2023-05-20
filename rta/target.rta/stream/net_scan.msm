@@ -1,0 +1,93 @@
+	$if		0
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	def.sys/base.def
+	$include,$void	rta.gen/syslabel
+	$include	language/stack.def
+	$list
+	$include	lib/alib.def
+	$include	fs/response.def
+	$include	t77.4/dq.def
+	$include	t77.4/ip.def
+	$include	t77.4/socket.def
+	$include	t77.4/tcp.def
+	$path
+	$endif
+
+$(70::0,fp)
+descriptor	acw
+$(66::0,x)
+transmissionp	tcp_connection
+
+
+$(0)
+	. vector name net_scan_tcp
+	. socket handle at argument 1 is already decoded in a:b
+	. format string pointer is at location before target pointers
+	. stack walkback pointer at arguments - 1 is limit of arguments
+
+scan_tcp* $tree
+	$head_far	 params(sotcp,	int			;
+				formap,	int		)	;
+								;
+			scalars(stream_registers,  float, RDATAC)
+
+	lcal	derive_tcp_tcb		. handle tuple is already expanded in a:b
+					. base the containing block of connections
+					. and calculate connection pointer in x
+open?	la	transmissionp:state
+	aa	-TCP_ESTABLISHED,,xi
+	jnza	file_not_open
+	la	transmissionp:receiveq:head
+	jnza	data
+	ii	YIELD$
+	j	open?
+
+data	ii	ON_NETB$
+
+	ly	a
+	la	descriptor:bytes,y
+	lb	descriptor:apdata,y
+	call	(rstream_start_net)
+
+	la	*q
+	lk	(00FF00)
+	mtane	k
+	j	keyboard_eof
+
+	c	(rstream_scana)		sotcp-1		; 	. param stream limit
+					formap,,i		. param stream address 
+								. other than socket
+	sa	sotcp						. borrow a stack location
+	call	(tcp_release_rxline)
+	la	sotcp						. until after tcp_release_rxline
+	j	nexitx
+
+keyboard_eof
+	call	(tcp_release_rxline)
+	la	-NO_DATA,,xi
+	j	nexitx
+
+file_not_open
+	la	-FILE_NOT_OPEN,,xi
+	j	nexity
+
+.	USTREAM					. defaults -> b$stream / SIMD registers
+
+nexitx	ii	FREE_NETB$
+nexity	ii	FREE_SOCKB$
+
+nexitz	qpop	RDATAC				. stream registers need to be nonvolatile
+	fret	0
+	$root
+
+derive_tcp_tcb
+	lx	(BSOCKET*/12)
+	and	0FF8,,xi
+	ax	a
+	la	b
+	sabr	BSOCKET
+	lret	0
+

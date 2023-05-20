@@ -1,0 +1,88 @@
+argument	$tree*
+
+.	vector name forward_callstring
+
+forward	lx	(32*/12++APP_CALL_STRING-01000)
+
+.	y	->	call string
+
+	lk	255,,xi
+update_string
+	la	0, y
+	sa	0, x
+	ay	1,,xi
+	ax	1,,xi
+	mta	(0)
+	j	update_string	
+	fret	0
+
+.	vector_name	retrieve_callstring
+
+retrieve
+	lk	255,,xi
+	on	see$1
+
+	ly	APP_CALL_STRING,,xi
+	lr	02000,,xi
+
+retrieve_string
+	la	0, y
+	sa	0, x
+	ax	1,,xi
+	ay	1,,xi
+	jyge	retrieved
+	mta	(0)
+	j	retrieve_string
+
+retrieved
+	off	see$1
+	fret	0
+
+
+.	vector name unpack_callstring*
+
+unpack	qpush	RDATAC
+	qpush	a
+	qpush	r
+	on	see$1
+
+	lb	APP_CALL_STRING,,xi
+	call	(rstream_starta)
+
+	c	(strlenx)	APP_CALL_STRING,,xi
+	sa	BYTES
+	dsl	25			. words * 2 to buffer any expansion from padding
+
+	lb	fp			. maximum end of inserted param stream
+	anb	a			. start of inserted param stream
+	sb	p			. start inserted param stream
+	lr	b			. limit allowed tuples
+	lx	b			. end of tuples { words, *where }
+
+argue	lb	p			. tokena will copy b -> p
+	la	BYTES			. available bytes
+	push	r
+	call	(tokena)
+	pop	r
+	dpush	a			. words:address
+	ax	-2,,xi			. stretch the external stack frame adowni
+	jza	rebuild			. there weren't any. Last tuple is void
+	j	argue
+
+rebuild	sx	fp			. tuple list <- fp
+	lx	r			. x <- start of args / end of tuples
+	lr	fp			. limits register <- dp
+	
+	ax	-2,,xi			. start with 1 unconditional make space + pop		
+
+unpop	dpop	0, x			. tuple of internal stack newest first
+	ax	-2,,xi			. do more of them until x < fp
+	jxge	unpop	
+
+	off	see$1
+	qpop	r
+	qpop	a
+	qpop	RDATAC
+	fret	0
+
+		$root

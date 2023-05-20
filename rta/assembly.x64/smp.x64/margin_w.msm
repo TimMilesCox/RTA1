@@ -1,0 +1,56 @@
+write_straddle_12b?:				; multiword write request
+write_straddle12b?:				; in last 3 words of block
+	test	cl, 1				; 4-word write request?
+	jnz	split_write4w			;
+	cmp	esi, 0FFFH			; 2 words then. In last word?
+	jb	writeout			; no
+						; yes
+split_write2w:
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	mov	qword ptr [rsp], rbx		; not returning to there
+	push	rdi				; esp -> saved eax [ea], saved ebx
+	mov	rax, rdi			; place ea in eax
+	xor	cl, cl				; request 1-word write
+	mov	ebx, dword ptr [rbp+rbx*4]	; data from register array
+	call	bus_write
+	pop	rax				; retrieve ea from stack
+	pop	rbx				; retrieve register index
+	inc	rax				; advance ea to next block
+	mov	ebx, dword ptr [rbp+rbx*4+4]	; data from register array
+	xor	cl, cl				; request 1-word write
+	call	bus_write
+	ret					; return caller of caller
+
+write_straddle_18b?:				; multiword write request
+write_straddle18b?:				; in last 3 words of block
+	test	cl, 1				; 4 words?
+	jnz	split_write4w
+	cmp	esi, 0003FFFFh			; 2 words then. In last word?
+	jnb	split_write2w			; yes
+						; no
+writeout:
+	ret					; return to burst write
+
+split_write4w:
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
+
+	mov	qword ptr [rsp], rdi		; return address at stack top not used
+	mov	rax, rdi			; copy ea
+	call	write2				; request 2 writes word pairs
+	call	write2				; if 1 of them straddles it splits again
+	pop	rax				; this is ea
+	ret					; return to caller of caller
+
+
+write2:	mov	cl, 6				; request 2-word bus write
+	push	rax				; save ea
+	push	rbx				; save register array index
+	call	bus_write			; send write pair request
+	pop	rbx				; retrieve register index
+	pop	rax				; and ea
+	add	rbx, 2				; update register index
+	add	rax, 2				; and ea
+	ret

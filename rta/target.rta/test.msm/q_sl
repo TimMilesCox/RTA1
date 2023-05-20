@@ -1,0 +1,56 @@
+q_sa	$head_far	 params(countR,		int		)
+								;
+			scalars(caller_89,	long,	8	;
+				caller_xy,	long,	x	)
+
+	ly	3,,xi
+	lx	countR
+	ds	8			. borrow part of the lookaside area
+	la	mantissa2		. this should be a word of signs
+	saa	24
+
+sa_again
+	ax	-24,,xi			. roll down adding leading signs
+	tp	x			. until shift distance <= 1 data word
+	j	sa_round
+	
+	dpush	7
+	pop	8
+	pop	9			. until the stack comes back up
+	sa	7			. add 1 word signs in front
+
+	ay	-1,,xi
+	tz	y
+	j	sa_again
+
+	dsr	48			. shift count out of range
+	ds	6			. 2s complement integer
+	j	sa_return		. so all - signs is not zero
+
+sa_round
+	ax	24,,xi
+	sa	6			. signs -> high order shift word. It is anyway
+
+	tz	x			. save some work if no net bit offset
+	lcal	sa_pushdown_store	. shift overlapping word pairs right
+					. by shift distance /// word size
+	dl	8			. get manipulated data bits 47..0
+					. back into accumulators
+sa_return
+	pop	x
+	pop	y
+	pop	8
+	pop	9
+	fret	0
+
+sa_pushdown_store
+	ly	4,,xii
+
+sa_align
+	ay	-1,,xi			. count / index down - 1
+	dl	5, y			. read words
+	dsr	0, x			. 2-word shift
+	sb	6, y			. write low-order word back
+	tz	y			. reached zero index / count ?
+	j	sa_align		. no
+	lret	0			. yes

@@ -1,0 +1,74 @@
+scan_istring	$tree
+
+.	SENTINEL character is register r loaded by caller
+.	and should be ZERO if SPACE HT CR LF ZERO are enough sentinels
+.	this is lcal target of %s in sscanf
+.	and encapsulated in far call target vector string_scana_sentinel
+
+token	lk, xi  +(1*/$byte)-1
+        z       WDATAC
+        off     b$stream16w
+        sy      p
+
+	la	LAST_BYTE_READ
+	jza	tokenz
+
+token_search
+        lcal    tcolumn
+        j       token_search	. SP HT search forward
+        j       token_total	. CR LF SENTINEL NUL conclude
+        j       token_store	. data
+
+token_read
+        lcal    tcolumn
+        j       token_total	. SP HT stop
+        j       token_total	. CR LF SENTINEL 0 stop
+				. data keep going
+token_store
+        sal     $word-$byte
+        wsr     $byte
+        j       token_read
+
+token_total
+	lb	p
+	tz	WDATAC		. if some bits remain to go
+	lb	1, b, i		. containing words = p - y + 1
+	anb	y
+	lr	b		. containing words returned in r
+
+	la	0,,xi		. there must be a zero byte 
+        wsr     $word		. or three on the output string
+tokenz  lret    0		. local return
+
+until	lk	+(1*/$byte)-1,,xi
+	z	WDATAC
+	off	b$stream16w
+	sy	p
+	la	LAST_BYTE_READ
+	jza	tokenz
+
+until_when
+	lcal	tcolumn
+	j	until_store	. keep including columns
+	j	token_total	. until sentinal or radical end of line
+until_store
+	sal	$word-$byte
+	wsr	$byte
+	j	until_when
+
+tcolumn READ_BYTE
+	mtane	(0)
+	lret	1
+        mtane   (' ')
+        lret    0
+        mtane   (CR)
+        lret    1
+        mtane   (LF)
+        lret    1
+	mtane	SENTINEL
+	lret	1
+        mta     (HORIZONTAL_TAB)
+        lret    2		. data
+        lret    0		. HT
+
+	$root

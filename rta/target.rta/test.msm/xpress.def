@@ -1,0 +1,366 @@
+icompute* $proc
+SAVEP	$set	1
+SAVE(1)	$equ	8
+SAVE(2)	$equ	10
+
+
+f               $func
+"$indirect_or_indexed"* $name
+                $do     f(1, *1),       $return 1
+                $return f(1, 2)
+                $end
+
+f               $func
+"$1w"*          $name
+                $do     f(1)<3,         $return 0
+                $do     f(1, 3)<0,      $return 0
+                $do     f(1, 3)>5,      $return 0
+                $return 1
+                $end
+
+"$$significands" $set	0
+
+.	$xqt_i	icompute()
+.	$end
+
+STACK_TOP* $func
+	$return	SAVE(SAVEP-1)
+	$end
+
+POP*	$proc
+SAVEP**	$set	SAVEP-1
+	$end
+
+PUSH*	$proc
+	ds	SAVE(SAVEP)
+SAVEP**	$set	SAVEP+1
+	$end
+
+p	$proc
+LOAD*	$name
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		$else
+		$aax	p(1)
+		$if	$1w(p((1))
+"$$significands"** $set	24
+		la	$aaa
+		dsa	24
+		$else
+"$$significands"** $set	48
+		dl	$aaa
+		$endif
+		$endif
+	$end
+
+p	$proc
+LOAD_NEGATIVE* $name
+		$flag	HOWSO?
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		ds	i$aside($ASIDE)
+		dsr	48
+		dan	i$aside($ASIDE)
+		$else
+		$if	$1w(p(1))
+"$$significands"** $set	24
+		la, xi	0
+		ana	p(1)
+		dsa	24
+		$else
+"$$significands"** $set	48
+		dsr	48
+		$aax	p(1)
+		dan	$aaa
+		$endif
+		$endif
+	$end
+
+p	$proc
+TEST_EQUAL* $name
+		$aax	p(1)
+                dan     $aaa		. a result is double
+                jdz     $+3
+                dsr     48
+                j       $+2
+                lb, xi  1
+	$end
+
+p	$proc
+TEST_NE* $name
+		$aax	p(1)
+                dan     $aaa		. a result is double
+                jdz     $+3
+                la, xi  0
+                lb, xi  1
+	$end
+
+p	$proc
+TEST_GREATER* $name			. a result is double
+                $aax	p(1)
+		dan	$aaa
+                jdz     $+6
+                jna     $+4
+                la, xi  0
+                lb, xi  1
+                j       $+2
+                dsr     48
+	$end
+
+p	$proc
+TEST_LESS* $name
+		$aax	p(1)
+                dan     $aaa
+                jdz     $+6
+                jpa     $+4
+                la, xi  0
+                lb, xi  1
+                j       $+2
+                dsr     48
+	$end
+
+p	$proc
+SHIFT*	$name
+		$if	$indirect_or_indexed(p(1))
+		$aax	p(1)
+		dsl	$aaa
+		$else
+		dsl	+p(1)
+		$endif
+	$end
+
+p	$proc
+SHIFT_RIGHT* $name
+		$if	$indirect_or_indexed(p(1))
+		$aax	p(1)
+		dsa	$aaa
+		$else
+		dsa	+p(1)
+		$endif
+	$end
+
+p	$proc
+OR*	$name
+		$aax,y	p(1)
+		$if	$1w(p(1))
+		orB	$aaa
+		$else			. long booleans are 2 parallel
+                or      $aaa		. 1-word operations
+                orB     $aaa+1
+"$$significands"** $set	48
+		$endif
+	$end
+
+p	$proc
+XOR*	$name
+		$aax,y	p(1)
+		$if	$1w(p(1))
+		andB	$aaa
+		$else
+                xor     $aaa
+                xorB    $aaa+1
+"$$significands"** $set	48
+		$endif
+	$end
+
+p	$proc
+AND*	$name
+		$aax,y	p(1)
+		$if	$1w(p(1))
+		andB	$aaa
+		la,xi	0
+		$else
+                and     $aaa
+                andB    $aaa+1
+"$$significands"** $set	48
+		$endif
+	$end
+
+p	$proc
+ADD*	$name
+		$aax	p(1)
+		$if	$1w(p(1))
+		ds	6
+		la	$aaa
+		dsa	24
+		da	6
+		$else
+		da	$aaa		. add / subtract are double
+		$endif
+"$$significands"** $set	48
+	$end
+
+p	$proc
+SUBTRACT*	$name
+		$aax	p(1)
+		$if	$1w(p(1))
+		ds	6
+		la, xi	0
+		ana	$aaa
+		dsa	24
+		da	6
+		$else
+		dan	$aaa
+		$endif
+"$$significands"** $set	48
+	$end
+
+p	$proc
+MULTIPLY*	$name
+		$aax	p(1)		. multiplier / divisor are single
+
+		$if	$$significands<25
+		m	$aaa
+		$else
+
+		sb	7
+		lb	a
+		m	$aaa
+		sb	6
+		lb	7
+		mf	$aaa
+		aa	6
+		$endif
+"$$significands"** $set	48
+	$end
+
+p	$proc
+DIVIDE*	$name
+		$aax	p(1)
+		d	$aaa
+		sb	7	. save the remainder
+		lb	a
+		la	6
+	$end
+
+p	$proc
+DIVIDE_ROUNDED* $name
+		$flag	covered quotient may only be a constant
+	$end
+
+p	$proc
+MODULO*	$name
+		$aax	p(1)
+		d	$aaa
+		ds	6	. save the quotient. MSW is already in 6
+		la	b
+		dsa	24
+	$end
+
+
+	$xqt_i	icompute()
+	$end
+
+
+fcompute* $proc
+SAVEP	$set	1
+SAVE(1)	$equ	8
+SAVE(2)	$equ	d$save
+.	$xqt_fp	fcompute()
+.	$end
+
+FP_STACK_TOP* $func
+	$return	SAVE(SAVEP-1)
+	$end
+
+FPOP*	$proc
+SAVEP**	$set	SAVEP-1
+	$end
+
+FPUSH*	$proc
+	qs	SAVE(SAVEP)
+SAVEP**	$set	SAVEP+1
+	$end
+
+p	$proc
+FP_LOAD* $name
+	$aax	p(1)
+	ql	$aaa
+	$end	
+
+p	$proc
+FP_LOAD_NEGATIVE* $name
+	$aax	p(1)
+	ql	(0.0)
+	qan	$aaa
+	$end
+
+p	$proc
+FP_ADD*	$name
+	$aax	p(1)
+	fa	$aaa
+	$end
+
+p	$proc
+FP_SUBTRACT* $name
+	$aax	p(1)
+	fan	$aaa
+	$end
+
+p	$proc
+FP_MULTIPLY* $name
+	$aax	p(1)
+	fm	$aaa
+	$end
+
+p	$proc
+FP_DIVIDE* $name
+	$aax	p(1)
+	fd	$aaa
+	$end
+
+	$xqt_fp	fcompute()
+	$end
+
+p		$proc
+"$aax"*		$name
+
+"$u"		$set	p(1, 1)		. drop any indirection bit
+"$ix"		$set	p(0, 2)
+"$iy"		$set	$ix**1
+
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1,3)	p(1, 1), p(1, 2)
+"$aaa"*		$equf	fp$aside($$aside)
+		$elseif	p(1, *1)**(p(1, 2)^=0)
+
+		$if	$ix**x
+		lx++$iy	$u, p(1, 2)
+"$aaa"*		$equf	0, $ix
+		$else
+		lr++$iy	$u, p(1, 2)
+"$aaa"*		$equf	*$ix
+		$endif
+
+		$elseif	p(1, *1)**($net($u)>8191)
+
+		$if	$ix**x
+		$if	$u>32767
+		lx++$iy	*($u:s)
+		$else
+		lx++$iy	$u
+		$endif
+"$aaa"*		$equf	0, $ix
+		$else
+		$if	$u>32767
+		lr++$iy	*($u:s)
+		$else
+		lr++$iy	$u
+		$endif
+"$aaa"*		$equf	*$ix
+		$endif
+
+		$elseif	($net($u)>32767)**(p(1, 2)=0)**(p(1, *1)=0)
+
+		$if	$ix**x
+		lx++$iy	$0($u:s)
+"$aaa"*		$equf	0, $ix
+		$else
+"$aaa"*		$equf	*$0($u:s)
+		$endif
+
+		$else
+
+"$aaa"*		$equf	p(1)
+		$endif
+		$end

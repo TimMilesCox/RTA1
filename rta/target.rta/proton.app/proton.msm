@@ -1,0 +1,619 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	def.sys/base.def
+	$include	def.sys/events.def
+	$include	def.sys/tcb.def
+	$include	stream/stream.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	t77.4/dq.def
+	$include	t77.4/i_f.def
+	$include	t77.4/ip.def
+	$include	t77.4/ipv4.def
+	$include	t77.4/tcp.def
+	$include	t77.4/socket.def
+	$include	t77.4/pointers.def
+	$include	t77.4/hvsocket.def
+.	$include	t77.4/spring_q.def
+	$include	drivers/soc_data.def
+	$include	lib/ascii.def
+	$include	table/names.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+ROTARY		$equ	1
+RX_THREADS	$equ	8
+RX_PORTS	$equ	8000
+RX_RANGE	$equ	RX_PORTS/RX_THREADS
+
+DATA	$equ	120
+	$set_option	"z"
+
+$(69::,b)
+so	$socket
+
+$(66::,x)
+tlist	tbank
+
+$(66::,x)
+transmission	tcp_connection
+
+$(71::,sp)
+dgram	datagram
+
+$(70::,fp)
+descriptor acw
+
+$(3:03000/$3)
+
+route_10	5-2, 16, 0a00, 0, 0a00, 000a:H
+route_10_1	5-2, 16, 0a01, 0, 0, 0:H
+route_10_2	5-2, 16, 0a02, 0, 0a00, 000a:H
+
+chain_again	0
+
+command_byte	0
+bytes		0
+port		10240
+restart_local_port	10240
+local_port	10240
+ports	1024
+restart_ports	1024
+restart_port	10240
+connections	20
+connections_prolog	0	. make a 48-bit integer for quick add
+connections_pro	20
+connections_total	0L
+interval		10L
+tx_interval		0L
+
+	$res	120
+
+local_restart	$net_socket	10.1.0.1:10240
+remote_restart	$net_socket	10.2.0.1:10240
+
+socket_addresses
+local_socket	$net_socket	10.1.0.1:10240
+remote_socket	$net_socket	10.2.0.1:10240
+
+local_socket_name	$res	3
+remote_socket_name	$res	3
+
+payload_segments	0L
+payload_sent		0L
+
+times	1
+data	$res	DATA//3
+message	$res	DATA//3
+
+?	$do	4,command_word(?)	0o
+
+$(0:0/$0)
+
+__BASE	$equ	PROTON_P
+__PRIORITY $equ	0
+
+	catalog
+
+	$base_d	$zenith(3)-03000	1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	;
+					1024	1024	1024	1024	1024	1024	1024	1024	1024
+
+	$if	0
+	la	4096,,xi
+	ii	BANK$
+	push	a			. no stack_dependent references
+	sabr	SPRING_Q
+	$endif
+
+	c	(seg$load)	0,,xi	(proton_data:L),,long
+
+	$if	0
+	pop	spring_page		. certainly none until here
+	$endif
+
+	ly	route_10,,xi
+	call	(__route_config)
+	ly	route_10_1,,xi
+	call	(__route_config)
+	ly	route_10_2,,xi
+	call	(__route_config)
+
+	$if	ROTARY
+
+rx_start* $proc
+	ql	(rthreads:rx_thread, 0, rxport_range(?), THREAD_FP(?+1)q)
+	ii	THREAD$
+
+	$if	1
+	lb	$3("proton_rx(":'0'+?///10:")":0),,xi
+	$else
+	lb	?-1+$0(names	proton_rx(1) proton_rx(2) proton_rx(3) proton_rx(4)	;
+				proton_rx(5) proton_rx(6) proton_rx(7) proton_rx(8))
+	$endif
+
+	ii	TAG$
+	$end
+
+?	$do	RX_THREADS,	rx_start
+
+	$else
+	ql	(rxthread, 0, 0, THREAD_FP(2)q)
+	ii	THREAD$
+	lb	$3("rxthread":0),,xi
+	ii	TAG$
+	$endif
+
+request	printf	$3("proton>":0),,xi
+	fflush	stdout
+poll	fgets	data,,xi	DATA,,xi	stdin
+
+	jnb	away			. or broke
+	jnza	evaluate		. stdin timed out
+	ii	GUARD$
+	j	poll			. it was meant to block
+
+evaluate
+extract* $proc
+	lb	command_word(?),,xi
+	la	24,,xi
+	call	(tokena)
+	$end
+
+	lb	data,,xi
+	call	(rstream_starta)
+?	$do	3,	extract
+
+	dl	command_word(1)
+	lk	(-1*/$word-$byte)
+	
+	mta	('+'*/$word-$byte)
+	j	traffic?
+
+	sscanf	data,,xi	$3("%::%s":0),,xi	command_word(2),,xi	;
+							command_word(3),,xi
+
+	lx	command_word(2),,xi
+	aa	-2,,xi
+	jnc	remote_chosen				. local socket goes here
+							. remote socket scan goes here
+
+	sscanf	command_word(2),,xi	$3("%:/%s":0),,xi	command_word(4),,xi	;
+								command_word(1),,xi
+
+	lc	netascan	command_word(4),,xi
+	ds	local_restart
+
+	lc	netascan	command_word(1),,xi
+	ds	remote_restart	
+
+	lx	command_word(3),,xi
+
+remote_chosen
+	sscanf	x	$3("%d/%d/%d %d":0),,xi		restart_port,,xi	;
+							restart_ports,,xi	;
+							connections_pro,,xi	;
+							local_port,,xi
+	jna	away
+	jza	request
+
+	z	connections_total
+	z	connections_total+1
+
+	anu	5,,xi
+	jc	local_port_given
+	la	restart_port
+	sa	local_port
+
+local_port_given
+	dl	remote_restart
+	lk	(00FFFF)
+	mlb	restart_port
+	ds	remote_restart
+	ds	6
+	dl	local_restart
+	mlb	local_port
+	ds	local_restart
+	qs	socket_addresses
+
+
+	la	local_port
+	sa	sockets:first
+	sa	sockets:actual
+	aa	restart_ports
+	sa	sockets:limit
+	la	restart_ports
+	aa	4,,xi
+	sa	sockets:span
+	sa	sockets:span_restart
+
+	la	restart_ports
+	sa	ports	
+
+connect_multiple
+	la	connections_pro
+	sa	connections
+
+connect_next
+	c	(__connect)	socket_addresses,,float	-1,,xi
+
+	jpa	connect_a1
+	printf	$3("connect return %ld":10:0),,xi	a,,long
+
+connect_a1
+	dl	remote_socket
+	da	(1*/16d)
+	ds	6
+	dl	local_socket		. send from 1 port
+	da	(1*/16d)		. multiple network addresses
+	qs	socket_addresses
+
+	dec	connections
+	tz	connections
+	j	connect_next
+
+	lk	(00FFFF)
+	inc	remote_socket+1
+	dl	remote_restart
+	mlb	remote_socket+1
+	ds	6
+
+	inc	local_socket+1		. up port
+	dl	local_restart		. rewind network address
+	mlb	local_socket+1
+	qs	socket_addresses
+
+	dl	connections_prolog
+	da	connections_total
+	ds	connections_total
+
+	printf	$3("":CR:" %ld ":0),,xi	a,,long
+	fflush	stdout
+
+	dl	interval
+	jdz	no_interval		. default 10ms change command ^ msecs
+	ii	TWAIT$			. in case of single-core
+					. let ip thread receive some SYN_ACKs
+no_interval
+
+	dec	ports
+	tz	ports
+	j	connect_multiple
+
+	dl	interval		. extra time
+
+	jnzb	intervalnz		. stab at a wait time
+	lb	dl(15*1000d)		. reasonable..generous
+					. will get doubled to 30sec
+intervalnz
+	dsl	1
+	ii	TWAIT$			. for the last batch to connect
+
+        la      restart_port
+        aa      restart_ports
+        lc      states  restart_port    a
+
+	j	request
+
+traffic?
+	mta	('>'*/$word-$byte)
+	j	close?
+
+	sscanf	data,,xi	$3("%s %d %s":0),,xi	command_byte,,xi	;
+							times,,xi		;
+							command_word(2),,xi
+
+next_time
+	dec	times
+	tp	times
+	j	request
+
+	la	restart_local_port
+	sa	local_port
+	la	restart_ports
+	sa	ports
+
+next_port
+	sprintf	message,,xi	$3("%d %s":0),,xi	times	command_word(2),,xi
+
+	$if	0			. sprintf length result checks out
+	c	(strlen)	message,,xi
+	$endif
+
+	sa	bytes
+	la	local_port
+	call	(connection_array)
+	j	port_thru
+
+	lx	(BSOCKET*/12++tlist:chain(1))		. point @ chain head, don't load it
+
+next_chain
+	sx	chain_again
+	j	chain_along
+
+traffic!
+	la	bytes
+	lb	message,,xi
+	lcal	msg_tcp		
+
+	jna	chain_along
+	jza	chain_along
+	dl	(1L)
+	da	payload_sent
+	ds	payload_sent
+
+chain_along
+	lx	0, x
+	tz	x
+	j	traffic!
+
+	lx	chain_again
+	ax	1,,xi
+	lr	(BSOCKET*/12++tlist:chain(CHAINS)+1)
+	jxge	port_thru
+	j	next_chain
+
+port_thru
+	$if	1
+
+	dl	tx_interval
+	jdz	traffic_thru
+	ii	TWAIT$
+traffic_thru
+
+	$else	0		.	MODEL_REQUEST_RESPONSE
+
+	la	local_port
+	call	(connection_array)
+	j	ported
+
+	ly	(BSOCKET*/12++tlist:connection_block(1):receiveq:head)
+port_sense
+	ii	YIELD$
+	tnz	0, y
+	j	port_sense
+
+readback
+	call	(hvsocket_readq)
+	jza	ported
+
+	lcal	qreadq
+
+	dl	(1d)
+	da	payload_segments
+	ds	payload_segments
+	j	readback
+	tz	0, y
+	j	readback
+	dl	(5d)
+	ii	TWAIT$
+	tz	0, y
+	j	readback
+
+ported	printf	$3("rx @ socket %ld":LF:0),,xi	payload_segments,,long
+
+	dl	payload_segments
+	da	total_rx
+	ds	total_rx
+	dsr	48
+	ds	payload_segments
+
+	$endif	
+
+	inc	local_port
+	dec	ports
+
+	tz	ports
+	j	next_port
+
+	$if	0	.	MODEL_REQUEST_RESPONSE
+	printf	$3("%d tx %ld rx %ld":LF:0),,xi	times	payload_sent,,long	total_rx,,long
+	$else
+	printf	$3("%d tx %ld":10:0),,xi	times	payload_sent,,long
+	$endif
+
+	j	next_time
+
+
+close?	mta	('<'*/$word-$byte)
+	j	anomaly?
+
+	la	restart_ports
+	sa	ports
+
+	la	restart_local_port
+
+close_array
+	sa	local_port
+	call	(connection_array)
+	j	close_next_port
+
+	ly	(BSOCKET*/12++tlist:chain(1))
+	lr	CHAINS, y, i
+
+close_chain
+	lx	y
+	j	close_chain_along
+close_chain_next
+	n	transmission:state
+close_chain_along
+	lx	transmission:next
+	tz	x
+	j	close_chain_next
+	
+	ay	1,,xi
+	jyge	close_next_port
+	j	close_chain
+
+close_next_port
+	la	local_port
+	aa	1,,xi
+	dec	ports
+	tz	ports
+	j	close_array
+
+	j	request
+
+.	subroutines of anomal?
+
+rx_segment_awaiting_sequence
+	lc	waiting_segment $3(" rx segment awaiting sequence":0),,xi	transmission:deferq:head
+
+segment_untransmitted
+	lc	waiting_segment	$3(" UNTRANSMITTED":0),,xi	transmission:q4window:head
+	lret	0
+
+segment_waiting_ack
+	lc	waiting_segment	$3(" awaiting TCP_ACK":0),,xi	transmission:q4ack:head
+	lret	0
+
+rx_traffic_at_socket
+	lc	waiting_segment $3(" rx traffic at socket":0),,xi	transmission:receiveq:head
+	lret	0
+
+waiting_segment	$tree	
+	$head_near	 params(reason_p,	int		;
+				q_p,		int	)	;
+								;
+			scalars(save_rkxy,	float,	r	;
+				save_bsocket,	int		)
+
+	on	see$1
+	la	ABT+BSOCKET
+	off	see$1
+	sa	save_bsocket
+	printf	$3("":LF:"connection %x:%x has segment[s] %s":LF:0),,xi	;
+							save_bsocket	;
+							x		;
+							reason_p
+
+	lc	display_segment	q_p
+	lx	save_rkxy+2
+	lcal	display_connection
+
+	pop	a
+	qpop	r
+	lret	0
+
+	$root
+
+anomaly?
+	mta	('?'*/$word-$byte)
+	j	states?
+
+	la	restart_port
+	sa	ports
+	la	restart_local_port
+
+search_port
+	sa	local_port
+	call	(connection_array)
+	j	search_next_port
+
+	lx	(BSOCKET*/12++tlist:connection_block(1))
+	tz	transmission:receiveq:head
+	lcal	rx_traffic_at_socket
+
+	ly	(BSOCKET*/12++tlist:chain(1))
+	lr	CHAINS, y, i
+
+search_chain
+	lx	y
+	j	search_chain_tail
+
+search_chain_next
+	tz	transmission:deferq
+	lcal	rx_segment_awaiting_sequence
+	tz	transmission:q4window
+	lcal	segment_untransmitted
+	tz	transmission:q4ack
+	lcal	segment_waiting_ack
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	search_chain_tail
+	lcal	display_connection
+
+search_chain_tail
+	lx	transmission:next
+	tz	x
+	j	search_chain_next
+
+	ay	1,,xi
+	jyge	search_next_port
+	j	search_chain
+
+search_next_port
+	la	local_port
+	aa	1,,xi
+	dec	ports
+	tz	ports
+	j	search_port
+	j	request
+
+states?	mta	('!'*/$word-$byte)
+	j	option?
+	la	restart_port
+	aa	restart_ports
+	lc	states	restart_port	a
+	j	request
+
+option?	mta	('^'*/$word-$byte)
+	j	stop?
+	sscanf	data,,xi	$3("%s %ld %ld":0),,xi	command_byte,,xi	;
+							interval,,xi		;
+							tx_interval,,xi
+	j	request
+
+stop?	mta	('.'*/$word-$byte)
+	j	request
+away	fret	0
+
+
+msg_tcp	lk	05000++TCP_ACK++TCP_PSH,,xi
+
+.	push	05018,,xi
+.	pop	SOCKET_CALL_FLAGS
+	push	x
+.	sb	q
+	call	(tcp_tx)
+	pop	x
+	lret	0
+
+$(3)
+
+rx_ports	$res	1
+rx_local_port	$res	1
+
+sockets	$socket_array	10240:10240+2048
+
+?	$do	RX_THREADS,rxport_range(?)	+	10240+?*RX_RANGE-RX_RANGE, 10240+?*RX_RANGE:L
+?	$do	RX_THREADS,total_rx(?)		0L
+
+$(0)
+
+qreadq	lx	*(BSOCKET*/12++tlist:rxbu_p)
+	push	y
+	tz	x
+	call	(if_sell1)
+	pop	y
+	lret	0
+
+	$list		2
+
+rthreads $tree
+	$include	rxrotary
+	$root
+
+	$include	respond
+	$include	summary
+	$include	sdisplay
+	$include	cdisplay
+	$include	states
+	$include	netascan
+
+	$do	$<256,$(0:256)

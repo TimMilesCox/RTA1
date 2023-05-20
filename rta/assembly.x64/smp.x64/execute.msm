@@ -1,0 +1,188 @@
+;	include	rta_x86.h
+.model	small
+.code
+
+__ea:	mov	ecx, eax
+	shl	ecx, 8
+	shr	ecx, 24-5		; instruction index in ch
+	shr	cl, 5			; operand designator in cl
+
+	shl	eax, 16
+	cmp	cl, XI			; sign extended immediate?
+	jnz	derive_ea
+
+	sar	eax, 8			; different from other EAs
+	shr	eax, 8
+	jmp	ea_derived
+
+derive_ea:
+	shr	eax, 16			; no sign of it
+	and	ax, ax			; indexing / indirection ?
+	jns	ea_derived		; no
+
+	mov	ebx, eax
+	and	ah, 127			; ie: and ax 32767
+	shr	bx, 12			; position index tag
+	test	bl, 6			; indirect or indexed ?
+	jz	indirect
+					; pe = PF set
+					; can only be tested on b7..0
+	jpe	indexed_4bit		; indexed fp / sp
+					; indexed x / y / a / b
+	and	bl, 7			; zero bit 3
+
+indexed_4bit:
+	and	ax, 4095		; isolate adqress offset
+	add	eax, dword ptr [rbp+rbx*4]
+
+	shl	eax, 8			; truncate any overflow
+	shr	eax, 8
+
+	jmp	ea_derived
+
+indirect:				; indirect via page B0 / B1
+	mov	bx, cx
+	xor	cx, cx			; cl <- zero to read 1-word indirection pointer
+	call	_operand_read
+	mov	cx, bx			; retrieve instruction:class into cx
+
+	movq	rsi, mm7
+;	mov	rsi, qword ptr [rbp+CORE_INDEX1]	; retrieve smp core ->
+
+ea_derived:
+	ret
+
+_execute:
+	mov	qword ptr [rsi+REGISTER+286*4], rsp
+	call	__ea
+
+	movzx	ebx, ch			; instruction index
+	cmp	cl, 6
+	jz	near shifts_jumps
+	ja	near large_operations
+
+integer_operations:
+	mov	rbx, qword ptr [operations1+rbx*8]
+	jmp	rbx
+
+operations1:
+        dq	_sr
+        dq	_sk
+        dq	_sx
+        dq	_sy
+        dq	_sa
+        dq	_sb
+        dq	_z
+        dq	_pop
+
+        dq	_lr
+        dq	_lk
+        dq	_lx
+        dq	_ly
+        dq	_la
+        dq	_lb
+        dq	_tz
+        dq	_tp
+
+        dq	_ax
+        dq	_ay
+        dq	_or
+        dq	_orB
+        dq	_and
+        dq	_andB
+        dq	_xor
+        dq	_xorB
+
+        dq	_aa
+        dq	_ab
+        dq	_ana
+        dq	_anb
+        dq	_m
+        dq	_mf
+        dq	_d
+        dq	_push
+
+shifts_jumps:
+	mov	rbx, qword ptr [operations6+rbx*8]
+	jmp	rbx
+
+operations6:
+        dq	_sar
+        dq	_sbr
+        dq	_dsr
+        dq	_jdr
+        dq	_sal
+        dq	_sbl
+        dq	_dsl
+        dq	_lcal
+
+        dq	_rar
+        dq	_rbr
+        dq	_drr
+        dq	_jnc
+        dq	_ral
+        dq	_rbl
+        dq	_drl
+        dq	_jc
+
+        dq	_saa
+        dq	_sba
+        dq	_dsa
+        dq	_jao
+        dq	_jpa
+        dq	_jpb
+        dq	_j
+        dq	_jpo
+
+        dq	_jza
+        dq	_jzb
+        dq	_jnza
+        dq	_jnzb
+        dq	_jna
+        dq	_jnb
+        dq	_jxge
+        dq	_jyge
+
+
+large_operations:
+	mov	rbx, qword ptr [operations7+rbx*8]
+	mov	cl, 0		; default size large operand
+	jmp	rbx		; 1 word
+
+operations7:
+        dq	_ts
+        dq	_n
+        dq	_inc
+        dq	_dec
+        dq	_sim
+        dq	_popA
+        dq	_src
+        dq	_slc
+
+        dq	_qs
+        dq	_ql
+        dq	_dte
+        dq	_dpop
+        dq	_fa
+        dq	_fan
+        dq	_fm
+        dq	_fd
+
+        dq	_qpop
+        dq	_qpush
+        dq	_ex
+        dq	_dpush
+        dq	_lsc
+        dq	_mta
+        dq	_sc
+        dq	_mlb
+
+        dq	_ds
+        dq	_dl
+        dq	_da
+        dq	_dan
+        dq	_dlsc
+        dq	_spare
+        dq	_go
+        dq	_call
+

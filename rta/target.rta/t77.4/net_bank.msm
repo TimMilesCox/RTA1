@@ -1,0 +1,266 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$if	NET_ADAPTING=0
+
+	$do	RX_BANKS<NET_BANKS/2,	$exit NET_BANKS too few and TX_BANKS too many
+
+base_netpage* $proc
+	sabr	NET_BASE+?-1
+	aa, xi	1
+	$end
+
+base_netbank* $proc
+	sabr	NET_BASE+?-1
+	aa, xi	64
+	$end
+
+
+$(0)
+net_bank
+	inA	device$flags
+	aa, xi	1
+	anu	(SCALE_THRESHOLD)
+
+	jc	large_netbank
+
+small_netbank
+	la	(4096*NET_BANKS)
+	ii	BANK$
+	jza	emergency_netbank
+
+	lx	(NET_BASE*/12)
+.	sx	rx_buffers
+
+?	$do	NET_BANKS,	base_netpage
+
+	la	(4096*RX_BANKS)
+	lcal	init_pool
+
+	lx	(NET_BASE+RX_BANKS*/12)
+.	sx	tx_buffers
+	la	(4096*TX_BANKS)
+	lcal	init_pool
+
+	lret	0
+
+large_netbank
+	la	(262144*NET_BANKS)
+	ii	BANK$
+	jza	small_netbank
+
+	lx	(NET_BASE*/18:s)
+.	sx	rx_buffers
+
+?	$do	NET_BANKS,	base_netbank
+
+	la	(262144*RX_BANKS)
+	lcal	init_pool
+
+	lx	(NET_BASE+RX_BANKS*/18:s)
+.	sx	tx_buffers
+	la	(262144*TX_BANKS)
+	lcal	init_pool
+
+	lret	0
+
+emergency_netbank
+
+	.	can we get 16K then?
+
+	la, xi	4096*4
+	ii	BANK$
+	jza	minimal_emergency_netbank
+
+	lx	(NET_BASE*/12:s)
+.	sx	rx_buffers
+
+?	$do	3,	base_netpage
+	sabr	NET_BASE+RX_BANKS	. keep 60*/18 as a reliable
+					. pointer to transmission buffers
+	la, xi	3*4096
+	lcal	init_pool
+
+	lx	(NET_BASE+RX_BANKS*/12)
+.	sx	tx_buffers
+
+	la, xi	4096
+	lcal	init_pool
+	lret	0
+
+
+minimal_emergency_netbank
+
+	.	can we get 8K then?
+
+	la, xi	4096*2
+	ii	BANK$
+	jza	nowhere_to_go_netbank
+
+	lx	(NET_BASE*/12:s)
+.	sx	rx_buffers
+
+	base_netpage
+	sabr	NET_BASE+RX_BANKS
+
+	la, xi	4096
+	lcal	init_pool
+
+	lx	(NET_BASE+RX_BANKS*/12)
+.	sx	tx_buffers
+
+	la, xi	4096
+	lcal	init_pool
+	lret	0
+
+
+nowhere_to_go_netbank
+
+.	if we couldn't get 8K for network buffers
+.	then we won't start any new tasks either
+
+.	we should maybe set an LED pattern
+.	and exit the IP process
+
+.	otherwise
+.	we could program a flash to say it's always full
+.	and no buffer is ever available in it
+
+	lret	0
+
+	$endif		.	not NET_ADAPTING
+
+net_free
+	lx	rx_buffers
+	j	sell1
+
+net_free_txb
+	lx	tx_buffers
+	j	sell1
+
+	$if	RX_FRAGMENTS
+net_transfer
+.	from q is y
+.	to q is a
+.	strictly from head of fromq
+.	to tail of 2q
+
+	push	a
+
+net_transfer1
+	lcal	readq
+	jza	net_transferx
+	lb	descriptor:dgram, a
+	push	dgram:flags_fragment, b
+	push	y
+	ly	2, sp
+	lcal	q2
+	pop	y
+	pop	a
+	and, xi	IP_MORE
+	jnza	net_transfer1
+
+net_transferx
+	pop	a
+	lret	0
+
+
+net_drop
+.	from queue is	y
+
+	push	x
+
+net_drop1
+	lcal	readq
+	jza	net_dropx
+	lb	descriptor:dgram, a
+	push	dgram:flags_fragment, b
+	push	y
+	lcal	net_free
+	pop	y
+	pop	a
+	and,xi	IP_MORE
+	jnza	net_drop1
+net_dropx
+	pop	x
+	lret	0
+
+	$else		.	RX_FRAGMENTS
+
+net_transfer
+	push	a
+	lcal	readq
+	jza	net_transferx
+	push	y
+	ly	1, sp
+	lcal	q2
+	pop	y
+net_transferx
+	pop	a
+	lret	0
+
+net_drop
+	push	x
+	lcal	readq
+	jza	net_dropx
+	push	y
+	lcal	net_free
+	pop	y
+net_dropx
+	pop	x
+	lret	0
+
+net_free_txdatagram
+	dpush	x
+	lcal	readq
+	jza	net_free_txdatagramx
+	lcal	net_free_txb
+net_free_txdatagramx
+
+	dpop	x
+	lret	0
+
+	$endif		.	not RX_FRAGMENTS
+
+net_pass_xcall
+	lcal	net_transfer
+	fret	0
+
+
+

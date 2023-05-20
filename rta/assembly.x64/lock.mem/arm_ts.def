@@ -1,0 +1,94 @@
+
+.	RTA1 locking is instruction Test_and_Set
+.	which sets a storage location in 1 cycle
+.	and skips 1 instruction if before-state was "free"
+.	the lock is in any system memory data word
+.	you release the lock by writing zero
+.	RTA1 is designed to have no operand cache
+.	at least not per core
+
+.	RTA1 also has a Switch_Interrupt_Mask instruction
+.	to avoid getting thread-switched in possession of a lock
+
+.	-------------------------------------------------------
+
+.	No platform ISR is interested in your lock location
+.	because no platform ISR knows anything about it
+
+.	RTA1 core emulation thread getting interrupted MAY drop platform lock
+.	and thread switch certainly WILL
+
+.	Other RTA1 cores are emulated by other platform threads
+.	and may be already leaning on the lock location
+
+.	if you can bar platform interrupts / platform thread switch
+.	without a lengthy service call
+.	there may be some choice how you hold a location
+.	long enough to set it
+
+.	------------------------------------------------------------
+
+.	on ARM you read data + obtain a sub-architectural lock
+.	which you can lose again if you get interrupted
+.	and another core or another thread has requested read + obtain
+.	on the same location
+
+.	you find out when you write back
+.	because if you lost the lock you didn't write back
+
+.	ARM is RISC
+.	therefore has about 30 instructions to support this idea
+.	and monitors electronically core:lock pairings 
+.	obtaining a lock safely is never less than 7 instructions
+
+	$if	HOLD_EMULATOR_THREAD
+
+	. this path must successfully bar
+	. platform interrupts and thread switch
+	. therefore needs to be an ISR
+	. therefire ends witu eret instead of ret
+
+p	$proc
+LOCK_THREAD* $name
+	cpsid	iaf
+	$end
+
+p	$proc
+FREE_THREAD* $name
+	cpsie	iaf
+	$end
+
+_ts	LOCK_THREAD		. keep this platform thread going
+	ldrexh	r0, [rea]	. read data + raise lock
+	ld	r1, #128	. RTA1 TS locked value
+	and	r0, r1		. data indicates RTA1 locking?
+	bne	_locked		. already locked fall thru
+	strexh	r1, [rea]	. lock in RTA1 terms / free platform lock
+	inc	apc		. skip next RTA1 instruction
+	FREE_THREAD		. allow platform thread interrupt
+	eret
+
+_locked	clrex	[rea]		. free platform lock
+	FREE_THREAD		. allow platform thread interrupt
+	eret
+
+	$else			. platform thread may need to retry lock
+
+	. this path RTA1 TS instruction may get interleaved but still works
+	. latest requestor is 1st served
+
+_ts	ldrexh	r0, [rea]	. read data + raise lock
+	ld	r1, #128	. TS locked value
+	and	r0, r1		. data indicates RTA1 locking?
+	bne	_locked		. already locked fall thru
+	strexh	r1, [rea]	. lock in RTA1 terms / free platform lock
+	cmp	r1, 0		. did we though?
+	bne	ts		. something got in between: start again
+	inc	apc		. skip RTA1 instruction
+	ret
+
+_locked	clrex	[rea]		. free platform lock
+	ret
+
+	$endif
+

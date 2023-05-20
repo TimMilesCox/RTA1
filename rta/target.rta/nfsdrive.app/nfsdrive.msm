@@ -1,0 +1,300 @@
+	
+	$if	PRIVATE_MOUNTS=0
+	$list	0
+	$else
+PLATFORM_NFSD   $equ    $neta(172.29.7.6:2049)		. the emulator platform
+PLATFORM_MOUNTD $equ    $neta(172.29.7.6:1023)
+
+SUSE_NFSD	$equ	$neta(192.168.0.14:2049)	. server enet
+SUSE_MOUNTD	$equ	$neta(192.168.0.14:1023)
+
+SUSE_NFSDW	$equ	$neta(192.168.0.15:2049)	. server wifi
+SUSE_MOUNTDW	$equ	$neta(192.168.0.15:1023)
+
+MACMINI_NFSD	$equ	$neta(192.168.0.10:2049)
+MACMINI_MOUNTD	$equ	$neta(192.168.0.10:1023)
+
+MACWIFI_NFSD	$equ	$neta(192.168.0.11:2049)
+MACWIFI_MOUNTD	$equ	$neta(192.168.0.11:1023)
+
+AIRBOOK_NFSD	$equ	$neta(192.168.0.12:2049)
+AIRBOOK_MOUNTD	$equ	$neta(192.168.0.12:1023)
+	$list	2
+	$endif
+
+$(1:01000/$1)
+cursor		0L
+
+$(3:03000/$3)
+
+BUFFER	$equ	32
+
+handle  -1
+
+		$if	PRIVATE_MOUNTS=0
+		$list	0
+		$else
+
+		$if	PRIVATE_LIST^=0
+private_list	pmount_list	platform	suse	macmini	airbook macwifi
+		$endif
+
+platform	mount_path	PLATFORM_NFSD::mount_platform:""
+mount_platform	mount_path	PLATFORM_MOUNTD:::"/Users/__OWNER/nfsdrive/fsimages"
+
+suse		mount_path	SUSE_NFSD::mount_suse:""
+mount_suse	mount_path	SUSE_MOUNTD:::"/home/laclimpide/online_files/"
+
+suse_ro		mount_path	SUSE_NFSDW::mount_suse_ro:""
+mount_suse_ro	mount_path	SUSE_MOUNTDW:::"/home/laclimpide/lookup_files/"
+
+macmini		mount_path	MACMINI_NFSD::mount_macmini:""
+mount_macmini   mount_path      MACMINI_MOUNTD:::"/Users/__OWNER/nfsdrive/fsimages"
+
+macwifi         mount_path      MACWIFI_NFSD::mount_macwifi:""
+mount_macwifi   mount_path      MACWIFI_MOUNTD:::"/Users/__OWNER/nfsdrive/fsimages"
+
+airbook		mount_path	AIRBOOK_NFSD::mount_airbook:""
+mount_airbook	mount_path	AIRBOOK_MOUNTD:::"/Users/__OWNER/nfsdrive/fsimages"
+		$list	2
+		$endif
+
+command		$res	8
+path		$res	120/3
+host		$res	8
+file		$res	72
+
+
+request $res    72/3
+buffer  $res    BUFFER
+arguments $res	1
+
+$(0)
+
+	$set_option	"c"		. that makes escape sequences easier to read
+					. it means C Language number and string syntax
+
+	$base_d	$zenith(3)-0x003000 1024*2
+
+	c	(seg$load)	0,,xi	(viewfile_data:d),,long
+
+inzel	printf	$3("data command>":0),,xi
+	z	cursor
+	z	cursor+1
+	fgets	request,,i 172 stdin
+	printf	$3("file command: %s":10),,xi request,,xi
+
+	sscanf	request,,xi $3("%s %:@%s"),,xi command,,xi path+6,,xi host,,xi
+	sa	arguments
+	jza	inzel
+
+	lookup	command	;
+		view, xmitfi, @eof, append, @?
+
+@?	prompt	view, xmitfi, @eof, append, @?
+	j	inzel
+
+view	la	arguments
+	aa	-3,,xi			. field @ field acquired?
+	jc	remote_open
+	sscanf	request,,xi $3("%s %s":0),,xi command,,xi path,,xi
+	printf	$3("display %s\n":0),,xi path,,xi
+	j	open_view
+
+remote_open
+	printf	$3("speed dial %s@%s\n":0),,xi	path+6,,xi	host,,xi
+
+
+	$if	(PRIVATE_MOUNTS=0)++(PRIVATE_LIST^=0)
+
+	lcal	host_lookup
+	jna	neverdid
+
+	$else
+
+	lookup,*	host						;
+			platform, suse, suse_ro, macmini, macwifi, airbook
+
+	ql	0, x
+	qs	path
+	dl	4, x
+	ds	path+4
+
+	c	(strlenx) path+6,,xi	. count the filename bytes -> a containing words -> b
+
+	sal	8			. insert name byte count in path preamble header word
+	or	path
+
+	aa	b			. add containing words of name to path structure length
+	sa	path			. update the path preamble
+	$endif
+
+open_view
+	c	(open)	path,,xi	;
+			O_RDONLY,,xi
+
+	sa	handle
+	jna	neverdid
+
+more	c	(read)	handle	buffer,,xi	 BUFFER,,xi
+	jna	didsome
+
+	lx	buffer,,xi		. calculate display limit pointer
+	ax	a			. = &buffer + data words
+	lr	x
+	lx	buffer,,xi
+
+owrite	jxge	ocomplete
+	lcal	writealine
+	j	owrite
+ocomplete
+	
+
+	fgets	request,,i 100 stdin
+	jna	leave_orderly		. if stdin has disconnected just drop out
+	la	request
+	jna	leave_orderly		. CTRL_D detected, treat as EOF
+	sar	16
+	aa	-'.',,xi		. a period means stop
+	jza	inzel
+	aa	'.'-'0'-10,,xi		. a number entered in either decimal or hex
+	jc	more			. means reposition within the target file
+	aa	10,,xi			. leading zero = hex, 1..9 = decimal
+	jnc	more			. anything else means carry on
+
+	sscanf	request,,xi	$3("%li":0),,xi	cursor,,xi	. read 48-bit number
+	c	(lseek)	handle	cursor,,long	SEEK_SET,,xi
+	j	more
+
+didsome	printf	$3("read failed %d\n":0),,xi a
+	j	inzel
+
+neverdid
+	printf	$3("bad open %d\n":0),,xi a
+	j	inzel
+
+@eof
+leave_orderly
+	c	(close)	handle		. terminate process
+	fret	0			. dialogue continues in telnet stub
+					. if stdin socket is still connected
+	$list	0
+
+writeaword
+pointer_x $equf	2, sp
+	lx	pointer_x
+	inc	pointer_x
+	la	0, x
+	inc	cursor+1
+	tnz	cursor+1
+	inc	cursor
+	call	(display_quartets)
+	ds	output
+	c	(write) 1,,xi output,,xi 7,,xi
+	lret	0
+
+writealine
+	$head_near	scalars(caller_x,	int,	x	;
+				caller_r,	int,	r	)
+
+
+	la	cursor
+	call	(display_quartets)
+	ds	output_cursor
+	c	(write) 1,,xi output_cursor,,xi 6,,xi
+	la	cursor+1
+	call	(display_quartets)
+	ds	output_cursor
+	c	(write) 1,,xi output_cursor,,xi 8,,xi
+	la	caller_x
+	ql	0, a
+	lcal	edit6
+	ds	output_text+1
+	dl	6
+	lcal	edit6
+	ds	output_text+3
+	$do	4,	lcal	writeaword
+	c	(write)	1,,xi output_text,,xi 17,,xi
+	c	(fsync)	1,,xi
+
+	pop	r
+	pop	x
+	lret	0
+
+edit1	jna	high		. high bit on, nongraphic
+	mta	(0)		.
+	lret	0		. either of bits 6..5 on, graphic 
+low				. 3 high bits off, nongraphic
+high	dsl	8
+	orB	'.',,xi		. rotate nongraphic substitute in
+	lret	1		. skip rotate after return
+
+edit6	lr	6-1,,xi
+	lk	(0x600000)	. test mask character bits 6..5
+editb	lcal	edit1
+	drl	8		. in graphic range
+	jdr	editb
+	lret	0
+
+$(3)
+output_cursor	"000000: "
+output		"000000 "
+output_text	"  \"___|||___|||\"\n"
+$(0)
+
+	
+	$list	2
+
+$(3)
+write_handle	0
+$(0)
+
+append	printf	$3("speed dial + --> %s@%s\n":0),,xi	path+6,,xi host,,xi
+	lcal	host_lookup
+	c	(open)	path,,xi	O_APPEND++O_OCTET,,xi
+	j	open?
+
+xmitfi
+	printf	$3("speed dial --> %s@%s\n":0),,xi	path+6,,xi host,,xi
+	lcal	host_lookup
+	c	(open)	path,,xi	O_CREAT++O_TRUNC++O_OCTET,,xi
+open?	jna	open_problem
+	sa	write_handle
+
+next_xmit_line
+	printf	$3("data>":0),,xi
+	fgets	buffer,,xi	BUFFER*3,,xi	stdin
+	jza	file_written					. or else a problem
+
+	la	buffer
+	jna	file_written		. EOF transmitted inband
+
+	c	(write)	write_handle	buffer,,xi	b	. if a-> buffer b = bytes
+	jpa	next_xmit_line
+
+	printf	$3("write problem %d":10:0),,xi	a
+	j	file_written
+
+open_problem
+	printf	$3("open problem %d":10:0),,xi	a
+	j	file_written
+
+input_problem
+	printf	$3("input data read problem %d":10:0),,xi	a
+		
+file_written
+	j	inzel
+
+host_lookup
+
+	$if	PRIVATE_LIST
+
+	c	(speed_dial)	host,,long	path,,xi	private_list,,xi
+
+	$else
+
+	c	(speed_dial)	host,,long	path,,xi	. dialplan, no 3rd param
+
+	$endif
+
+	lret	0

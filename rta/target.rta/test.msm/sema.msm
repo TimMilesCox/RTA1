@@ -1,0 +1,129 @@
+	$path		../
+	$include	def/rta.def
+	$include	language/stack.def
+	$include	language/fpxpress.def
+
+
+p	$proc
+i2fp_token*	$name	111
+	$if	p(0, 2)=63
+	la	p(1, 1), p(1, 2)
+	lcal	i2fp	. initial token to result registers
+	$else		. otherwise to another register
+	lc	i2fp_right_side	p(1),,INT	fp$aside($$aside),,xi
+	$endif
+	$end
+
+p	$proc
+di2fp_token*	$name	111
+	$if	p(0, 2)=63
+	dl	p(1, 1), p(1, 2)
+	lcal	di2fp
+	$else
+	lc	di2pf_right_side p(1),,LONG	fp$aside($$aside),,xi
+	$endif
+	$end
+
+p	$proc
+translate_floating_input* $name	111
+	$if	p(1, 2)=63
+	la	p(1, 1), p(1, 2)
+	sa	q
+	call	(fpscan)
+	$else
+	lc	fpscan_right_side	p(1),,INT	fp$aside($$aside),,xi
+	$endif
+	$end
+
+three	$equ	1.875
+
+jings	$equf	buffer,,t3
+crivvens $equf	buffer,,t2
+
+$(3:03000)
+one	1.5
+two	1.75
+first	-84d
+buffer	$res	1
+pointer	$res	1
+
+$(0:64)
+
+	$xqt_fp	two*three+one-first,,di2fp_token*1.009
+	$xqt_fp	jings,,i2fp_token*0.09+crivvens,,i2fp_token
+	$xqt_fp	three*pointer,,translate_floating_input
+	$xqt_fp	-jings,,i2fp_token*6.125
+
+
+.	routines below this line are in library
+.	but reproduced here for illustration
+
+
+i2fp_right_side $tree
+	$head_near	 params(input,		int		;
+				where?,		int	)	;
+			scalars(left_side,	float,	a	)
+
+	la	input
+	lcal	i2fp
+	lx	where?
+	qs	0, x	. park the number where the algorithm expects it
+
+	qpop	a
+	lret	0
+	$root
+
+di2pf_right_side $tree
+	$head_near	 params(input,		long		;
+				where?,		int	)	;
+			scalars(left_side,	float,	a	)
+
+	dl	input
+	lcal	di2fp
+	lx	where?
+	qs	0, x
+	qpop	a
+	lret	0
+	$root
+
+fpscan_right_side $tree
+	$head_near	 params(pointer,	int		;
+				where?,		int	)	;
+			scalars(left_side,	float,	a	)
+
+	lx	pointer
+	sx	q
+	call	(fpscan)
+	lx	where?
+	qs	0, x
+	qpop	a
+	lret	0
+	$root
+
+i2fp	dsa	24
+	sa	6
+	sa	7
+	ab	a
+	lsc	b
+	push	a
+	la	(0400000++24)
+	ana	b
+	pop	b
+	xor	6
+	lret	0
+
+di2fp	dpush	a
+	dsa	48
+	sb	7
+	da	0, sp
+	dlsc	a
+	ds	0, sp
+	la	(0400000++48)
+	ana	6
+	xor	7
+	pop	b
+	pop	6
+	lret	0
+
+
+	$do	$<256,$(0:256)

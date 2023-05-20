@@ -1,0 +1,102 @@
+
+
+f	$func
+PROTO*	$name
+tcp	$equ	6
+udp	$equ	17
+icmp	$equ	1
+	$sterm	'/'
+	$do	f(1, 1:)>2,	$return	0
+	$return	f(1, 1:2)
+	$end
+
+f	$func
+PORT*	$name
+	$sterm	'/'
+	$do	f(1, 1:)>2,	$return	0
+	$return	f(1, 1:1)
+	$end
+
+f	$func
+HOST*	$name
+f	$func
+host*	$name
+	$sterm	'.'
+HOST	$set	0
+?	$do	f(1, 1:),HOST	$set	HOST*/8++f(1, 1:?)
+	$sterm	':'
+	$return	HOST
+	$end
+	$sterm	'/'
+	$return	host(f(1, 1:1))
+	$end
+
+f	$func
+MASK*	$name
+	$sterm	'/'
+MASK	$set	f(1, 1:2)
+	$sterm	':'
+unmask* $set	0FFFFFFFF/*MASK
+netmask* $set	unmask--0FFFFFFFF
+	$do	MASK<0,		$return	0
+	$do	MASK>31,	$return	0
+	$return	MASK
+	$end
+
+p	$proc
+dest*	$name
+
+host	$set	HOST(p(1, 1))
+port	$set	PORT(p(1, 1:2))
+proto	$set	PROTO(p(1, 1:2))
+	$sterm	':'
+mask	$set	MASK(p(1, 1:1))
+								. decision to receive subnet[s] is per
+	$do	__RELOAD,	l	ip_dest			. interface at start of linuxnet / osserv
+__RELOAD* $set	1						. and only applies for net.1s = mask.1s
+	$if	(host^=0)**(mask^=0)**(host**unmask=unmask)	. note it's not like && in c unless you
+								. chain each dependency by reduction
+								. to single-bit True / False
+	and	netmask						. then a test happens in realtime
+								. next test requires reload of net address
+	j	host**netmask,,p(2, 1)				. any subconditions port / protocol
+								. can be added here
+
+	$elseif	(host^=0)**(port=0)				. host [ port protocol ] conditions here
+__RELOAD* $set	0
+	j	host,,p(2, 1)
+						. must be a 1-pass macro to get __RELOAD switch right
+						. so can't reference label next, $+ instead, apologies
+	$elseif	(host^=0)**(port^=0)
+	$do	proto=0,proto $set IPPROTO_TCP	. test for default protocol 
+
+	j	host, $+6			. next clause is reload or drop exit
+						. avoid reloads by placing port / proto filters last
+	l,b	ip_protocol
+	j	proto, $+4			. fall thru to the reload instr if any next test
+	lx,b++qmsl ip_v_hl			. load mask & shift HL quartet
+	l,h++x	dgram+tcp_dest_port		. so [iphl] + dgram offset + 2
+	j	port,,p(2, 1)	
+
+	$elseif	(host^=0)**(port=0)**(proto^=0)
+
+	j	host, $+3			. next clause is reload or drop exit
+						. avoid reloads by placing port / proto filters last
+	l,b	ip_protocol
+	j	proto,,p(2, 1)
+						. fall thru to the reload instr if any next test
+	$elseif	(host=0)**(port^=0)
+	$do	proto=0,proto $set IPPROTO_TCP	. test for default protocol
+	l,b	ip_protocol
+	j	proto, $+4
+	lx,b++qmsl ip_v_hl			. load mask & shift HL quartet
+	l,h++x	dgram+tcp_dest_port		. so [iphl] + dgram offset + 2
+	j	port,,p(2, 1)
+
+	$elseif	(host=0)**(port=0)**(proto^=0)
+	l,b	ip_protocol
+	j	proto,,p(2, 1)
+	$endif
+next
+	$end
+

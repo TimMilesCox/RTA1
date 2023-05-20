@@ -1,0 +1,244 @@
+<div	style="font-size:14pt">
+<h2>Single Instruction Multiple Data</h2>
+<pre>
+	<a style="color:#0000FF"><i>Repeat Execute feature in all RTA1 emulators
+	Stepping 14.02.2022 [ USA 02.14.2023 ]</i></a>
+
+</pre>
+<a href="rta.html#sim_d">Single Instruction Multiple DataPoint</a> is modelled as an instruction repeat paradigm in RTA1
+in order to be available with or without parallel hardware
+
+<p>
+Multiple operation is implemented with Repeat Execute instruction rex.
+See <a href="rta.html#rex">Repeat Execute instruction</a> and <a href="rta.html#sim_d">instruction architecture SIMD</a>
+
+<p>
+RTA1 SIMD uses an array of registers in the internal stack as accumulators
+for floating and integer math, boolean operations and shifts
+<pre>
+										<--------- internal stack root
+						_________________________
+						|	last object	|
+						|			|
+
+
+						|	2nd object	|	
+						|_______________________|
+	_________________			|	1st object	|
+	| dest. cursor	|--------------------->	|_______________________|
+	|_______________|							<--------- internal stack top
+
+</pre>
+Destination cursor is by default initialised to the internal stack top and may instead point to another region of the internal stack
+
+<p>
+At main program level SIMD can use all 104 internal stack registers which would contain 26 floating numbers, 52 long integers or 104 short integers
+
+<p>
+Loop-counting instructions and instructions updating the selection of destination register and source-2 data point are saved
+
+<p>
+Multiple values may remain loaded in internal stack accumularos for successive operations
+
+
+<h2>Loadable Application Group array + 1off</h2>
+<p>
+This loadable suite of two applications demonstrating SIMD can be called from telnet
+
+<p>
+One application is called array and uses standard quadword push instructions to load source-1 operands to the array of destination registers in the internal stack and standard quadword pop instructions top write results to storage
+
+<pre	style="color:#0000FF;font-size:12pt">
+
+	$ <a style="color:#000000">cat array.msm</a>
+	
+		$list		0
+		$path		../
+		$include	def/rta.def
+		$include	def/vector.def
+		$include	language/stack.def
+		$include	stream/stream.def
+		$path
+		$include	./array.def
+		$list
+	
+	$(3:03000/$3)
+	
+	LANES	$equ	5
+	
+	?	$do	LANES,input(?)	1*+?
+	?	$do	LANES,addend(?)	1*?*+0
+	?	$do	LANES,sum(?)	0.0
+	
+		$lit	4
+	
+	$(4:*1/$4)
+	$(0:*1)
+	
+		$base_d	$zenith(3)-003000 1024
+		c	(seg$load)	0,,xi	(array_data:L),,long
+	
+		SIMD_CONTROL	(-1, 4, LANES-1, 4q)	. dest and source-2 both at 4-word intervals here
+		lx	addend(1),,xi			. [source-1 source-2 may be at any intervals]
+	
+	?	$do	LANES,	qpush	input(LANES+1-?) . 5 source-1 values -> 5 dest registers
+		rex	(fa	0, x)			. operate
+	?	$do	LANES,	qpop	sum(?)		. 5 results -> store
+	
+		printf	$3("%f %f %f %f %f":10:0),,xi	sum(1),,float  sum(2),,float  sum(3),,float  sum(4),,float  sum(5),,float
+	
+		fret	0
+	
+	
+	$ <a style="color:#000000">telnet 172.29.7.7</a>
+	Trying 172.29.7.7...
+	Connected to 172.29.7.7.
+	Escape character is '^]'.
+	RTA1 smaragd7 OS shared console
+	<a style="color:#000000">r load /test/array</a>
+	00001d
+	loader: load /test/array
+	
+	[00007e000018:001000003008]
+	000022 
+	+1.100e+1 +1.020e+2 +1.003e+3 +1.000400e+4 +1.000050e+5
+	load><a style="color:#000000">array*1off</a>
+	000022 array
+	+1.222222333333111111222e+1250000
+	+1.222222333333111111223e+1260000
+	+2.444444666666222222444e+1250000
+	load><a style="color:#000000">@eof</a>
+
+</pre>
+The second application 1off demonstrates using the stack top as a <a href="rta.html#A2_2">second set of accumulators</a>
+
+<p>
+1off also does a calculation in regular accumulators [ 4..7 ] then selects a destination inside the internal stack for a third calculation
+
+<p>
+Any registers in the internal stack can be selected for a operation on one or more objects (a VECTOR)  with macro SIMD_TARGET
+
+<p>
+Parameters and dynamic variables are addressable by name as destination registers  
+
+<pre	style="color:#0000FF;font-size:12pt">
+
+	$ <a style="color:#000000">cat 1off.msm</a>
+		$list		0
+		$path		../
+		$include	def/rta.def
+		$include	def/ii.def
+		$include	def/vector.def
+		$include	language/stack.def
+		$include	stream/stream.def
+		$include	lib/ascii.def
+		$include	array.app/array.def
+		$path
+		$list
+	
+	$(3:03000/$3)
+	alongside	3.666666999999333333666e+1200000
+	
+	OUTPUT(2)	$equ	8
+	OUTPUT(3)	$equ	d$save
+	
+		$lit	4
+	
+	$(4:*1/$4)
+	$(0:*1)
+	
+	start	$base_d	$zenith(3)-03000 1024
+		c	(seg$load)	0,,xi	(one_off_data:L),,long
+	
+		lc	summary	alongside,,float
+	
+		printf	$3("%f":LF:"%f":LF:"%f":LF:0),,xi	a,,float OUTPUT(2),,float OUTPUT(3),,float
+		fret	0
+	
+	summary	$head_near	 params(along,	float)					;
+											;
+				scalars(another1,	float,	(2.0),,float		;
+					one_off,	float,	along			)
+	
+		SIMD_CONTROL	(-1, 0, 0, 0q)		. single operation at internal stack top
+							. increment neither cursor
+	
+		rex	(fd	(3.0e-60000))		. divide on stack top [object called one_off]
+	
+		ql	(0.333333333333333333333e50000)
+		fm	along				. multiply in regular accumulators [ 4..7 ]
+	
+		SIMD_TARGET	another1		. 1-object vector  operation inside the internal stack
+		rex	(fm	a)			. multiply next object after stack top
+	
+							. return 3 results in available scalar registers
+		qpop	OUTPUT(2)			. object one_off from internal stack top
+		qpop	OUTPUT(3)			. object another1 next on internal stack
+		lret	0				. regular accumulators [ 4..7 ] also contain a result
+
+</pre>
+
+<h2>Construction Notes Loadable Application Group array + 1off</h2>
+
+Directory contains files make_rel and loadfs
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$ <a style="color:#000000">cat make_rel</a>
+	rels 1off array
+
+	$
+	
+
+	$ <a style="color:#000000">cat loadfs</a>
+	volume embedded
+	file one_off_data 1off_lsegment
+	file array_data array_lsegment
+	tree application_templates
+	link 1off _launch_gate_stack_top G
+	link array _launch_gate_array G
+	.
+	.
+
+	$
+	
+</pre>
+
+Command amake arrays constructs load group arrays. Directory contains linking assembly arrays.msm
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$ <a style="color:#000000">amake arrays</a>
+
+	$ <a style="color:#000000">cat arrays.msm</a>
+		$list		0
+		$path		../
+		$include	def/rta.def
+		$include	def/map1.def
+		$include	language/iframe.def
+		$include	fs/fs24.def
+		$include	image.app/imports.def
+		$path
+		$list
+
+	__BASE	$equ	ARRAY_LOADP
+
+	$(0:0)
+		$application	0:array	0:stack_top
+	stack_top
+		$include,$binary	1off.rel	$(0)
+	array	$include,$binary	array.rel	$(0)
+
+		$do	$<256,$(0:256)
+		$include,$binary	1off.rel	$(4)
+		$include,$binary	array.rel	$(4)
+
+
+</pre>
+
+Inclusion clause in file system construction renames load group arrays as array in directory test (fsimages/baseload)
+<pre	style="font-size:12pt;color:#0000FF">
+
+	file array target.rta/array.app/arrays
+
+</pre>
+</div>

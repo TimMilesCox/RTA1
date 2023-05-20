@@ -1,0 +1,230 @@
+fp_192		$tree
+$(1)
+socket1	+	0
+fp_bound -	1
+portcb_lva	$res 1
+portcb		$res 1
+
+$(0)
+
+
+fp_server	$head_far	scalars(response_axw,	int	;
+					operator,	int	;
+					left,		8	;
+					right,		8	)
+
+	tz	socket1
+	j	fp_rx
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socket1
+	jna	fp_error
+
+	c	(bind) a (FPSERVER_PORT2:d),,long
+
+.	lb, xi	FPSERVER_PORT2
+.	sb	7
+.	z	6
+.	call	(bind)
+
+	sa	fp_bound
+	jna	fp_error
+
+	dl	10
+	ds	portcb_lva
+
+fp_rx	tp	fp_bound
+	j	fp_error
+
+	dl	portcb_lva
+	sabr	BSOCKET
+
+fp_rx1	lb	s:udp:socket_inq.head, b
+	jzb	fp_no_traffic
+
+	$if	1
+
+	sb	fp			. take a copy of the input axw
+	la	43+7+1+2+1,,xi
+	call	(udp_rtxbuffer)
+	jza	fp_release		. can't buffer  a response
+					. so drop the question
+	sa	response_axw
+	la	descriptor:bytes
+	lb	descriptor:apdata
+	call	(rstream_start_net)
+
+	$else
+
+	la	descriptor:bytes, b
+	sa	BYTES
+
+	z	RDATAC
+
+	push	descriptor:apdata, b
+	pop	q
+
+	la, xi	43+7+1+2+1
+	call	(udp_rtxbuffer)
+	jza	fp_release
+
+	ly	descriptor:apdata, a
+	sa	response_axw
+	sy	p
+	z	WDATAC
+	z	WDATA
+
+	$endif
+
+	call	(floating_scan192)
+	qs	left
+	ql	$residue
+	qs	left+4
+
+	call	(symbol_scan)
+	sa	operator
+
+	call	(floating_scan192)
+	qs	right
+	ql	$residue
+	qs	right+4
+
+	lr, xi	0
+	la	LAST_BYTE_READ	.	LAST_BYTE_READ
+	aa, xi	-','
+
+	jnza	fp_again
+	call	(iscan_skip)
+	lb, xi	1		.	nothing scanned
+	ab, xi	-1
+	jnb	fp_again
+	lr	b
+
+fp_again
+	la	operator
+
+	anu, xi	'+'
+	jzb	fp_add
+	anu, xi	'-'
+	jzb	fp_add_negative
+	anu, xi	'*'
+	jzb	fp_multiply
+	anu, xi	'/'
+	jzb	fp_divide
+	j	fp_nop
+
+fp_add
+	ql	left+4
+	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
+fp_add1
+	c	(fp192_add)	right,,i
+
+	on	fp$r		. supernormalise to avoid accumulating rounding bumps
+	fa	$residue
+	off	fp$r
+	jdr	fp_add1
+
+	j	fp_edit
+
+fp_add_negative
+	ql	left+4
+	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
+fp_add_negative1
+	c	(fp192_add_negative)	right,,i
+
+	on	fp$r		. supernormalise to avoid accumulating rounding bumps
+	fa	$residue
+	off	fp$r
+
+	jdr	fp_add_negative1
+
+	j	fp_edit
+
+fp_multiply			. leaving this one how it was. It's just as good as (fp192_multiply)
+	c	(fp192_mfa)	left,,i	right,,i
+	jdr	fp_multiply
+	ql	left+4		. this doesn't have a supernormalise
+	qs	$residue	. if iteratively multiplying change to call (fp192_multiply)
+	ql	left		. and add a supernormalise in the jdr loop
+	j	fp_edit
+
+
+.	the other 3 functions process two 192-bit inputs
+
+.	but 192-bit divide must test 
+.	whether the divisor is represented in 1 or 2 floating numbers
+
+.	a 96-bit number sounds big
+.	but if the divisor exponent is < 0 or > 31 decimal equivalent
+.	then the 2nd divisor floating number is nonzero
+.	for now deliver an indicative result in this case
+.	by rounding both dividend and divisor to 96 bits
+.	(adding their major and minor parts) and delivering a 96-bit quotient
+
+.	if the divisor is only one floating number (minor part is zero)
+.	deliver a 192-bit quotient from a 192-bit dividend 
+
+fp_divide
+	ql	left+4
+	qs	$residue
+	ql	left		. doesn't appear that iscan_skip etc affects $residue 8:9:10:11
+
+fp_divide1
+	c	(fp192_divide)	right,,i
+
+	on	fp$r		. supernormalise 
+	fa	$residue
+	off	fp$r
+	jdr	fp_divide1
+
+	j	fp_edit
+
+fp_nop	j	fp_edit
+	ql	left+4		. no operation
+	qs	$residue	. return scanned number if any
+	ql	left
+
+fp_edit
+	$if	1
+
+	lx	response_axw
+	lx	descriptor:apdata, x
+	call	(wstream_start_net)
+
+	$else
+
+	z	BYTES
+
+	$endif
+
+	ii	FP_XPO$FLAG
+	lcal	fp_reactz
+	
+	call	(floating_edit192)
+
+	la	("":10:0:0)
+	wsr	24
+	
+	lx	response_axw
+	la	BYTES
+	la, i	1, a
+	sa	descriptor:bytes, x
+
+
+	call	(udp_acw_send)
+
+fp_release
+	lx	portcb			. port structure in scalar frame
+	call	(release_udgram)
+	lb	portcb			. port structure in scalar frame
+	j	fp_rx1
+fp_no_traffic
+fp_error
+	lx, i	$$frame, sp
+	sx	sp
+	fret	0
+	$root

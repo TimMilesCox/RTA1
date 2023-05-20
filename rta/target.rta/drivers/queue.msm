@@ -1,0 +1,152 @@
+
+.	descriptors are short-term on two chains
+.	so that TCP segments awaiting ACK
+.	can be on the interface queue and the
+.	connection's ACK wait queue at the same time
+
+.	IP / TCP / UDP uses chain link descriptor:next
+
+.	interface queues use chain link descriptor:ifql
+
+.	ifql is a reuse of descriptor:readpoint which
+.	which points TCP past consumed / duplicate
+.	payload in incoming segments
+
+.	in high-volume space where certain TCP ports
+.	have private buffer pools [HVSOCKET], the buffer
+.	and its descriptor are in the same bank
+
+.	descriptors are located by chain head pointer
+.	or previous descriptor forward pointer
+
+.	during HVSOCKET operations the bank containing
+.	the segment is in address space whenever the socket
+.	is in address space	
+
+.	high-volume private buffer pools are only used
+.	in some TCP traffic which is expected to be of
+.	extreme volume or confidential. The private buffer
+.	arrangement enables millions of transmitted segments
+.	awaiting remote acknowledgement to remain buffered
+
+.	interface device drivers drop transmitted datagrams
+.	from protocols which do not resend
+
+.	TCP flags bit 23 of descriptor:bytes and interface
+.	drivers do not drop those buffers after transmission
+
+.	vector name write_ifq
+
+
+rewindq	ii	YIELD$
+	lret	-2
+
+q2if	push	x
+	tz	this_if:q2		. diversion to trunk handling
+	lx	this_if:q2		. at another logical interface
+
+	LOCK	this_if:lock_cell_q1	rewindq
+
+	tz	this_if:oq:head
+	j	q2ifz
+	sa	this_if:oq:head
+	sa	this_if:oq:tail
+	z	descriptor:ifql, a
+	j	q2ifzx
+
+q2ifz	lb	this_if:oq:tail
+	sa	descriptor:ifql, b
+	sa	this_if:oq:tail
+	z	descriptor:ifql, a
+
+q2ifzx	FREE	this_if:lock_cell_q1
+	pop	x
+	fret	0
+
+					. local call only visible from this page
+					. only drivers call it in IP thread
+					. for physical transmission queued frames
+
+readifq	LOCK	this_if:lock_cell_q1	rewindq
+	la	this_if:oq:head
+readifq2
+	jza	rqifz
+	lb	descriptor:ifql, a
+	sb	this_if:oq:head
+rqifz	FREE	this_if:lock_cell_q1
+	lret	0
+
+	. long address (inter bank) queues
+
+					. local call only visible from this page
+					. only drivers call it in IP thread
+					. for physical transmission queued frames
+
+rqtxL	LOCK	this_if:lock_cell_q2	rewindq
+	dl	this_if:oq2:head
+	jza	rqtxL_z
+	sabr	BSOCKET			. base containing memory
+	dpush	descriptor:sobdi, b
+	dpop	this_if:oq2:head
+	z	descriptor:sobdi, b	. prevent delayed wrong updates along chain
+	la	b			. return containing pointer
+rqtxL_z	FREE	this_if:lock_cell_q2
+	lret	0			. called from this iframe = drivers
+
+q2txL_head
+	push	x
+	tz	this_if:q2
+	lx	this_if:q2
+
+	LOCK	this_if:lock_cell_q2	rewindq
+
+					. socket memory is based
+	dpush	this_if:oq2:head	. and stays based
+	lb	a
+	on	see$1
+	la	ABT+BSOCKET
+	off	see$1
+	tnz	0, sp			. anything already on this queue?
+	ds	this_if:oq2:tail	. if not the new object is head + tail
+	ds	this_if:oq2:head	. new becomes 1st
+	dpop	descriptor:sobdi, b	. 1st becomes 2nd if any
+
+	FREE	this_if:lock_cell_q2
+
+	pop	x			. I / F pointer at call
+	fret	0			. called from protocol iframe
+
+q2txL_tail
+	push	x
+	tz	this_if:q2
+	lx	this_if:q2
+
+	LOCK	this_if:lock_cell_q2	rewindq
+
+	lb	a
+	on	see$1
+	la	ABT+BSOCKET
+	off	see$1
+	z	descriptor:sobdi, b
+	z	descriptor:ifql, b	. always up to here
+	
+	tz	this_if:oq2:head:bx
+	j	q2txL_catenate
+	ds	this_if:oq2:head	. 1st on queue
+	j	q2txL_final		. and last
+	
+q2txL_catenate
+	dpush	a			. 2 copies of long pointer
+	dpush	a			. connections_block:connection
+	dl	this_if:oq2:tail
+	sabr	BSOCKET			. memory index heretofore last on chain
+	dpop	descriptor:sobdi, b	. 1st copy previous last -> last 
+	dpop	a			. 2nd copy to write to queue tail
+	sabr	BSOCKET			. caller certainly needs that restored
+
+q2txL_final
+	ds	this_if:oq2:tail	. always from here
+
+	FREE	this_if:lock_cell_q2
+	pop	x			. I / F pointer at call
+	fret	0			. called from protocol iframe

@@ -1,0 +1,60 @@
+
+
+$(1)
+
+tco_total_o	mobjet	0	9	SNMP_GAUGE.6	6	;
+			1	0	0	tco_total_i
+
+
+tco_total_i	0L
+
+$(0)
+
+tcpagent_established $tree
+
+	on	see$1
+	push	ABT+BSOCKET
+	off	see$1				. save socket page
+
+	lcal	accumulate
+	ds	tco_total_i
+
+	pop	a
+	sabr	BSOCKET				. rebase socket page
+
+	la	0,,xi
+	lb	tco_total_o,,xi
+	fret	0
+
+accumulate
+	z	7
+	z	6
+	la	tcx_v4(1)
+	lx	(BSOCKET*/18++028:s)		. 1st table starts @ + 40
+
+nextp	sabr	BSOCKET
+	lr	*(BSOCKET*/18++tlist:top:s)	. all tables end where they end
+
+nextc	jxge	along				. possibly before they start
+
+	la	transmission:state
+	aa	-TCP_ESTABLISHED,,xi
+	jza	upcount
+	aa	-TCP_CLOSEWAIT,,xi
+	jnza	next
+
+upcount	lb	1,,xi				. 000000 000001 -> [ a b ]
+	da	6
+	ds	6
+
+next	ax	24,,xi				. next connection
+	j	nextc
+
+along	la	*(BSOCKET*/18++tlist:link:s)	. next table
+	lx	(BSOCKET*/18++040:s)	. tables after 1st start @ + 64
+	jnza	nextp
+
+	dl	6
+	lret	0
+
+	$root

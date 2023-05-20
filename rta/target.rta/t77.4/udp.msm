@@ -1,0 +1,797 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+$(71::,sp)
+uugram udgram
+
+$(66::,b)
+s	$socket
+
+$(1)
+udpq	dq
+udp_nosocket_rxgrams	0		. value for controlling proliferation of DU ports
+
+udp_ldgram_noport +	icmp_du_port	. default vector of RX large segment no port bound:
+					. DU[PORT] without preliminary checksum. Avoids
+					. expensive input-completion / buffering / repooling
+
+					. can be changed administratively to silent drop
+					. or even to full checksum to choose whether
+					. DU + drop or silent drop
+$(0)
+udp4	lk	(00FFFF)
+	ly, xi	udpq
+udp_next
+	la	udpq.head
+	jza	udp4_x
+	sa	fp
+
+	$if	IPV4_OVERHAUL
+	dl	descriptor:sobdi
+	sabr	BSOCKET
+	$else	. IPV4_OVERHAUL
+	$endif	. IPV4_OVERHAUL
+
+	la	s:socket_address+1, b
+	and	(65535)			. socket still bound since since datagram arrived?
+	jza	udp_socket_closed
+
+	la	descriptor:uproto
+	aa	4,,xi
+	sa	descriptor:apdata
+
+	lx	b			. queueing uses TS cell in socket structure
+	lcal	udp_write_rxq
+	j	udp_next
+
+udp_socket_closed
+	lcal	icmp_nosocket
+
+	lcal	net_drop
+	j	udp_next
+
+udp4_x
+	lret	0
+
+
+.	this is the direct feed to udpq from interfaces which have
+.	fixed dual-ported buffering. Interfaces with a direct access
+.	to system memory would not have this packet copy
+
+.	The packet copy is used as an occasion to checksum
+
+.	The packet copy places the packets in rx_buffer with
+.	T77 descriptors which are called ACWs
+
+.	This routine cannot be called for fragmented datagrams
+.	because it is instant from frame readout to UDP checksum
+.	generation
+
+.	this is an upward call from ipv4_rx
+
+
+	$if	IPV4_OVERHAUL
+udp_rxq					. TP_HEADER is in x
+	MIB_ICOUNT48	udpInDatagrams:i
+
+	la	dgram:bytes
+	lk	uugram:checksum, x
+	z	uugram:checksum, x
+
+	lb	uugram:udgraml, x
+	ab	-8,,xi
+	jnc	ipv4_drop
+
+	lb	HEADER_LONGWORDS
+	sbl	2
+	ab	uugram:udgraml, x
+	ana	b
+	jnc	ipv4_drop
+
+	la	dgram:bytes
+	anu	IPV4_OVERHAUL,,xi
+	jza	udp_exact
+	jc	udp_rxqlong
+
+udp_exact
+	tnz	k				. rx without checksum?	
+	j	udp_socket?			. skip checksum
+	lcal	check_part1s
+	lcal	check_complete
+	jnzb	$+2
+	lb	(00FFFF)
+	xorB	k
+	jnzb	ipv4_rxz
+
+udp_socket?
+	la	uugram:destp, x
+	lcal	udp_socket
+	jza	icmp_du_port			. socket structure not stored
+	ds	SOCKET_LPOINTER
+
+	la	s:socket_address+1, b
+	and	(65535)
+	jza	icmp_du_port			. socket not bound
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz
+
+	lx	descriptor:dgram
+	lb	dgram:bytes			. calculate 8-byte blocks to store
+	ab	-1,,xi
+	jnc	ipv4_drop
+	sbr	3
+	lr	b
+
+udp_iquick
+	qpop	0, x
+	ax	4,,xi
+	jdr	udp_iquick
+
+udp_rxqthru
+	la	descriptor:uproto
+	la	uugram:udgraml, a
+	aa	-8,,xi				. application data byte count
+	sa	descriptor:bytes
+	dl	SOCKET_LPOINTER
+	ds	descriptor:sobdi
+	ly	udpq,,xi			. don't queue to the socket here
+	la	fp				. because that involves TS arbitration
+	lcal	q2				. so let the other half of UDP do that
+	j	ipv4_rxz			. and clear the interface frame now
+
+udp_rxqlong
+	tnz	k
+	j	udp_uportbound?
+	lcal	check_part1
+
+udp_uportbound?
+	la	uugram:destp, x
+	lcal	udp_socket
+	jza	*udp_ldgram_noport		. drop large ugrams to no port
+	ds	SOCKET_LPOINTER			. without checking sum
+	la	s:socket_address+1, b
+	and	(65535)				. silently or not
+	jza	icmp_du_port			. according to nuisance levels
+
+	la	dgram:bytes
+	lx	rx_buffers
+	lcal	ibuffer
+	jza	ipv4_rxz 
+
+	lx	descriptor:dgram
+	la	dgram:bytes
+
+?	$do	IPV4_OVERHAUL/8,	qpop	?*4-4, x
+
+	aa	-IPV4_OVERHAUL,,xi
+
+	ax	IPV4_OVERHAUL/2,,xi
+	ay	IPV4_OVERHAUL/2,,xi
+
+	tz	k
+	j	udp_store	
+
+udp_qup	lcal	rx_nocheck
+	j	udp_rxqthru
+
+udp_store
+	lcal	rx_payload
+	jnzb	$+2
+	lb	(65535)
+	xorB	k
+	jzb	udp_rxqthru
+	j	ipv4_drop
+
+	$else	. IPV4_OVERHAUL
+	
+	$endif	. IPV4_OVERHAUL
+
+.	this is the feed to udpq for reassembled datagrams
+.	which are already in a chain of rx_buffer with ACW
+.	descriptors
+
+.	each fragment has the checksum addition of its data
+.	in the ACW, to exploit the chance of checksum
+.	generation during copy to rx_buffer
+
+.	it has been second-guessed in all cases that checksum
+.	is specified in the UDP header (the UDP header may not
+.	be the first fragment of the datagram to arrive).
+
+.	also, it is unlikely that UDP payload large enough
+.	to need reassembly would be exempt from checksum
+
+.	no-checksum is usually a feature of high-speed
+.	media traffic which is transmitted in much smaller
+.	packets than any MTU
+
+.	large reassembly is more likely to be traffic like
+.	NFS in 8KByte slabs (or 3KByte slabs where RTA is the
+.	NFS client). Checksum would certainly apply
+
+.	So all the data arriving here has been end-around
+.	added and the positive sum left in the ACW
+
+.	if the UDP header has a nonzero checksum, the data sums
+.	are now summed with network address, protocol index
+.	and user datagram length, then inverted and if finally
+.	zero inverted again. Then compared.
+
+	$if	RX_FRAGMENTS
+udp_rx_rasm
+	lx	descriptor:uproto
+	la	uugram:checksum, x
+	jza	udp_rx_rasm_nocheck
+	push	a
+	z	uugram:checksum, x
+	lcal	rasm77_gcheck
+	tnz	b		. because zero isn't
+	xorB,xi	-1		. a UDP checksum
+	xorB	0, sp
+	pop	uugram:checksum, x
+	la	fp
+	jnzb	net_free_chain
+udp_rx_rasm_nocheck
+	la	fp
+	lx, xi	udpq	
+	j	net_add_chain
+	$endif
+
+
+udp_buy_txaw
+	lb, xi	04500		. no option bytes, TOS default 0
+
+udp_buy_txaw_optional
+	push	a
+	aa, xi	8		. UDP header length
+	lcal	ip_buy_datagram
+	pop	b
+	jza	udp_txbx
+	sb	descriptor:bytes, a
+	lx	TX_DATAGRAM
+	lb, xi	IP_DEFAULT_TTL++IPPROTO_UDP
+	sb	dgram:ttl_protocol, x
+	lx	TP_HEADER
+	lx, i	8/2, x
+	sx	descriptor:apdata, a
+udp_txbx
+	fret	0
+				. this is a far call because
+				. socket users may call it
+
+				. unlike the similar calls
+				. in icmp and tcp which are
+				. not application visible
+
+
+
+. far calls
+
+.	udp_acw_send
+.	udp_acw_send_nocheck
+
+. get to here
+
+. udp_txaw
+. udp_txaw_nocheck
+
+. low level call with the acw adress in X
+
+. both ports must be in the UDP header
+. both adresses must be in the address buffer
+
+. if there is no come-from address in the address buffer
+. the thing cannot now be checksummed and an earlier
+. call should have done the internal routing step to
+. find the sending interface and its default network
+. address
+
+. so in that case an error gets returned as described
+. in the rest of this discussion
+
+. it's the interface number that is important in
+. finding a local address for the datagram and
+. for the checksum
+
+. it's also optimal if the interface index is already
+. in the descriptor
+
+. we have the local address and the interface number
+. already when we just bounce back reversing the
+. incoming addresses as a server with the calls to
+
+. 	udp_rtxbuffer->udp_response_buffer
+
+. and after message construction, to here:
+
+.	udp_acw_send->udp_txaw
+
+. some implementations suggest you do a connect
+. which makes a routing call to IP and plugs the
+. default network address of the interface back
+. into the socket
+
+. having a from address in the socket is
+. usable when you are making the conventional
+. calls send and sendto
+
+. the connect idea is nice for send but not
+. for sendto which is meant for random desinations
+. reached over various interfaces
+
+. it's also not right that an application should
+. need to pick a local network address before
+. binding a UDP socket. The application and its
+. developer cannot know that unless the
+. application is for one host with one interface
+
+. since this is the final path step of all the
+. possible interface calls to send UDP
+
+. and the step where checksum is done if opted
+. and the come-from address therefore needed
+
+. we'll do the following here
+
+. we'll return with an error code if there is
+. no source address, because
+
+. if you got here with the primitive
+
+.	udp_acw_send
+
+. then it was up to you to copy the address
+. information into the buffers. At this
+. point it's no longer certain that the
+. socket/port structure is based. That's
+. not even in the parameters to this call
+. and it's intended that the caller decides
+. what at this point is based in socket
+. space
+
+. so we'll send back an error
+
+. if you obtained the buffer with
+
+.	udp_rtxbuffer
+
+. then that DID set the addresses up for you
+
+. if you came from send, send had access
+. to your socket and copied the addresses
+. in there
+
+. if you then get to here with no come-from
+. address you hadn't done the connect call
+. which writes both to and from addresses
+. to the socket. So the same error return
+. is appropriate, we'll call it something
+. like
+
+. UDP_NOSOURCENET	$equ	-5
+
+. if you got here from sendto, that makes
+. the same internal routing call as connect
+. for every datagram
+. but writes what it finds to the datagram
+. address buffer and not to the socket
+
+. recvfrom can cheekily write all the
+. incoming addressing to the socket
+
+. then sendto can skip the internal routing
+. step if the socket has a source address
+. and the destinaton address stored on the
+. socket is the sendto parameter address
+
+. send can just send on the recvfrom
+. addresses as if it had connected
+
+. since the routing call finds the next hop
+. as well as the interface, that information
+. stays in the address buffer of the datagram
+. and IP routing will not need to find the
+. next hop again for this one datagram
+
+. for connect/send the next-hop isn't saved,
+. because it might change. But the interface
+. is saved
+
+
+
+udp_txaw
+	ly	descriptor:dgram, x
+	ql	dgram:ipsource, y
+	jdz	udp_nosource
+	da	6			. destination network
+	ds	8
+	sy	11			. IP datagram pointer
+	ly	descriptor:uproto, x
+	la	descriptor:bytes, x
+
+	lb	a			. payload length no flag for checksum algo
+	andB	(07FFFFF)
+	lr	b
+
+	la	8, a, i			. add UDP header length to payload length
+	sa	descriptor:bytes, x	. byte count -> descriptor
+	and	(07FFFFF)		. remove keep flag if any
+	sa	uugram:udgraml, y	. length -> user datagram header
+
+.	sa	descriptor:bytes, x	. byte count to... aintcha jerst done that?
+					. dont do it again with the sticky bit switched off
+
+	sy	10			. uugram pointer
+	lb, xi	IPPROTO_UDP
+	ab	a			. length counts twice, of itself and as a header word
+	da	0, y			. ports from to
+	da	8
+	lcal	udp_check_payload_tx
+	lb	10
+	sa	uugram:checksum, b
+	ly	11
+
+	j	udp_ip_send
+
+udp_txaw_nocheck
+	ly	descriptor:dgram, x
+	ql	dgram:ipsource, y
+	jdz	udp_nosource
+	lb	descriptor:uproto, x
+	la	descriptor:bytes, x
+	la	8, a, 1			. add udp header length
+	sa	descriptor:bytes, x
+	and	(07FFFFF)		. unlikely you want a sticky bit
+					. on a datagram you didn't want checked
+					. but no harm making sure
+	sa	uugram:udgraml, b
+	z	uugram:checksum, b
+
+udp_ip_send
+	MIB_ICOUNT48	udpOutDatagrams:i
+
+	j	ip_send			. hand IP the datagram address in Y
+
+udp_nosource
+	la, xi	-UDP_NOSOURCENET
+	fret	0
+
+
+					. vector udp_rtxbuffer gets here
+udp_response_buffer			. ultra primitive call interface
+					. the input axw is in B
+					. the buffer byte size request
+					. is in A
+
+					. socket option DNF is in K
+
+	push	b			. you need that back after
+	call	(udp_txbuffer)		. the buffer request
+	pop	x
+	jza	udp_noresponseb
+					. the new buffer descriptor
+					. is in A
+					. the application buffer
+					. pointer is in B
+	ly	axw:uproto, x
+	dpush	uugram:sourcep, y
+	ly	axw:uproto, a
+	pop	uugram:destp, y
+	pop	uugram:sourcep, y
+
+	ly	axw:dgram, x
+	dpush	dgram:ipsource, y
+	dpush	dgram:ipdest, y
+	ly	axw:dgram, a
+	qpop	dgram:ipsource, y
+
+.	push	axw:i_f, x
+.	pop	axw:i_f, a
+
+udp_noresponseb
+	fret	0
+
+check8in* $proc
+	qpush	?*4-4, y
+	da	0, sp
+	da	2, sp
+	qpop	?*4-4, x
+	$end
+
+HEADER_SUM $equ	6
+
+tx_payload
+rx_payload
+	dsr	6
+	lr	a
+	dsl	3
+	and, xi	7
+	dpush	a
+	dl	HEADER_SUM
+	j	rxcheck64?
+rxcheck64!
+?	$do	8,	check8in
+	ax, xi	32
+	ay, xi	32
+	aa	b
+	dsr	16
+	sbr	8
+rxcheck64?
+	jdr	rxcheck64!
+	pop	r
+	j	rxcheck8?
+rxcheck8!
+	qpush	0, y
+	da	0, sp
+	da	2, sp
+	qpop	0, x
+	ax, xi	4
+	ay, xi	4
+rxcheck8?
+	jdr	rxcheck8!
+
+	slc	0, sp
+	jnc	rnowordpair
+	dpush	0, y
+	da	0, sp
+
+	dpop	0, x
+	ax	2,,xi
+	ay	2,,xi
+
+rnowordpair
+	ds	6
+	pop	a		. that should leave a return address
+				. next on the stack
+	dsr	24+22		. any 1, 2 or 3 bytes ?
+
+	jzb	rnolastbytes
+	lr	(0, 32, 16, 8q), b
+	dl	0, y
+	dsr	*r
+	dsl	*r
+	ds	0, x
+rnolastbytes
+	da	6
+	ds	6
+	lcal	check_complete
+
+	la	b
+
+	lret	0
+
+udp_tx_payload
+udp_rx_payload
+	lcal	tx_payload
+	jnza	$+2
+	xor	(00FFFF)
+	lret	0
+
+in8nocheck* $proc
+	qpush	?*4-4, y
+	qpop	?*4-4, x
+	$end
+
+tx_nocheck
+rx_nocheck
+	dsr	6
+	lr	a	
+	dsl	3
+	and, xi	7
+	j	rx64?
+rx64!
+?	$do	8,	in8nocheck
+	ax, xi	32
+	ay, xi	32
+rx64?	jdr	rx64!
+	lr	a
+	j	rx8?
+rx8!	qpush	0, y
+	qpop	0, x
+	ax, xi	4
+	ay, xi	4
+rx8?	jdr	rx8!
+	dsl	2
+	and, xi	3
+	lr	a
+	j	rx2?
+rx2!	push	0, y
+	pop	0, x
+	ax, xi	1
+	ay, xi	1
+rx2?	jdr	rx2!
+	jpb	rxnocheckZ
+	la	0, y
+	and	(00FF00)
+	sa	0, x
+rxnocheckZ
+	lret	0
+
+
+check_payload_tx
+	ly	descriptor:apdata, x
+check_payload
+	ds	8
+
+	la	r
+	dsr	6
+	lr	a
+	la, xi	0
+	dsl	4
+	dpush	a
+
+	dl	8
+	j	txsum64?	. sum any blocks of 64 bytes
+
+txsum64!
+?	$do	16,	;
+	da	?*2-2, y
+
+	ay, xi	32
+	aa	b		. fold the sum down
+	dsr	16		. otherwise overflow becomes
+	sbr	8		. possible after about 1K bytes
+
+txsum64?
+	jdr	txsum64!
+
+	pop	r
+	j	txsum4?		. sum any blocks of 4 bytes
+txsum4!
+	da	0, y
+	ay, xi	2
+txsum4?
+	jdr	txsum4!
+
+	aa	b
+	pop	b
+
+	jpb	txsum1?
+	aa	0, y		. sum a remaining byte pair
+	ay, xi	1
+txsum1?
+	rbl	1
+	jpb	txsumz
+	lb	0, y		. sum a remaining byte
+	andB	(00FF00)
+txsumx
+	aa	b
+txsumz
+	dsr	16
+	sbr	8
+	jnza	txsumx
+	la	b
+	lret	0
+
+udp_check_payload_tx
+	lcal	check_payload_tx
+	xor	(00FFFF)
+	jza	$-1
+	lret	0
+
+
+.	atomic reads and writes of buffer queues shared between the IP task
+.	and socket users
+
+.	the lock cells are in the socket structures, because not all queues need them
+
+.	some socket users are application protocols in the IP task and some are
+.	different tasks
+
+.	udp_write_rxq is called from udp in the IP task
+.	the socket structure is in x
+
+udp_write_rxq
+
+	LOCK	s:udp:tsq, x
+	la, i	s:udp:socket_inq, x
+	lcal	net_transfer
+	FREE	s:udp:tsq, x
+	lret	0
+
+
+.	udp_read_rxq is called by the socket user which may be a server protocol
+.	in the IP task or it may be another task
+
+.	again, the socket structure pointer is in x
+
+udp_read_rxq
+	push,xi	NETMASK_ABSOLUTE
+	sim	0, sp
+	ts	s:udp:tsq, x
+	j	$-1
+	ly, i	s:udp:socket_inq, x
+	lcal	readq
+	z	s:udp:tsq, x
+	sim	0, sp
+	inc	sp
+	lret	0
+
+
+.	it's been decided that
+
+
+.	inward traffic will always be in rx_buffers
+.	traffic on loopback will just be copied
+
+udp_drop_dgram
+	$if	RX_FRAGMENTS
+	LOCK	s:udp:tsq, x
+	ly, i	s:udp:socket_inq, x
+	lcal	net_drop
+	FREE	s:udp:tsq, x
+	fret	0
+	$else
+	lcal	udp_read_rxq
+	lcal	net_free
+	fret	0
+	$endif
+
+udp_socket
+	$if	1
+
+	push	x
+	lx	usockb(1),,xi
+	lcal	protocol_socket
+	pop	x
+
+	$else
+
+        lb, i   BSOCKET*/9      .       | 000 000 000 101 111 000 000 000 |
+        dsr     9               .       | sss sss sss 000 000 000 101 111 |
+        and, xi 127
+        aa, xi  usockb(1)
+        la      0, a
+	rbr	12
+	
+	$endif
+
+        jza     udp_socketx
+        sabr    BSOCKET
+
+.	la      s:socket_address+1, b	. socket storage page is there
+.	and     (65535)			. is it bound? Let the caller ask
+udp_socketx
+	lret	0
+
+

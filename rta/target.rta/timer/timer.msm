@@ -1,0 +1,100 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+.	this is
+
+.		timer/timer.msm
+.		in restarts page because none of it is service calls
+
+PER_SECOND	$equ	1000000000	. just for now the incrementer
+					. is in nanoseconds indeed
+
+i_timer				. incrementer overflow
+				. when an incrementer is added to hardware
+				. update the dayclock in interrupt registers
+				. DAYCLOCK$U DAYCLOCK
+				. and multicast the new millisecond time
+				. with an out to the I/O port that does that
+
+	dpush	a_x		. may be a nested interrupt
+	push	k_x		. and if not application are untouched
+
+	$if	1		. updated ms time already delivered
+				. as in emulations
+	dl	DAYCLOCK$U
+	on	see$3
+	ds	new_dayclock
+
+	$else			. something like this
+				. if really maintaining MS time
+				. from an incrementer
+
+	dl	DAYCLOCK$U
+	da	(1d)
+	ds	DAYCLOCK$U
+	on	see$3		. kernel memory
+	ds	new_dayclock
+	dl	(-PER_SECOND/1000, -1d)
+	outA	INC$START
+
+	$endif
+				. the rest is the same. broadcast it
+
+	inB	CORE_SOCKET$
+	la	-2,,xi
+	ral	0, b		. broadcast everyone but me
+	lk	a_x
+	la	DAYCLOCK_MCAST$,,xi
+	outA	MCAST_TO$
+
+	pop	k_x
+	dpop	a_x
+	ir	0
+
+	$if	0		. this is inline in attention broacase ISR
+
+dayclock_update
+	on	see$3
+	dl	new_dayclock	. receive the new time from multicast
+	ds	DAYCLOCK$U
+
+	lret	0
+
+	$endif

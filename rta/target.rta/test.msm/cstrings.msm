@@ -1,0 +1,136 @@
+	$path		../
+	$list		0
+	$include	def/rta.def
+	$include	language/stack.def
+	$list
+	$path
+
+	$include	libparam.def
+
+$(0::STRINGSLIB)
+strcmp*	$vector	scmp
+memcmp*	$vector	mcmp
+
+$(0:64)
+scmp	$tree
+	$head_far	 params(to,	long	;
+				from,	long)
+	LIBPARAM_ISTREAM	to
+	ex			$start_string1, b
+	LIBPARAM_ISTREAM2	from
+
+	lb	0, x
+	ax	1,,xi
+	ly	$position, b
+	rbl	0, y
+
+	on	b$streamZR	. for quick detection of zero byte
+
+loop	rsr	$byte
+	jza	last_compare
+
+	ex	align_s2, y
+	ay	$byte,,xi
+
+	ana	b
+	sal	$word-$byte
+	jnza	complete
+	j	loop
+
+last_compare
+	ex	align_s2, y
+	ay	$byte,,xi
+	ana	b
+	sal	$word-$byte
+	
+complete
+	saa	$word-$byte
+	$ret
+	$root
+
+mcmp	$tree
+	$head_far	 params(to,	long	;
+				from,	long	;
+				bytes,	int)
+	LIBPARAM_ISTREAM	to
+	ex			$start_string1, b
+	LIBPARAM_ISTREAM2	from
+	lr			bytes
+
+	ly	$position, b
+	lb	0, x
+	ax	1,,xi
+	rbl	0, y
+
+	j	byte?
+
+byte!	rsr	$byte
+	ex	align_s2, y
+	ay	$byte,,xi
+	sal	$word-$byte
+	jnza	complete
+byte?	jdr	byte!
+complete
+	saa	$word-$byte
+	$ret
+	$root
+
+"$write_string_thru"	. only call this if WDATAC is nonzero
+			. after string write
+			. ie	tz	WDATAC
+			.	lcal	$write_string_thru
+	la	WDATA
+	lb	*p
+	drl	*WDATAC
+	rbr	*WDATAC
+	sb	*p
+	lret	0
+
+	$do	$<256,$(0:256)
+
+chain_symbol* $proc
+	$if	?>$word-$byte
+	lcal	slew2
+	$else
+	lcal	clew
+	$endif
+	$end
+
+align_s2
+	$do	$word-$byte+1,	rbl	$byte
+	$do	$byte-1,	lcal	slew
+	lcal	new
+?	$do	$byte-1,	chain_symbol
+
+new	lcal	$+1
+	lb	0, x
+	ax	1,,xi
+	ly	0,,xi
+	ral	$byte
+	lret	0
+
+clew	lb	6
+	rbl	$byte
+	ly	0,,xi
+	lret	0
+
+	$if	$byte>$word/2+1
+slew2	lb	6
+	ay	-24,,xi
+	$endif
+
+slew	push	a
+	sbr	0, y
+	la	0, x
+	drl	$byte, y
+	sb	6
+	sa	b
+	pop	a
+	lret	0
+
+"$position"
+?	$do	$word/$byte,	+	?*$byte-$byte
+
+"$start_string1"
+?	$do	$word/$byte,	rsr	?*$byte-$byte
+

@@ -1,0 +1,72 @@
+
+	$if	IPV4_FRAGMENTED_DGRAMS
+
+.	this routine holds a small number of datagrams at one time
+.	for reassembly
+
+.	its criterion is how many datagrams are reassembling
+.	not how many fragments are held
+
+.	the number of datagrams buffered for reassembly is restricted
+
+.	timeout restarts for all the fragments of a datagram
+.	if a fragment is accepted
+
+.	the fragment is not buffered on call
+.	the IP header is in the stack top
+
+.	call is j instruction, not lc macro or even lcal instruction
+.	return is to ipv4_rxz
+.	this routine either wants it, buffers it
+.	and eventually queues it upwards
+.	or times out all the pieces at once
+.	or doesn't want it
+
+.	the 2-word descriptors are chain head and MS timeout
+
+ipv4_fragment $tree
+	lb	dgram:ttl_proto
+	andB	255,,xi			. isolate the protocol field
+	ab	-IPPROTO_TCP,,xi	
+	jza	protocol_ok
+	ab	IPPROTO_TCP-IPPROTO_UDP,,xi
+	jnzb	ipv4_rxz		. fragmented ICMP doesn't make it
+protocol_ok
+	lb	dgram:id
+	ds	FLAGS_FRAGMENT		. = 8:9 a already has flags, fragment
+
+	dl	dgram:ipsource		. cache the netwide identity
+	ds	10			. = source + id 
+
+	lr	IPV4_FRAGMENTED_DGRAMS-1,,xi
+	ly	fragmented_dgram(1),,xi
+	z	7			. index of unused slot
+
+search	tz	0, y			. lookaside
+	j	search_test		. slot is populated: for this datagram?
+	sy	7			. slot is available for new use
+search_on
+	ay	2,,xi
+	jdr	search
+	tz	7			. slot available for new datagram?
+	j	search_insert
+	j	ipv4_rxz
+
+search_insert
+search_test
+	j	ipv4_rxz
+
+.	this routine is called routinely and does return via the internal stack
+.	as subroutines mostly do
+
+timeouts
+	lret
+
+$(1)
+?	$do	IPV4_FRAGMENTED_DGRAMS,fragmented_dgram(?)	0:d
+$(0)
+
+
+	$root
+
+	$endif

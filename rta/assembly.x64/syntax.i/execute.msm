@@ -1,0 +1,193 @@
+;	include	rta_x86.h
+.model	small
+.code
+;	_execute:
+;        mov     dword ptr [__register+287*4], esp
+
+__ea:	mov	ecx, eax
+	shl	ecx, 8
+	shr	ecx, 24-5		; instruction index in ch
+	shr	cl, 5			; operand designator in cl
+
+	shl	eax, 16
+	cmp	cl, XI			; sign extended immediate?
+	jnz	derive_ea
+
+	sar	eax, 8			; different from other EAs
+	shr	eax, 8
+	jmp	ea_derived
+
+derive_ea:
+	shr	eax, 16			; no sign of it
+	and	ax, ax			; indexing / indirection ?
+	jns	ea_derived		; no
+
+	mov	ebx, eax
+	and	ah, 127			; ie: and ax 32767
+	shr	bx, 12			; position index tag
+	test	bl, 6			; indirect or indexed ?
+	jz	indirect
+					; pe = PF set
+					; can only be tested on b7..0
+	jpe	indexed_4bit		; indexed fp / sp
+					; indexed x / y / a / b
+	and	bl, 7			; zero bit 3
+
+indexed_4bit:
+	and	ax, 4095		; isolate address offset
+	add	eax, dword ptr [ebp+ebx*4]
+
+	shl	eax, 8			; truncate any overflow
+	shr	eax, 8
+
+	jmp	ea_derived
+
+indirect:				; indirect via page B0 / B1
+	mov	bx, cx
+	xor	cx, cx			; cl <- zero to read 1-word indirection pointer
+	call	_operand_read
+	mov	cx, bx			; retrieve instruction:class into cx
+
+ea_derived:
+	ret
+
+_execute:
+	mov	dword ptr [__register+287*4], esp
+	call	__ea
+
+	movzx	ebx, ch			; instruction index
+	cmp	cl, 6
+	jz	joshi
+	cmp	cl, 7			; 2 quick questions about instruction class
+	jnz	integer_operations
+	jmp	large_operations
+
+escape:	ret
+
+joshi:	jmp	shifts_jumps
+
+integer_operations:
+	mov	ebx, dword ptr [operations1+ebx*4]
+	jmp	ebx
+
+operations1:
+        dd	_sr
+        dd	_sk
+        dd	_sx
+        dd	_sy
+        dd	_sa
+        dd	_sb
+        dd	_z
+        dd	_pop
+
+        dd	_lr
+        dd	_lk
+        dd	_lx
+        dd	_ly
+        dd	_la
+        dd	_lb
+        dd	_tz
+        dd	_tp
+
+        dd	_ax
+        dd	_ay
+        dd	_or
+        dd	_orB
+        dd	_and
+        dd	_andB
+        dd	_xor
+        dd	_xorB
+
+        dd	_aa
+        dd	_ab
+        dd	_ana
+        dd	_anb
+        dd	_m
+        dd	_mf
+        dd	_d
+        dd	_push
+
+shifts_jumps:
+	mov	ebx, dword ptr [operations6+ebx*4]
+	jmp	ebx
+
+operations6:
+        dd	_sar
+        dd	_sbr
+        dd	_dsr
+        dd	_jdr
+        dd	_sal
+        dd	_sbl
+        dd	_dsl
+        dd	_lcal
+
+        dd	_rar
+        dd	_rbr
+        dd	_drr
+        dd	_jnc
+        dd	_ral
+        dd	_rbl
+        dd	_drl
+        dd	_jc
+
+        dd	_saa
+        dd	_sba
+        dd	_dsa
+        dd	_jao
+        dd	_jpa
+        dd	_jpb
+        dd	_j
+        dd	_jpo
+
+        dd	_jza
+        dd	_jzb
+        dd	_jnza
+        dd	_jnzb
+        dd	_jna
+        dd	_jnb
+        dd	_jxge
+        dd	_jyge
+
+
+large_operations:
+	mov	ebx, dword ptr [operations7+ebx*4]
+	mov	cl, 0		; default size large operand
+	jmp	ebx		; 1 word
+
+operations7:
+        dd	_ts
+        dd	_n
+        dd	_inc
+        dd	_dec
+        dd	_sim
+        dd	_popA
+        dd	_src
+        dd	_slc
+
+        dd	_qs
+        dd	_ql
+        dd	_dte
+        dd	_dpop
+        dd	_fa
+        dd	_fan
+        dd	_fm
+        dd	_fd
+
+        dd	_qpop
+        dd	_qpush
+        dd	_ex
+        dd	_dpush
+        dd	_lsc
+        dd	_mta
+        dd	_sc
+        dd	_mlb
+
+        dd	_ds
+        dd	_dl
+        dd	_da
+        dd	_dan
+        dd	_dlsc
+        dd	_spare
+        dd	_go
+        dd	_call
+

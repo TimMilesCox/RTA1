@@ -1,0 +1,193 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	def/vector.def
+	$include	def.sys/base.def
+	$include	def.sys/banks.def
+	$include	def.sys/io.def
+	$include	def.sys/tcb.def
+	$include	def.sys/events.def
+	$include	language/stack.def
+	$include	mib/mib-II.def
+	$include	t77.4/ip.def
+	$include	t77.4/net_bank.def
+	$include	t77.4/dq.def
+	$include	t77.4/i_f.def
+	$include	t77.4/ll.def
+	$include	t77.4/route.def
+	$include	t77.4/lockfree.def
+	$include	t77.4/pointers.def
+	$include	t77.4/socket.def
+	$include	fs/response.def
+	$include	table/names.def
+	$path
+	$include	soc_data.def
+	$include	ifconfig.def
+	$include	routecfg.def
+	$include	if2media.def
+	$list
+
+	
+$(66::,x)
+?	$set	1
+this_if i_f
+__IF_SIZE	$set	$
+
+$(70::,fp)
+descriptor	acw
+
+$(67::,y)
+rxq2		dq
+
+$(67::,y)
+xmit_list	dq
+
+$(66::,x)
+pool		mpool
+
+$(66::, x)
+nframe  	netframe
+
+$(66::, x)
+ro		route
+
+$(66::, x)
+transmission	tcp_connection
+
+$(66::, x)	
+transfer	segment
+
+$(66::, x)
+tlist		tbank
+
+$(0::DRIVERS_BANK1)
+
+"$rxtx_lo"*	$vector		rxtx_softwareloopback
+"$rxtx_ift1"*	$vector		ift1_rxtx
+"$initial_ift1"* $vector	start_ift1
+"$light_flight"* $vector	mplex_tx
+. "$qo2_relay"*	$vector		output_relay
+if_dualport_txwrite* $vector    if_dportw
+dlt_null*       $vector         ifw_dlt_null
+dlt_loop*       $vector         ifw_dlt_loop
+dlt_e10mb*      $vector         ifw_dlt_e10mb
+__ifconfig*	$vector		ifconfig
+
+arp_ether_reso* $vector         ethernet_arp:resolve
+arp_ether_xmit* $vector         ethernet_arp:xmit
+xarp_ethernet*  $vector         ethernet_arp:xarp
+arp_ether_rx*   $vector         ethernet_arp:arp_rx
+
+xrelay_reset*	$vector		restart_xrelay_interface
+__route_config*	$vector		route_insert
+
+write_ifqlist*	$vector		q2txL_tail
+. "$ift1_inband"*	$vector		write_ift1_direct
+write_ifq*	$vector		q2if
+
+__initial_ift2*	$vector		__ift2:initial
+__rxtx_ift2*	$vector		__ift2:rxtx
+__ift2_align*	$vector		__ift2:restart_cursors
+__ift2_mirror*	$vector		__ift2:swap_initial
+
+__buy6_bytes*	$vector		soc_data:buy6
+__buy12_bytes*	$vector		soc_data:buy12
+write_ifqlist_head*	$vector	q2txL_head
+__recheck*	$vector		recheck
+
+tx_mib_update*	$vector		mib_scope_update:variable48
+
+.	frame handling at interface
+
+	$do	48-$,	fret	0
+
+.	protocol stack extras
+
+	$if	HVSOCKET
+hvsocket_storage* $vector       hvsocket:storage
+hvsockets_bind* $vector         hvsocket:bind
+hvsocket_rx*	$vector		hvsocket:rx
+hvsocket_tx*	$vector		hvsocket:tx
+hvsocket_readq*	$vector		hvsocket:readq
+connection_array* $vector	hvsocket:locate
+hvsocket_xbind*	$vector		hvsocket:xbind
+hvsocket_close*	$vector		hvsocket:close
+hvsocket_write_rxq* $vector	hvsocket:write_rxq
+tcp_window*	$vector		window
+	$endif
+
+
+tnet_callstring*	$vector	net_callstring
+
+	$do	64-$,	fret	0
+
+	$list		2
+	$include	irelay
+	$include	xrelay
+	$include	ift2
+	$include	lladdres
+	$include	dualport
+	$include	ifconfig
+	$include	log2mask
+	$include	route_in
+	$include	queue
+	$include	soc_data
+	$include	if2media
+	$include	recheck
+	$include	mcapsule
+	$list
+
+	$path		../arp.ext
+	$list	0
+	$include	arp.def
+	$include	../t77.4/ipv4.def
+
+$(66::,x)
+ifaddr	netv4
+
+$(71::,sp)
+dgram	datagram
+
+	$list		3
+	$include	arp_enet
+	$list		2
+	$path
+
+$(0)
+
+	$if		HVSOCKET
+	$list		0
+	$path		../
+	$include	array.app/array.def
+	$include	t77.4/tcp.def
+	$include	t77.4/window.def
+	$include	t77.4/hvsocket.def
+	$list		2
+	$include	t77.4/hvsocket
+	$include	t77.4/window
+
+	$path
+	$endif
+
+
+
+net_callstring
+
+.	vector name	tnet_callstring
+
+	push		a
+	sabr		32
+	lx		transmission:receiveq:head
+	lr		descriptor:bytes, x
+	ly		descriptor:apdata, x
+	lx		(32*/12++APP_CALL_STRING-01000)
+	
+	lcal		hvsocket:block_read
+
+	pop		a
+	fret		0
+
+	$do	$<256,$(0:256)
+	$do	$zenith>4096,	$flag	driver bank literal table partly invisible
+

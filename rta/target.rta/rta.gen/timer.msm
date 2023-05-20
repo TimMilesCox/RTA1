@@ -1,0 +1,91 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+.	this is
+
+.		rta.gen/timer.msm
+.		contains service call TWAIT$
+
+twait_ii
+	dl	DAYCLOCK$U
+	da	a
+	on	see$1++see$3++see$4++see$5++see$6++see$7
+	lx	TDESCRIPTOR
+	ds	4, x
+	la	(0800000s)	. TIME_WAIT -> schedule flags
+	or	2, x
+	sa	2, x
+	j	yield
+
+timer_check
+	qpush	x_x
+	lx	a_x
+
+	$if	0		. deadly. replaced
+	la	2, a		. an asynchronously cancelled thread?
+	and	(EXIT)
+	jza	timer_cheq	. no, check for time wait expired
+				. yes, manoeuvre the descriptor
+				. out of the switch list
+	la	0, x		. next to pop back from stack
+	sa	2, sp		. as resulting actual
+	sa	0, y		. and is new next of prior
+	tp	1, a		. prior may become new last in its priority
+	sy	3, a		. if so it's the new uplink of the stem
+
+	la	3, x
+
+	outA	65		. base the thread control block
+	lcal	exit		. the exit routine expects it
+
+	j	timer_chex
+
+timer_cheq
+	$endif
+
+	dl	DAYCLOCK$U	. a time wait expired?
+	dan	4, x
+	jna	timer_chex
+	z	2, x		. the clock > my deadline
+
+timer_chex
+	qpop	x_x
+	lret	0
+

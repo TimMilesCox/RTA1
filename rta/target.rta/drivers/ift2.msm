@@ -1,0 +1,266 @@
+.	vector name __initial_ift2
+
+__ift2	$tree
+
+initial	sa	this_if:flags
+	la	1, a, i			. change high index 256K block
+	sal	6			.  -> I / F buffer page limit
+	or	y			. add device index
+	or	(0400000)
+	sa	this_if:ift1:tx_limit	. switch the interface on
+					. this is also page high index
+					. TX side
+
+	lb	(32*/18s)
+
+	sar	1			. halve banks #
+	and	(01FFFC0)					
+	or	y
+	or	(0400000)
+	ds	this_if:ift1:base_tx	. TX restart is RX limit
+	sa	this_if:ift1:tx_restart
+	sa	this_if:ift1:rx_limit	. TX limit is this_if:
+	and	(040003F)
+	ds	this_if:ift1:base_rx
+	sa	this_if:ift1:rx_restart
+
+	fret	0
+
+swap_initial				. mirror the trunk TX / RX
+	ax	$if0p,,xi
+	lx	0, x
+
+	lcal	swap_around
+	lcal	rewind
+	fret	0
+
+restart_cursors
+	ax	$if0p,,xi
+	lx	0, x
+
+	lcal	rewind
+	fret	0
+
+swap_around
+	dpush	this_if:ift1:rx_restart
+	dpush	this_if:ift1:tx_restart
+	qpop	this_if:ift1:rx_restart
+
+	dpush	this_if:ift1:base_rx
+	dpush	this_if:ift1:base_tx
+	qpop	this_if:ift1:base_rx
+	lret	0
+
+rewind	lb	(32*/18s)
+	la	this_if:ift1:rx_restart
+	ds	this_if:ift1:base_rx
+	la	this_if:ift1:tx_restart
+	ds	this_if:ift1:base_tx
+	lret	0	
+
+rxtx	dl	this_if:ift1:base_rx
+	ii	XBASE$32
+	ly	b
+
+rx_next_page
+	dl	networkframe:flag
+	jza	tx1?
+
+	MIB_ACOUNT48	this_if:inoctets	b
+	MIB_ICOUNT48	this_if:inpackets
+
+	la	networkframe:ll_hl
+
+	sy	fp
+	ly	networkframe:frame,,i	. -> frame from network
+	anb	a			. datagram length without link header
+
+	jnc	frame_complete		. frame size < link header size
+	lr	b			. datagram net bytes = frame minus llh
+	la	1, a, i			. advance pointer to datagram
+	sar	1			. add llh bytes / 2
+	ay	a
+
+	la	networkframe:protocol, fp
+	push	fp			. frame in interface buffer
+	push	x			. trunk multiplexing interface named in call
+	
+	lx	networkframe:interface, fp	. RX interface this frame
+	ax	$if2p,,xi
+	lx	0, x
+
+	call	(frame_to_protocol)
+	pop	x			. y gets pointer from saved fp
+	pop	fp
+frame_complete
+	z	networkframe:flag, fp
+
+	lcal	update_rx_cursor
+
+	j	rx_next_page
+
+tx1?	dl	this_if:ift1:base_tx
+	ii	XBASE$32
+	la	this_if:mtu, x
+	sa	MTU
+	sb	fp
+
+tx_space1?
+	tz	networkframe:flag, fp	. outgoing slot clear to write?
+	j	txz
+
+tx_data1?
+	lcal	readifq			. anything on default output queue?
+	jza	tx_data2?		. separate descriptor from queue
+	push	a			. before dualport_write clears frame-gather microstac
+
+	lcal	txq_ift1_oframe
+	lcal	update_tx_cursor	
+
+	pop	a			. recover descriptor
+	tp	descriptor:bytes, a
+	j	tx_space1?
+
+	push	x
+	lx	tx_buffers
+	call	(if_sell1)
+	pop	x
+
+	j	tx_space1?
+
+tx_data2?
+	$if	1
+
+	lcal	rqtxL
+	jza	txz
+	push	a
+	lcal	txq_ift1_oframe
+	lcal	update_tx_cursor
+	pop	a
+	tp	descriptor:bytes, a	. does protocol want to keep the buffer?
+	j	tx_space2?		. yes
+
+	push	x			. no
+	lx	*(BSOCKET*/12++tlist:txbu_p)
+	call	(if_sell1)
+	pop	x
+
+tx_space2?
+	tz	networkframe:flag, fp
+	j	txz
+
+	$if	THRESHOLD_QUANTUM_MS_IFT2
+	lcal	if2media?
+	j	txz
+	$endif
+
+	j	tx_data2?
+
+	$else
+
+	la	this_if:portP
+	jza	txz
+tx_block
+
+	sabr	BSOCKET
+	ly	(BSOCKET*/12++tlist:connection_block(1):q4ack:head)
+
+tx_data2_on_q?
+	la	xmit_list:head
+	jza	tx_next_transmissions_block
+
+	lb	descriptor:ifql, a	. separate descriptor from queue
+	sb	xmit_list:head		. before dualport_write clears frame_gather microstac
+
+	dpush	y			. [ y : a ]
+	lcal	txq_ift1_oframe
+	lcal	update_tx_cursor
+	dpop	y			. [ y . a ]
+
+	tp	descriptor:bytes, a	. upper protocol decides when to drop
+
+	j	tx_space2?
+
+	dpush	x
+	lx	*(BSOCKET*/12++tlist:txbu_p)
+	call	(if_sell1)
+	dpop	x
+
+
+tx_space2?
+	$if	0
+	lcal	if2media?		. is it also within safe demands on volume?
+	j	txz			. no
+	$endif
+
+	tz	networkframe:flag, fp	. can you practically?
+	j	txz			. no
+
+	$if	THRESHOLD_QUANTUM_MS_IFT2
+	lcal	if2media?		. is it also within safe traffic volume?
+	j	txz			. no
+	$endif
+		
+	j	tx_data2_on_q?		. is there any to send?
+
+tx_next_transmissions_block
+	
+	la	*(BSOCKET*/12++tlist:txchain)	. chain next
+	sa	this_if:portP			. is chain head
+	z	*(BSOCKET*/12++tlist:txchain)	. mark out of chain
+	jnza	tx_block
+	z	this_if:portQ			. mark there is no last
+
+	$endif
+
+txz	fret	0				. because that's used to test
+						. if already in chain
+update_rx_cursor
+	ly	RPAGEW,,xi
+	ay	fp
+	lr	(33*/18s)
+	jyge	update_rx_page
+	sy	fp
+	sy	this_if:ift1:rx_cursor
+	lret	0
+
+update_rx_page
+	la	this_if:ift1:base_rx
+	aa	1*/6,,xi
+	anu	this_if:ift1:rx_limit	. upper limit rx pages
+	jnc	update_rx_page_store
+	la	this_if:ift1:rx_restart
+
+update_rx_page_store
+	lb	(32*/18s)
+	ly	b
+	ds	this_if:ift1:base_rx
+	ii	XBASE$32
+	lret	0
+
+update_tx_cursor
+	ly	RPAGEW,,xi
+	ay	fp
+	lr	(33*/18s)
+	sy	fp
+	jyge	update_tx_cursor_next_page
+	sy	this_if:ift1:tx_cursor, x
+	lret	0	
+
+update_tx_cursor_next_page
+	la	this_if:ift1:base_tx
+	aa	1*/6,,xi
+	anu	this_if:ift1:tx_limit	. upper limit pages 262144 words
+	jnc	update_tx_cursor_store
+	la	this_if:ift1:tx_restart
+
+update_tx_cursor_store
+	lb	(32*/18s)
+	ds	this_if:ift1:base_tx
+	sb	fp
+	ii	XBASE$32
+	ly	b
+	lret	0
+	
+	$root
+

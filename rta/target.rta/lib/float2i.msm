@@ -1,0 +1,78 @@
+float2i	$tree			. vector name float2i72
+
+	lx	a
+	tp	x		. obtain magnitude exponent
+	n	x
+	ax	(-0400000)	. net of midpoint
+	tz	x		. nothing
+	tp	x		. or less
+	j	all_fraction	. = no integral part
+	lr	144,,xi
+	jxge	too_astronomic	. no part can be represented
+				. in 72 bits
+	lr	73,,xi
+	saa	24
+	j	promote?
+
+all_fraction
+too_astronomic
+	dsr	48		. that's all we can tell you
+	ds	mantissa2	. for trace residues
+	j	away		. call (float2ix72) instead
+
+promote!
+	dpush	mantissa2	. this is abandoning
+	sa	mantissa3	. significant bits
+	pop	b
+	pop	mantissa2
+	ax	-24,,xi
+
+promote?
+	jxge	promote!
+				. x = significant bits count 0..72
+				. a = signs
+				. b:6:7 = LJus integer
+	lr	72,,xi
+	jxge	maximal		. no manipulation needed
+	lr	48,,xi		. shift right sign fill [ 72 - x ]
+
+pushdown
+	jxge	level
+	dpush	b
+	sa	b		. insert a word of signs in front
+
+	dpop	mantissa2
+
+	ax	24,,xi
+	j	pushdown
+
+level	n	x		. x = 72 - x
+	ax	72+1,,xi
+
+	dpush	a
+	dl	mantissa2
+	dsr	0, x
+	sb	mantissa3	. [ 6 7 ] /* [x] -> 7
+	lb	mantissa2
+	la	1, sp		. b before
+	dsr	0, x
+	sb	mantissa2	. [ b 6 ] /* [x] -> 6
+	dpop	a
+	dsa	0, x
+
+maximal	jpa	away		. 2s & 1s-comp + values are identical
+	dpush	a		. for - values add 1 sign bit
+	dsr	47		. to the 96-bit value
+	da	mantissa2
+	ds	mantissa2	. of which 24+ bits are leading signs
+
+	sc	b		. the 48-bit add carry
+	z	a
+	da	0, sp
+
+	inc	sp
+	inc	sp
+
+away	fret	0
+
+	$root

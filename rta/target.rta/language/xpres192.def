@@ -1,0 +1,265 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+__CONDENS8	$equ	1
+fp$aside(1)	$equ	24
+fp$aside(2)	$equ	32
+
+"$$aside"	$set	1
+
+p		$proc
+
+"$aax"*		$name
+
+f	$func
+"$192"*	$name
+pointer	$equf	$4(major_minor	f(1, 1))
+	$return	pointer
+	$end
+
+"$u"		$set	p(1, 1)		. drop any indirection bit
+"$ix"		$set	p(0, 2)
+"$iy"		$set	$ix**1
+
+		$if	($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1,3)	p(1, 1), p(1, 2)
+"$aaa"*		$equf	fp$aside($$aside)
+		$elseif	p(1, *1)**(p(1, 2)^=0)
+
+		$if	$ix**x
+		lx++$iy	$u, p(1, 2)
+"$aaa"*		$equf	0, $ix
+		$else
+		lr++$iy	$u, p(1, 2)
+"$aaa"*		$equf	*$ix
+		$endif
+
+		$elseif	p(1, *1)**($net($u)>8191)
+
+		$if	$ix**x
+		$if	$u>32767
+		lx++$iy	*(+($u)s)
+		$else
+		lx++$iy	$u
+		$endif
+"$aaa"*		$equf	0, $ix
+		$else
+		$if	$u>32767
+		lr++$iy	*(+($u)s)
+		$else
+		lr++$iy	$u
+		$endif
+"$aaa"*		$equf	*$ix
+		$endif
+
+		$elseif	($net($u)>32767)**(p(1, 2)=0)**(p(1, *1)=0)
+
+		$if	$ix**x
+		lx++$iy	$0(+($u)s)
+"$aaa"*		$equf	0, $ix
+		$else
+"$aaa"*		$equf	*$0(+($u)s)
+		$endif
+
+		$else
+
+"$aaa"*		$equf	p(1)
+		$endif
+
+		$end
+
+p		$proc
+"$x_add"*	$name
+		$do $o('V'),	$note	ADD
+		$aax		p(1)
+		$if		__CONDENS8
+		push		$aaa,,i
+		lcal		condens8:add
+		$else
+		c	(fp192_add)		$aaa,,i
+		$endif
+		$return
+
+"$x_subtract"*	$name
+		$do $o('V'),	$note	ADD_NEGATIVE
+		$aax		p(1)
+		$if		__CONDENS8
+		push		$aaa,,i
+		lcal		condens8:add_negative
+		$else
+		c	(fp192_add_negative)	$aaa,,i
+		$endif
+		$return
+
+"$x_multiply"*	$name
+		$do $o('V'),	$note	MULTIPLY
+		$aax		p(1)
+		$if		__CONDENS8
+		push		$aaa,,i
+		lcal		condens8:multiply
+		$else
+		c	(fp192_multiply)	$aaa,,i
+		$endif
+		$return
+
+"$x_divide"*	$name
+		$do $o('V'),	$note	DIVIDE
+		$aax		p(1)
+		$if		__CONDENS8
+		push		$aaa,,i
+		lcal		condens8:divide
+		$else
+		c	(fp192_divide)		$aaa,,i
+		$endif
+		$return
+
+"$x_load"*	$name
+		$do $o('V'),	$note	LOAD
+		$if		($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		$else
+		$aax		p(1)
+		ql		$aaa+4
+		qs		8
+		ql		$aaa
+		$endif
+		$return
+
+"$x_load_negative"* $name
+		$do $o('V'),	$note	LOAD_NEGATIVE
+		$if		($t(p(1, 3))=$name)**(p(1, 3)=111)
+		p(1, 3),63	p(1, 1), p(1, 2)
+		qs		fp$aside($$aside)
+		ql		(0.0)
+		fan		fp$aside($$aside)
+		$else
+		$aax		p(1)
+		ql		$aaa+4
+		qs		8
+		ql		$aaaa
+		$if		__CONDENS8
+		lcal		condens8:neg8
+		$else
+		n		a
+		n		b
+		n		6
+		n		7
+		n		8
+		n		9
+		n		10
+		n		11
+		$endif
+		$endif
+		$return
+
+"$x_reserve"*	$name
+		$do $o('V'),	$note	PUSH
+		$do	$$aside>2,	$flag	floating lookaside overflow
+		qs		fp$aside($$aside)
+		ql		8
+		qs		fp$aside($$aside)+4
+"$$aside"**********************	$set	$$aside+1
+		$return
+
+"$unstac"*	$name
+		$do $o('V'),	$note	POP
+"$$aside"**********************	$set	$$aside-1
+		$do	$$aside<1,	$flag	floating lookaside underflow
+		$return
+
+"$x_reverse"*	$name
+		$do $o('V'),	$note	REVERSE
+		$if		__CONDENS8
+		lcal		condens8:neg8
+		$else
+		n	a
+		n	b
+		n	6
+		n	7
+		n	8
+		n	9
+		n	10
+		n	11
+		$endif
+		$return
+
+"$x_retrieve_add"*	$name
+		$do $o('V'),	$note	POP_ADD
+		$unstac
+		$if		__CONDENS8
+		push		fp$aside($$aside),,i
+		lcal		condens8:add
+		$else
+		c	(fp192_add)	fp$aside($$aside),,i
+		$endif
+		$return
+
+"$x_retrieve_subtract"*	$name
+		$do $o('V'),	$note	POP_ADD_NEGATIVE
+		$unstac
+		$if		__CONDENS8
+		push		fp$aside($$aside),,i
+		lcal		condens8:add_negative)
+		c	(fp192_add_negative)	fp$aside($$aside),,i
+		$endif
+		$return
+
+"$x_retrieve_multiply"*	$name
+		$do $o('V'),	$note	POP_MULTIPLY
+		$unstac
+		$if		__CONDENS8
+		push		fp$aside($$aside),,i
+		lcal		condens8:multiply)
+		$else
+		c	(fp192_multiply)	fp$aside($$aside),,i
+		$endif
+		$return
+
+"$x_retrieve_divide"*	$name
+		$do $o('V'),	$note	POP_DIVIDE
+		$unstac
+		$if		__CONDENS8
+		push		fp$aside($$aside),,i
+		lcal		condens8:divide)
+		$else
+		c	(fp192_divide)		fp$aside($$aside),,i
+		$endif
+		$end
+

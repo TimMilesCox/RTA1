@@ -1,0 +1,129 @@
+
+replicate_abt
+	outB		65
+?	$do	64/4,	qpush		ABT+64-?*4
+	outA		65
+?	$do	64/4,	qpop		ABT+?*4-4
+	lret		0
+
+thread	II_LOCK
+	la		b		. priority of new thread, application b
+	jna		no_new_thread	. you can't
+	aa, xi		-PRIORITIES
+	jc		no_new_thread	. you still can't
+					. OK maybe you can
+	on		see$1		. see calling TCB
+
+	la, xi		4096		. assign new TCB
+	lcal		bank
+	jza		no_new_thread	. you can't
+
+	lcal		tdescriptor
+	j		no_new_thread_descriptor	. you can't
+
+	.		the new thread is now a certainty
+
+					. a -> new tcb page
+					. b -> memory management descriptor of that
+					. x -> 6-word switching descriptor in kernel store
+
+	z		0, b		. forward pointer of new TCB page
+					. in memory management chain
+	lr		WALKUP		. TCB of initial thread
+					. unless the initial thread is calling
+	push		ERROR_RESTART	
+	push		b_x		. new TCB descriptor pointer
+	push		B1_P		. calling thread B1 list pointer
+	push		NEXT_THREAD	. next of caller, base pointer
+
+	inB		65		. calling thread TCB
+	sa		NEXT_THREAD	. new TCB base pointer next of calling thread
+	outA		65		. new thread TCB
+
+	pop		NEXT_THREAD	. old next of caller is next of new
+	pop		B1_P		. b1 list pointer from calling thread
+	pop		BANK_CHAIN	. only storage block of new thread
+	pop		ERROR_RESTART	. new threads must resstart on error
+					. if the process initial thread does
+
+	z		2, x		. construct thread descriptor
+	sa		3, x		. with TCB
+?	$do		TDESCRIPTOR_WORDS-6,	z	6-1+?, x	. clear affinity mask
+	sx		TDESCRIPTOR
+
+	push		('TCB')
+	pop		TCB
+
+	lcal		replicate_abt
+
+	z		XINTT+3		. start without an interrupts table because
+					. most threads don't get external interrupts
+	z		ULIMIT
+
+	dpush		a_x		. new and calling TCBs
+
+	lb		a		. thread transfer address from application a
+	la		2, fp		. calling thread B0
+
+	ds		UPACKET+2
+	la, xi		0
+	lb		1, fp		. calling thread PSR
+	andB, xi	080
+	ds		UPACKET		. thread switch packet complete
+
+	la, xi		128
+	sa		RSAVE+sp	. new thread internal stack pointer
+
+	la		fp$guard	. copy caller's rounding guard bits
+	sa		FP_FRAP
+	z		FP_XPO		. no exponent overflow yet
+
+	qpush		(-1, 0, 0, 0q)	. default SIMD configuration
+	qpop		RSAVE+RDATAC	. held in b$stream registers
+
+	ts		switch_lock_cell
+	j		$-1
+	
+	lb		b		. priority in application register b
+	sb		1, x		. 2nd word switching descriptor 
+
+	$if		1		. all done with just 1 queue now
+	lb		stem(PRIORITIES),,xi
+	$else
+	sbl		2		. 
+	ab, xi		stem(1)		. thread descriptor into switch list
+	$endif
+
+	la		3, b		. trailing uplink
+	sx		0, a		. new is last->next
+	sb		0, x		. stem is new->next
+	sx		3, b		. new is stem->uplink
+
+	z		switch_lock_cell
+
+	dpop		a_x		. retrieve new TCB : calling TCB
+
+	lx		6		. from application mantissa2
+	sx		RSAVE+a		. parameter for thread
+	lx		7		. from application mantissa3
+	sx		RSAVE+fp	. external stack pointer if needed
+
+	sb		WALKUP		. caller TCB
+	tz		r_x		. but if caller was not initial thread
+	sr		WALKUP		. initial thread TCB
+					. initial thread owns all threads
+	z		TAG		. clear optional thread name
+	outB		65		. caller TCB
+	sa		a		. result TCB ID in caller a
+	j		thread_final	. return to caller
+
+no_new_thread_descriptor
+	la		b_x		. descriptor TCB bank, not used
+	lcal		bank_free	. because thread descriptor not assigned
+
+no_new_thread
+	z		a		. result no TCB ID in caller a
+
+thread_final
+	II_FREE
+	ir		0

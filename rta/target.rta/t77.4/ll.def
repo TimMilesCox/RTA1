@@ -1,0 +1,244 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+.		delivery is the prototype
+.		dual-port buffer header
+.		for RX and TX
+
+p		$proc
+delivery*	$name
+*		$tree
+flag		$res	1
+frame_length	$res	1
+ll_hl		$res	1
+interface	$res	1
+protocol	$res	1
+frame
+		$root
+		$end
+
+
+
+
+. IP temporarily caches routing information in the routing buffer
+. at the front of the datagram transmission buffer
+
+. IP then interfaces the datagram to network device drivers by
+. constructing a transmission list in the routing buffer
+. plus protocol family tag and link layer target address if any
+
+. the device driver constructs a link layer header at the
+. start of the routing buffer if the network uses LLH
+
+. these structures are intended both for DMA and dual-port-memory
+. network interfaces. The device driver knows which it has
+. and IP doesn't
+
+
+LONGEST_LL_HEADER $equ	14//2
+
+ROUTING_HEADER	$equ	 LONGEST_LL_HEADER;
+			+2*TX_DESCRIPTORS;
+			+1;		. <- descriptor stack pointer
+			+2		. <- next hop network address
+					. increase LONGEST_LL_HEADER
+					. if you start to have
+					. PPPOE or SNAP or VLAN
+					. or anything else that
+					. lengthens the LL header
+
+					. or if a new protocol family
+					. needs many length:pointer
+					. word pairs
+
+					. ROUTING_HEADER is a count
+					. of words not bytes
+
+					. 16 bits of network data
+					. are stored in each 24-bit
+					. word, so the minimum 
+					. ethernet header is 7 words
+
+					. the last location in the
+					. block is a stack index
+					. to the length:pointer pairs
+
+					. decrementing by 2 from zero
+					. 000000..FFFFFE..FFFFFC..
+
+					. the device drivers read
+					. upward from the stack top
+
+					. 14 words allows 3 buffers
+					. including this buffer itself
+					. if a Link Layer header is
+					. added
+					
+
+					
+TX_DESCRIPTORS	$equ	3	.	3: segment / udgram
+				.	2: ip header
+				.	1: ll header, may be zero length
+
+
+.		the high-address end of routing buffer
+.		contains a downward-growing stack of
+.		bytecount:wordpointer pairs
+
+.		The driver either constructs
+.		a DMA program from the descriptor
+.		word pairs or does copy operations into
+.		dual port memory
+
+.		(or possibly even feeds a FIFO
+.		for a network like SLIP. If that
+.		can be synchronised while multitasking)
+
+.		for networks which use link headers
+.		the driver constructs a link layer
+.		header at the buffer start and adds a
+.		descriptor word pair the the stack top
+
+.		The calling packet layer places
+.		the protocol family tag
+.		like 0800 or 0806
+.		at fixed location word 6
+
+.		and the target physical address
+.		if any in the first three words
+.		of the frame space
+
+.		drivers insert any extras like
+.		PPPOE / VLAN / SNAP between the
+.		link layer addresses and the
+.		protocol family tag
+
+
+.		_________________________________
+.	word 0	| 0000 0000 xxxx xxxx xxxx xxxx	|<-------- LLH pointer
+.	     1	| 0000 0000 xxxx xxxx xxxx xxxx |
+.	     2	| 0000 0000 xxxx xxxx xxxx xxxx |
+.		|_______________________________|
+.	word 3	|				|
+.	     4	|	sending address		|
+.	     5	|	space			|
+.		|_______________________________|
+.	word 6  |	protocol family tag	|
+.		|_______________________________|
+.		|				|
+
+
+.							 
+.		|	[ LLH BYTES:WPOINTER]	|--------> word 0
+.		|				|
+.		|_______________________________|
+.		|				|
+.		|_______DGRAM BYTES:WPOINTER____|
+.		|				|
+.		|_______________________________|
+.		|				|
+.		|_______PAYLOAD X BYTES:WPOINTER|
+.		|				|
+.		|_______________________________|
+.		|	index 0..-2..-4..	|
+.		|_______________________________|
+
+.		Drivers which add a link header
+.		also add a count:pointer to the stack
+
+
+
+.		This ROUTING_HEADER buffer is at
+.		word 0 of the socket transmission
+.		buffer. It is the
+
+.			descriptor:frame
+
+.		of the socket transmission buffer
+.		descriptor
+
+
+
+.		llheader is the simplest LAN header
+.		layout. Network device drivers
+.		construct any variations on that
+
+
+p		$proc
+ioaccesswordB*	$name	
+*		$tree
+bytes		$res	1
+word_pointer	$res	1
+		$root
+		$end
+
+p		$proc
+llheader*	$name
+*		$tree
+
+loopback	$branch
+af		$res	2
+		$root
+
+ethernet	$branch
+to		$res	3
+from		$res	3
+protocol	$res	1
+		$root
+
+generic		$branch
+address		$res	6
+protocol	$res	1
+		$root
+
+		$root
+		$end
+
+p		$proc
+netframe*	$name
+*		$tree
+llh		llheader
+?		$do	TX_DESCRIPTORS,;
+frame_axw(?)	ioaccesswordB
+stack_index	$res	1
+next_hop	$res	2
+		$root
+		$end
+
+

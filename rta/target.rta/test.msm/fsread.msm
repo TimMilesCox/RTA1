@@ -1,0 +1,221 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+	$path		../
+	$include	def/rta.def
+	$include	language/stack.def
+	$include	fs/fs.def
+	$include	fs/fs24.def
+	
+
+fsarray_direct		. set caller state pointing to the first extent descriptor
+			. plus a device-relative extent pointer to the start of first
+			. extent data
+
+		$head_far	 params(fsarray_fspp,		int	;
+					fsarray_start_bank,	int	;
+					fsarray_direct_name,	long)
+
+			lx	fsarray_fspp
+			la	fsarray_start_bank
+			sa	fspax:bank, x
+
+			dl	fsarray_direct_name	. position of 1st extent descriptor
+			dsl	6			. change to pointer in large bank
+			orB	B_FS1,,xi
+			rbr	6
+			sal	6			. change to pointer in large bank
+			aa	fsarray_start_bank
+			ds	fspax:extent, x
+
+			sabr	B_FS1
+			dl	fsys:e:granule, b	. cursor = 1st extent position
+
+			dsl	6			. word offset pointer
+							. within  micro file system
+			ds	fspax:absolute_pointer, x
+
+			$ret	0
+
+
+fsarray_words		$head_far	 params(fsarray_fsp,		int	;
+						fsarray_buffer,		int	;
+						fsarray_words_requested,int)	;
+										;
+					scalars(fsarray_absolute_pointer,long)
+
+			. return requested words to buffer starting at intra-
+			. extent cursor and advancing that. Change extent of
+			. reference as current extent exhausts via fsarray_forward
+
+			. return words which could be delivered
+
+			. there is a state containing
+			.	long virtual address of current read point
+			.	long virtual address of current extent descriptor
+
+			. pick up the current extent information and turn it
+			. into an address limit pointer in the current extent
+
+			lx	fsarray_fsp
+			dl	fspax:absolute_pointer	. word position in FS
+			ds	fsarray_absolute_pointer
+			dl	fspax:extent		. long pointer extent descriptor
+			z	8			
+
+
+			sabr	B_FS1
+
+			la	fsys:e:granule_high_index, b	. granule position + size
+			ly	b
+			la, i	1, a			. index + 1 = granules
+			dsr	24
+			da	fsys:e:granule, y
+			dsl	6			. word pointer extent + 1
+							. = relative limit pointer
+			dan	fsarray_absolute_pointer . remaining words in extent
+fsarray_repoint		jna	fsarray_anomaly1
+			jdz	fsarray_next_extent?
+			la	words_requested
+			ana	b
+			jc	fsarray_transferinb	. transfer remaining words in extent 
+			lb	fsarray_words_requested	. transfer remaining words in request
+
+fsarray_transferinb	la	fsarray_words_requested	. subtract transfer from outstanding
+			ana	b
+			sa	fsarray_words_requested
+
+			sb	7
+			la, xi	0
+			
+			da	fsarray_absolute_pointer
+			ds	fspax:absolute_pointer	. advance position by transfer
+
+			dl	fsarray_absolute_pointer
+
+			dsl	6			. translate position
+			orB	B_FS1,,xi		. to based pointer
+			rbr	6
+			sal	6
+			ab	fspax:bank
+			sabr	B_FS1
+
+			ly	b
+			la	7
+
+			lb	8
+			ab	a
+			sb	8
+
+			lx	fsarray_buffer
+			
+			lcal	fs_xfer
+
+fsarray_next_extent?	tz	fsarray_words_requested
+			j	fsarray_next_extent!
+			j	fsarray_exit
+
+
+fsarray_next_extent!	lx	fsarray_fsp	. move to next extent descriptor
+			dl	fspax:extent
+			sabr	B_FS1
+			
+			ly	b
+			lb	fsys:e:next_offset, y
+			sb	7
+			z	6			
+
+			dl	fsys:e:next, y
+			jdz	fsarray_exit
+
+			dsl	6		. extent offset to word offset
+			da	6
+						. next extent position
+			dsl	6		. to next extent pointer
+			orB, xi	B_FS1
+			rbr	6
+
+			sal	6
+			aa	fspax:bank
+			ds	fspax:extent
+
+			sabr	B_FS1		. now get the new data word pointer
+			ly	b
+			dl	fsys:e:granule, b . in the micro file_system
+			dsl	6
+			ds	fsarray_absolute_pointer
+			la	fsys:e:granule_high_index, y
+			la, i	1, a		. index + 1 = granules
+			dsr	24
+			dsl	6		. and the remaining words in the
+						. new extent = all of them
+			j	fsarray_repoint
+
+fsarray_anomaly1	la, xi	-1
+			j	fsarray_exit1
+fsarray_exit		la	8		. result = data words transferred
+fsarray_exit1		$ret	0
+
+fsarray_read_words	$head_far	 params(fsarray_rwpp,		int		;
+						fsarray_rwbuffer,	int		;
+						fsarray_rwwords,	int)		;
+
+			c	(fsarray_read)	fsarray_rwpp		;
+						fsarray_rwbuffear	;
+						fsarray_rwwords
+
+			jna	fsarray_read_wordx
+			z	7
+			lx	fsarray_rwpp
+			dl	fspaxq:quantum_pointer
+			da	7
+			ds	fspaxq:quantum_pointer
+			la	8
+
+fsarray_read_wordx	$ret	0
+
+fsrewind		$head_far	 params(fsrew_pp,	int)
+
+			lx	fsrew_pp
+			z	fspaxq:quantum_pointer
+			z	fspaxq:qantum_pointer+1
+			c	(fsarray_da)	fsrew_pp			;
+						fsrew_pp:serialp:device		;
+						fsrew_pp:rewind_extentp,	long
+			$ret

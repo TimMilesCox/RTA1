@@ -1,0 +1,303 @@
+trig192	$tree
+
+RECIPROCAL_READY $equ	1
+
+	$if	1
+_RADIAN_FACTOR $equ	1.7453292519943295769236907684886127134428719z*-2
+	$else
+_RADIAN_FACTOR $equ 0.01745329252z	. 168-bit expression expression + 24 extra signs
+	$endif
+
+_PASSES	$equ	18
+
+.	vector name sine
+
+sine	$tree									. quadrant looks after itself
+	$head_far	 params(angle,	float192)			;	. trim to % 360 degrees here
+			scalars(u_rkxy,	float,		r		)
+
+	lc	trig192:_sine	angle,,i
+	qpop	r
+	fret	0
+	$root
+
+
+.	vector name cosine
+
+cosine	$tree
+	$head_far	 params(angle,	float192)			;
+			scalars(u_rkxy,	float,		r		)
+
+							. trim to % 360 degrees before the next step
+							. or values > 180 are negative to infinity
+							. instead of retraversing + and - quadrants
+
+	ql	(0.0)				. 	constant 90.0 is loaded up
+	qs	8					. because it can't be pointed in reference
+	ql	(90.0)					. to a different B0 section, fp192lib
+	c	(fp192_add_negative)	angle,,i
+	qs	angle
+	ql	8
+	qs	angle+4
+
+	lc	trig192:_sine	angle,,i
+	qpop	r
+	fret	0
+	$root
+
+
+.	vector name tangent
+
+tangent	$tree
+	$head_far	 params(angle,	float192)		;
+								;
+			scalars(cosine,	float192		;
+				u_rkxy,	float,	r		)
+
+	c	(cosine192)		angle,,float192		. this is a copy on the internal stack
+	qs	cosine						. angle gets changed to radian
+	ql	8
+	qs	cosine+4
+
+	lc	trig192:_sine		angle,,i		. this is not copied. _sine updates it
+	c	(fp192_divide)	cosine,,i
+
+	qpop	r
+	push	8,sp,i
+	pop	sp
+	fret	0
+
+	$root
+
+cotangent $tree
+	$head_far	 params(angle,	float192)		;
+								;
+			scalars(sine,	float192, angle		;
+				u_rkxy,	float,	r		)
+
+	lc	trig192:_sine		sine,,i			. second copy of angle, updated
+	qs	sine
+	ql	8
+	qs	sine+4
+
+	c	(cosine192)		angle,,float192		. this is copied and not an address
+	c	(fp192_divide)	sine,,i
+
+	qpop	r
+	push	8, sp, i
+	pop	sp
+	fret	0
+	$root
+
+_sine
+	$if	RECIPROCAL_READY
+
+	$head_near	 params(anglep, int)			;
+								;
+			scalars(power,	float192		;
+				square,	float192		)
+
+	ly	reciprocal_factorials,,xi
+
+	$else
+
+	$head_near	 params(anglep, int)					;
+										;
+			 scalars(power,	float192				;
+				square,	float192				;
+				factorial, float192 		;
+				factor,	float192		)
+
+	ql	(6.0)
+	qs	factorial
+	ql	(3.0)
+	qs	factor
+	ql	(0.0)
+	qs	factorial+4
+	qs	factor+4
+
+	$endif
+
+	lc	encircle	anglep			. 360 remainder
+
+	lx	anglep
+	ql	_radian_factor+4			. _RADIAN_FACTOR constant is loaded up
+	qs	8					. because it can't be pointed in reference
+	ql	_radian_factor				. to a different B0 section, fp192lib
+
+	c	(fp192_multiply)	x
+
+	qs	0, x
+	ql	8
+	qs	4, x
+	ql	0, x
+
+	c	(fp192_multiply) x			. square the angle in radians
+	qs	square					. square is the power multiplier
+	ql	8
+	qs	square+4
+	ql	square
+
+	c	(fp192_multiply) x			. and cube is the initial power
+
+	qs	power
+	ql	8
+	qs	power+4					. initially power is cube
+	ql	power
+
+	lr	_PASSES,,xi
+	j	_nomial					. start on the minus kick
+
+_NEXT_FACTORIAL* $proc
+	$if	RECIPROCAL_READY
+	ay	8,,xi
+	$else
+	ql	factor
+	fa	(1.0)
+	qs	factor
+	c	(fp192_mfa)	factorial,,i	factor,,i
+	ql	factor
+	fa	(1.0)
+	qs	factor
+	c	(fp192_mfa)	factorial,,i	factor,,i
+	$endif
+	$end
+
+_NEXT_POWER* $proc
+	c	(fp192_mfa)	power,,i	square,,i
+	$end
+
+_poly	qs	0, x					. the plus kick
+	ql	8
+	qs	4, x
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+
+	$if	RECIPROCAL_READY
+	ql	0, y
+	on	fp$r
+	fa	4, y
+	$else
+	c	(reciprocal192)	factorial,,float192
+	$endif
+	c	(fp192_multiply)	power,,i	. 
+.	c	(fp192_divide) factorial,,i		. divide power(angle) by factorial
+	c	(fp192_add) x			. add quotient to running total
+	qs	0, x
+	ql	8
+	qs	4, x
+	_NEXT_FACTORIAL
+	_NEXT_POWER
+_nomial
+	$if	RECIPROCAL_READY
+	ql	0, y
+	on	fp$r
+	fa	4, y
+	$else
+	c	(reciprocal192)	factorial,,float192
+	$endif
+	c	(fp192_multiply)	power,,i
+.	c	(fp192_divide) factorial,,i		. divide power(angle) by factorial
+	n	a
+	n	b
+	n	6
+	n	7
+	n	8
+	n	9
+	n	10
+	n	11
+	c	(fp192_add)	x			. subtract quotient from runnning total
+	jdr	_poly
+
+	lcal	eliminate_microdust
+	lcal	trim
+
+	$ret
+
+_radian_factor	major_minor	_RADIAN_FACTOR
+
+	$if	1
+trim	push	a		. if 96 mantissa bits are nonsign change it all to nonsign
+	saa	24		. it's likely to round up after that
+	lk	-1,,xi		. mask = all 24 bits
+	xor	-1,,xi		. test = value = not signs
+	mta	b
+	j	trimmed
+	mta	6
+	j	trimmed
+	mta	7
+	j	trimmed
+	mta	9		. don't mess with the normalised position of minor mantissa
+	j	trimmed		. or its exponent in register 8
+	sa	10
+	sa	11
+trimmed	pop	a
+	lret	0
+	$endif
+
+	$if	1
+eliminate_microdust			. change any microscopic number to true result 0
+	lk	(0800000s)
+	mta	b
+	lcal	eliminate_normalised	. it is nonzero so check its range
+	lret	0
+
+eliminate_normalised
+	qpush	a
+	dsa	24
+	xorB	a
+	anb	(0400000-112)		
+	jc	eliminated		. it is larger than microscopic
+	sa	b			. it is microscopic. Change to 192 signs
+	ds	0, sp
+	ds	2, sp
+	ds	6
+	qs	8
+eliminated
+	qpop	a
+	lret	0
+	$endif
+
+encircle
+	$head_near	 params(degreep,	int)						;
+												;
+			scalars(downward,	float192,					;
+				(major_minor 2.777777777777777777777777777777777777777778e-3)	)
+				
+	lx	degreep
+	dl	0, x
+	jpa	magnitude_obtained
+	xor	-1,,xi
+	xorB	-1,,xi
+
+magnitude_obtained
+	dan	(360.0)			. just the front half of the constant
+					. real dirty dancing that
+	jnc	encircled
+
+	c	(fp192_mfa)	downward,,i	degreep
+	c	(fraction192)	downward,,float192
+
+	lcal	q360
+
+encircled
+	$ret
+
+q360	qpush	8
+	on	fp$r
+	fm	(360.0)
+	qs	0, x
+	qpop	a
+	off	fp$r
+	fm	(360.0)
+	fa	8
+	qs	4, x
+	lret	0
+	
+
+	$if	RECIPROCAL_READY
+reciprocal_factorials
+	$include	rfactori
+	$endif
+
+	$root

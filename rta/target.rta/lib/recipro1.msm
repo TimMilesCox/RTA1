@@ -1,0 +1,187 @@
+
+.	192-bit floating reciprocal routine
+
+.	very long and plodding, but has at least established
+.	the mantissa can successfully be reciprocated
+.	in a separate step from reciprocating the exponent
+.	which is a fortunate discovery for writing 
+.	any smarter reciprocal routine
+        
+.	used for dividing 192 bits by 192 bits
+.	multiply by 192-bit reciprocal of the divisor 
+.	is done instead
+
+
+
+reciprocal_192 $head_far	 params(dzor,		float192)	;
+				scalars(reciprocal,	float192	;
+					rzemainder,	float192	;
+					us_rkxy,	float,	r	)
+	la	dzor
+	jpa	turn_up
+
+	n	reciprocal
+	n	dzor
+	n	dzor+1
+	n	dzor+2
+	n	dzor+3
+	n	dzor+4
+	n	dzor+5
+	n	dzor+6
+	n	dzor+7
+
+turn_up	la	dzor+5	. is any minor number normalised?
+	jnza	turn
+	z	dzor+4	. positively absolutely zero the characteristic
+	j	sok	. just in case. Then don't move anything anywhere
+
+turn	la	dzor	. midpointed positive characteristic
+	ana	dzor+4	. magnitude characteristic difference
+	aa	-72,,xi	. normalising count second mantissa
+	lx	a
+	lr	24,,xi
+	jxge	s24plus	. normalising shift >= 1 word
+
+	la	dzor+7	. includes the no-shift case
+	lb	0,,xi
+	dsr	0, x
+	sb	dzor+7
+	lb	dzor+6
+	sal	0, x
+	drr	0, x
+	sa	dzor+6
+	la	dzor+5
+	sbl	0, x
+	dsr	0, x
+	ds	dzor+4
+
+	j	sok
+
+s24plus	dl	dzor+6
+	ax	-24,,xi
+	dsr	0, x
+	sb	dzor+7
+	lb	dzor+5
+	sal	0, x
+	drr	24, x
+	ds	dzor+5
+	z	dzor+4
+
+sok	n	dzor+7
+	n	dzor+6
+	n	dzor+5
+	n	dzor+4
+	n	dzor+3
+	n	dzor+2
+	n	dzor+1
+
+	la	(0800000s)
+	sa	rzemainder+1
+
+	la	fp$guard
+	sa	rzemainder+7
+
+	lr	169-1,,xi
+
+trial_add
+	lb	1,,xi
+	la	0,,xi
+	da	rzemainder+6
+	sc	k
+	da	dzor+6
+	ds	10
+	sc	b
+	ab	k
+	la	0,,xi
+	da	rzemainder+4
+	sc	k
+	da	dzor+4
+	ds	8
+	sc	b
+	ab	k
+	la	0,,xi
+	da	rzemainder+2
+	sc	k
+	da	dzor+2
+	ds	6
+	sc	b
+	ab	k
+	ab	rzemainder+1
+	sc	k
+	ab	dzor+1
+	tnz	k
+
+	jnc	insert_reciprocal
+	sb	rzemainder+1
+	dl	6
+	ds	rzemainder+2
+	ql	8
+	qs	rzemainder+4
+
+insert_reciprocal
+	slc	reciprocal+7
+	slc	reciprocal+6
+	slc	reciprocal+5
+	slc	reciprocal+4
+	slc	reciprocal+3
+	slc	reciprocal+2
+	slc	reciprocal+1
+
+	on	carry$
+
+	src	dzor+1
+	src	dzor+2
+	src	dzor+3
+	src	dzor+4
+	src	dzor+5
+	src	dzor+6
+	src	dzor+7
+
+	jdr	trial_add
+
+	la	reciprocal
+	sa	SIGNS
+
+	la	reciprocal+1
+	sa	TRIPLE
+	dl	reciprocal+2
+	ds	TRIPLE+1
+	call	(u72tofloat)
+	ql	QUAD
+	qs	reciprocal
+
+	la	reciprocal+4
+	sa	TRIPLE
+	dl	reciprocal+5
+	ds	TRIPLE+1
+	call	(u72tofloat)
+	ql	QUAD
+	qs	reciprocal+4
+
+	la	dzor		. this exponent is positive
+	xor	(07FFFFF)
+	aa	2,,xi
+
+	lb	reciprocal+4	. u72tofloat signed this exponent
+	anb	reciprocal	. get the minus of the normalising count
+	xorB	SIGNS
+	tp	SIGNS
+	ab	1,,xi
+	ab	a
+	ab	-72,,xi		. and lessify
+
+	xor	SIGNS
+	xorB	SIGNS
+	sa	reciprocal
+	sb	reciprocal+4
+	
+	on	fp$r
+	ql	reciprocal
+	fa	reciprocal+4
+	off	fp$r
+	qpop	r
+
+	push	8+8, sp, i
+	pop	sp
+	fret	0
+

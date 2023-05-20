@@ -1,0 +1,151 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#               
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#   
+#    You can redistribute and/or modify RTA1 and it materials
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#   
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#   
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#   
+#   
+#   
+
+if	[ -z "$RTA_BINARY" ]
+then
+
+echo
+echo    [*** PLEASE DO THESE SIMPLE SETUP STEPS ***]
+echo
+echo    export RTA_BINARY=directory in your shell profile
+echo    and add \$RTA_BINARY to \$PATH
+echo    supplied binaries are
+echo            ../binary.rta/osx.ppc
+echo            ../binary.rta/osx.x86
+echo
+echo    otherwise build for your platform
+echo    echo export RTA_BINARY=new-directory-name \>\> \~/.bash_profile
+echo    echo export PATH=\$PATH:\$RTA_BINARY      \>\> \~/.bash_profile
+echo
+echo    [NEW SHELL]
+echo    cd ../util.rta
+echo    ./make
+echo    cd ../client
+echo    ./make_fp [powerpc\|sparc\|intel\|arm]       [linux\|osx]
+echo    cd ../netifx
+echo    ./make  [powerpc\|sparc\|intel\|arm]       [linux\|osx]
+echo    ./runL
+echo
+echo    [NEW SHELL]
+echo    cd ../rta.run
+echo    ./tipgen
+echo    ./run srom
+echo
+echo    if you build say RTA_BINARY=a-new-directory, not a supplied one
+echo    you only build native for this platform
+echo    the make parameters are not for cross compiling \
+        but for small code differences
+echo    if you kill the supplied binaries you can always download again
+echo
+echo    [*** SIMPLE SETUP NEEDED. PLEASE SCROLL BACK TO SEE WHAT TO DO ***]
+echo
+
+exit	0
+fi
+
+if	[[ "$@" == *"-h"* ]]
+then
+
+echo	
+echo	"	linuxnet commmand line is generated from addresses in $HOME/.rta_net"
+echo	"	details in http://172.29.7.7/connect.html#route"
+echo
+echo	"	script ./runL [-options]"
+echo
+echo	"	-v	display received frame contents plus:"
+echo
+echo	"	-u	transmitted frame contents"
+echo	"	-W	transmitted frame timestamps"
+echo
+echo	"	-V	display BPF metadata anomalies on receive"
+echo
+echo	"	-z	verify and correct checksums received over platform loopback"
+echo	"	-Z	verify and correct checksums received on all interfaces"
+echo	"	-x	correct instead of zeroing wrong UDP checksums received"
+echo
+echo	"	-h	display this information and exit"
+echo
+	exit
+fi
+
+if	[ -e $HOME/.rta_net ]
+then
+source	$HOME/.rta_net
+else
+	echo initial network configuration
+	echo copy file .rta_net from this directory to your home directory
+	echo read the comment line notes in ~/.rta_net and edit if necessary
+	exit
+fi
+
+export  PLATFORM=`uname`
+if      [ $PLATFORM = Linux ]
+then
+        RAMFS=/dynamic/rta
+else
+        RAMFS=/Volumes/rta
+fi
+
+if      [ ! -e "$RAMFS/online/masmx" ]
+then
+        if      [ -e "$MASMX64" ]
+        then
+                echo    export PMASMX=$MASMX64 > ../temp/pathfind
+        else
+                echo    export PMASMX=$MASMX > ../temp/pathfind
+        fi
+        pushd   ../client
+        sudo    ./ramdev.lix
+        popd
+fi
+
+cp -p	$RTA_BINARY/bpf_slab    $RAMFS/online/
+cp -p	$RTA_BINARY/physal      $RAMFS/online/
+                       
+echo    wired ethernet $ENET:$RTA_ENET
+echo    wireless LAN $WIFI:$RTA_WIFI
+echo    binary code is in $RTA_BINARY
+
+sudo	$RTA_BINARY/linuxnet	$SLOOP:172.29.7.7@172.29.7.6/32	\
+				$ENET:$RTA_ENET			\
+				$WIFI:$RTA_WIFI $1 $2	-zx
+

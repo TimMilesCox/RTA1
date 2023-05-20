@@ -1,0 +1,78 @@
+.
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+
+
+NETMASK_ABSOLUTE $equ MAX_INT_MASK
+T77_DRIVERS_THREADED $equ 0	. set to 1 if network device drivers
+				. are not in main thread
+				. and use locking for tcpq and icmpq
+				. as for arpq
+				. incoming udp datagrams can in that case
+				. queue directly to sockets not udpq
+LOCK*	$proc
+	push, xi	NETMASK_ABSOLUTE
+	sim		0, sp		. don't get interrupted with lock
+	ts		LOCK(1)		. lock the resource
+
+ 	$if		LOCK()>1
+	lcal		LOCK(2, 1)
+	$else
+	j		$-1
+	$endif
+
+	$end
+
+FREE*	$proc
+	z		FREE(1)
+	sim		0, sp		. sp must be where LOCK placed it
+	inc		sp
+	$end
+
+OPEN*	$proc				. free the resource momentarily
+	z		OPEN(1)
+	sim		0, sp		. sp must be where LOCK placed it
+	$end
+
+SHUT*	$proc				. reclaim the resource
+	sim		0, sp		. sp must be where LOCK placed it
+	ts		SHUT(1)
+	j		$-1
+	$end
+

@@ -1,0 +1,409 @@
+
+_sr:	cmp	cl, I
+	jz	_inA
+	cmp	cl, XI
+	jz	_on
+
+	mov	ebx, dword ptr [ebp+R]
+	jmp	_operand_write
+
+_sk:	cmp	cl, I
+	jz	_inB
+	cmp	cl, XI
+	jz	_off
+
+	mov	ebx, dword ptr [ebp+K]
+	jmp	_operand_write
+
+_sx:	cmp	cl, I
+	jz	_outA
+	cmp	cl, XI
+	jz	_rsr
+
+	mov	ebx, dword ptr [ebp+X]
+	jmp	_operand_write
+
+_sy:	cmp	cl, I
+	jz	_outB
+	cmp	cl, XI
+	jz	_wsr
+
+	mov	ebx, dword ptr [ebp+Y]
+	jmp	_operand_write;
+
+_sa:	cmp	cl, I
+	jz	_reload
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [ebp+A]
+	jmp	_operand_write
+
+_sb:	cmp	cl, I
+	jz	_emulator_cool
+	cmp	cl, XI
+	jz	escape
+
+	mov	ebx, dword ptr [ebp+B]
+	jmp	_operand_write
+
+_z:	cmp	cl, I
+	jz	_sabr
+	cmp	cl, XI
+	jz	_lret
+	xor	ebx, ebx
+	jmp	_operand_write
+
+_pop:	cmp	cl, I
+	jz	escape
+	cmp	cl, XI
+	jz	_fret
+
+	call	stack_read1
+	mov	ebx, dword ptr [ebp+ebx*4]
+	mov	ebp, dword ptr [_register_set]
+	jmp	_operand_write
+
+_lr:	call	_operand_read
+	mov	dword ptr [ebp+R], eax
+	ret
+
+_lk:	call	_operand_read
+	mov	dword ptr [ebp+K], eax
+	ret
+_lx:	call	_operand_read
+	mov	dword ptr [ebp+X], eax
+	ret
+
+_ly:	call	_operand_read
+	mov	dword ptr [ebp+Y], eax
+	ret
+
+_la:	call	_operand_read
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_lb:	call	_operand_read
+	mov	dword ptr [ebp+B], eax
+	ret
+
+_tz:	cmp	cl, I
+	jz	near _rex
+	cmp	cl, XI
+	mov	esi, 0
+	jz	_ii_instruction
+
+	call	_operand_read
+	test	eax, 00FFFFFFh
+	jnz	_tz_
+	add	edx, 4
+_tz_:	ret
+
+_tp:	cmp	cl, I
+	jz	_jdz
+	cmp	cl, XI
+	jz	_ir
+
+	call	_operand_read
+	test	eax, 00800000h
+	jnz	_tp_
+	add	edx, 4
+_tp_:	ret
+
+_push:	call	_operand_read	; this 1st in case sp is pushed
+	call	stack1
+	mov	dword ptr [ebp+ebx*4], eax
+	mov	ebp, dword ptr [_register_set]
+	
+;	add	dword ptr [ebp+S_P], -1
+;	mov	ebx, dword ptr [ebp+S_P]
+;	mov	dword ptr [ebx*4+__register], eax
+
+	ret
+
+_jdz:	mov	ebx, dword ptr [ebp+B]
+	or	ebx, dword ptr [ebp+A]
+	jz	near _j
+	ret
+
+_jdr:	mov	ebx, dword ptr [ebp+R]	; dec r and jump if it passed from zero to -1
+	add	ebx, 00FFFFFFh
+	rol	ebx, 8
+	mov	cl, bl
+	shr	ebx, 8			; write back to registers only 00000000 thru 00FFFFFF
+	mov	dword ptr [ebp+R], ebx
+	test	cl, 1
+	jnz	_j
+	ret
+
+_lcal:	call	stack1
+	sub	edx, dword ptr [_b0p]
+	shr	edx, 2
+	mov	dword ptr [ebp+ebx*4], edx
+	mov	ebp, dword ptr [_register_set]
+	jmp	_j			; EA is in eax
+	ret
+
+_jnc:	test	dword ptr [_psr], 1
+	jz	_j
+	ret
+
+_jc:	test	dword ptr [_psr], 1
+	jnz	_j
+	ret
+
+_jao:	test	dword ptr [ebp+A], 1
+	jnz	_j
+	ret
+
+_jpa:	test	dword ptr [ebp+A], 00800000h
+	jz	_j
+	ret
+
+_jpb:	test	dword ptr [ebp+B], 00800000h
+	jz	_j
+	ret
+
+_j:	mov	edi, edx			; save updated apc
+	mov	edx, dword ptr [_b0p]
+	shl	eax, 2
+	add	edx, eax
+	cmp	edx, dword ptr [_apcz]
+	ja	_j_check
+	ret
+
+_j_check:
+	mov	edx, edi			; restore updated apc
+	mov	esi, LP_ADDRESS
+	jmp	guard_ii_escape			; for interrupt come-from
+
+_jpo:	call	NEAR _get_parity
+	jpo	_j
+	ret
+
+_jza:	and	dword ptr [ebp+A], 00FFFFFFh
+	jz	_j
+	ret
+
+_jzb:	and	dword ptr [ebp+B], 00FFFFFFh
+	jz	_j
+	ret
+
+_jnza:	and	dword ptr [ebp+A], 00FFFFFFh
+	jnz	_j
+	ret
+
+_jnzb:	and	dword ptr [ebp+B], 00FFFFFFh
+	jnz	_j
+	ret
+
+_jna:	test	dword ptr [ebp+A], 00800000h
+	jnz	_j
+	ret
+
+_jnb:	test	dword ptr [ebp+B], 00800000h
+	jnz	_j
+	ret
+
+_jxge:	mov	ebx, dword ptr [ebp+X]
+	sub	ebx, dword ptr [ebp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  x <  r,    jump
+	ret				; yes: x >= r, no jump
+
+_jyge:	mov	ebx, dword ptr [ebp+Y]
+	sub	ebx, dword ptr [ebp+R]
+	test	ebx, 01000000h		; microcarry?
+	jz	_j			; no:  y <  r,    jump
+	ret				; yes: y >= r, no jump
+
+_qs:	mov	ebx, a
+	jmp	_burst_write4
+
+_ql:	mov	ebx, a
+	jmp	_burst_read4
+
+_qpop:	push	eax				; EA
+	call	stack_read4			; places 4 stack registers in the scope of burst write
+	pop	eax				; EA
+	call	_burst_write4
+	mov	ebp, dword ptr [_register_set]	; stack ops have ebp->total register set
+
+	ret					; stack pointers are absolute
+
+_qpush: call	stack4
+	call	_burst_read4
+	mov	ebp, dword ptr [_register_set]
+	mov	dword ptr [ebp+S_P], ebx	; updated sp written after burst read
+	ret
+
+_dpop:	push	eax
+	call	stack_read2
+	pop	eax
+	call	_burst_write2
+	mov	ebp, dword ptr [_register_set]	; stack op had register set of all registers
+	ret
+
+_dpush:	call	_burst_read2
+	push	ebx
+	call	stack2
+	mov	dword ptr [ebp+ebx*4], eax
+	pop	eax
+	mov	dword ptr [ebp+ebx*4+1*4], eax
+	mov	ebp, dword ptr [_register_set]
+	ret
+
+_mta:	call	_operand_read
+	xor	eax, dword ptr [ebp+A]
+	and	eax, dword ptr [ebp+K]
+	jnz	_mta_
+	add	edx, 4		; k AND (a XOR operand) = 0, skip 1 instruction
+_mta_:	ret
+
+_dte:	call	_burst_read2
+	xor	eax, dword ptr [ebp+A]
+	jnz	_dte_
+	xor	ebx, dword ptr [ebp+B]
+	jnz	_dte_
+	add	edx, 4
+_dte_:	ret	
+
+_sc:	mov	ebx, dword ptr [_psr]
+	and	ebx, 1		; store carry 
+	jmp	_operand_write
+
+_mlb:	call	_operand_read
+	mov	ebx, dword ptr [ebp+K]
+	and	eax, ebx
+	xor	ebx, 00FFFFFFh
+	and	ebx, dword ptr [ebp+B]
+	or	ebx, eax
+	mov	dword ptr [ebp+B], ebx	; b = (b AND (NOT k)) OR (operand AND k)
+	ret
+
+_ds:	mov	ebx, a
+	jmp	_burst_write2
+
+_dl:	call	_burst_read2
+	mov	dword ptr [ebp+B], ebx
+	mov	dword ptr [ebp+A], eax
+	ret
+
+_spare:	ret
+
+_ex:	call	memory_read
+	jmp	_execute
+
+_ts:	call	memory_read_lock
+	test	eax, 00800000h
+	jz	_ts___
+
+	ret					; not obtained
+
+_ts___:	add	edx, 4				; successful, skip one instruction
+	or	eax, 00800000h			; claim
+	jmp	memory_direct
+
+_sim:	call	memoreg	
+	shl	ax, 8				; mask 3 bits
+	mov	al, byte ptr [_psr+2]		; read the psr mask part
+	ror	eax, 3
+	rol	al, 3
+	mov	byte ptr [_psr+2], al
+	shr	eax, 32-3
+	jmp	memoreg_writeback
+
+_call:	push	edx
+	call	stack2
+	sub	edx, dword ptr [_b0p]
+	shr	edx, 2
+	mov	dword ptr [ebp+ebx*4+1*4], edx
+	mov	edx, dword ptr [_b0_name]
+	mov	dword ptr [ebp+ebx*4], edx
+	pop	edx		; in case the jump goes wrong
+				; and an interrupt frame needs constructed
+	mov	ebp, dword ptr [_register_set]
+
+_go:	mov	dword ptr [_apc], edx
+	call	_operand_read	; may be memory or register
+
+	mov	edx, eax	; lookaside to calculate the vector
+	test	eax, 00800000h	; gate?
+	jz	_go2_4k_frame
+
+	and	eax, 007FFFFFh	; read the gate constant
+	call	_burst_read2	;
+	mov	edx, eax	; page high index ++ word offset
+	mov	eax, ebx	; storage block base page index
+	rol	edx, 6+8
+	mov	ebx, edx	; instruction frame page high index
+	and	ebx, 63
+	jz	_go_gate	; one page iframe
+	or	eax, 00800000h	; two+ page iframe
+
+_go_gate:
+	shr	edx, 6+8	; net word offset
+
+	jmp	_go2_frame
+	
+_go2_4k_frame:
+	and	edx, 63		; target is in 4k block, 64 vectors
+	shr	eax, 6		; new b0_name
+	and	eax, 0000FFFFh	; bit 22 of GO / CALL word reserved
+	xor	ebx, ebx	; frame high page index
+
+_go2_frame:
+	test	byte ptr [_psr+2], 128	; already in interrupt code?
+	jnz	_go2_base_frame	; 	; may branch into interrupt code
+					; because he is interrupt code
+	mov	ecx, eax
+	and	ecx, 03FFFFFh
+	sub	ecx, dword ptr [_base+72*4]	; applications lower limit
+	jnl	_go2_base_frame
+
+	mov	edx, dword ptr [_apc]
+	mov	esi, LP_AUTHORITY
+	jmp	guard_ii_escape
+
+_go2_base_frame:
+
+	mov	dword ptr [_b0_name], eax	; with flags
+	and	eax, 003FFFFFh			; base page index only
+	add	ebx, eax
+	mov	dword ptr [_base+64*4], ebx
+
+	%if	1
+	mov	ecx, dword ptr [_base+128*4]	; memory page high index
+	and	ecx, 003FFFFFh			; strip memory type bits
+	sub	ecx, ebx			; iframe high page may be = not >
+	jns	_go2_frame_in_range
+
+	mov	esi, LP_ADDRESS
+	mov	edx, dword ptr [_apc]
+	jmp	guard_ii_escape
+
+_go2_frame_in_range:
+
+	%else
+	mov	ecx, dword ptr [_base+128*4]	; have we the highest frame page?
+	and	ecx, 003FFFFFh			; read highest page index
+	mov	esi, LP_ADDRESS			; trim off flags
+	sub	ecx, ebx			; compare
+	xchg	edx, dword ptr [_apc]
+	js	guard_ii_escape			; if negative that should catch it
+	xchg	edx, dword ptr [_apc]
+	%endif
+
+	shl	ebx, 12
+	lea	ebx, [_memory+ebx*4+4095*4]	; last instruction word in iframe
+						; higher = wrong
+	mov	dword ptr [_apcz], ebx	; set execution limit pointer
+
+	mov	dword ptr [_base], eax
+	shl	eax, 12+2	; 4kword block multiplied by 4 for word
+	add	eax, _memory	; add the platform location of executable space
+	mov	dword ptr [_b0p], eax
+	shl	edx, 2		; add the vector offset * 4 for word
+	add	edx, eax
+_go_:	ret
+

@@ -1,0 +1,203 @@
+$(67::, y)
+ifco	ifconfig_frame
+
+$(0)
+ifconfig
+	la	ifco:ifclass_llhl
+	lb	ifco:oqif
+	jdz	ixconfig
+	lcal	ifconfigure
+ixconfig
+
+	$if	HVSOCKET
+	la	ifco:protocol_part:protocol
+	xor	IPPROTO_TCP,,xi
+	jnza	izconfig
+	lcal	hvtraffic_configure
+izconfig
+	$endif
+
+	fret	0
+
+ifconfigure
+	push	x
+	lx	this_if:id
+	lr	INTERFACES,,xi		. 2 + index must <= INTERFACES
+	jxge	ixconfigure
+	lx	0, sp
+
+	jza	if_setrelay		. default routine is already tabled
+					. just set the relay destination
+	lk	255,,xi
+	dsr	8
+	sbr	16
+	ds	this_if:class		. and llhl
+
+	mtane	(DLT_NULL)
+	j	if_dlt_null
+	mtane	(DLT_LOOP)
+	j	if_dlt_loop
+	mtane	(DLT_E10MB)
+	j	if_dlt_e10mb
+	j	ixconfigure
+
+if_dlt_null
+	la, xi	2048-10-4**-4
+	sa	this_if:mtu
+	lr	(dlt_null)
+	ql	(0:q)
+	j	if_storecall_llh
+if_dlt_loop
+	la, xi	2048-10-4**-4
+	sa	this_if:mtu
+	lr	(dlt_loop)
+	ql	(0:q)
+	j	if_storecall_llh
+if_dlt_e10mb
+        la, xi	1500
+	sa	this_if:mtu
+	dl	ifco:phys_address	. store the link layer address
+	ds	this_if:physa		. in the interface block
+	orB	a			. is there any physical address?
+	la	ifco:phys_address+2
+	sa	this_if:physa+2
+	orB	a
+	lk	b
+	lr	(dlt_e10mb)
+
+	ql	(0:q)			. zero address = ethernet-shaped loopback
+					. with 0800 etype, as Linux emulator platform
+	tz	k			. broadcast or p2p medium = ARP or not
+	ql	(arp_ether_rx, arp_ether_xmit, arp_ether_reso, xarp_ethernet:q)
+if_storecall_llh
+	sr	this_if:write_llh
+	qs	this_if:arp_rx
+
+					. jump to ifconfigure_addresses
+	lb	ifco:oqif		. if you have placed anything different
+					. in this_if:flags or in rxtx
+
+if_setrelay
+	jzb	ifconfigure_addresses
+	anuba	INTERFACES+1,,xi
+	jc	ixconfigure
+	ab	$if0p,,xi		. i_f_pointer_array,,xi
+	lb	0, b
+	sb	this_if:q2
+
+ifconfigure_addresses
+	dl	ifco:protocol_addr
+	ds	6			. cache the new address
+	sy	8
+	lx	this_if:address_list
+	tz	ifaddr:net		. the first address tuple is present from compile time
+	lcal	ifconfigure_add_address	. and may or may not have the first address written in
+	ds	ifaddr:net
+	lcal	ifconfigure_lexically
+	ly	0, sp
+	la	this_if:id, y
+	sa	ifaddr:i_f
+	ly	8
+	lb	ifco:maskbits_physaoctets
+
+	lcal	ifconfigure_log2netmask
+
+	ds	ifaddr:mask
+	xor	(65535)			. compose directed broadcast address
+	xorB	(65535)
+	or	ifaddr:net
+	orB	ifaddr:net+1
+	ds	ifaddr:broadcast
+	lx	0, sp
+
+ifconfig_store_high_index
+	lr	$ifzp			. don't move it backwards
+	jxge	ifconfig_at_highest
+	lx	r
+	sx	$ifzp			. i_f_last
+
+ifconfig_at_highest
+	la	this_if:id
+	sa	$if0p			. i_f_pointer_array
+	sa	IFNUMBER_I		. ifNumber:i
+
+ixconfigure
+	pop	x
+	lret	0
+
+
+
+ifconfigure_advance
+	lx	y
+
+ifconfigure_add_address			. you get here because the default slot is populated
+	dl	6
+	dan	ifaddr:net
+	jdz	ifconfigured_already	. well maybe you wanted to keep the address with  
+					. with changed settings
+
+	ly	ifaddr:next		. if default slot is populated then so are any more you have
+	tz	y
+	j	ifconfigure_advance
+
+
+	ts	net_alock
+	j	$-1
+
+	ly	net_afree
+	tz	y
+	j	ifconfigure_take_slot
+	z	net_alock		. let go the address slots list
+	ly	ixconfigure,,xi		. just have to dance dirty here
+	sy	0, sp			. short-circuit the add_address operation
+	lret	0
+
+ifconfigure_take_slot
+	sy	ifaddr:next		. set the new next
+	lx	y			. and move to it
+	ly	ifaddr:next		. and write the next next
+	sy	net_afree		. to the free chain head
+
+	z	ifaddr:next		. cap the interface chain
+
+	z	net_alock		. free the address slots list
+ifconfigured_already
+	dl	6
+	lret	0
+
+
+ifconfigure_lexically
+	lr	net_alexical,,i		. update pointer: a scalar not structure member
+
+configure_lexically			. entry point for other tables like ifAddrTable
+	ly	*r			. r is **
+	j	ifconfigure_eolexical?
+
+ifconfigure_compare
+	dl	6
+	dan	ifaddr:net, y
+	jdz	ifconfigure_listed	. built and run-time configured with the same address
+					. but possibly with other settings changed
+	jnc	ifconfigure_insert_lexically
+	lr	ifaddr:lexical, y, i	. update pointer word in structure, not structure
+	ly	ifaddr:lexical, y
+
+ifconfigure_eolexical?
+	tz	y			. end of chain = higher
+	j	ifconfigure_compare
+
+ifconfigure_insert_lexically
+	sy	ifaddr:lexical
+	sx	*r			. either lexical chain head or link pointer
+
+ifconfigure_listed
+	lret	0
+
+	$if	HVSOCKET
+hvtraffic_configure
+	c	(hvsockets_bind)	ifco:protocol_part:ports	;
+					ifco:protocol_part:port		;
+					ifco:protocol_part:density	;
+					ifco:protocol_addr,,long
+	lret	0
+	$endif

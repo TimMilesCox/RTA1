@@ -1,0 +1,462 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+AGENT2_TUPLES	$equ	24
+A2_WORDS	$equ	500
+
+$(1)
+a2_socket	+	0
+a2_bound	-	1
+a2_sva		-	1:d
+
+$(3)
+
+?	$do	AGENT2_TUPLES,;
+a2_ber_transient(?)	ber_template
+
+a2_permission	+	0
+a2_ix		+	0
+ber_command	+	0
+snmp_tferq	$res	A2_WORDS
+
+$(0)
+
+	$if	SNMP_AGENT_THREADED
+snmp_agent_launch
+	ql	(agent_2, 7, 0, 0q)
+	ii	THREAD$
+	lb	$3("*snmp_agent":0),,xi
+	ii	TAG$
+	fret	0
+
+	$endif
+
+agent_2	lcal	agent_2scan
+
+	$if	SNMP_AGENT_THREADED
+	ii	YIELD$
+	j	agent_2
+	$endif
+
+	fret	0
+
+agent_2scan $head_near	scalars(snmp_rseq,	24	;
+				a2_total8,	int	;
+				a2_highest_tuple, int	;
+				a2_octets,	int	;
+				a2_inaxw,	int	;
+				a2_restartp,	int	;
+				a2_restartbits,	long	;
+				a2_axw,		int)
+
+	tz	a2_socket
+	j	a2_sample
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	a2_stop
+	sa	a2_socket
+
+	c	(bind) a (SNMP_PORT:d),,long
+
+	sa	a2_bound
+	jna	a2_stop
+	dl	10
+	ds	a2_sva
+	call	(mib_start)	. agent1 did that
+a2_sample
+	tp	a2_bound
+	j	a2_stop
+	dl	a2_sva
+	sabr	BSOCKET
+	lx	b
+a2_next	lb	s:udp:socket_inq:head, x
+	jzb	a2_defer
+
+	sb	a2_inaxw
+	la	descriptor:bytes, b
+	sa	a2_octets
+	sa	BYTES
+
+	la	descriptor:apdata, b
+	sa	q
+	z	RDATAC
+
+	la, i	snmp_tferq
+	sa	p
+
+	on	b$streamZR++b$stream16r
+	off	b$stream16w
+
+	z	a2_ix		. error_index, if it is ever needed
+
+	rsr	8
+	anu, xi	SNMP_SEQUENCE
+	jnzb	a2_drop
+
+	sa	a2_ber_transient(1):ojet
+	lcal	ber_swap_compare
+	sa	a2_ber_transient(1):bytes
+	jnc	a2_drop
+
+	ly, xi	a2_ber_transient(2)
+	lcal	ber_ri
+	j	a2_drop
+
+	rsr	8
+	anu, xi	SNMP_STRING
+	jnzb	a2_drop		. there must be a community string
+	sa	a2_ber_transient(3):ojet
+	
+
+	la	p
+	sa	a2_ber_transient(3):data
+	ly, xi	a2_ber_transient(3)
+	lcal	ber_rs
+
+
+
+.	the parts to pull out are
+.	_________________________
+
+.	30LL	binding and length		00..7F 81:80..FF 82:0100..FFFF
+.	0201vv	SNMP version	00 = v 1
+
+.	then for v 1 at least...
+
+.	04LLalpha community string
+
+.	AxLL	command byte pdu length		00..7F 81:80..FF 82:0100..FFFF
+.	160 = get 161 = getnext 163 = set
+
+.	0204xxxxxxxx	request ID typically 4 bytes
+
+.	020100	status
+.	020100	error index
+
+.	30LL	binding and length		00..7F 81:80..FF 82:0100..FFFF
+.	30LL-2	maybe another one nested
+
+.	06LLxxxxxx...0500	oids with NULLtype zeroL for get / getnext
+.	06LLxxxxxx...4103yyyyyy	oids with typeLL / value for set
+
+.	strings may be > 127 bytes, length is encoded
+.						00..7F 81:80..FF 82:0100..FFFF
+
+.	______________________________________________________________
+
+.	if the command is not A0 A1 A3 the request is dropped silently
+
+.	if the bindings lengths don't figure with the containing lengths
+.	the request is dropped silently
+
+.	if community string is unknown the request is dropped silently
+
+
+.	the response is as the request except
+.	_____________________________________
+
+.	the command byte or response is SNMP_RESPONSE A2 162
+
+.	the response to successful get / getnext contains
+.	a value encoding, not NULLtype/zeroL 0500
+
+
+.	if anything has went wrong
+
+.		status is the error
+
+.		1 = something was too large in some way		tooBig
+.		2 = that does not exist				noSuchName
+.		3 = value wrong type or out of range		badValue
+.		4 = object may not be wrote			readOnly
+.		5 = something else was wrong			genErr
+
+.		error index indicates the [1st] oid binding which is in error
+.		relative 1, 1 = 1st oid binding in the PDU
+
+.	the plan is
+.	take all the actions and table the results as BER templates
+
+.	if anything is wrong, send the bindings back as received
+.	with error-code set to the mistake
+.	and error-index pointing to the first binding which is in error
+
+.	(no further ones need be scanned if that happens)
+.	this means the update values are returned but not actioned
+
+.	and the read-requests are returned with null values as received
+
+.	even multiple get-nexts can be sensibly answered on this principle
+
+.	and if everything has went right, produce the BER-encoded results
+
+
+	rsr	8
+	sa	a2_ber_transient(4):ojet
+
+	anu, xi	SNMP_GETNEXTREQ
+	jzb	a2_getnext
+	anu, xi	SNMP_SETREQ
+	jzb	a2_set
+	anu, xi	SNMP_GETREQ
+	jnzb	a2_drop
+
+a2_get
+a2_getnext
+a2_set	sa	ber_command
+	lcal	ber_swap_compare
+	sa	a2_ber_transient(4):bytes
+	jnc	a2_drop
+
+
+	ly, xi	a2_ber_transient(5)
+	lcal	a2_seq_sta_erx
+	j	a2_drop
+
+	dl	RDATAC		. snapshot the start point
+	ds	a2_restartbits	. of the enveloping binding
+	la	q
+	sa	a2_restartp	. it might decide to go wrong
+				. on a binding which is not the 1st one
+a2_getcluster
+	rsr	8
+	anu, xi	SNMP_SEQUENCE
+
+	jnzb	a2_drop
+
+	lcal	ber_rl
+	lb	BYTES
+	anb	a
+	sb	BYTES
+
+	lc	ber_sequence_scan	a	snmp_rseq,,i
+
+	jnza	a2_error_response
+
+	ab	a2_total8
+	sb	a2_total8
+
+	ly	BER_TRANSIENT_SIZE, y, i
+	tp	BYTES
+	j	a2_construct_response
+	tz	BYTES
+	j	a2_getcluster
+
+
+a2_construct_response
+	sy	a2_highest_tuple
+
+	la	a2_total8
+	lcal	a2_gener8
+	sa	a2_total8
+
+	dl	a2_sva
+	sabr	BSOCKET
+	lb	s:udp:socket_inq:head
+
+	la	a2_total8
+
+	call	(udp_rtxbuffer)
+	jza	a2_drop
+	sa	a2_axw
+
+	lb	a2_total8
+	sb	descriptor:bytes, a
+
+	lcal	a2_write_headers
+
+	ly, xi	a2_ber_transient(8)
+
+a2_add_tuple
+	lcal	ber_release_mo
+	ay, xi	BER_TRANSIENT_SIZE
+	lr	a2_highest_tuple
+	jyge	a2_transmit_response1
+	j	a2_add_tuple
+
+
+a2_transmit_response1
+	wsr	$byte	. push the last byte if uneven numbered
+
+	lx	a2_axw
+	call	(udp_acw_send)
+
+	j	a2_drop
+
+a2_snmp_gerr
+	la, xi	5
+a2_error_response			. error response from MIB
+	sa	a2_ber_transient(6):data+1
+	z	a2_ber_transient(6):bytes	. zero has effect 1
+	la	a2_ix
+	sa	a2_ber_transient(7):data+1
+	z	a2_ber_transient(7):bytes	. zero has effect 1
+
+a2_mirror
+	la	a2_restartp		. retrieve the whole input bindingS
+	sa	q
+	dl	a2_restartbits
+	ds	RDATAC
+
+	rsr	8
+	aa	-SNMP_SEQUENCE,,xi
+	jnza	a2_drop
+	la	a2_octets		. retrieve the input message length
+	lb	a2_inaxw		. it copies addressing
+	call	(udp_rtxbuffer)
+	jza	a2_drop
+	sa	a2_axw
+	lb	a2_octets
+	sb	descriptor:bytes, a
+	lx	descriptor:apdata, a
+	ly	a2_inaxw
+	ly	descriptor:apdata, y
+	ab	-1,,xi
+	sbr	3			. byte_count//8-1
+	lr	b
+a2_qload
+	ql	0, y
+	qs	0, x
+	ax	4,,xi
+	ay	4,,xi
+	jdr	a2_qload
+
+	lcal	ber_rl
+	lb	a			. calculate length of length
+	sbr	7			. 1 extra for 128..255, 1 more extra for 256..65535
+	aa	2,b,i			. self-include sequence and length of length
+
+	lcal	a2_gener8
+	sa	a2_total8
+
+	la	a2_axw
+	lcal	a2_write_headers
+
+a2_release
+	lx	a2_axw
+	call	(udp_acw_send)
+
+a2_drop	lx	a2_sva+1
+	la	a2_axw
+	call	(release_udgram)
+	j	a2_next
+
+a2_defer
+a2_stop	$ret
+
+a2_seq_sta_erx
+	lcal	ber_ri
+	lret	0
+	ay, xi	a2_ber_transient(6)-a2_ber_transient(5)
+
+	lcal	ber_ri
+	lret	0
+	ay, xi	a2_ber_transient(7)-a2_ber_transient(6)
+
+	lcal	ber_ri
+	lret	0
+	ay, xi	a2_ber_transient(8)-a2_ber_transient(7)
+
+	lret	1			.	good return
+	
+
+.	this part writes cluster contents into cluster length tags
+.	add adds together the sums of the containing sequences
+
+a2_gener8
+	push	a			.	data clusters length
+	ly, xi	a2_ber_transient(5)	.	request_id
+	lcal	ber_edit_semantic_i
+	push	a
+	ly, xi	a2_ber_transient(6)	.	status
+	lcal	ber_edit_semantic_i
+	push	a
+	ly, xi	a2_ber_transient(7)	.	error_index
+	lcal	ber_edit_semantic_i	
+	popA	a			.	plus status integr
+	popA	a			.	plus request ID 
+	popA	a			.	plus data clusters
+
+	sa	a2_ber_transient(4):bytes .	PDU Type/Length
+
+	lcal	ber_edit_cluster	.	PDU containing length
+	push	a
+
+	ly, xi	a2_ber_transient(2)	.	protocol version
+	lcal	ber_edit_semantic_i	.	protocol version size
+	push	a			
+	la	a2_ber_transient(3):bytes	
+	lcal	ber_edit_cluster	.	community string effect
+
+	popA	a			.	plus protocol version field
+	popA	a			.	plus PDU containing length
+
+	sa	a2_ber_transient(1):bytes .	initial sequence content length
+
+	lcal	ber_edit_cluster	.	total buffer size
+
+	lret	0
+
+a2_write_headers
+	push	descriptor:apdata, a
+	pop	p
+
+	on	b$stream16w
+	z	WDATAC
+
+	lb, xi	SNMP_GETRESP
+	sb	a2_ber_transient(4):ojet
+
+	ly, xi	a2_ber_transient(1)	.	30.length
+	lcal	ber_release_cluster_p
+	ly, xi	a2_ber_transient(2)	.	protocol version
+	lcal	ber_release_protocol_i
+	ly, xi	a2_ber_transient(3)	.	community string
+	lcal	ber_release_protocol_s
+	ly, xi	a2_ber_transient(4)	.	PDU type.length
+	lcal	ber_release_cluster_p
+	ly, xi	a2_ber_transient(5)	.	request ID
+	lcal	ber_release_protocol_i
+	ly, xi	a2_ber_transient(6)	.	status
+	lcal	ber_release_protocol_i
+	ly, xi	a2_ber_transient(7)	.	error-index
+	lcal	ber_release_protocol_i
+
+	lret	0
+

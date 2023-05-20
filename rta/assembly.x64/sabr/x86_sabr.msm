@@ -1,0 +1,98 @@
+;		edi -> value	-144(ebp) -> rax 16(rax) -> edi : int
+;		esi -> ea	-60(rbp)  -> esi		: int
+;		rdx -> base	-48(rbp)  -> rax + 1248  -> rdx	: pointer
+;		ecx <- psr
+;		r8  -> platform address tcp page = &devices[0].pages[base[65]]
+
+
+%define	ptr
+
+	global	_sabr
+	extern	_ultra
+
+_sabr:	push	rbx
+
+	mov	eax, esi		; EA
+	mov	ebx, edi		; value
+	mov	rdi, rdx		; base[]
+
+	test	eax, 0000003Eh		; target window must be 2..63
+	jz	_sabr_guard_authority
+	test	eax, 00FFFFC0h
+	jnz	_sabr_guard_authority
+
+	mov	eax, ebx		; cache final copy. EA remains in esi
+
+	mov	edx, dword ptr [rdi+128*4]	; device attribute system memory
+					; device zero = executable space
+					; flags ++ size in pages
+	test	eax, 00400000h		; big and maybe not system memory?
+	jz	_sabr_executable_space	; yes executable space
+
+	test	ebx, 63
+	jz	_sabr_executable_space	; yes executable space
+					; no some other space
+
+	and	rbx, 63			; extend device index -> 64 bits
+
+	mov	edx, dword ptr [rdi+128*4+rbx*4]
+	test	edx, 00400000h		; DATA16_FLAG     %equ    00400000h
+	jnz	 _sabr_device_array	; other than system memory type 0800000
+	test	edx, 00800000h		; but is it any type at all?
+	jz	_sabr_guard		; range issue. The device is void
+
+	mov	ebx, eax
+	and	ebx, 003FFFC0h		; blocks of 64 pages if not device zero
+	jmp	_sabr_executable_type	; devices usable as system memory
+	
+_sabr_executable_space:			; is the target page @+ application space?
+	and	ebx, 003FFFFFh		; just the page, not any flags
+	cmp	ebx, dword ptr [rdi+72*4]
+	js	_sabr_guard		; neither ISrs nor applications may base ISR space
+
+_sabr_executable_type:			; has the device this much memory?
+	and	edx, 003FFFFFh		; 4K-word page high index of device
+					; has the device this many pages?
+	sub	edx, ebx
+
+	jns	_sabr_thru		; yes
+	jmp	_sabr_guard		; no
+
+_sabr_device_array:
+	test	ecx, 00800000h		; psr
+	jz	_sabr_guard_authority	; only be here if you are an ISR
+	mov	ebx, eax		; refresh the requested block index
+	and	ebx, 003FFFFFh
+	shr	ebx, 6			; align it with high index from device port
+	and	edx, 003FFFFFh		; has the device array this many blocks?
+
+	sub	edx, ebx
+	jns	_sabr_thru		; yes
+					; no
+_sabr_guard:
+	mov	eax, 00C00001h		; no-access value
+					; will trip on reference in target window
+_sabr_thru:
+	and	rsi, 63			; zero extend rsi
+	mov	dword ptr [rdi+rsi*4], eax
+
+	mov	edx, dword ptr [rdi+65*4]	; base[65]
+	shl	rdx, 64-22
+	shr	rdx, 64-22-12-2		; * 4096 * 4
+	add	rdx, r8			; + memory
+
+	bswap	eax
+
+	mov	qword ptr [r14+284*4], r8
+	mov	qword ptr [r14+286*4], rdx
+
+	mov	dword ptr [rdx+rsi*4+64*4], eax	; TCB + ABT
+
+	xor	rax, rax
+	jmp	_sabrx			; -> TCB + ABT + window index
+
+_sabr_guard_authority:
+	mov	eax, -1
+
+_sabrx:	pop	rbx
+	ret

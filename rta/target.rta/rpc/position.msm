@@ -1,0 +1,122 @@
+.	lseek for remote files where
+.	you are updating the locally held file open block
+.	without any external operation taking place
+.	the file position in the in the file open block
+.	is sent to the server with every read and every write
+.	for SEEK_END you use file size
+.	which server returns on every access
+
+.	for now we'll say a 48-bit pointer is enough for one file
+.	even though it's signed
+
+seek72	$tree
+	$head_near	 params(seek_source,	int		;
+				options,	int		;
+				actualp,	int		;
+				newkey,		long		;
+				sizep,		int)		;
+								;
+			scalars(impression,	long, newkey	;
+				high_orderw,	int		)
+
+	tp	impression
+	n	high_orderw
+
+	la	options
+	and	O_OCTET,,xi		. opened the file as...
+	jnza	octet_pointer		. octet array
+					. 24-bit word array
+	dl	impression		. triple the word pointer
+	lr	high_orderw
+	off	carry$
+	slc	impression+1		. double it
+	slc	impression
+	slc	high_orderw
+	da	impression		. add the number
+	ds	impression		. you first thought of
+	sc	b
+	ab	r
+	ab	high_orderw
+	sb	high_orderw
+	
+	la	seek_source
+	jnza	seek_?			. not SEEK_SET
+	dl	newkey			. yes SEEK_SET
+	j	store_x			. simple to do
+
+seek_?	aa	-SEEK_END,,xi
+	jza	seek_end
+	aa	SEEK_END-SEEK_CUR,,xi
+	jnza	abandon			. that's simple too
+
+	lx	actualp			. relative current position
+	j	seek_relative
+
+seek_end
+	lx	sizep			. file size last updated
+	ql	0, x			. pack down from network format
+	qs	d$save
+	lx	9,,xi
+	lcal	quantum:compress
+	ql	d$save
+	lcal	quantum:align		. relative to 1st unwritten data word
+
+seek_relative
+	dl	impression		. stack top value in octets
+	da	1, x			. offset change
+	ds	impression		. receiving side of sum
+
+	sc	b			. calculate bits 71..48 of outcome
+	ab	high_orderw
+	ab	0, x
+	sb	high_orderw		. complete the stack top update
+	jnb	abandon			. but only store it if you like it
+
+	lcal	quantum:retell		. word quantum result in [ 6 a b ]
+	j	store_x
+	
+octet_pointer
+	la	seek_source
+	jza	store_hee		. SEEK_SET
+
+	aa	-SEEK_END,,xi
+	jza	relative_highest_write	. written size +- offset
+	aa	SEEK_END-SEEK_CUR,,xi
+	jnza	abandon
+	lx	actualp			. here +- offset
+	j	relative
+
+relative_highest_write
+	lx	sizep			. read & compress 64-bit file size
+	ql	0, x
+	lx	9,,xi
+	lcal	quantum:compress
+
+relative				. compose 3 words relative result
+	dl	1, x			. in stack top
+	da	impression
+	ds	impression
+	sc	b
+	ab	0, x
+	ab	high_orderw
+	sb	high_orderw
+	jnb	abandon
+
+store_hee
+	dl	impression		. 48-bit result
+					. if files get larger than 256 teraquanta
+					. a function lseek64 with 72-bit argument will be needed
+store_x	lx	actualp
+
+					. write from internal stack top
+	dpop	0, x			. to file open state descriptor
+	pop	2, x
+	lret	0
+
+abandon	la	3,sp,i
+	sa	sp
+	la	-1,,xi
+	lb	-BAD_ARGUMENT,,xi
+	lret	0
+
+	$root

@@ -1,0 +1,161 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+export	ICC=/opt/intel/oneapi/compiler/2022.0.2/linux/bin/ia32/icc
+
+PLATFORM=`uname`
+
+if      [ "$PLATFORM" == "Linux" ]
+then
+        OSPAN=-DLINUX
+        THREADS=-lpthread
+	echo	linux intel
+elif	[ "$PLATFORM" == "Darwin" ]
+then
+	if	[ "$1" == "powerpc" ]
+	then
+		echo darwin powerpc
+	else
+#		OSPAN=-mmacosx-version-min=10.6.8
+		echo darwin intel $OSPAN
+	fi
+fi
+
+
+if [ -z "$RTA_BINARY" ]
+then
+echo	export $RTA_BINARY=directory-for-new-binaries \
+	in your shell profile
+echo	and add \$RTA_BINARY to \$PATH
+exit	0
+fi
+
+if      [ ! -d "$RTA_BINARY" ]
+then
+mkdir   "$RTA_BINARY"
+fi
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+fi
+
+
+pushd   ../netifx
+$ICC -O0 -no-cxxlib -m32 -c -funsigned-char $IFLAG -DGCC $OSPAN -o ../emulator.rel/netbank.o netbank.c
+cd	../rta.run
+$ICC -O0 -no-cxxlib -m32 -c -funsigned-char  -DGCC $OSPAN -o ../emulator.rel/time32.o ../rta.run/time32.c
+$ICC -O0 -no-cxxlib -m32 -c $OSPAN -DGCC -o ../emulator.rel/tzone.o tzone.c
+popd
+
+$ICC -O0 -no-cxxlib -m32 -c -funsigned-char -DGCC $OSPAN -o ../emulator.rel/idisplay.o ../rta.run/idisplay.c
+
+if	[ -z $RTA_MBANKS ]
+then
+export	RTA_MBANKS=8
+fi
+
+rm	$RTA_BINARY/tipt$RTA_MBANKS
+echo	emulated RTA executable space $RTA_MBANKS banks image tipt$RTA_MBANKS
+
+if	[ "$1" == "powerpc" ]
+then
+	ARCHFLAG=-UX86
+        DAYCLOCK=-DRATIO=3000
+	echo	constructing for powerpc
+	echo	$DAYCLOCK
+elif	[ "$1" == "x86" ]
+then
+	ARCHFLAG=-DX86
+	DAYCLOCK=-DRATIO=3000
+	echo	constructing x86 specific
+else
+	ARCHFLAG=-DICC 
+	DAYCLOCK=-DRATIO=3000
+	echo	constructing ICC -O0 LE
+	echo	$DAYCLOCK
+fi
+
+export	RATIO=12000
+
+pushd	../engine.rta
+./genreli $ARCHFLAG $OSPAN -DMETRIC
+popd
+
+$ICC -O0 -no-cxxlib -m32 -c -funsigned-char -DARGUMENTS=64		\
+			 $OSPAN				\
+	  		-o ../emulator.rel/argue.o	\
+			../netifx/argue.c
+
+$ICC -O0 -no-cxxlib -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS -DGCC		\
+				-DMETRIC  $OSPAN -D_XINT	\
+			 	-o ../emulator.rel/console.o	\
+				../tgen.x64/console.c
+
+$ICC -O0 -no-cxxlib -m32 -DGCC -DMBANKS=$RTA_MBANKS -DMETRIC $OSPAN $THREADS	\
+				-DRATIO=$RATIO $DAYCLOCK	\
+				-fjump-tables			\
+				-o $RTA_BINARY/tipt$RTA_MBANKS	\
+				../emulator.rel/argue.o		\
+				../emulator.rel/netbank.o	\
+				../emulator.rel/time32.o	\
+				../emulator.rel/tzone.o		\
+				../emulator.rel/idisplay.o	\
+				../emulator.rel/console.o	\
+				../engine.rel/rta.o		\
+				../engine.rel/ii.o		\
+				../engine.rel/rw.o		\
+				../engine.rel/alu.o		\
+				../engine.rel/fpu.o		\
+				../engine.rel/sr.o		\
+				../engine.rel/rex.o		\
+				../tgen.x64/tipt64.c		\
+				../engine.rel/memory.o
+
+echo	binaries in $RTA_BINARY
+ls -l $RTA_BINARY

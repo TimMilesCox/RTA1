@@ -1,0 +1,51 @@
+read_straddle_12b?
+	test	cl, 1				; 4 words? You are here because
+	jnz	split_read4w			; offset is within last 3 of page
+						; 2 words then
+	cmp	esi, 0FFFh			; starting @ last word of page?
+	jb	readout				; not so, go ahead with burst read
+
+split_read2w:
+	mov	dword ptr [esp], edi		; delete 1st return address + save EA
+	mov	eax, edi			; recover EA
+	xor	cl, cl				; request 1 word
+	call	_bus_read			;
+	xchg	eax, dword ptr [esp]		; save 1st word read + load updated EA
+	inc	eax				; advance EA onto next page
+	xor	cl, cl				; request 1 word
+	call	_bus_read			; read new page or block
+	mov	ebx, eax
+	pop	eax				; recover 1st read word
+	ret					; return to caller of operand_read
+
+read_straddle_18b?
+	test	cl, 1				; 4 words? You are here because 
+	jnz	split_read4w			; offset is within last 3 of of bank
+						; 2 words then
+	cmp	esi, 0003FFFFh			; starting @ last word of bank?
+	jnb	split_read2w			; otherwise fall thru to burst read
+
+readout:
+	ret					; burst read in order
+
+split_read4w:					; write EA over stack top return address
+	mov	dword ptr [esp], edi		; one or other of these 2-word reads
+	mov	eax, edi			; splits down to 1-word reads
+	call	read2				; when offset is [3F]FFD
+	call	read2				;             or [3F]FFF
+	pop	eax				;   but not when [3F]FFE
+	ret					; return to caller of caller
+	
+read2:	push	eax				; EA
+	push	ebx				; destination index on stack top
+	mov	cl, 6				; ask bus for 2 words
+	call	_bus_read			; replaces eax and ebx
+	xchg	ebx, dword ptr [esp]		; get destination index up again
+	mov	dword ptr [ebp+ebx*4], eax	; write 1st result word
+	pop	eax				; recover 2nd result word
+	mov	dword ptr [ebp+ebx*4+1*4], eax	; write 2nd result word
+	pop	eax				; EA
+	add	eax, 2
+	add	ebx, 2
+	ret	
+

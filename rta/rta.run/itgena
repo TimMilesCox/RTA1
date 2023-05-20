@@ -1,0 +1,144 @@
+#
+#    Copyright Tim Cox, 2012
+#    TimMilesCox@gmx.ch
+#
+#    This file is part of the software emulation of the freeware
+#    processor architecture
+#
+#                RTA1
+#
+#    RTA1 is a free processor architecture design.
+#
+#    The executable emulation of RTA1 is free software.
+#
+#    Instruction code for the target RTA1 architecture is free software
+#    if it is delivered with this software
+#
+#    Software programs delivered with this software to connect the
+#    emulated RTA1 with real network interfaces in the emulator host
+#    are free software
+#
+#    Scripts and programs delivered with this software for running
+#    on other computers and interacting with the RTA1 are free software
+#
+#    Scripts and utility programs for constructing RTA1 target
+#    executable software are free software
+#
+#    You can redistribute it and/or modify RTA1
+#    under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version. 
+#
+#    RTA1 is distributed in the hope that it will be useful,     
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+#
+#
+#
+
+export  ICC=/opt/intel/oneapi/compiler/2022.0.2/linux/bin/ia32/icc
+
+if [ -z "$RTA_BINARY" ]
+then
+echo	export $RTA_BINARY=directory-for-new-binaries \
+	in your shell profile
+echo	and add \$RTA_BINARY to \$PATH
+exit	0
+fi
+
+if      [ ! -d "$RTA_BINARY" ]
+then
+mkdir   "$RTA_BINARY"
+fi
+
+if	[ "$1" == "powerpc" ]
+then
+	IFLAG=-UINTEL
+	echo	constructing for network byte order
+else
+	IFLAG=-DINTEL
+	echo	constructing for Intel byte order
+fi
+
+if	[ -z $RTA_MBANKS ]
+then
+export	RTA_MBANKS=2
+fi
+
+rm	$RTA_BINARY/tipa$RTA_MBANKS
+echo	emulated RTA executable space $RTA_MBANKS banks image tipa$RTA_MBANKS
+
+PLATFORM=`uname`
+if [ "$PLATFORM" == "Linux" ]
+then
+	echo	Linux
+	THREADS=-lpthread
+	ICORE=../assembly.x86/linux86.alt/rta_x86M.o
+	OSFLAG=-DLINUX
+	echo	constructing for some _imports
+#	pushd ../assembly.x86/linux86.alt/
+#	./makelf
+#	popd
+else
+	echo	OSX
+	ICORE=../assembly.x86/osx_x86.alt/rta_x86M.o
+	pushd ../assembly.x86/syntax.i
+	./iamacho
+popd
+fi
+
+if	[ "$1" == "powerpc" ]
+then
+	ARCHFLAG=-UX86
+	echo	constructing for powerpc
+else
+	ARCHFLAG=-DX86
+	echo	constructing x86 specific
+fi
+
+pushd   ../netifx
+$ICC -no-cxxlib -m32 -c -funsigned-char $IFLAG $OSFLAG -o ../emulator.rel/netbank.o netbank.c
+cd	../engine.rta
+$ICC -no-cxxlib -m32 -funsigned-char -c -DMBANKS=$RTA_MBANKS $1 $2 -DLINUX_ASM -o ../engine.rel/memory.o memory.c
+cd      ../rta.run
+$ICC -no-cxxlib -m32 -c -funsigned-char -o ../emulator.rel/time32.o ../rta.run/time32.c
+$ICC -no-cxxlib -m32 -c $OSFLAG -o ../emulator.rel/tzone.o tzone.c
+$ICC -no-cxxlib -m32 -c -funsigned-char $OSFLAG -o ../emulator.rel/idisplay.o idisplay.c
+popd
+
+$ICC -no-cxxlib -m32 -c -funsigned-char -DARGUMENTS=64      \
+                -o      ../emulator.rel/argue.o \
+                        ../netifx/argue.c
+
+$ICC -no-cxxlib -m32 -c -funsigned-char -DMBANKS=$RTA_MBANKS		\
+                                -DMETRIC $OSFLAG -D_XINT        \
+                                -o ../emulator.rel/console.o    \
+                                ../tgen.x64/console.c
+
+$ICC -no-cxxlib -m32 -funsigned-char -c -DMBANKS=$RTA_MBANKS -UGCC -DLLVM_LE $OSFLAG \
+			 -o 	../emulator.rel/rwk.o			\
+				../engine.rta/rw.c
+
+ls -l $ICORE
+
+$ICC -no-cxxlib -m32 -DMBANKS=$RTA_MBANKS -DMETRIC $THREAD $OSFLAG -DRATIO=70000	\
+				 -o $RTA_BINARY/tipa$RTA_MBANKS	\
+				$ICORE	$THREADS		\
+				../emulator.rel/argue.o		\
+				../emulator.rel/netbank.o	\
+				../emulator.rel/time32.o	\
+				../emulator.rel/tzone.o		\
+				../emulator.rel/idisplay.o	\
+				../emulator.rel/console.o	\
+				../emulator.rel/rwk.o		\
+				../tgen.x64/tipt64.c		\
+				../engine.rel/memory.o
+
+echo	binaries in $RTA_BINARY
+ls -l $RTA_BINARY

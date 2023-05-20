@@ -1,0 +1,470 @@
+.       
+.    Copyright Tim Cox, 2012
+.    TimMilesCox@gmx.ch
+.
+.    This file is instruction code for the freeware processor architecture
+.
+.                RTA1
+.
+.    RTA1 is a free processor architecture specification.
+.
+.    The executable emulation of RTA1 is free software.
+.
+.    This instruction code for the target RTA1 architecture is free software
+.
+.    Software programs delivered with this software to connect the
+.    emulated RTA1 with real network interfaces in the emulator host
+.    are free software
+.
+.    Scripts and programs delivered with this software for running
+.    on other computers and interacting with the RTA1 are free software
+.
+.    Scripts and utility programs for constructing RTA1 target
+.    executable software are free software      
+.
+.    You can redistribute it and/or modify RTA1
+.    under the terms of the GNU General Public License as published by
+.    the Free Software Foundation, either version 3 of the License, or
+.    (at your option) any later version.
+.
+.    RTA1 is distributed in the hope that it will be useful,
+.    but WITHOUT ANY WARRANTY; without even the implied warranty of
+.    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+.    GNU General Public License for more details.
+.
+.    You should have received a copy of the GNU General Public License
+.    along with RTA1.  If not, see <http://www.gnu.org/licenses/>.
+.
+.
+
+HTTP_USER $equ	1		. there may be a second web pages tree
+				. for the customer
+HTTP_PORT $equ	80
+
+	$if	0		. moved to ascii.def
+CR	$equ	0d
+LF	$equ	0a
+HT	$equ	09
+	$endif
+
+$(67::,y)
+fs_lookup	$filetag
+
+$(3)
+http_s	+	0
+http_bound -	1
+http_sla   -	1:d
+
+fs24_sla   -	1:d
+. fs24_cursor -	1:d
+
+. http_file_octets
+.	+	0:d
+
+	$if	HTTP_USER
+fs24_sla2  -	1:d
+	$endif
+
+http_threads	1
+
+http_formation1
+	"HTTP/1.1 200 OK":CR:LF:;
+	"Content-Type: text/html; charset=UTF-8":CR:LF:;
+	"Content-Length: "
+http_formation1_length $equ	$bits/$byte
+http_formation2
+	$do	8,	+	0
+
+http_listening_transmission
+	+	0
+. http_name_buffer
+	$res	84/3
+
+$(0)
+http_serve
+
+	$if	HTTP_THREADED
+
+	ql	(http_thread,,,:q)
+	ii	THREAD$
+
+	jza	http_zstart
+	lb	$3("*http"),,xi
+	ii	TAG$
+
+http_zstart
+	fret	0
+
+http_thread
+	$endif
+
+	tz	http_s
+	j	http_bound?
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	http_zserve
+	sa	http_s
+
+	c	(bind) a (HTTP_PORT:d),,long
+
+.	lb	(HTTP_PORT)
+.	sb	7
+.	z	6
+.	call	(bind)
+
+	sa	http_bound
+	jna	http_zserve
+	dl	10
+	ds	http_sla
+
+	lr, xi	1
+	ly, xi	$1("web")
+	dsr	48
+	call	(fs_find)
+	ds	fs24_sla
+
+	$if	HTTP_USER
+	lr	2,,xi
+	ly, xi	$1("web2")
+	dsr	48
+	call	(fs_find)
+	ds	fs24_sla2
+	$endif
+
+http_bound?
+	tp	http_bound
+	j	http_zserve
+
+	dl	http_sla
+	sabr	BSOCKET
+	la	s:tcp:tbase
+	sabr	BSOCKET
+
+.	call	(tcp_hash_localsocket)
+
+http_walk_q
+	lx	(BSOCKET*/12++tlist:chain(1)+TPORTCHAIN(HTTP_PORT))
+
+	sx	http_listening_transmission
+
+
+http_walk
+	lx	transmission:next
+	tz	x
+	j	$+2
+	j	http_xserve
+
+	la	(HTTP_PORT)
+	lk	(00FFFF)
+	mta	transmission:socket_address+1
+	j	http_walk
+
+	sx	http_listening_transmission
+
+	la	transmission:state
+	aa, xi	-TCP_ESTABLISHED
+	jza	http_traffic?
+	aa	TCP_ESTABLISHED-TCP_SYNRECEIVED,,xi
+	jnza	http_remote_close?
+	call	(xaccept)
+	j	http_walk		. next
+
+http_traffic?
+	call	(tcpr)			. a message of some sort? 
+	jza	http_walk		. far call to read segment queue
+
+	sx	descriptor:tcbloc, a
+
+	$if	0			. nothing gained by more threads
+	sa	6			. parameter
+	z	7
+.	ql	(http_request_thread,,,:q)
+	dl	(http_request_thread,:d)
+				. assign the connection as parameter
+	ii	THREAD$
+	jnza	http_walk		. thread started
+	$endif
+
+					. thread not started but message read accepted
+	lcal	http_request_thread	. serve request in this thread
+	j	http_walk		. if connection not really established
+					. the call will return without action
+http_remote_close?
+	aa, xi	TCP_SYNRECEIVED-TCP_CLOSEWAIT
+	jnza	http_walk
+	call	(xdisco)
+	ii	YIELD$			. in case TCP servicing needed
+	j	http_walk_q		. start at the list start
+					. after you have done this
+http_xserve
+        $if     HTTP_THREADED
+	$if	1
+	ii	YIELD$
+	$else
+	dl	(10d)
+        ii      TWAIT$
+	$endif
+        j       http_walk_q
+        $endif
+http_zserve
+        fret    0
+
+
+http_request_thread $head_near	scalars(http_thread_request, 	int, a		;
+					http_thread_transmission, int, descriptor:tcbloc, a	;
+					fs24_cursor,		long		;
+					http_file_octets,	long		;	
+					http_target_name, 	72//3		)
+
+
+	inc	http_threads
+.	lx	desciptor:tcbloc, a
+.	sx	http_thread_transmission
+
+	ly	http_target_name,,i
+	lcal	http_get_what
+
+	dl	fs24_sla		. fs descriptor from
+
+	$if	HTTP_USER
+	jza	http_search2
+	$else
+	jza	http_drop_request	. global initialisation
+	$endif
+
+	call	(fs_dsearch)
+	jnza	http_located
+
+	$if	HTTP_USER
+http_search2
+	dl	fs24_sla2		. user pages directory
+	jza	http_drop_request
+	call	(fs_dsearch)
+	jnza	http_located
+	dl	fs24_sla		. need to ask a second time
+	jza	http_drop_request
+	$endif
+
+	ly, xi	$1("index.html")
+	lr, xi	4
+
+	dl	fs24_sla
+	call	(fs_dsearch)
+	jza	http_drop_request	. if you can't find the default page
+					. something's wrong with the fs
+http_located
+	ds	fs24_cursor		. fs_dsearch returned fs_lookup in b
+					. although it's typed as ,y
+
+.	dpush	fs_lookup:quanta, b
+
+	$if	1
+	lb	http_formation1,,xi
+	lk	05010,,xi
+	la	http_formation1_length,,xi
+	$else
+
+	push,xi	http_formation1
+	pop	q
+	la, xi	http_formation1_length
+
+	push,xi	05010
+	pop	SOCKET_CALL_FLAGS
+	$endif
+
+	lx	http_thread_transmission
+	call	(tcp_tx)
+	jna	http_hangup
+
+	ly	fs24_cursor+1
+	dl	fs_lookup:quanta
+	ds	http_file_octets
+
+
+	push, xi http_formation2
+	pop	p
+
+	z	WDATAC
+	z	BYTES
+	call	(iedit48ua)
+.	la, xi	0
+	wsr	16
+	la	BYTES
+
+	$if	1
+	lb	http_formation2,,xi
+	lk	05000++TCP_ACK,,xi
+	$else
+
+	push,xi	http_formation2
+	pop	q
+	$endif
+
+	lx	http_thread_transmission
+	call	(tcp_tx)
+	jna	http_hangup
+
+	$if	1
+	lk	05000++TCP_ACK,,xi
+	lb	$3("":CR:LF:CR:LF),,xi
+	$else
+
+	push,xi $1("":CR:LF:CR:LF)
+	pop	q
+	$endif
+
+	la, xi	$bits/$byte
+	lx	http_thread_transmission
+	call	(tcp_tx)
+	jna	http_hangup
+
+http_next_extent
+	dl	fs24_cursor
+	jza	http_pushover
+	call	(fs_xbase)
+	ds	fs24_cursor		. extent words are in r
+					. data address is in y 
+.	sy	q
+	lb	r
+	m, xi	3		
+	ds	6
+
+	dl	http_file_octets
+	dan	6
+	jnc	http_final_extent
+	ds	http_file_octets
+	la	7
+	lb	y
+	lk	05000++TCP_ACK,,xi
+
+	lx	http_thread_transmission
+	call	(tcp_tx)
+	jna	http_hangup
+	j	http_next_extent
+
+http_final_extent
+	lb	y
+	la	http_file_octets+1
+	lx	http_thread_transmission
+	lk	05000++TCP_ACK,,xi
+	call	(tcp_tx)
+	jna	http_hangup
+
+http_pushover
+	$if	1
+	lb	$3("":CR:LF),,xi
+	la	2,,xi
+	lk	05000++TCP_ACK++TCP_PSH,,xi
+	$else
+	push,xi	$1("":CR:LF)
+	pop	q
+	la, xi	2
+	push, xi	05018
+	pop		SOCKET_CALL_FLAGS
+	$endif
+
+	lx	http_thread_transmission
+	call	(tcp_tx)
+	jna	http_hangup
+
+http_norequest
+	j	http_hangup
+
+http_drop_request
+	lb, xi	$3("HTTP/1.1 200 OK":CR:LF:;
+                   "Content-Type: text/html; charset=UTF-8":CR:LF:;
+		   "Content-Length: 36":CR:LF:CR:LF:;
+		   "<html><div>":CR:LF:;
+		   "web archive not found":CR:LF:"</div></html>":CR:LF)
+
+.	sb	q
+	la	$bits/$byte,,xi
+	lx	http_thread_transmission
+	lk	05000++TCP_ACK++TCP_PSH,,xi
+	call	(tcp_tx)
+
+http_hangup
+http_thread_exit
+	la	http_thread_request
+	call	(tcpz)
+	dec	http_threads
+	$ret				.	thread end
+
+
+http_get_what				. y = caller's name buffer
+					. a = descriptor request message
+http_name_buffer $equf	0, y
+	push	y
+	push	descriptor:apdata, a
+	pop	q
+	z	RDATAC
+	on	b$stream16r
+	off	b$streamZR
+	rsr	16
+	rsr	8
+	lk, xi	-1
+	mta	("GET")
+	j	http_get_default
+	rsr	16
+	lk, xi	255
+	mta	('/')
+	j	http_get_default
+
+	rsr	8
+	mtane	(' ')
+	j	http_get_default
+	mtane	('?')
+	rsr	8
+
+	lr, i	http_name_buffer+72//3
+	and, xi 255
+
+	j	http_name_2nd_read
+
+http_name
+	lcal	http_name_mark
+	j	http_name1
+http_name_2nd_read
+	lcal	http_name_mark
+	j	http_name2
+	lcal	http_name_mark
+	j	http_name3
+
+	sa	0, y
+	la, xi	0
+	ay, xi	1
+
+	j	http_name
+	
+
+http_name2
+	sal	8
+http_name3
+	sa	0, y
+	ay, xi	1
+http_name1
+	la	y
+	ana	0, sp
+	lr	a
+	pop	y
+	lret	0
+
+	
+http_name_mark
+	rsr	8
+	mtane	(' ')
+	j	http_name_x		. end, truncate the ASCII space
+	mtane	('?')
+	j	http_name_x		. end, truncate the quizzical
+	mta	('=')			. out of range character?
+	lret	1			. character OK for being in name
+http_name_x
+	and,xi	-256			. truncate the out-of-range character
+	lret	0
+
+
+http_get_default
+	lr, xi	4
+	ly, xi	$1("index.html")
+	inc	sp
+	lret	0
