@@ -37,16 +37,22 @@ net_buffer_pages
 	aa, xi	1
 	sal	12
 
-	lcal	net_buffer_request
-	push	b
+net_buffer_request_pages
+	lcal	net_buffer_requestP
+	jnza	net_buffer_base_pages
+	ii	EXIT$
 
+net_buffer_base_pages
+
+	push	b
 	lb	48,,xi
+
 net_buffer_page
 	sabr	0, b
 	ab, xi	1
 	aa, xi	1
 	jdr	net_buffer_page
-	
+
 	pop	b
 	lx	(NET_BASE*/12)
 
@@ -63,7 +69,13 @@ net_buffer_banks
 	aa, xi	64
 	sal	12
 
-	lcal	net_buffer_request
+	lcal	net_buffer_requestB
+	jnza	net_buffer_base_banks
+
+	la	(16*4096)			. did not get banks
+	j	net_buffer_request_pages	. ask for less
+
+net_buffer_base_banks
 	push	b
 
 	lb, xi	48
@@ -111,23 +123,23 @@ netpool_initial
 					. except the area containing instructions plus
 					. static data / TCB / B1 frames / vector bank
 					. which may make a quarter too much to ask
+net_buffer_requestB
+	lk	(-262144)
+	j	net_buffer_request
+
+net_buffer_requestP
+	lk	-4096,,xi
+
 net_buffer_request
 	push	a
 	ii	BANK$
 	pop	b
-	jnza	net_buffer_acquired
-	sbr	1			. halve the request until a bank
-	la	b			. is granted or is not
-	lk	(-262144)		. does the request size remain # banks?
-	mta	(0)			. ask again if so
+	jnza	net_buffer_acquired	. really needs very few net buffers
+	sbr	1			. so reduce request drastically
+	la	b			. so applications can have memory
+	mta	(0)
 	j	net_buffer_request
-	lk	(-65536)		. has the request size changed
-	mta	(0)			. from banks to < 1 bank? Then
-	la	(65536)			. its size restarts at 16 pages
-	lk, xi	-4096			. has the request diminished
-	mta	(0)			. to < 4096?
-	j	net_buffer_request	. ask again if still > 4095
-	ii	EXIT$
-net_buffer_acquired
+
+net_buffer_acquired			. or not
 	lret	0
 

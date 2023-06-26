@@ -6,11 +6,19 @@ device_k	$array_key
 $(67::,y)
 canister	$array_index
 
+$(66::,x)
+cluster		$cluster_descriptor
+
 $(0)
 
 array_device_claim_ii
-	on	see$3
 	la	a			. pages desired - 1 in application a
+	lcal	array_device_claim
+	sa	a			. application accumulator
+	ir	0
+
+array_device_claim
+	on	see$3
 	and	(03FFFC0)		. banks sought - 1
 	sa	7+128			
 
@@ -37,17 +45,19 @@ claim?	inA	128, b			. device port
 	ly	(BVOLATILE_I*/18:s)	. canister start address
 
 	lr	(__TERA_BANKS-1)
-	lx	canister:free(1),,i
+	lx	canister:descriptors,,i
 
-zchain	z	0,x
-	ax	1,,xi
+zchain	z	cluster:chainf
+	ax	4,,xi
 	jdr	zchain
 					. currently based highest device bank
 	orB	(0400000)		. 0400000++device = 1st bank of device
 	la	0,,xi
-	lx	(BVOLATILE_I*/18++262142:s)	. -> 1st descriptor at top of canister
+
+	lx	(BVOLATILE_I*/18++262144-CLUSTER4:s)	. -> 1st descriptor at top of canister
 	ds	0, x
-	sx	canister:next		. 1st available for assignment
+	sx	canister:next+1
+	sb	canister:next		. 1st available for assignment
 	ly	6+128
 
 index_constructed
@@ -56,12 +66,13 @@ index_constructed
 	sabr	BVOLATILE_I
 	ly	(BVOLATILE_I*/18:s)	. canister start address
 
-	lx	canister:free(1)-1,,i	. index into free chains. ie lx y
+	lx	canister:descriptors,,i	. index into free chains. ie lx y
 	la	7+128			. banks desired - 1 from application a
 	sar	6
+	sal	2
 	ax	a_x
 
-	lb	0, x			. read chain head
+	lb	cluster:chainf		. read chain head
 	jzb	claim_new		. if none ready for use
 
 	push	0, b			. next pointer
@@ -70,21 +81,67 @@ index_constructed
 	j	return_buffer
 
 claim_new
-	lb	canister:next		. result container
-	la	1, b			. result
+.	lb	canister:next		. result container
+.	la	1, b			. result
+
+	dl	canister:next		. ultimate result
+
 	lx	64, a, i		. construct new next bank name
 	ax	7+128			. banks required */ 6
 	jxge	key_free		. higher than control tables
 
+	dpush	a_x			. after jump decision
+
+	$if	1
+	sx	canister:next
+	lb	x_x
+	la	x_x
+
+	sbr	6-2
+	andB	(00FFFF*/2)
+	xorB	-4,,xi			. descriptor address
+	lx	(BVOLATILE_I+1*/18s)		
+	ax	0, b, i			. as a function of buffer address
+	sx	canister:next+1
+	sa	cluster:bank, x
+	lb	x_x
+	$else	
+
 	ly	b_x
 	ay	-2,,xi			. new next descriptor
 	sy	*(BVOLATILE_I*/18++canister:next:s)
-	sx	1, y			. new next bank name
+
+	sx	cluster:bank, y		. new next bank name
+	lb	y_x
+	$endif
+
+
+.	can't use macro [ c lc ] in ISRs
+.	because it finishes by popping application sp
+
+
+	la	0, sp			. update basis
+	lr	4, x, i			. lower limit of intermediate space update
+	lx	1, sp			. descriptor of new buffer
+	
+	lcal	intermediate_space
+	dpop	a_x			. this is the buffer getting delivered
 
 return_buffer
 	ly	128+6			. reload device key address
 	z	device_k:ts_cell	. free device
 
+	on	see$1
+
+	lx	TERAFRAME_CHAIN(1),,xi
+	ax	device_index	
+	tnz	TERAFRAME_CHAIN(1)
+	lcal	teraframes_initial
+	ly	0, x			. old chain head
+	sy	cluster:next, b			
+	sb	0, x			. new chain head
+
+.	la	0, b
 	j	deliver
 
 key_free
@@ -98,7 +155,6 @@ claim_next
 	dec	b_x
 	lr	device_key(3),,xi
 	jyge	claim?
-
 					. high index page request
 	la	7+128
 	lcal	array_high_ix
@@ -110,11 +166,339 @@ claim_next
 	sb	BANK_CHAIN		. add to thread memory estate chain
 	or	(0400000)		. it's big
 
-deliver	sa	a
-
+deliver	lb	a_x
 	la	(0C00001:s)
 	sabr	BVOLATILE_I
-	ir	0	
+	la	b_x
+
+	lret	0	
+
+	$if	1
+
+chain_relink
+        on      see$1
+	lb	a_x
+	andB	63
+	ly	TERAFRAME_CHAIN(1)-1,,xi
+	ay	b_x
+	lk	-1,,xi
+chain_next
+	lb	x_y
+	ly	0, y
+	tnz	y
+	lret	0
+	mta	0, y
+	j	chain_next
+	pushd	0, y
+	pop	0, b
+	lret	1
+
+derive_descriptor
+	lb	a_x
+
+        andB    (03FFFC0)               . derive descriptor from bank identifier
+        sbr     6-2
+        xorB    -4,,xi
+        lx      (BVOLATILE_I+1*/18s)
+        ax      0, b, i
+        lk      -1,,xi
+        mta     1, x
+	lret	0			. not found
+	lret	1			. found
+
+.	r_x is new heap top descriptor + 1
+.	x_x is new buffer descriptor
+.	a_x is update basis
+
+intermediate_space
+	ax	-CLUSTER4,,xi		. to next base
+	jxl	intermediate_x		. comparand is last for updating
+					. stop at cursor lower than that
+	la	64, a, i		. advance data buffer pointer
+	lb	a_x
+	xorB	-1,,xi			. flag for memory management
+	sb	cluster:bank		. update
+	j	intermediate_space	
+
+intermediate_x
+	lret	0
+
+
+.	final leaf of BANK$FREE
+
+.	a <- bank start index
+.	device zero system memory does not get here
+.	only device types 800000 OR page_high_index
+.	system memory type outside executable space
+
+array_device_free
+	
+	lcal	array_cluster_free
+	ir	0
+
+array_cluster_free
+	$head_near	scalars(indication,	int		;
+				bank_index,	int,	a_x	;
+				tuple_p,	int		;
+				caller_x,	int,	x_x	)
+
+.	1st job find the descriptor in the device memory table
+.	if it's not leading edge of a cluster it doesn't get freed
+.	and result in b is zero =  "no banks are actually pooled"
+.	calling ISR can use that result to cancel vectors or not
+
+	on	see$3			. some lookups about array devices
+					. cached in kernel memory
+
+	and	63,,xi			. index 2-word information cell
+	sal	1
+	ly	device_key(1)-2,,xi
+	ay	a_x
+
+	lk	(03FFFC0)
+	la	device_k:index		. we want bank at high index = management pool
+	mtane	bank_index		. that aint the page we're fixin to pool ?
+	j	array_cluster_leave	. we might not wish to pool the pool controls
+
+	ts	device_k:ts_cell	. lock target a moment or 2
+	j	$-1
+
+	sy	tuple_p			. best not forget that part
+	ly	(BVOLATILE_I*/18s)
+	sabr	BVOLATILE_I		. remember hee? the device control page
+	la	bank_index		. and hee? the one we want to free
+
+	lcal	derive_descriptor
+	j	array_device_release	. possibly not a cluster leading edge
+					. or is not of this process
+
+	lcal	chain_relink		. remove from owner chain first
+	j	array_device_release	. if he wasn't there forget it
+
+	lr	canister:next		. is a_x < heap top ? (y still -> canister)
+	ly	a_x
+	jyge	array_device_release
+
+	lb	canister+1		. find the descriptor above the stack top
+	lcal	cluster_walk		. -> the cluster below the heap top
+
+	mta	1, b			. k is still -1
+	j	array_into_list
+
+	lr	(BVOLATILE_I+1*/18s)
+
+array_heap_compress
+	
+ 	sa	canister:next
+ 	sx	canister:next+1
+
+	lb	x_x
+	lcal	cluster_walk
+	lcal	find_in_freelist
+	j	array_device_release	. not found do not free
+	j	array_heap_compress	. 
+
+array_into_list
+	lcal	find_in_freelist
+	j	found_list_position	. not found so insert
+	j	array_device_release	. was found, is already there
+
+found_list_position
+	sx	0, b			. insert in chain
+	sy	0, x
+	j	array_device_release	. clear lock
+
+find_in_freelist
+	lcal	cluster_size		. returns size in b
+	ly	(BVOLATILE_I+canister:free(1)) 
+	ay	b_x
+					. so clusters > zero start at entry 1+
+	lr	x_x			. comparand for x_y
+
+freelist_search
+	lb	y_x
+	ly	y_x
+
+	jyge	list_descriptor_high	. therefore list buffer low
+
+	lx	0, y
+	j	freelist_search
+
+list_descriptor_high			. k_x still trusted as = -1
+	la	y_x
+	mta	x_y
+	lret	0			. not in chain
+	lret	1			. in chain
+
+	$if	0
+
+	ly	(BVOLATILE_I*/18:s)	. find the assigned heap top
+
+
+	lx	canister:next+1		. stack top - 1
+	lr	1, x			. -> heap top available
+	lb	r_x			. keep heap top for result ***
+
+	ly	bank_index		. there > actual descriptors
+	jyge	array_device_release	. not inside the descriptor heap
+	
+	lr	(BVOLATILE_I+1*/18s)	. don't graze over the edge
+	ax	CLUSTER4,,xi			
+	jxge	array_device_release	. stack root
+	tp	cluster:bank		. is the slot populated ?
+	lcal	cluster_walk
+
+	lk	-1,,xi			. stack top item
+	lr	1, x			. bank index compare
+	mta	r_x			. direct hit ?
+	j	array_into_list
+
+	anb	a_x			. heap top minus freed buffer ***
+	sbr	6
+	sb	indication		. result 2nd part cluster size
+
+	lb	0, x
+	sb	bank_index		. result 1st part forward chain
+
+array_stack_compress
+	sx	*(BVOLATILE_I*/18s)	. ie canister:next
+
+.	is the one after that in a free chain?
+
+.	lr	(BVOLATILE_I*/18++262142s)
+	jxge	array_device_release
+
+	lb	x
+	lcal	cluster_walk
+					. calculate next buffer size then scope up
+	lb	1, b
+	anb	1, x
+
+.	lb	1, x			. subtract from this re-heaped buffer
+.	anb	3, x			. the lower buffer before moving to it
+
+	sbr	6			
+
+.	ax	CLUSTER4,,xi		. move up to descriptor of lower buffer
+	lr	x_x			. hold descriptor as comparand jxge jyge
+
+	ly	(BVOLATILE_I*/18s)	. y <- @ free chains heads. select freechain
+	ay	canister:free(1)-1, b, i
+
+.	this is traversing descriptors high to low
+.	without reading the low to high data addresses
+
+array_search_free			. that is search if new heap top
+					. inhabits the free chain for its size
+	lb	y_x			. prior <- this
+	ly	0, y			. this  <- next
+	jyl	array_device_release	. not in free chain
+					. includes case no_next
+	la	r_x			. it's not lower
+	mta	y_x			. but is it higher ?
+	j	array_search_free	. no it's higher
+	la	0, y			. yes it's a hit
+	sa	0, b			. that's x_x out of the free chain
+ 	j	array_heap_compress
+	
+
+.	r = not-equal candidate from descriptor stack
+.	x -> stack descriptor
+.	y = candidate bank index
+.	a = candidate bank index
+
+.	fall thru here is inequality on first compare [ a = y ] ^= r
+.	traverse ascending descriptors is traverse descending buffer addresses
+.	descriptor for bank index not yet known
+
+array_into_list				. actual buffer address y
+	jyge	array_device_decision	. >= tabled address in r
+	lb	x_x			. save current x for possible subtract
+	ax	CLUSTER4,,xi
+	lr	(BVOLATILE_I+1*/18s)	. don't graze over the cliff edge
+	jxge	array_device_release
+
+	lr	1, x			. sample the next stored buffer address
+	j	array_into_list		. could be the very last one
+
+array_device_decision
+	mta	r_x			. address from table. a is still the same as y
+	j	array_device_release	. it's not the leading edge of an assigned block
+
+.	equal	now calculate list entry
+
+	lb	1, b			. bank index above in heap
+	anb	a_x			. minus this
+	sbr	6			. index - b_x = free chain ID
+	sb	indication		. result cluster size banks
+	lr	x_x			. candidate descriptor in limits pointer
+
+	ly	(BVOLATILE_I*/18s)
+	ay	canister:free(0)-1, b, i
+
+					. comparison now is descriptor addresses
+					. no need to read descriptor contents
+
+array_freechain_pass			. initially y_x contains address of chain head
+	lb	y_x			. prior <- this
+	ly	0, y			. this  <- next
+
+					. higher addressed descriptors = lower addressed buffers
+					. go earliest for re-use in free chains
+	jyl	array_descriptor_insert_point
+					. candidate descriptor is in limits pointer r_x
+	
+	la	y_x	
+	mta	r_x
+	j	array_freechain_pass
+        j	array_device_release	. already in the free chain, no action
+
+
+array_descriptor_insert_point
+
+	sy	0, x			. place into chain
+	sr	0, b
+
+	la	0, x			. forward pointer
+	ax	-2			. <- next buffer up
+	lb	1, x			.
+	anb	bank_index		. subtract buffer from buffer + 1
+	sbr	6			. number of banks
+	ds	bank_index		. 2 result words link_next:size_this
+
+	$endif
+
+array_device_release
+	ly	tuple_p
+	z	device_k:ts_cell	. free thayum control tuple
+
+array_cluster_leave
+	la	(0C00001s)
+	sabr	BVOLATILE_I		. close the gate
+	qpop	x_x			. [ caller_x | device_tuple | bank_index | banks_in_cluster ]
+	lret	0
+
+cluster_walk				. get to the start of a cluster
+	lb	CLUSTER4, b, i		. to heap top
+	tp	cluster:bank, b		. it's flipped if it's intermediate
+	j	cluster_walk
+	lret	0
+
+cluster_size
+	lb	x_x
+
+cluster_up
+	ab	-CLUSTER4,,x		. towards heap top via stack top
+	tp	cluster:bank, b
+	j	cluster_up
+
+	lb	cluster:bank, b
+	anb	cluster:bank
+
+	sbr	6
+	lret	0			. return size of cluster x ->
+
+	$else
 
 array_device_free			. not an _ii .. you get here from BANK$FREE
 	on	see$3
@@ -228,5 +612,7 @@ bad_descriptor
 	sabr	BVOLATILE_I		. screen where you were working
 
 	ir	0
+
+	$endif
 
 	$root

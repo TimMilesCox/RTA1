@@ -1,0 +1,64 @@
+.	turn a subscript to an offset
+.	optionally load it
+.	optionally zone it with target window p(1, 1)
+
+
+p		$proc
+dframe$*	$name	0
+dframe$bank*	$name	0400000
+
+S		$equ	24
+__WINDOW	$set	p(1, 1:1)
+__SEVERAL	$set	0
+	$do	p(1, 1:2)>p(1, 1:1),__SEVERAL	$set	p(1, 1:2)-p(1, 1:1)
+__VECTOR	$set	p(2, 1)
+CONTAINER_SIZE	$set	p(3, 1)
+instance	$equf	p(4,1), p(4, 2), p(4, 3)
+
+LOG_TRUE*	$func
+LOG	$do	18,	$do	1*/LOG=CONTAINER_SIZE,	$return	LOG
+		$return	0
+		$end
+
+		ql	(dframef __WINDOW, $t(instance)=0*instance\0, __VECTOR, p(0, 0)++__SEVERAL)
+
+__SCALE		$set	LOG_TRUE			
+
+		$if	p(4, 4)=S
+__SCALE		$set	0
+	$do	(instance\2^=0)++(p(4, *1))++(instance\1^=b),	lb	p(4)
+
+		mf	CONTAINER_SIZE,,xi
+
+		$elseif	__SCALE++(CONTAINER_SIZE=1)
+	$do	(instance\2^=0)++(p(4, *1))++(instance^=a),	dl	instance
+	$do	__SCALE^=0,	dsl	__SCALE
+
+
+		$else
+		$if	__KEEP_SIMD_SETTING
+		dpush	instance
+		pop	b
+		m	CONTAINER_SIZE,,xi
+		sb	6
+		pop	b
+		mf	CONTAINER_SIZE,,xi
+		aa	6
+		$else
+		dpush	instance
+		rex	(m	CONTAINER_SIZE,,xi)
+		dpop	a
+		$endif
+		$endif
+
+		$if	__WINDOW
+		$if	(__WINDOW>$zenith(3)/*12)**(__WINDOW+__SEVERAL<32)
+		or	(__WINDOW*/18:s)
+		$else
+		$flag	address space window out of range
+		$endif
+		$endif
+
+		ii	DFRAME$
+
+		$end

@@ -164,7 +164,6 @@ anomaly	qs		32+128			. ISR faulted
 	mtane		(zeta_ii_user_refp)
 	ir		0
 
-
 	$if		0
 	mtane		(rtq_user_rfp)
 	ir		0
@@ -586,6 +585,9 @@ $(0:0:TRANSFER_PAGE/$0p1)
 
 ?	$do	XIOBASES,	j	xbase(32+?-1)
 
+DFRAME$*	$vector	dframe:dframe_ii
+DFRAME$FREE*	$vector	dframe:dframe_free_ii
+
 	$do		44-$,	ir	0	
 
 CACHE_NETB$*	$vector	cache_standard_netbuf_ii
@@ -737,6 +739,7 @@ spawn_ii
 				. the application accumulators
 
 	lcal		spawn
+	jdz		spawn_z	. return zero		
 
 	on		see$2	. read the kernel vector bank
 	dl		rx_buffers
@@ -751,7 +754,7 @@ spawn_ii
 	ds		rx_buffers
 
 	pop		a_x	. retrieve the caller's B2
-
+	
 	inB		65	. new B65 as result value
 	sb		a	. in the application A-Register
 	pop		b_x
@@ -760,7 +763,12 @@ spawn_ii
 	II_FREE
 	ir		0
 
-
+spawn_z	z		a	. only applications do ii SPAWN$
+	dpop		a_x	. ISRs lcal spawn instead
+	outB		65	. restore these because the point of failure
+	sabr		2	. may be after TCB acquire
+	II_FREE			
+	ir		0
 
 start	la		APPLICATION_L,,xi
 	outA		application$L	. lower limit application code calls
@@ -1424,7 +1432,8 @@ energy_ii
 	
 	ir	0
 
-	$include	../teraframe/device_a
+	$include	../teraframe/device1a
+	$include	../teraframe/dframe
 
 TRANSFER_PAGE_HIGH
 

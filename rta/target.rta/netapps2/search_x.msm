@@ -1,6 +1,70 @@
 
+	$if	1
+
+.	this doesn't need configuring with a file
+.	it just walks the nvram iframes to the end of nvram
+.	only one vector in kernel vector list is used, vpointer(17)
+.	instead of reading vpointer(18...) from a file at startup
+
 search_onlinexqt
 	$head_far	 params(search_name_words,	int	;
+				search_run_namep,	int)	;
+								;
+			scalars(nextpx,			int	;
+				startpx,		int	;	
+				ram_start,		int	)
+
+	inA	ram$threshold
+	sa	ram_start
+
+	on	see$2
+	la	vpointer(17)
+	off	see$2
+
+online_search_app
+	sabr	32			. load an iframe
+	lb	*(32*/12++64)
+	sbr	18			. iframe page high index
+	ab	1, a, i			. point to next iframe
+	ds	startpx			. save this:next iframes
+	
+	lk	(0FF00FFs)		. look for a mount pointer
+
+	ql	*(32*/12++68)		. pointing to load gates directory
+	mta	(MOUNT$,,3)		. each iframe must have one
+	j	search_unbalanced	. unless the chain is ybroken
+
+	dl	6			. it points to directory
+	dsl	12			. application_templates
+	orB	32,,xi			. inside the embedded file system
+	aa	startpx			. inside the iframe
+	sabr	32			. construct a pointer to that
+	rbr	12			. in register b
+	dl	2, b			. and retrieve a read offset
+	dsl	6			. of objects in application_templates
+	
+	c	(qstart)	startpx			;
+				a,,long			;
+				search_name_words	;
+				search_run_namep
+
+	jnza	online_run		. if it found and ran you get the process id
+	lx	nextpx			. otherwise pull up the next iframe
+	lr	ram_start		. and the ram start page index
+	jxge	online_norun		. application not found in nvram pages
+	la	x			. not searched all of them:
+	j	online_search_app	. next
+	
+search_unbalanced
+online_norun
+	la	0,,xi
+online_run
+	$ret
+
+	$else
+
+search_onlinexqt
+	$head_far	 params(search_name_words,	int	; 
 				search_run_namep,	int)	;
 								;
 			scalars(online_devicep,	int,	vpointer(17),,xi	;
@@ -43,3 +107,4 @@ online_norun
 online_run
 	$ret
 
+	$endif

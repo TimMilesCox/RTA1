@@ -58,15 +58,22 @@ unpack	qpush	RDATAC
 	sb	p			. start inserted param stream
 	lr	b			. limit allowed tuples
 	lx	b			. end of tuples { words, *where }
-
+	ly	0,,xi			. argc returned in register a
+	
 argue	lb	p			. tokena will copy b -> p
 	la	BYTES			. available bytes
 	push	r
 	call	(tokena)
 	pop	r
 	dpush	a			. words:address
-	ax	-2,,xi			. stretch the external stack frame adowni
-	jza	rebuild			. there weren't any. Last tuple is void
+	lb	WDATAC			. this has just had $word-$byte added to it
+	xorB	$word-$byte,,xi		. was it zero before = last word exact fit?
+	jnzb	padded			. no, there is zero padding on last word
+	z	*p			. pragmatic step: force zero-end
+	inc	p			. as well as word-counted string
+padded	ax	-2,,xi			. stretch the external stack frame adown
+	jza	rebuild			. there weren't words. Last tuple is void
+	ay	1,,xi			. argc++
 	j	argue
 
 rebuild	sx	fp			. tuple list <- fp
@@ -78,7 +85,7 @@ rebuild	sx	fp			. tuple list <- fp
 unpop	dpop	0, x			. tuple of internal stack newest first
 	ax	-2,,xi			. do more of them until x < fp
 	jxge	unpop	
-
+	sy	4, sp			. return argc in register a
 	off	see$1
 	qpop	r
 	qpop	a

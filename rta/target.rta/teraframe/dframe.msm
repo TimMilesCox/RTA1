@@ -1,0 +1,262 @@
+dframe	$tree
+
+.		 47	 42						       0
+.		_________________________________________________________________
+.		|*window|			word offset			|
+.		|_______|_______________________________________________________|
+.		|		vector		|0x|	pages / banks - 1	|			
+.		|_______________________________|__|____________________________|
+.		 47			       24   21			       0
+
+
+.	these routines populate referenced parts of application arrays
+.	via the application vector list which is read-only to the application
+.
+.	note these routines update application vectors in the range
+.
+.				002900 hex to 002FFF
+.
+.	and may use all of them to populate array parts which the application references
+.	these routines never touch kernel vectors
+.
+.	kernel vectors within parts of the same range have special uses for serving the system
+
+.	these routines routinely support uniquely applications using uniquely application vectors
+
+.			vector 002900 hex is named vpointer(1)
+.			vector 002FFF hex is named vpointer(1792)
+.
+
+dframe_ii
+	ql	a			. 4-word request block in [ a b 6 7 ] 
+	tp	a			. or in a ->
+	ql	*a
+
+	slc	7+128			. get the big bit of bank range to view
+	slc	7+128			. into carry$
+	jc	dframe_large		. think big instead of page
+
+	lr	vpointer(1),,xi		. address of vector list start
+	drr	12			. get 24 bits of page displacent in array
+	lx	6+128			. address of 1st vector in array
+	ax	b_x			. plus offset page
+	jxl	dframe_zero		. may not be < vpointer(21)
+	lb	7+128			. how many pages to pull up - 1
+	sbr	2			. normalise after rolling into carry
+	ly	x_x			. sum high index in y
+	ay	b_x
+	lr	02FC0,,xi		. 
+	jyge	dframe_teraspace	. beyond direct vector page slots
+
+	dsr	12			. change 12.window.6 to z12.12 | window.?18
+	sbr	6			.				 z6.window.?18
+	andB	(31*/12)
+	or	b_x			. z6.window.12
+	sa	a			. result in application register
+	sbr	12			. window
+
+	lr	y_x			. top of vectors range in limits pointer
+	ly	x_x			. start of vectors range for search
+
+dframe_sample_p1
+	la	0, y			. sample the stored vector
+	jpa	dframe_p1_base		. storage already, give that to the caller
+	lcal	dframe_range		. obtain storage for the gap
+	jza	dframe_zero		. or try to
+
+dframe_p1_base
+	sabr	0, b			. get a page of buffer into address window
+	lb	1, b, i			. advance 1 window
+	jyge	dframe_complete		. was that all that is required?
+	ay	1,,xi			. see how the next page vector is
+	j	dframe_sample_p1
+
+dframe_large
+	drr	18			. pull 24 bits of bank offset into b
+	lx	6+128			. start of vectors range
+	ax	b_x			. sum in x
+	lr	vpointer(1),,xi		. lowest advisable vector to use
+	jxl	dframe_zero		. lower than that is rejected
+	lb	7+128			. number of banks requested in view - 1
+	sbr	2			. renormalise after shifting 2 bits to carry
+	ly	b_x			. add to start of range
+	ay	x_x			. vector + bank offset + banks - 1
+	lr	03000,,xi		. last useable vector location + 1
+	jyge	dframe_zero		. no option about that
+
+	and	-64++31,,xi		. 18 bits of offset and 5 bits of window
+	rar	6			. window.offset
+	sa	a			. result in application accumulator
+	dsr	48-6			. window in b
+	
+	lr	y_x			. top of vectors range in limits pointer
+	ly	x_x			. start of vectors range
+
+dframe_sample_b1
+	la	0, y			. read vector
+	jpa	dframe_b1_base		. storage already resourced, hand to caller
+	lcal	dframe_resource		. measure the gap ad request storage
+	jza	dframe_zero		. request can't be met
+
+dframe_b1_base
+	sabr	0, b			. place in address window
+	jyge	dframe_complete		. if that was all ...
+	ay	1,,xi			. ... otherwise next vector
+	lb	1, b, i
+	j	dframe_sample_b1
+
+dframe_teraspace
+
+
+dframe_zero
+	z	a			. squersh the result
+
+dframe_complete
+	ir	0
+
+					. measure gap in requested vectors
+dframe_range				. and request storage
+	qpush	a_x			. memory routines use a lot of registers
+	qpush	r_x
+
+	la	4096,,xi		. start the bidding at one page
+
+bid	jyge	bidden			. end of gap already?
+	ay	1,,xi			. next vector otherwise
+	tn	0, y			. already loaded ?
+	j	bidden			. don't overload, that's the storage in use
+	aa	4096,,xi		. otherwise up the bidding
+	j	bid
+
+bidden	lcal	bank			. ask for storage = gap
+	sa	4, sp			. store the result in stacked accumulator
+	jza	wan			. if none no more to do
+	push	BANK_CHAIN
+	pop	0, b
+	sb	BANK_CHAIN
+	ly	3, sp			. retrieve start-of-gap pointer
+	lr	0, sp			. and limits pointer
+	
+win	sa	0, y			. populate a vector
+	jyge	won			. is that all?
+	la	1, a, i			. next page pointer
+	ay	1,,xi			. next vector
+	j	win			. and do it again
+wan
+won	qpop	r_x			. stacked info includes the first page pointer
+	qpop	a_x			. and cursor / limit in vector list
+	lret	0
+
+dframe_resource				. same thing for big pages called banks
+	qpush	a_x
+	qpush	r_x
+
+	la	64,,xi			. start the bidding at one bank
+dframe_bid
+	jyge	dframe_bidden		. is that the end of the range?
+	ay	1,,xi			. no, sample the next vector
+	tn	0, y			. if it has storage don't overload
+	j	dframe_bidden		. the gap is covered
+	aa	64,,xi			. otherwise up the bidding by one bank
+	j	dframe_bid
+
+dframe_bidden
+	aa	-1,,xi
+
+	lcal	teraframe:array_device_claim	. get the banks cluster wherever it is
+	sa	4, sp			. store result in stacked accumulator
+
+	jza	dframe_distributed	. if that result is zero do no more
+.	la	b_x
+	lb	5, sp
+	ly	3, sp			. otherwise seed the storage pointer into vectors
+	lr	0, sp
+
+dframe_distribute
+	sa	0, y			. write a vector
+	jyge	dframe_distributed	. an it be the last
+	la	64, a, i		. or advance in the cluster
+	ay	1,,xi			. and in the vector list
+	j	dframe_distribute
+
+dframe_distributed			. results and running parameters
+	qpop	r_x			. are in the stacked registers
+	qpop	a_x
+	lret	0
+
+
+.	called from applications
+.	drop clusters in a range of space
+.	application registers [ a b ] are the start, end + 1
+
+dframe_free_ii
+	lx	a			. application start of range parameter
+	lr	$vector(21),,xi		
+	jxl	dframe_cancel_out
+	lr	03000-192,,xi
+	jxge	dframe_cancel_out
+	ly	b			. epplication end of range parameter
+	jyge	dframe_cancel_out
+	lr	1, x, i
+	jyl	dframe_cancel_out
+	lr	y_x
+	lcal	dframe_cancel
+
+dframe_freed
+dframe_cancel_out
+	ir	0
+
+
+dframe_cancel
+	la	0, x
+	jna	dframe_count
+
+	push	x_x			. save running parameter
+	push	r_x			. save fixed parameter
+
+	lk	(0400000)
+	mta	k
+	j	dframe_cancel_sysmem
+	lk	63,,xi
+	mta	(0)
+	j	dframe_cancel_arraymem
+
+dframe_cancel_sysmem			. storage in executable space
+	lcal	bank_free
+	
+
+dframe_cancel_arraymem			. storage outwith executable space
+	
+
+	pop	r_x
+	pop	x_x
+
+dframe_count
+	ax	1,,xi
+	jxl	dframe_cancel
+	lret	0
+
+
+.	at process exit
+.	no need to cancel the vector pointers
+.	or to drop system memory blocks. That happens anyway
+.	just pool any memory array device-nonzero blocks
+
+	$if	0			. these three instructions go inline in exit_ii
+dframes_cancel
+	on	see$1
+	tz	TERAFRAME_CHAIN(1)
+	lcal	free_teraframes
+	lret	0
+	$endif
+
+
+free_teraframes
+	on	see$1
+	la	TERAFRAME_CHAIN(1)	. move to device2a.msm / device_a.msm
+free_next_cluster
+	lcal	teraframe:array_cluster_free
+	jnza	free_next_cluster
+	lret	0
+	
+	$root
