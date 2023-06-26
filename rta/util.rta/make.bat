@@ -52,16 +52,24 @@ rem then
 rem mkdir   "$RTA_BINARY"
 rem fi
 
-pushd ..\netifx
-cl /J /c /Fo..\emulator.rel\argue.obj argue.c
+rem     set CL32=c:\Program Files (x86)\Microsoft visual Studio 10.0\VC\bin\amd32\cl.exe
+rem     or similar
+set     CL32=
+
+pushd	..\netifx
+CL32	/J /c /Fo..\win32.rel\argue.obj argue.c
 popd
 
-cl /J /DDOS /Fe..\binary.rta\win32\fds24 ..\emulator.rel\argue.obj fds24.c
-cl /J /DDOS /Fe..\binary.rta\win32\fsformat ..\emulator.rel\argue.obj fsformat.c
-cl /J /DDOS /Fe..\binary.rta\win32\lstring lstring.c
-cl /J /DDOS /Fe..\binary.rta\win32\slab ..\emulator.rel\argue.obj slab.c
-cl /J /DDOS /Fe..\binary.rta\win32\4kformat ..\emulator.rel\argue.obj 4kformat.c
-
+CL32	/J /DDOS /Fe..\binary.rta\win32\fds24 ..\win32.rel\argue.obj fds24.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\fsformat ..\win32.rel\argue.obj fsformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\fxformat ..\win32.rel\argue.obj fxformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\lstring ..\win32.rel\argue.obj lstring.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\slab ..\win32.rel\argue.obj slab.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\4kformat ..\win32.rel\argue.obj 4kformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\1gformat ..\win32.rel\argue.obj 1gformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\2gformat ..\win32.rel\argue.obj 2gformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\4gformat ..\win32.rel\argue.obj 4gformat.c
+CL32	/J /DDOS /Fe..\binary.rta\win32\8gformat ..\win32.rel\argue.obj 8gformat.c
 echo	..\binary.rta\win32
 dir	..\binary.rta\win32
 

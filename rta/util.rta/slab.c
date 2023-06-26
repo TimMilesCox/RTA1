@@ -249,17 +249,16 @@ int main(int argc, char *argv[])
 
                      if (words & 0x00800000)
                      {
-                        printf("fixup tuple %6.6x\n", words);
-
                         if (uflag['S'-'A'])
                         {
-                           printf("skipped: output is for examination only\n"
-                                  "input is for link load\n");
+                           if (flag['v'-'a'])
+                           printf("link load tuple %6.6x : %12.12llx\n", words, location);
+
                            continue;
                         }
 
-                        else printf("option -S to generate unfixed rom image "
-                                    "for examination only\n");
+                        else printf("option -S if fixup tuples are expected "
+                                    "for ROM link load\n");
                      }
 
                      next_location = location + words - 1;
