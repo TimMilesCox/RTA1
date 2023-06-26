@@ -17,7 +17,7 @@ int csabr(int ea, smp *xcore)
    int		 range;
    int		 device_index;
    int		 descriptor;
-   int		 isr;
+   int		 isr = psr & 0x00800000;
 
    page		*tcbp;
    word		*reloadp;
@@ -27,8 +27,6 @@ int csabr(int ea, smp *xcore)
 
    if ((v & 0x00400000) && ((device_index = v & 63)))
    {
-      isr = psr & 0x00800000;
-
       if (v & 0x00800000)
       {
          if (isr == 0) return -1;
