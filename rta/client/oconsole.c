@@ -2,7 +2,14 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <time.h>
+
+#ifdef	DOS
+#include <sys/types.h>
+#include <sys/timeb.h>
+#else
 #include <sys/time.h>
+#endif
+
 #include <errno.h>
 
 #include "../include.rta/address.h"
@@ -21,6 +28,13 @@ static struct sockaddr_in here = { 16, AF_INET, USTDOUT	} ;
 static struct sockaddr_in from = { 16, AF_INET		} ;
 #endif
 
+#ifdef  DOS
+static struct sockaddr_in here = {     AF_INET, USTDOUT	} ;
+static struct sockaddr_in from = {     PF_INET, 0	} ;
+
+static WSADATA wsa;
+#endif
+
 static socklen_t sixteen = 16;
 
 int main()
@@ -30,11 +44,27 @@ int main()
    unsigned short	*udgram;
 
    char			 time_string[60];
+
+   #ifdef DOS
+   time_t		 ltime;
+   struct _timeb	 tstruct;
+   struct tm		 tfields = { 0, 0 } ;
+   #else
    struct tm		*time_fields;
    struct timeval	 timep;
+   #endif
 
+   #ifdef DOS
+   int                   wnet = WSAStartup(MAKEWORD(1, 1), &wsa);
+   int                   s = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+   int                   f = 1;
+   int                   u = ioctlsocket(s, FIONBIO, &f);
+   int			 x = (s < 0) ? 0 : bind(s, (struct sockaddr *) &here, 16);
+   _tzset();
+   #else
    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
    int x = (s < 0) ? 0 : bind(s, (struct sockaddr *) &here, 16);
+   #endif
 
    int			 y;
    int			 iphl;
@@ -58,9 +88,18 @@ int main()
          x = recvfrom(s, data, DATA, 0, (struct sockaddr *) &from, &sixteen);
          if (x < 0) break;
 
+         #ifdef	DOS
+         _strdate_s(time_string, 60);
+	 printf(time_string);
+	 _strtime_s(time_string, 60);
+         printf(time_string();
+         // time(&ltime);
+         // ftime_s(&tstruct); https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/time-time32-time64?view=msvc-170
+         #else
 	 gettimeofday(&timep, NULL);
          time_fields = localtime(&timep.tv_sec);
          strftime(time_string, 60, "%d.%m.%Y %T", time_fields);
+         #endif
 
          if (from.sin_addr.s_addr == LOCAL)
          {
