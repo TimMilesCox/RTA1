@@ -696,7 +696,6 @@ bank_free_ii
 	la		4		. bank ID value
 
 	on		see$all		. see TCB +
-	lb, xi		BANK_CHAIN	. descriptors in kernel memory
 
 	lk		(0400000)
 	mta		k_x		. either not big
@@ -706,8 +705,16 @@ bank_free_ii
 	j		teraframe:array_device_free
 
 bank_free_sysmem
+	lcal		sysmem_free
+	ir		0
+
+sysmem_free
+	lb		BANK_CHAIN,,xi	. ownership chain
 	lk		(03FFFFF)	. 22-bit search mask
-	j		bank_freewheel	. start page index match will do	
+
+	$if		0		. surely not
+	j		bank_freewheel	. start page index match will do
+	$endif
 
 bank_freewheel
 	ly		b_x
@@ -716,16 +723,14 @@ bank_freewheel
 	mta		1, b		. skip on equal bank ID value 
 	j		bank_freewheel
 
-	la		b_x		. bank free wants
-					. a descriptor pointer
+	la		b_x		. bank free wants a -> descriptor
 
-	lb		0, a		. take it out of
-	sb		0, y		. the chain
-
+	push		0, b		. take it out of
+	pop		0, y		. the chain
+					. 48-bit result page_index:*descriptor
 	lcal		bank_free
 bank_freed
-	II_FREE
-	ir		0
+	lret		0
 
 spawn_ii
 	II_LOCK
@@ -802,6 +807,9 @@ start	la		APPLICATION_L,,xi
 	inB		71
 
 	ds		kernel_B6
+
+	la		(APPLICATION_BASE/*12)
+	sa		vpointer(17)		. start NVRAM application chain
 
 	ql		(0q)
 	ds		NFS_MOUNTS		. + FILESHARE_TABLE

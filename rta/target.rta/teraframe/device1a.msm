@@ -206,7 +206,6 @@ teraframe_reset
 	pop	x_x
 	lret	0
 
-	$if	1
 chain_relink
 
 	on	see$1
@@ -228,51 +227,6 @@ chain_chase
 	pop	0, b
 	lret	1			. result in x_x
 
-	$else
-
-chain_relink
-	lb	cluster:reverse
-	lx	cluster:next		. drop x -> 
-	jzb	chain_anomaly		. should not happen at all at all
-	tz	x_x			. if there is a next
-	sb	cluster:reverse		. transfer back pointer to it
-	sx	cluster:next, b
-	lret	1
-chain_anomaly
-	lret	0
-
-derive_descriptor
-	lb	a_x
-
-        andB    (03FFFC0)               . derive descriptor from bank identifier
-        sbr     6-2
-        xorB    -4,,xi
-        lx      (BVOLATILE_I+1*/18s)
-        ax      0, b, i
-        lk      -1,,xi
-        mta     1, x
-	lret	0			. not found
-	lret	1			. found
-
-.	r_x is new heap top descriptor + 1
-.	x_x is new buffer descriptor
-.	a_x is update basis
-
-intermediate_space
-	ax	-CLUSTER4,,xi		. to next base
-	jxl	intermediate_x		. comparand is last for updating
-					. stop at cursor lower than that
-	la	64, a, i		. advance data buffer pointer
-	lb	a_x
-	xorB	-1,,xi			. flag for memory management
-	sb	cluster:bank		. update
-	j	intermediate_space	
-
-intermediate_x
-	lret	0
-
-	$endif
-
 .	final leaf of BANK$FREE
 
 .	a <- bank start index
@@ -282,11 +236,13 @@ intermediate_x
 
 array_device_free
 	
+	xorB	b_x			. caller does not have the descriptor
+					. just bank index in application register a
 	lcal	array_cluster_free
 	ir	0
 
 array_cluster_free
-	$head_near	scalars(indication,	int		;
+	$head_near	scalars(indication,	int,	b_x	;
 				bank_index,	int,	a_x	;
 				tuple_p,	int		;
 				caller_x,	int,	x_x	)
@@ -323,61 +279,27 @@ array_cluster_free
 	lx	a_x			. bank index for delete
 	jxge	array_device_release	.
 
-	$if	1
+	lx	b_x			. this caller max be...
+	jnzb	indicated		. ...working the front of the owner chain
+	lcal	chain_relink		. obtain descriptor pointer from owner chain
+	j	array_device_release	. no
+	sx	indication		. will return to caller in b_x
 
-.	lb	DESC2, x, i		. buffer below heap top
-
-	$if	1
-
-	lcal	chain_relink		. obtain descriptor pointer
-	j	array_device_release
-	sx	indication
-	
-.	lb	DESC2, y, i		. buffer below heap top
-
-	$else
-	
-	lcal	derive_descriptor
-	j	array_device_release	. possibly not a cluster leading edge
-					. or is not of this process
-
-	sx	indication		. save
-
-	lcal	chain_relink		. remove from owner chain first
-	j	array_device_release	. if he wasn't there forget it
-
-
-	lx	indication		. restore
-
-	lb	canister:next+1
-	lcal	cluster_walk		. -> the cluster below the heap top
-
-	$endif
-
-					. 
+indicated
 	mta	1, y			. k is still -1
 	j	array_into_list
 
 	lr	(BVOLATILE_I+1*/18s)
 
 array_heap_compress
-	
-	$if 	1
+	ly	(BVOLATILE_I*/18:s)	. point ro canister again
 	sx	canister:next
-	$else
- 	sa	canister:next
- 	sx	canister:next+1
-	$endif
 
 	.	is the next buffer on its freelist[SIZE] ?
 
-	$if	1
 	la	1, x			. the buffer above
 	ax	DESC2,,xi		. the next buffer
-	$else
-	lb	x_x
-	lcal	cluster_walk
-	$endif
+	jxge	array_device_release	. heap empty next -> heap
 
 	lcal	find_in_freelist
 	j	array_device_release	. not found do not free
@@ -395,21 +317,10 @@ found_list_position
 
 find_in_freelist
 
-	$if	1
 	lb	a_x			. buffer + 1
 	anb	1, x			. minus buffer
 	sbr	6			. = size
 	ly	(BVOLATILE_I*/18:s)	. still at canister?
-
-
-	$else
-
-	lcal	cluster_size		. returns bank slots in b
-	
-	sbl	2			. * descriptor size
-
-	ly	(BVOLATILE_I*/18s)
-	$endif
 
 	ay	b_x
 					. so clusters > zero start at entry 1+
@@ -428,140 +339,6 @@ list_descriptor_high			. k_x still trusted as = -1
 	j	freelist_search		. not in chain
 	lret	1			. in chain
 
-	$if	0
-
-	ly	(BVOLATILE_I*/18:s)	. find the assigned heap top
-
-
-	lx	canister:next+1		. stack top - 1
-	lr	1, x			. -> heap top available
-	lb	r_x			. keep heap top for result ***
-
-	ly	bank_index		. there > actual descriptors
-	jyge	array_device_release	. not inside the descriptor heap
-	
-	lr	(BVOLATILE_I+1*/18s)	. don't graze over the edge
-	ax	CLUSTER4,,xi			
-	jxge	array_device_release	. stack root
-	tp	cluster:bank		. is the slot populated ?
-	lcal	cluster_walk
-
-	lk	-1,,xi			. stack top item
-	lr	1, x			. bank index compare
-	mta	r_x			. direct hit ?
-	j	array_into_list
-
-	anb	a_x			. heap top minus freed buffer ***
-	sbr	6
-	sb	indication		. result 2nd part cluster size
-
-	lb	0, x
-	sb	bank_index		. result 1st part forward chain
-
-array_stack_compress
-	sx	*(BVOLATILE_I*/18s)	. ie canister:next
-
-.	is the one after that in a free chain?
-
-.	lr	(BVOLATILE_I*/18++262142s)
-	jxge	array_device_release
-
-	lb	x
-	lcal	cluster_walk
-					. calculate next buffer size then scope up
-	lb	1, b
-	anb	1, x
-
-	sbr	6			
-
-	lr	x_x			. hold descriptor as comparand jxge jyge
-
-	ly	(BVOLATILE_I*/18s)	. y <- @ free chains heads. select freechain
-	ay	canister:free(1)-1, b, i
-
-.	this is traversing descriptors high to low
-.	without reading the low to high data addresses
-
-array_search_free			. that is search if new heap top
-					. inhabits the free chain for its size
-	lb	y_x			. prior <- this
-	ly	0, y			. this  <- next
-	jyl	array_device_release	. not in free chain
-					. includes case no_next
-	la	r_x			. it's not lower
-	mta	y_x			. but is it higher ?
-	j	array_search_free	. no it's higher
-	la	0, y			. yes it's a hit
-	sa	0, b			. that's x_x out of the free chain
- 	j	array_heap_compress
-	
-
-.	r = not-equal candidate from descriptor stack
-.	x -> stack descriptor
-.	y = candidate bank index
-.	a = candidate bank index
-
-.	fall thru here is inequality on first compare [ a = y ] ^= r
-.	traverse ascending descriptors is traverse descending buffer addresses
-.	descriptor for bank index not yet known
-
-array_into_list				. actual buffer address y
-	jyge	array_device_decision	. >= tabled address in r
-	lb	x_x			. save current x for possible subtract
-	ax	CLUSTER4,,xi
-	lr	(BVOLATILE_I+1*/18s)	. don't graze over the cliff edge
-	jxge	array_device_release
-
-	lr	1, x			. sample the next stored buffer address
-	j	array_into_list		. could be the very last one
-
-array_device_decision
-	mta	r_x			. address from table. a is still the same as y
-	j	array_device_release	. it's not the leading edge of an assigned block
-
-.	equal	now calculate list entry
-
-	lb	1, b			. bank index above in heap
-	anb	a_x			. minus this
-	sbr	6			. index - b_x = free chain ID
-	sbl	2			. = borrowed 3rd word of chunk descriptor
-	sb	indication		. result cluster size banks
-	lr	x_x			. candidate descriptor in limits pointer
-
-	ly	(BVOLATILE_I*/18s)
-	ay	0, b, i
-
-					. comparison now is descriptor addresses
-					. no need to read descriptor contents
-
-array_freechain_pass			. initially y_x contains address of chain head
-	lb	y_x			. prior <- this
-	ly	0, y			. this  <- next
-
-					. higher addressed descriptors = lower addressed buffers
-					. go earliest for re-use in free chains
-	jyl	array_descriptor_insert_point
-					. candidate descriptor is in limits pointer r_x
-	
-	la	y_x	
-	mta	r_x
-	j	array_freechain_pass
-        j	array_device_release	. already in the free chain, no action
-
-
-array_descriptor_insert_point
-
-	sy	0, x			. place into chain
-	sr	0, b
-
-	la	0, x			. forward pointer
-	ax	-2			. <- next buffer up
-	lb	1, x			.
-	anb	bank_index		. subtract buffer from buffer + 1
-	sbr	6			. number of banks
-	ds	bank_index		. 2 result words link_next:size_this
-
-	$endif
 
 array_device_release
 	ly	tuple_p
@@ -570,146 +347,78 @@ array_device_release
 array_cluster_leave
 	la	(0C00001s)
 	sabr	BVOLATILE_I		. close the gate
-	qpop	x_x			. [ caller_x | device_tuple | bank_index | banks_in_cluster ]
+	qpop	x_x			. [ caller_x | device_tuple | bank_index | descriptor ]
 	lret	0
 
+.	at process & thread  exit
+.	no need to cancel the vector pointers
+.	or to drop system memory blocks. That happens anyway
+.	just pool any memory array device-nonzero blocks
 
-	$else
-
-cluster_walk				. get to the start of a cluster
-	lb	CLUSTER4, b, i		. to heap top
-	tp	cluster:bank, b		. it's flipped if it's intermediate
-	j	cluster_walk
+	$if	0			. these three instructions go inline in exit_ii
+dframes_cancel
+	on	see$1
+	tz	TERAFRAME_CHAIN(1)	. indicates some of TERAFRAME_CHAIN() are populated
+	lcal	teraframe:free_teraframes
 	lret	0
-
-cluster_size
-	lb	x_x
-
-cluster_up
-	ab	-CLUSTER4,,xi		. towards heap top via stack top
-	tp	cluster:bank, b
-	j	cluster_up
-
-	lb	cluster:bank, b
-	anb	cluster:bank
-
-	sbr	6
-	lret	0			. return size of cluster x ->
-
-
-array_device_free			. not an _ii .. you get here from BANK$FREE
-	on	see$3
-	la	a			. from application a
-	lb	a			. read bank name
-
-	andB	63,,xi
-
-	ly	device_key(1)-2,,xi
-	sbl	1			. 2 word descriptor
-	ay	b_x
-
-	lk	(0400000++63)		. match the device number
-	mta	1, y
-	j	bad_descriptor
-
-	lk	(03FFFC0)
-	mtane	1, y			. cannot free the control page
-	j	bad_descriptor
-
-	ts	device_k:ts_cell
-	j	$-1
-
-
-	push	y_x
-
-	la	device_k:index
-	sabr	BVOLATILE_I		. access device structures
-	la	a			. retrieve bank name
-
-	lb	a			. from application a
-	ly	(BVOLATILE_I*/18:s)
-	lx	canister:next
-	xorB	3, x
-
-	lr	(BVOLATILE_I*/18++262142:s)
-	sy	7+128
-	jnzb	free_list_insert
-
-	
-	ax	2,,xi			. you're gone
-
-shave	sx	canister:next
-	jxge	stack_freed
-	lb	3, x
-	ana	b_x
-
-	sar	6
-	and	63,,xi
-	ly	7+128			. *canister = canister:free(1)-1,,i
-	ay	a_x
-
-	la	b_x			. update the subject name
-	ax	2,,xi			. and the forward pointer of reference
-
-alongout				. cycle until pointer x_x >= next in chain y_x
-
-	sy	6+128			. previous = @list on 1st pass
-	ly	0, y
-	lb	x_x
-
-	anb	y_x			. chain instance - candidate descriptor
-	jnc	alongout		. chain instance lower = buffer higher
-	jnzb	not_in_free_chain	. includes case y = 0 = end of chain
-
-	ly	0, y			. next
-	sy	*6+128			. <- previous
-
-	ly	7+128			. *canister
-.	lx	canister:next
-	j	shave
-
-free_list_insert			. find its descriptor
-	jxge	not_in_stack
-	ax	2,,xi
-	lb	a_x
-	anb	1, x
-	jnc	free_list_insert	. if it's less it's nearer stack root
-	jnzb	not_in_stack		. if not > and not = it's not there
-
-	ly	x_x
-	ay	-2,,xi			. x is the forward pointer
-	lb	1, y			. attached to candidate descriptor
-	anb	a_x
-	sbr	6
-	andB	63,,xi
-	ly	7+128			. *canister = canister:free(1)-1,,xi
-	ay	b_x
-					. <- ** qhead
-alongin	sy	6+128
-	ly	0, y			. down pointers = up handles
-
-	lb	x_x			. subtract chain pointer y
-	anb	y_x			. from candidate forward pointer x
-	jnc	alongin			. until candidate pointer is not less
-	jzb	chained_already		. includes case y = 0 = end of chain
-					
-into_chain				. descriptor y is higher, its buffer is lower
-	sy	0, x		. 	. insert in front of it
-	sx	*6+128
-
-chained_already
-not_in_stack
-stack_freed
-not_in_free_chain
-	pop	y_x
-	z	device_k:ts_cell
-
-bad_descriptor
-	la	(0C00001:s)
-	sabr	BVOLATILE_I		. screen where you were working
-
-	ir	0
-
 	$endif
+
+free_teraframes				. see$1 is on
+	lx	TERAFRAME_CHAIN(63+1),,xi	. label #s are relative 1 not zero
+free_next_chain
+	tz	0, x
+	lcal	free_owner_chain	. if this call is made...
+	ax	-1,,xi			. ... x_x is saved and restored
+	lr	TERAFRAME_CHAIN(3+1),,xi	. no array device may be device [ 0 1 2 ]
+	jxge	free_next_chain
+	lret	0
+
+free_owner_chain
+	push	x_x
+	ax	-TERAFRAME_CHAIN(1),,xi	. get the device instance 
+	ly	device_key(1)-2,,xi	. management tuple in kernel store
+	ay	x_x
+	ay	x_x			. 2-word management tuples
+
+	la	device_k:index		. base index of highest block
+					. = management block
+	inB	128, x			. read the corresponding device port
+	andB	(03FFFC0)		. isolate block high index
+	orB	(0400000)		. zone it with big flag
+	orB	x_x			. and device index
+	xorB	a_x			. does it tally?
+	jnzb	free_owner_chain_out	. management structure compromised, or owner chain
+
+	lcal	owner_chain_walk
+
+free_owner_chain_out
+	pop	x_x
+	lret	0
+					. note it's very costly if array_cluster_free
+					. is allowed to hunt the owner chain for the
+					. descriptor which is already supplied from here
+					. especially as a resource is locked
+					. so array_cluster_free is not allowed to do that
+
+owner_chain_walk			. no need to update chain headers
+	ax      TERAFRAME_CHAIN(1),,xi	. recover chain head address in TCB
+	lb	0, x
+	jzb	owner_chain_walk_thru	. shouldn't happen but...
+					. 1-time check we're not here by mistake
+
+owner_chain_walk_on			. array_cluster_free closes window each pass
+	sabr	BVOLATILE_I		. all descriptor pointers relate this window
+	push	a_x			. save control block index
+	push	0, b			. save next in case it's cleaned off descriptor
+	la	1, b			. storage block index 
+	lcal	array_cluster_free	. b_x = descriptor
+					. both returned unchanged
+					. array_cluster_free regenerates y_x
+	pop	b_x			. retrieve next		
+	pop	a_x			. retrieve control page
+	jnzb	owner_chain_walk_on
+					. array_cluster_free has already closed window
+owner_chain_walk_thru			. to the same as it is and hands it back
+	lret	0
 
 	$root

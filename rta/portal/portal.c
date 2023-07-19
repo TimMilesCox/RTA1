@@ -70,18 +70,29 @@ static int write_program(int iftype, int offset,
               host[0], host[1], host[2], host[3], host[4], host[5]);
    #endif
 
-   bytes = sprintf(text, "\t$include ../bpfmasmx/bpfmasmx.def\n");
+   #ifdef NET
+   bytes = sprintf(text, "\t$path ../../bpfmasmx/\n");
+   #else
+   bytes = sprintf(text, "\t$path ../bpfmasmx/\n");
+   #endif
+
    write(f, text, bytes);
 
-   bytes = sprintf(text, "\t$include ../bpfmasmx/host.def\n");
+   bytes = sprintf(text, "\t$include bpfmasmx.def\n");
+   write(f, text, bytes);
+
+   bytes = sprintf(text, "\t$include host.def\n");
    write(f, text, bytes);
 
    bytes = sprintf(text, "dgram\t$set\t%d\n", offset);
    write(f, text, bytes);
 
-   bytes = sprintf(text, "\t$include ../bpfmasmx/dgram.def\n");
+   bytes = sprintf(text, "\t$include dgram.def\n");
    write(f, text, bytes);
 
+   bytes = sprintf(text, "\t$path\n");
+   write(f, text, bytes);
+   
    #ifdef INTEL
    bytes = sprintf(text, "INTEL\t$set\t%d\n", 1);
    #else
@@ -185,13 +196,23 @@ int portal(int iftype, unsigned char *ifname, unsigned char *net_addresses)
    if (flag['a'-'a'])
    {
       printf("generate alternate filters\n");
+      #ifdef ANET
+      sprintf(ofile1, ANET "%s/bpf_gate.msm", ifname);
+      sprintf(ofile2, "./fgena.%s", ifname);
+      #else
       sprintf(ofile1, "../atemp.%s/bpf_gate.msm", ifname);
       sprintf(ofile2, "./fgen.%s", ifname);
+      #endif
    }
    else
    {
+      #ifdef NET
+      sprintf(ofile1, NET "%s/bpf_gate.msm", ifname);
+      sprintf(ofile2, "./fgen.%s", ifname);
+      #else
       sprintf(ofile1, "../temp.%s/bpf_gate.msm", ifname);
       sprintf(ofile2, "./fgen.%s", ifname);
+      #endif
    }
    #endif
 

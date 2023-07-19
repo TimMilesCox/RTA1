@@ -2,11 +2,13 @@
 	$path		../
 	$include	def/rta.def
 	$include	def/vector.def
+	$include	def/vector_array.def
 	$include	def/ii.def
 	$include	language/stack.def
 	$include	stream/stream.def
 	$include	language/catalog.def
 	$include	image.app/imports.def
+	$include	teraframe/array.def
 	$include	teraframe/dframe.def
 	$path
 	$list
@@ -16,7 +18,7 @@
 dframef	$form	6, 42, 24, 24
 
 $(1:01000/$1)
-pointer	+	vpointer(21)
+pointer	+	vpointer(1)
 
 $(3:03000/$3)
 one	0
@@ -30,50 +32,223 @@ eight	0
 nine	0
 ten	0
 
+subscript(1)	1250
+subscript(3)	30000
+subscript(4)	40000
+subscript(5)	700000L
+subscript(6)	16000000L
+subscript(7)	100000L
+
 	$lit	4
 $(4:*1/$4)
 $(0:*1)
 
+	. large and small data arrays governed for safety
+	. via vector locations vpointer(1..1792)
+	. which are read-only to the application
+
+	. areas of an array become populated
+	. when first pulled into address space with command
+
+	.	dframe$[bank]	window[:s] vector(1..1792)	;
+	.			object_size which_object	;
+	.			[array_maximum_data_words][:cluster]
+	.
+
+	.	dframe$		is pages of 4096 words
+	.	dframe$bank	is pages of 262144 words (banks)
+
+
+	.	argument 1
+	.	__________
+
+	.	window[:s]	is a range of up to 8 address space windows like 30:31 or 24:31
+	.			Two windows are needed unless data object size is a power of 2,
+	.			more than two if object size is page[s] + 2+ words
+
+	.	argument 2
+	.	_________
+
+	.	vector		the vector starting number vpointer(1..1792)
+	.			in the read-only vectors which are to become
+	.			populated with page or bank index numbers
+
+	.	srgument 3
+	.	__________
+
+	.	object_size	size in data words of array element
+
+	.			size zero means no data space is requested
+	.			no runtime action takes place with size zero
+	.			but assembly time array configuration
+	.			per argument 5th
+	.
+
+	.	argument 4
+	.	__________
+
+	.	which_object[,index_register][,attribute][,S]
+
+	.			relative_zero subscript
+	.			in by default a 2-word integer (48 bits)
+
+	.			subscript may be 1 word 4th attribute:
+	 
+	.				subscript_name,,,S
+
+	.			2 preceding parameters may be stated
+	.			on subscript identifiers of 1 or 2 words
+
+	.			some boxes [] are used here around optional syntax elements
+	.			the boxes are not themselves part of syntax
+
+	.			the word[s] containing the subscript can be loaded indirectly
+
+	.				*pointer_to_long
+
+	.				*pointer_to_int,,,S
+
+	.			index register: subscript_name,[ x y a b fp sp ]
+
+	.			or part of one word
+	.			byte attribute: subscript_name,[ index],[ w0 t1 t2 t3 h1 ]
+
+	.			subscript can be value instead of a variable
+	.			and is typed without markings in 4th argument position
+
+	.				123456		
+	.
+	.			for example or in hex
+
+	.				01E240
+
+	.			or in hex with masmx command line option -c
+
+	.				0x01E240
+
+	.			immediate attribute ,,i can be used
+
+	.				value , [index], i
+
+	.			and the immediate value can be combined with indexing 
+	.		
+	.			fixed subscripts are infrequent because subscripting
+	.			is mosly used to vary references to data
+	.
+
+	.	argument 5
+	.	__________
+
+	.	[array_maximum_data_words][:cluster]
+
+	.			up to 4 terawords can be stated but the array may only be populated
+	.			with memory the RTA1 system has which is at maximum 1 teraword
+
+	.			arrays may be sparse and are initially void in total of memory
+
+	.			array parts become populated when commanded into the address space
+	.			by dframe$
+
+	.			very large arrays need very large clusters to configure in 1792
+	.			or fewer vector pointers
+
+	.			cluster size is a power of 2 number of pages or banks
+
+	.			argument 5 is only accepted once per array per assembly
+	.			subsequent calls on the same array are without argument 5
+	.			the array may not be configured twice in one assembly
+
+	.			an initial call object size zero which defines array geometry
+	.			to the assembly
+
+	.				dframe$bank	window[:s] 0 subscript	array_data_words[:cluster]
+
+	.			configuration is actioned at assembly and has no runtime steps
+
+	.			an array may be without limit or cluster and is configuration-free
+	.			Other arrays following a configuration-free array in vector space
+	.			may be overwritten by subscript error
+
+	.			unlimited arrays occupy a vector pointer per storage granule
+	.			of 4096 or 262144 words. A configuration-free array starting vpointer(1)
+	.			can address an array space of 7'340'032 data words in 4096-word pages
+	.			or 469'762'048 data words in pages of 262144 words
+ 
+
 frames*	$base_d	$zenith(3)-03000	1024
 	c	(seg$load)	0,,xi	(dframeprobe_data:L),,long
-	ql	(dframef	8, 10000, vpointer(21), 1)
-	ii	DFRAME$
+
+	. five arrays in realtime-determined variable clusters
+	. but also with a fixed limit (argument 5th) of data words
+	. in practice the that limit is containing pages or banks
+
+	dframe$	8	vpointer(1)	8	subscript(1),,,S	8*5000
+	$trace	__FREE_VECTOR
+	$trace	array()
 	sa	one
-	ql	(dframef	10, 20000, vpointer(21), 1q)
-	ii	DFRAME$
+
+	dframe$	10:11	vpointer(12)	10	20000	100*20000
+	$trace	__FREE_VECTOR
 	sa	two
-	ql	(dframef	12, 30000, vpointer(21), 1q)
-	ii	DFRAME$
+
+	dframe$bank	12:13	vpointer(540)	12	subscript(3),,,S	12*3000000
+	$trace	__FREE_VECTOR
 	sa	three
-	ql	(dframef	14, 40000, vpointer(21), 1q)
-	ii	DFRAME$
+
+	dframe$bank	14:15	vpointer(720)	20	subscript(4),,,S	20*1500000
+	$trace	__FREE_VECTOR
 	sa	four
-	ql	(dframef	16, 7000000, vpointer(21), 0400000++1q)
-	ii	DFRAME$
+
+	dframe$bank	16:17	vpointer(835)	18	subscript(5)	18*1000000
+	$trace	__FREE_VECTOR
 	sa	five
-	ql	(dframef	18, 8000000, vpointer(21), 0400000++1q)
-	ii	DFRAME$
+
+	dframe$bank	18:19	vpointer(905)	32	8000000	18*45000000:256
+	$trace	__FREE_VECTOR
 	sa	six
 
-	dframe$bank	20:21 vpointer(1) 80 (100000),,,S
+	. arrays in realtime-determined variable clusters
+	. and no stated upper limit
+	. in practice the upper is vpointer(1792)
+	. so in this case the array can get populated
+	. with 392 pages or banks
+
+	dframe$bank	20:27 vpointer(920) 80 subscript(7)
 	sa	seven
+
+	$trace	__FREE_VECTOR
+	$trace	array()
+
+	dframe$bank	18:19	vpointer(905)	32	subscript(6)
+	sa	eight
 	
-	printf	$3("%x %x %x %x %x %x %x -> %x":10:10:0),,xi	one two three	;
+	printf	$3("%x %x %x %x %x %x %x %x":10:10:0),,xi	one two three	;
 								four five six	;
-								seven vpointer(1)
+								seven eight
 
-again	.	printf	$3("[%d %x] ":0),,xi	counter	*pointer
+again	la	*pointer
 
-	la	*pointer
-	ii	BANK$FREE
+	$if	1
+
+.	exercise some large and small memory frees
+
+	dl	(vpointer(1), vpointer(719)d)
+	ii	DFRAME$FREE
+
+.	then let EXIT$ free the rest. That's the more efficient option
+
+	$else
 
 	jna	voidr
-	printf	$3("%x %x:%x":10:0),,xi	pointer	a,,long
+	ii	BANK$FREE
+	printf	$3("%x -> %x":10:0),,xi	pointer	a
 
 voidr	inc	pointer
 	lx	pointer
 	lr	03000,,xi
 	jxl	again	
+
+	$endif
 
 	ii	YIELD$
 	fret	0

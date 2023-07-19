@@ -1211,8 +1211,8 @@ int main(int argc, char *argv[])
    unsigned char	*p,
 			*q;
 
-   unsigned char	 ipath1[24],
-                         ipath2[24];
+   unsigned char	 ipath1[84],
+                         ipath2[84];
  
    int			 irules,
                          iphysa;
@@ -1344,13 +1344,26 @@ int main(int argc, char *argv[])
 
       if (flag['a'-'a'])
       {
+         #ifdef ANET
+         sprintf(ipath1, ANET "%s/filter", netdevice);
+         sprintf(ipath2, ANET "%s/physa", netdevice);
+         #else
          sprintf(ipath1, "../atemp.%s/filter", netdevice);
          sprintf(ipath2, "../atemp.%s/physa", netdevice);
+         #endif
       }
       else
       {
+         #ifdef NET
+         sprintf(ipath1, "%s%s/filter", NET, netdevice);
+         sprintf(ipath2, "%s%s/physa", NET, netdevice);
+
+	 printf("%s\n\n", ipath1);
+         printf("%s\n\n", ipath2);
+         #else
          sprintf(ipath1, "../temp.%s/filter", netdevice);
          sprintf(ipath2, "../temp.%s/physa", netdevice);
+         #endif
       }
 
       #ifdef LINUX

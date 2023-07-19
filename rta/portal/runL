@@ -130,20 +130,55 @@ if      [ ! -e "$RAMFS/online/masmx" ]
 then
 	echo	worktools to ramfs
 
-        if      [ ! -e ../temp ]
-        then
-                mkdir ../temp
-        fi
+#	for macOS / OSX 
+#	following lines make a choice between early OSX which
+#	automatically carries environment variables over sudo
+#       and fails sudo -E ramdev.osx because it doesn't like -E
 
-        if      [ -e "$MASMX64" ]
-        then
-                echo    export PMASMX=$MASMX64 > ../temp/pathfind
-        else
-                echo    export PMASMX=$MASMX > ../temp/pathfind
-        fi
-        pushd   ../client
-        sudo    ./ramdev.osx
-        popd
+#	and newer macOS which leaves variables behind without -E
+
+#	preexisting variables we want for target script ramdev.osx
+
+#	early OSX answers `uname -r` [ 10.4.xx 10.5.xx ] as 8.11.xx
+#	and in subsequent alphanumeric compare "8.xx.xx" > "10.xx.xx"
+#	
+#       following workaround chooses for
+
+#		[ `uname -p` = "powerpc" ] and [ `uname -s` = "Darwin" ] 
+
+#	these criteria are  approximate and may be incorrect
+#	in which case make your own version of this script
+#	hacking out the choice whether sudo [ -E ] ramdev.osx
+#	according to which your system needs
+
+#	if it's wrong for your PowerPC Mac then either
+
+#	[ A ] -E is opted and isn't liked
+#	the RAM disk for JustInTime assemblies doesn't happen
+#	and a crash or a system intervention happens instead
+
+#	or [ B ] -E is needed and isn't opted
+#	then tools aren't found and copied to /Volumes/rta/online
+#	then interface filters don't configure
+#	and fponline PDUs aren't JustInTime assembled
+
+
+	export OS_FAMILY=`uname -s`
+	export OS_TARGET=`uname -p`
+
+	echo	OS family $OS_FAMILY target $OS_TARGET
+
+	if	[ "$OS_TARGET" = "powerpc" ] && [ "$OS_FAMILY" = "Darwin" ]
+	then
+		echo	criterion PowerPC and Darwin
+		pushd	../client
+		sudo	./ramdev.osx
+		popd
+	else
+		pushd   ../client
+		sudo -E	./ramdev.osx
+		popd
+	fi
 fi
 
 cp      $RTA_BINARY/bpf_slab    $RAMFS/online/
@@ -155,23 +190,8 @@ echo    wired ethernet $ENET:$RTA_ENET
 echo    wireless LAN $WIFI:$RTA_WIFI
 echo    binary code is in $RTA_BINARY
 
-if	[ "$BPF_L" = "" ]
-then
-	export	BPF_L=bpf2
-fi
-
-if	[ "$BPF_E" = "" ]
-then
-	export  BPF_E=bpf3
-fi
-
-if	[ "$BPF_W" = "" ]
-then
-	export  BPF_W=bpf4
-fi
-
 sudo	$RTA_BINARY/osserv				\
-	/dev/$BPF_L:$SLOOP:172.29.7.7@172.29.7.6/32	\
-	/dev/$BPF_E:$ENET:$RTA_ENET			\
-	/dev/$BPF_W:$WIFI:$RTA_WIFI -zx $1 $2
+	/dev/bpf2:$SLOOP:172.29.7.7@172.29.7.6/32	\
+	/dev/bpf3:$ENET:$RTA_ENET			\
+	/dev/bpf4:$WIFI:$RTA_WIFI -zx $1 $2
 

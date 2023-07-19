@@ -4,10 +4,12 @@ dframe	$tree
 .		_________________________________________________________________
 .		|*window|			word offset			|
 .		|_______|_______________________________________________________|
-.		|		vector		|0x|	pages / banks - 1	|			
-.		|_______________________________|__|____________________________|
-.		 47			       24   21			       0
-
+.		|		vector		|yx|_log|  		    |www|			
+.		|_______________________________|__|____|___________________|___|
+.		 47			      24|  |			    |  0
+.						|  |21..18 cluster log	    |	
+.						|  |22 banks / pages	    |2..0 address windows 	
+.						|23 cluster log present	    |	base 1..8 granules
 
 .	these routines populate referenced parts of application arrays
 .	via the application vector list which is read-only to the application
@@ -28,11 +30,11 @@ dframe	$tree
 .
 
 dframe_ii
+	off	see$2
 	ql	a			. 4-word request block in [ a b 6 7 ] 
-	tp	a			. or in a ->
-	ql	*a
 
 	slc	7+128			. get the big bit of bank range to view
+	jc	dframe_cluster
 	slc	7+128			. into carry$
 	jc	dframe_large		. think big instead of page
 
@@ -40,13 +42,18 @@ dframe_ii
 	drr	12			. get 24 bits of page displacent in array
 	lx	6+128			. address of 1st vector in array
 	ax	b_x			. plus offset page
-	jxl	dframe_zero		. may not be < vpointer(21)
+	jxl	dframe_zero		. may not be < vpointer(1)
+
 	lb	7+128			. how many pages to pull up - 1
 	sbr	2			. normalise after rolling into carry
 	ly	x_x			. sum high index in y
-	ay	b_x
-	lr	02FC0,,xi		. 
-	jyge	dframe_teraspace	. beyond direct vector page slots
+	ay	b_x			. get y to top of desired range
+
+.	lr	03000,,xi		. 
+
+	lr	r			. page / bank limit 
+	jxge	dframe_zero		. check at least 1 page is in range
+					. no so buy no memory return no pointer
 
 	dsr	12			. change 12.window.6 to z12.12 | window.?18
 	sbr	6			.				 z6.window.?18
@@ -55,20 +62,23 @@ dframe_ii
 	sa	a			. result in application register
 	sbr	12			. window
 
-	lr	y_x			. top of vectors range in limits pointer
-	ly	x_x			. start of vectors range for search
+	lr	y_x			. propose limit highest in cluster
+	ly	r			. is array limit at least as high?
+	jyge	dframe_sample_p1	. yes
+	lr	r			. no: read from application r again
 
 dframe_sample_p1
-	la	0, y			. sample the stored vector
+	la	0, x			. sample the stored vector
 	jpa	dframe_p1_base		. storage already, give that to the caller
 	lcal	dframe_range		. obtain storage for the gap
 	jza	dframe_zero		. or try to
 
 dframe_p1_base
 	sabr	0, b			. get a page of buffer into address window
+	jxge	dframe_complete		. enough?
+
 	lb	1, b, i			. advance 1 window
-	jyge	dframe_complete		. was that all that is required?
-	ay	1,,xi			. see how the next page vector is
+	ax	1,,xi			. and 1 vector
 	j	dframe_sample_p1
 
 dframe_large
@@ -81,32 +91,104 @@ dframe_large
 	sbr	2			. renormalise after shifting 2 bits to carry
 	ly	b_x			. add to start of range
 	ay	x_x			. vector + bank offset + banks - 1
-	lr	03000,,xi		. last useable vector location + 1
-	jyge	dframe_zero		. no option about that
+
+.	lr	03000,,xi		. last useable vector location + 1
+
+	lr	r			. array limit from application r 
+	jxge	dframe_zero		. not even 1st window served
+					. buy no memory return no pointer
 
 	and	-64++31,,xi		. 18 bits of offset and 5 bits of window
 	rar	6			. window.offset
 	sa	a			. result in application accumulator
 	dsr	48-6			. window in b
-	
-	lr	y_x			. top of vectors range in limits pointer
-	ly	x_x			. start of vectors range
+
+	lr	y_x			. propose top of cluster for top of frame
+	ly	r			. is array at least that large?
+	jyge	dframe_sample_b1	. yes
+	lr	r			. no: replace with top of array
 
 dframe_sample_b1
-	la	0, y			. read vector
+	la	0, x			. read vector
 	jpa	dframe_b1_base		. storage already resourced, hand to caller
-	lcal	dframe_resource		. measure the gap ad request storage
+	lcal	dframe_resource		. measure the gap and request storage
 	jza	dframe_zero		. request can't be met
 
 dframe_b1_base
 	sabr	0, b			. place in address window
-	jyge	dframe_complete		. if that was all ...
-	ay	1,,xi			. ... otherwise next vector
+	jxge	dframe_complete		. if that was all ...
+	ax	1,,xi			. ... otherwise next vector
 	lb	1, b, i
 	j	dframe_sample_b1
 
-dframe_teraspace
+__CLUSTER_LOG	$equ	8+128
+__BASE		$equ	9+128
+__CLUSTER_LOG_PLUS_6 $equ 10+128
+__CLUSTER_MASK	$equ	11+128
 
+dframe_cluster
+	slc	7+128
+	jnc	dframe_zero		. not worth doing gigantic stuff in pages
+
+	lx	6+128
+	lr	vpointer(1),,xi
+	jxl	dframe_zero
+
+	lr	r			. assembly makes array-limit (application r)
+					. the only remaining necessary  check
+
+	drr	18			. isolate array-relative bank index in b
+	lx	b_x
+	jxge	dframe_zero		. outside array. buy no memory, return no pointer
+
+	rar	6
+	sa	a			. write result window.offset			
+	dsr	42
+.	sa	BASE
+
+	la	7+128
+	sar	18+2			. two flag bits were pulled into carry$
+	and	15,,xi
+
+	ds	__CLUSTER_LOG		. and __BASE in next register
+	la	6, a, i			. comes in handy
+	sa	__CLUSTER_LOG_PLUS_6	. once or twice
+	la	-1,,xi
+	sal	*__CLUSTER_LOG
+	lk	a_x			. mask of cluster index field
+	sk	__CLUSTER_MASK
+	n	__CLUSTER_MASK
+	
+	la	7+128			. calculate highest requested 
+	sar	2			. two flag bits were pulled into carry$
+	and	7,,xi
+	ly	a_x
+	ay	x_x
+
+	lr	y_x
+	ly	r			. yes application r = array high index bank
+	jyge	cluster_granules	. array contains all requested granules?
+	lr	r			. no, only the starting one[s]
+
+cluster_granules
+	la	x_x
+	lb	0,,xi
+	drr	*__CLUSTER_LOG
+	rbl	*__CLUSTER_LOG_PLUS_6
+	ly	a_x
+	ay	6+128			. from start of vectors
+	la	0, y			. read out the vector
+	jpa	cluster_loaded		. it's not C00001 whatever it is 
+	lcal	dframe_cluster_request
+	jza	dframe_zero
+
+cluster_loaded
+	aa	b_x
+	sabr	*__BASE
+	jxge	dframe_complete
+	inc	__BASE
+	ax	1,,xi
+	j	cluster_granules
 
 dframe_zero
 	z	a			. squersh the result
@@ -121,9 +203,9 @@ dframe_range				. and request storage
 
 	la	4096,,xi		. start the bidding at one page
 
-bid	jyge	bidden			. end of gap already?
-	ay	1,,xi			. next vector otherwise
-	tn	0, y			. already loaded ?
+bid	jxge	bidden			. end of gap already?
+	ax	1,,xi			. next vector otherwise
+	tn	0, x			. already loaded ?
 	j	bidden			. don't overload, that's the storage in use
 	aa	4096,,xi		. otherwise up the bidding
 	j	bid
@@ -131,16 +213,17 @@ bid	jyge	bidden			. end of gap already?
 bidden	lcal	bank			. ask for storage = gap
 	sa	4, sp			. store the result in stacked accumulator
 	jza	wan			. if none no more to do
+	on	see$1
 	push	BANK_CHAIN
 	pop	0, b
 	sb	BANK_CHAIN
-	ly	3, sp			. retrieve start-of-gap pointer
+	lx	2, sp			. retrieve start-of-gap pointer
 	lr	0, sp			. and limits pointer
 	
-win	sa	0, y			. populate a vector
-	jyge	won			. is that all?
+win	sa	0, x			. populate a vector
+	jxge	won			. is that all?
 	la	1, a, i			. next page pointer
-	ay	1,,xi			. next vector
+	ax	1,,xi			. next vector
 	j	win			. and do it again
 wan
 won	qpop	r_x			. stacked info includes the first page pointer
@@ -153,35 +236,64 @@ dframe_resource				. same thing for big pages called banks
 
 	la	64,,xi			. start the bidding at one bank
 dframe_bid
-	jyge	dframe_bidden		. is that the end of the range?
-	ay	1,,xi			. no, sample the next vector
-	tn	0, y			. if it has storage don't overload
+	jxge	dframe_bidden		. is that the end of the range?
+	ax	1,,xi			. no, sample the next vector
+	tn	0, x			. if it has storage don't overload
 	j	dframe_bidden		. the gap is covered
 	aa	64,,xi			. otherwise up the bidding by one bank
 	j	dframe_bid
 
 dframe_bidden
-	aa	-1,,xi
-
+	aa	-1,,xi			. request teraframe:array_device_claim
+					. is pages - 1
 	lcal	teraframe:array_device_claim	. get the banks cluster wherever it is
 	sa	4, sp			. store result in stacked accumulator
 
 	jza	dframe_distributed	. if that result is zero do no more
 .	la	b_x
 	lb	5, sp
-	ly	3, sp			. otherwise seed the storage pointer into vectors
+	lx	2, sp			. otherwise seed the storage pointer into vectors
 	lr	0, sp
 
 dframe_distribute
-	sa	0, y			. write a vector
-	jyge	dframe_distributed	. an it be the last
+	sa	0, x			. write a vector
+	jxge	dframe_distributed	. an it be the last
 	la	64, a, i		. or advance in the cluster
-	ay	1,,xi			. and in the vector list
+	ax	1,,xi			. and in the vector list
 	j	dframe_distribute
 
 dframe_distributed			. results and running parameters
 	qpop	r_x			. are in the stacked registers
 	qpop	a_x
+	lret	0
+
+dframe_cluster_request
+	qpush	8+128
+	qpush	a_x
+	qpush	r_x
+
+	la	r			. array size in banks in application r
+	mta	x_x			. requested cluster = highest cluster in array?
+	j	dframe_cluster_all	. no so get the big cluster
+	and	__CLUSTER_MASK		. yes, request is the remainder of array / cluster
+	sal	6
+	j	dframe_cluster_part	. does not need last cluster so large
+
+dframe_cluster_all
+	la	1,,xi
+	sal	*__CLUSTER_LOG_PLUS_6	. 64 * BANKS = PAGES
+
+dframe_cluster_part
+	aa	-1,,xi			. request teraframe:array_device_claim
+					. is pages - 1
+	lcal	teraframe:array_device_claim		
+	sa	4, sp			. result
+	lb	3, sp			. pointer to vector
+	jza	$+2
+	sa	0, b
+	qpop	r_x
+	qpop	a_x
+	qpop	8+128
 	lret	0
 
 
@@ -190,73 +302,59 @@ dframe_distributed			. results and running parameters
 .	application registers [ a b ] are the start, end + 1
 
 dframe_free_ii
-	lx	a			. application start of range parameter
-	lr	$vector(21),,xi		
-	jxl	dframe_cancel_out
-	lr	03000-192,,xi
-	jxge	dframe_cancel_out
-	ly	b			. epplication end of range parameter
-	jyge	dframe_cancel_out
-	lr	1, x, i
-	jyl	dframe_cancel_out
-	lr	y_x
-	lcal	dframe_cancel
+	lx	a			. lowest vector in range
+	lr	vpointer(1),,xi		. lowest not < $vpointer(1)
+	jxl	dframes_freed
+	ly	b			. highest vector in range 
+	lr	03000,,xi		. higest not > $vpointer(1792)
+	jxge	dframes_freed
+	lr	1, y, i			. lowest must be <= highest
+	jxge	dframes_freed		. or else nothing to do
 
-dframe_freed
-dframe_cancel_out
+free_dframe
+	la	0, x
+	jna	next_vector
+	lcal	dframe_cancel
+	la	(0C00001s)		. vector now void
+	sa	0, x			. an available for re-use
+
+next_vector
+	ax	1,,xi
+	jxge	dframes_freed		. r = highest + 1
+	j	free_dframe
+
+dframes_freed
 	ir	0
 
-
+.	following is a simplified prototype
+.	suitable mostly for fixed-cluster arrays as in very vast arrays
+.	there is not a cluster per vector entry in the default free format
+.	but instead a storage granule (page or bank) per vector
+.	so quite a few delete calls are no-op
+.	where the pointer is not the leading edge of an assigned buffer
+ 
 dframe_cancel
-	la	0, x
-	jna	dframe_count
 
-	push	x_x			. save running parameter
-	push	r_x			. save fixed parameter
+	push	x_x			. save fixed parameter
+	push	r_x			. save running parameter
 
-	lk	(0400000)
-	mta	k
-	j	dframe_cancel_sysmem
-	lk	63,,xi
+	lk	(0400000)		. big?
+	mta	k_x
+	j	dframe_cancel_sysmem	. not big therefore system memory
+	lk	63,,xi			. system memory large bank?
 	mta	(0)
-	j	dframe_cancel_arraymem
+	j	dframe_cancel_arraymem	. no, another bank
 
 dframe_cancel_sysmem			. storage in executable space
-	lcal	bank_free
-	
+	lcal	sysmem_free
+	j	dframe_cancelled
 
 dframe_cancel_arraymem			. storage outwith executable space
-	
+	lcal	teraframe:array_cluster_free
 
+dframe_cancelled
 	pop	r_x
 	pop	x_x
-
-dframe_count
-	ax	1,,xi
-	jxl	dframe_cancel
 	lret	0
 
-
-.	at process exit
-.	no need to cancel the vector pointers
-.	or to drop system memory blocks. That happens anyway
-.	just pool any memory array device-nonzero blocks
-
-	$if	0			. these three instructions go inline in exit_ii
-dframes_cancel
-	on	see$1
-	tz	TERAFRAME_CHAIN(1)
-	lcal	free_teraframes
-	lret	0
-	$endif
-
-
-free_teraframes
-	on	see$1
-	la	TERAFRAME_CHAIN(1)	. move to device2a.msm / device_a.msm
-free_next_cluster
-	lcal	teraframe:array_cluster_free
-	jnza	free_next_cluster
-	lret	0
-	
 	$root

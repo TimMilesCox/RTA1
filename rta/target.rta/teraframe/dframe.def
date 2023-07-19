@@ -2,27 +2,72 @@
 .	optionally load it
 .	optionally zone it with target window p(1, 1)
 
+	$do	vpointer(34)=0,	;
+	$flag	vector.def and vector_array.def are required before dframe.def
+
+__KEEP_SIMD_SETTING	$set	0
 
 p		$proc
 dframe$*	$name	0
 dframe$bank*	$name	0400000
 
+__GRANULE_LOG	$set	12
+		$do	p(0, 0)=dframe$bank,__GRANULE_LOG	$set	18
+
+__GRANULE	$set	1*/__GRANULE_LOG
+
+		$array	p()
+
+f		$func
+LOG_TRUE*	$name
+LOG	$do	15,	$do	1*/LOG=f(1, 1),	$return	LOG
+		$return	0
+		$end
+
+
+
+		$if	__CLUSTER
+		$trace	__CLUSTER
+
+__CLUSTER_LOG	$set	LOG_TRUE(__CLUSTER)
+		$do	__CLUSTER_LOG=0,	;
+		$flag	argument(5,1:2) cluster size must equal a power 2 value
+__CLUSTER	$set	1*/23++__CLUSTER_LOG*/18
+		$else
+__CLUSTER	$set	0
+		$endif
+
 S		$equ	24
 __WINDOW	$set	p(1, 1:1)
 __SEVERAL	$set	0
 	$do	p(1, 1:2)>p(1, 1:1),__SEVERAL	$set	p(1, 1:2)-p(1, 1:1)
-__VECTOR	$set	p(2, 1)
+.	__INDEX	$set	p(2, 1)
 CONTAINER_SIZE	$set	p(3, 1)
 instance	$equf	p(4,1), p(4, 2), p(4, 3)
 
-LOG_TRUE*	$func
-LOG	$do	18,	$do	1*/LOG=CONTAINER_SIZE,	$return	LOG
-		$return	0
-		$end
+	$do	__INDEX<vpointer(1),		;
+	$flag	lowest possible vector is vpointer(1) @ 002900 hexadecimal
 
-		ql	(dframef __WINDOW, $t(instance)=0*instance\0, __VECTOR, p(0, 0)++__SEVERAL)
+	$do	__INDEX>vpointer(1792),	;
+	$flag	highest possible vector is vpointer(1792) @ 002FFF hexadecimal
 
-__SCALE		$set	LOG_TRUE			
+__OFFSET	$set	CONTAINER_SIZE*$net(instance\1)*($t(p(4, 1))=0)
+
+		$if	(($net(p(4, 1))=a)++($net(p(4, 1))=b));
+			**(p(4, 2)=0);
+			**($t(p(4, 1))=$equ);
+			++(p(4, 2)=a)++(p(4, 2)=b)
+		qpush	(dframef __WINDOW, __OFFSET, __INDEX, p(0, 0)++__CLUSTER++__SEVERAL)
+		ds	0, sp
+		qpop	a
+		$note	it is more optimal of neither a nor b is the subscript or a pointer to subscript
+		$else
+		ql	(dframef __WINDOW, __OFFSET, __INDEX, p(0, 0)++__CLUSTER++__SEVERAL)
+		$endif
+
+__SCALE		$set	LOG_TRUE(CONTAINER_SIZE)			
+
+		$if	($t(p(4, 1))^=0)++(instance\2^=0)++(p(4, *1))
 
 		$if	p(4, 4)=S
 __SCALE		$set	0
@@ -58,7 +103,13 @@ __SCALE		$set	0
 		$flag	address space window out of range
 		$endif
 		$endif
+		$endif
 
+		$if	__CLUSTER
+		lr	(__LIMIT:s)
+		$else
+		lr	__INDEX+__LIMIT,,xi
+		$endif
 		ii	DFRAME$
 
 		$end

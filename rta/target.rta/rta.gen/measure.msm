@@ -529,7 +529,8 @@ bank_free
 .	page_free
 	on	see$all**(see$7*/MANAGER_BANKS)-1
 	ts	banks_lock_cell
-	j	$-1
+	j	$-1			. consider cooling the waiting core
+					. instead of spinning
 
 .	this is an lcal subroutine and can only be called
 .	from interrupt code (internal interrupt, system start etc)
@@ -559,15 +560,20 @@ spiral_again
 	sa	next
 
 	tanu	(next_page_descriptor)
-	jzb	out_of_spiral
 
+	$if	1
+	jzb	bank_free_return
+	$else
+	jzb	out_of_spiral
+	$endif
+
+	$if	0
 	z	banks_lock_cell		. free the lock at this point
 	ts	banks_lock_cell		. and compete for it again
 	j	$-1			. another CPU may be looping
-					. for it
 
 	la	next			. this value may have changed
-
+	$endif
 					. see if the bank now at the
 	aa, xi	-2			. heap top is on its free chain
 
@@ -585,7 +591,12 @@ spiral_again
 spiral	ly	x_x			. copy "this" to "previous"
 	lb	0, x			. copy "next" to "this
 
+	$if	1
+	jzb	bank_free_return
+	$else
 	jzb	out_of_spiral
+	$endif
+
 	lx	b_x
 
 	tanu	x_x			. banks (and descriptors)
@@ -600,8 +611,12 @@ spiral	ly	x_x			. copy "this" to "previous"
 					. if you arrive at a higher
 					. address in B, the bank is
 					. not in the free chain, and
-	jnc	out_of_spiral		. consolidation stops here
 
+	$if	1
+	jnc	bank_free_return
+	$else
+	jnc	out_of_spiral		. consolidation stops here
+	$endif
 					. the candidate is still at
 					. a higher address than the
 	jnzb	spiral			. free chain sample, move on
@@ -619,11 +634,13 @@ spiral	ly	x_x			. copy "this" to "previous"
 
 	j	spiral_again		. store new next-available
 					. descriptor pointer
+	$if	0
+
 out_of_spiral
 	z	banks_lock_cell
 out_of_range				. descriptor == NULL
 	lret	0
-
+	$endif
 					. the freed bank isn't at
 					. the top of the assigned
 					. heap, so link it into its
@@ -645,14 +662,23 @@ find_higher_point
 
 	anb	a_x			. presumably a_x because call is from various ISRs
 	jnc	find_higher_point	. the chain sample is lower
+
+	$if	1
+	jzb	bank_free_return
+	$else
 	jzb	bank_is_free
+	$endif
 
 found_higher_point			. link into chain
 	sx	0, a			. "next" = next-pointer of "this"
 	sa	0, y			. "this" = next-pointer of "previous"
 bank_is_free
+	$if	1
+	j	bank_free_return
+	$else
 	z	banks_lock_cell
 	lret	0
+	$endif
 
 
 large_bank_free
@@ -686,8 +712,12 @@ fsearch	sx	B4
 
 position?
 	tanu	x_x
-	jzb	in_freechain_already
 
+	$if	1
+	jzb	bank_free_return
+	$else
+	jzb	in_freechain_already
+	$endif
 				. descriptors are in the
 				. same storage order as
 				. their buffers
@@ -709,8 +739,12 @@ chain_insert
 	sa	*B4
 	sx	0, a
 in_freechain_already
+	$if	1
+	j	bank_free_return
+	$else
 	z	banks_lock_cell
 	lret	0
+	$endif
 
 large_bank_at_summit
 	aa, xi	2
@@ -724,11 +758,13 @@ large_bank_at_summit
 				. any free banks which are now
 				. at the stack top
 
+	$if	0
 	z	banks_lock_cell	. free the lock and compete
 	ts	banks_lock_cell	. for it again. Other CPUs
 	j	$-1		. may be revolving on it	
 
 	la	large_bank_descriptor_sp
+	$endif
 
 				. this may now have a new value
 				. during the unlocked nanowindow
@@ -781,7 +817,9 @@ big_spiral
 	j	large_bank_at_summit
 
 end_big_spiral
+bank_free_return
 	z	banks_lock_cell
+out_of_range
 	lret	0
 
 
@@ -1126,7 +1164,11 @@ delete_another			. TCB is certainly there
 	push	0, a
 	lcal	bank_free
 	pop	a_x
-	jnza	delete_another
+	jnza	delete_another	. if you did this see$1 is on
+				. and still is
+
+	tz	TERAFRAME_CHAIN(1)
+	lcal	teraframe:free_teraframes
 	lret	0
 
 exit_ii
@@ -1587,8 +1629,12 @@ seal32vectors
 ?	$do	32/4,	qs	32-?*4, x
 	jxge	seal32vectors
 
-	la	(APPLICATION_BASE/*12)
+	$if	0			. exclusive to kernel vector list
+	la	(APPLICATION_BASE/*12)	. constructed in launch of procedure ip
 	sa	vpointer(17)
+	$endif				. applications have use of all vectors
+					. [ vpointer(1) .. vpointer(1792) ]
+					. for managing data arrays
 
 	la, xi	handle(4)	. good, reserve handle(1..3)
 	sa	handles
