@@ -91,8 +91,8 @@ FILESHARE_TABLE	$res	1
 
 FILE_OPEN_HEAP	$res	1
 FILE_OPEN_HEAPU	$res	1
-BASE_VECTOR	$res	1
-VECTOR_D	$res	1
+BASE_UPPER	$res	1	. now limit of containing B1_TCB_B2_STATIC[B3...]  was BASE_VECTOR
+VECTOR_D	$res	1	. STATIC[B3...]
 .	VECTOR_FS	$res	1
 
 ?	$do	128,;
@@ -153,7 +153,8 @@ ALL_EXTERNAL_STACKS $set 0
 	$endif
 
 D0_WORDS $set	p(1, 1)+ALL_EXTERNAL_STACKS		. argument 2+ = external stacks
-	
+B3_PLUS	$set	D0_WORDS-1*/-12	
+
 FREE_WORDS $set	D0_WORDS**4095
 	$do	FREE_WORDS^=0,;
 FREE_WORDS $set	4096-FREE_WORDS
@@ -170,7 +171,22 @@ STATIC_START $equ 03000
 	la	VECTOR_D
 	sabr	3
 
+	$if	B3_PLUS<5
+
 ?	$do	D0_WORDS-1*/-12,	base
+
+	$else			. many pages, no need to do it all unrolled
+
+	lr	BASE_UPPER	. next storage block not owned here
+	lb	4,,xi		. target base B3+1
+b4_plus	lx	1, a, i		. candidate page + 1
+	jxge	$+5		. if not < next storage block done
+	la	x		. candidate page
+	sabr	0, b		. to base port + active base table
+	lb	1, b, i		. target base ++
+	j	b4_plus		. more ?		
+
+	$endif
 
 THREAD_FP(1)* $set STATIC_START+D0_WORDS+4095**-4096
 

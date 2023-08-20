@@ -27,10 +27,12 @@ has been assembled with the masmx meta-assembler
 Macro language constructs applications with calling sequence and dynamic variable rules projected for a future C compiler
 
 <p>
-<a	name="structural_macros"/>
+<a	name="structure"/>
 This document is about
 
 <ol>
+	<li><a href="#4words">Four Words that mean Call</a></li>
+	<li><a href="#3words">Three Words that mean Return</a></li>
 	<li><a href="#far_call">Far Call Targets</a></li>
 	<ol>
 		<li><a href="#vector">$vector Macro</a></li>
@@ -56,10 +58,85 @@ This document is about
 </blockquote>
 
 
+<a	name="4words"/>
+<h2>1: Four Words that mean Call</h2>
+
+<p>
+<a href="rta.html#lcal">lcal</a> instruction calls inside the instruction frame and its return instruction is <a href="rta.html#lret">lret</a>
+
+<p>
+<a href="rta.html#call">call</a> instruction is a far call into an instruction frame. The far routine may be in this instruction frame, but if it's constructed for far call it must be called as a far routine. Return instruction from a far routine is <a href="rta.html#fret">fret</a>. fret is not like <a href="rta.html#lret">lret</a>
+
+<p>
+Operand of <a href="rta.html#call">call</a> is a vector value which is most often a storage constant but may be a variable pointing for example to a device driver from a device descriptor
+
+<p>
+lc is a macro with <a href="rta.html#lcal">lcal</a> inside. It pushes arguments and cancels them on return
+<pre>
+
+	lc	address	argument [argument...]
+
+</pre>
+called local routines return a result if any in register a
+
+<p>
+lc without arguments is <a href="rta.html#lcal">lcal</a> instruction. Variadic near routines have a minumum one parameter. Zero-parameter lc has no parameter displacement index
+
+<p>
+c is a macro with <a href="rta.html#call">call</a> inside. It pushes arguments and cancels them on return
+<pre>
+
+	c	(vector) argument [argument...]
+
+</pre>
+called routines return a result if any in register a
+
+<p>
+c without argumentss is <a href="rta.html#call">call</a> instruction. Variadic far routines have a minimum one parameter. Zero-parameter lc has no parameter displacement index
+
+<p>
+Another instruction <a href="rta.html#go">go</a> also jumps between instruction frames. Coming back is not on the stack
+
+<a	name="3words"/>
+<h2>2: Three Words that mean Return</h2>
+
+<a href="rta.html#lret">lret</a> local return and <a href="rta.html#fret">fret</a> far return can skip backward or forward on return
+<pre>
+
+        lret    &plusmn;displacement
+
+</pre>
+but only if called with direct <a href="rta.html#lcal">lcal</a> or <a href="rta.html#call">call</a> instruction, never if called with a parameter stream
+
+<p>
+Routine can return  with fret 0 and lret 0, but if the routine constructed dynamic variables at its head
+
+<pre>
+
+	$head_near	 [params(...)] <a style="color:#0000FF">scalars() xframe()</a>
+	$head_far	 [params(...)] <a style="color:#0000FF">scalars() xframe()</a>
+
+
+        the routine must before any <a href="rta.html#lret">lret</a> / <a href="rta.html#fret">fret</a> pop its dynamic variables
+        and may do so to present multiple return values in multiple registers
+	or to restore registers saved in dynamic space on behalf of calling routines
+
+	$head_far	[params(...)] <a style="color:#0000FF">scalars(caller_xyab,	x,	float)</a>
+		.
+		.
+		qpop	x
+		fret	0
+
+        alternatively the routine returns with $ret macro
+        which unwinds dynamic variables both on internal and external stacks
+        and issues correct return instruction lret 0 / fret 0
+
+</pre>
+
 <a	name="far_call"/>
 <a	name="vector"/>
-<h2>1. Far Call Targets</h2>
-<h3>1.1 1-Page Instruction Frame and $vector Macro</h3>
+<h2>3: Far Call Targets</h2>
+<h3>3.1: One-Page Instruction Frame and $vector Macro</h3>
 
 <b>$vector</b> publishes routines which are the target
 of far <b>call</b> or <b>go</b> instructions. <b>$vector</b> is a procedural macro coded
@@ -87,8 +164,7 @@ routine2
 	fret	0
 
 </pre>
-The handle value is the single-word constant or
-variable operand of <b>go</b> and <b>call</b> instructions
+The handle value is the single-word operand of <b>go</b> and <b>call</b> instructions
 <pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
 
@@ -158,7 +234,7 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 </pre>
 
 <a	name="gate"/>
-<h3>1.2 Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</h3>
+<h3>3.2 Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</h3>
 <pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
 	go or call operand flagged 1 in high order bit 23 is a pointer to a 48-bit gate
@@ -244,8 +320,8 @@ See also <a href="iframe.html">Large and Loadable Instruction Frames<a>
 
 <a	name="sequence"/>
 <a	name="realtime"/>
-<h2>2. Formal Calling Sequences used in Structured Assembly Language Code</h2>
-<h3>2.1 Structured Realtime in the Internal Stack</h3>
+<h2>4: Formal Calling Sequences used in Structured Assembly Language Code</h2>
+<h3>4.1: Structured Realtime in the Internal Stack</h3>
 <p>
 These calling sequences make many functions simpler to write
 
@@ -258,7 +334,7 @@ because they then have more freedom for internal stack manipulation
 
 
 <a	name="argument"/>
-<h3>2.2 Calling and Constructing the Argument Stream</h3>
+<h3>4.2: Calling and Constructing the Argument Stream</h3>
 
 <b>c / lc</b> macro embeds far and near call instructions
 <b>call</b> and <b>lcal</b>, first pushing parameters on the
@@ -323,7 +399,7 @@ subfield which is not always typed
 
 	lc	routine	left,,float	;
 			right,,float	;
-			centre, x, int	;
+			centre, x	;	. [ int ]
 			36, y, long
 
 
@@ -334,17 +410,44 @@ none is used
 <p>
 The assembly may otherwise already know a base + displacement register
 for the data name. If it is in the submacros <b>params() scalars() xframe()</b>
-or any other base + displacement section, the assembler does already know the
-default index base. Names like this have the masmx label type <b>$equf</b>
+or a base + displacement section, the assembler does already know the
+default index base
+
+<p>
+Internal stack pointer sp is the base register of parameters and dynamic variables
+
+<p>
+External frame pointer fp is the base register of xframe().
+See also <a href="#zeronet">$zero_stack</a>
+
+<p>
+Call sequences load the internal stack. Because parameters and dynamic values are on the same stack the increasing displacement from new pushes is factored to stay on target
+
+<p>
+Names which include a base register and a displacement  have the masmx label type <b>$equf</b>
 which is an equate to a tuple of attributes
 
 <p>
-The index field may typed to apply or to override an index register
+The index field may be typed to to override a default index register
 
 <p>
+Other than parameters, dynamic variables and external stack frames, base + displacement reference is 
+in program sections which have a pointer register instead of a start address
+<pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
+	$(66::,x)
+	this	otype1
+
+	$(0)
+		la	this:bias
+
+
+</pre>
+No data is generated inside the void section. It is a way of adressing members of a pointed structure
+
+<p>
 The third argument subfield is a default source type defaulting to integer variable
-and may be immediate and byte types which push as one word, or a larger object
+and may be immediate and byte types which push as one word, or an object of two, three four or eight words
 
 <pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
@@ -379,8 +482,7 @@ MASMX 7r3
 :$(00):000040:000101 :$(03):003000:003014 
 
 </pre>
-<b>c / lc</b> macro also takes parameters of two, three, four or eight words
-and expands compressed floating 2-word source to 4-word float in the stack
+floating_packed is a 48-bit storage-compressed number which is unpacked to 96 bits on the internal stack for computation. 48-bit format is not computational
   
 <pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
@@ -424,11 +526,9 @@ MASMX 7r3
 :$(00):000040:000108 
 
 </pre>
-<p>
-or subfield 3  may be a macro name which processes the parameter as it loads it
 
 <a	name="transform"/>
-<h3>2.3 Macro Conversion of Call Arguments</h3>
+<h3>4.3: Macro Conversion of Call Arguments</h3>
 
 <b>c / lc</b> macro can attach macros to individual arguments to
 generate, convert or format actual parameters as they are pushed
@@ -518,7 +618,7 @@ a value or address with optional index tag. In the example, input name <b>increm
 recognised as being base + displacement on the internal stack pointer
 
 <a	name="dynamic"/>
-<h3>2.4 The Called Routine: Parameters and Dynamic Data</h3>
+<h3>4.4: The Called Routine: Parameters and Dynamic Data</h3>
 
 <p>
 Macro <b>$head_near/far</b> constructs up to three lists of names which
@@ -716,7 +816,7 @@ saverlod.msm: object code 147 bytes: 0 errors: 0 undefined labels
 
 
 <a	name="zeronet"/>
-<h3>2.5 Recursive Programming and Zero Net Internal Stack</h3>
+<h3>4.5: Recursive Programming and Zero Net Internal Stack</h3>
 
 
 The RTA1 internal stack is a register array for  realtime programming.
@@ -984,7 +1084,7 @@ routine thinks it has are not the intended parameters until the real problem is 
 
 
 <a	name="trapping"/>
-<h3>2.6 Trapping Wrong Argument Lists</h3>
+<h3>4.6: Trapping Wrong Argument Lists</h3>
 <p>
 An initial check  on the call frame can also be opted to isolate problems in code
 development and testing
@@ -1070,28 +1170,6 @@ Here it's checking for 14 words beyond the actual stack pointer value
 </pre>
 <b>-UO</b> checks are not linked with <b>$zero_stack</b>. They are generated at
 every <b>$head_near/far</b> in the assembly when opted
-
-
-<a	name="algo"/>
-<h2>3. Runtime Algorithmic Expressions</h2>
-
-
-<p>
-<b>$xqt_fp</b> and <b>$xqt_i</b> directives code an instruction plan in a
-compiler-like fashion to solve expressions computing run-time variables
-
-<p>
-See <a href="masmx7r3.html#algors">Runtime Algorithmic Expressions</a>
-
-<a	name="struco"/>
-<h2>4. Data and Procedure Structures</h2>
-
-masmx.7r3A supports data structures at word and bit levels and functionally compartmented instruction code name spaces
-
-<p>
-See <a href="masmx7r3.html#structure">Structures</a>
-
-
 
 
 <a	name="licence_note"/>

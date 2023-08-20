@@ -173,6 +173,9 @@ See also the licensing notice at the foot of this document
 <dl><a href="#diagnostic">Appendix I: File and Socket Error Codes</a>
 </dl>
 
+<dl><a href="#teraword">Appendix J: Teraword Arrays</a>
+</dl>
+
 </div>
 
 <a	name="preamble"/>
@@ -2392,6 +2395,76 @@ NO_PATH         $equ    65	.					-65
 NO_CONNECTION   $equ    FILE_NOT_OPEN	.				-32
 NO_DATA         $equ    96	.					-96
 
+
+</pre>
+
+<a	name="teraword"/>
+<h3>Appendix J: Teraword Arrays</h3>
+
+Macro language supported by service calls delivers
+
+	<blockquote>
+	arrays with footprint four terawords<br><br>
+	populated on reference in realtime with up to one teraword of memory<br><br>
+	framed in the application vector page which to the application is read-only
+	</blockquote>
+
+<p>
+Arrays are declared by reference and populated with memory by reference, and so may be sparse or dense
+
+<p>
+Arrays have initially no memory and memory is drawn into arrays granule for granule in realtime from executable space maximum 16 gigawords and up to 61 memory array devices each of maximum 16 gigawords
+
+<p>
+Macro language interface serves from defining the array to deriving offsets from subscripts and placing the array element in application memory space, all in one macro call
+
+<p>
+It is alternatively possible to separate the array-defining macro call from subsequent access actions. The definition part does not contain any processing but informs the assembly of the array geometry and its reserved vector page locations
+
+<p>
+API consists principally of macro calls <a style="color:#0000FF">dframe$</a> which defines and accesses an array held in 4096-word pages and <a style="color:#0000FF">dframe$bank</a> which defines and accesses an array held in 262144-word pages
+<pre	style="font-size:12pt">
+	<a	style="color:#0000FF">
+	dframe$[bank]	window[:window] vector object_size subscript[,,,S] [maximum_words[:cluster]]</a>
+
+	if <a style="color:#0000FF">object_size</a> is nonzero action result is a pointer in application accumulator a
+	pointing to memory in <a style="color:#0000FF">window</a>[<a style="color:#0000FF">:window</a>] containing object[<a style="color:#0000FF">subscript</a>]
+
+	if <a style="color:#0000FF">object_size</a> is a power of 2 up to memory granule size [ granule 4096 or 262144 words ]
+	then only one containing window is needed
+
+	in all other cases some instances of target object must straddle pages
+	and <a style="color:#0000FF">window:window</a> needs to be a span of 2+ windows. 8 windows are allowed
+
+	<a style="color:#0000FF">vector</a> is a value betwen 002900<sub>16</sub> vpointer(1) and 002FFF<sub>16</sub> vpointer(1792)
+
+	<a style="color:#0000FF">object_size</a> is the array element size requested and zero means no action is requested
+	but <a style="color:#0000FF">vector</a> and <a style="color:#0000FF">maximum_words</a>[<a style="color:#0000FF">:cluster</a>] are used to define the array to the assembly
+
+	<a style="color:#0000FF">subscript</a> is the 48-bit object instance required. If it is flagged single-word[<a style="color:#0000FF">,,,S</a>]
+	then <a style="color:#0000FF">subscript</a> is lengthened when multiplied by <a style="color:#0000FF">object_size</a> for an array-relative offset
+
+	if <a style="color:#0000FF">object_size</a> is 1 then offset = subscript
+
+	<a style="color:#0000FF">maximum_words</a>[<a style="color:#0000FF">:cluster</a>] take effect once only, when the array is defined
+
+	<a style="color:#0000FF">maximum_words</a> can be declared as OBJECT_SIZE*MAXIMUM_INSTANCES
+
+	an array can be declared without <a style="color:#0000FF">maximum_words</a> and it is then definition-free
+	and may extend one memory granule per vector from <a style="color:#0000FF">vector</a> to vpointer(1792)
+
+	<a style="color:#0000FF">cluster</a> allows multiple large memory granules * 262144 words per vector in the range of the array
+	in order to allow arrays containing all available memories
+
+	without <a style="color:#0000FF">cluster</a> arrays are one granule per vector, maximum if all arrays are in pages of 4096 words 
+	7'340'032 words total, and if all arrays are in pages of 262144 words, 469'762'048 words total
+
+	<a style="color:#0000FF">cluster</a> must be a power 2 integer and may be any size which a memory device can supply
+
+	windows are only populated up to <a style="color:#0000FF">maximum_words</a> minus word offset
+	if at least one window cannot be populated then the pointer delivered to application accumulator a is zero
+
+	if part of requested windows is delivered then application reference beyond delivered windows faults 
 
 </pre>
 

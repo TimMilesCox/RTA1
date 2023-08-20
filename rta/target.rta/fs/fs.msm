@@ -163,6 +163,8 @@ nfswrite*		$vector	nfs_data_write
 appdata_share*		$vector	appdata_vector
 __fd_zero_timeout*	$vector	files:no_timeout
 
+"$HALT"*	$vector	app_emergency_stop
+
 	$list	0
 	$do	64-$,	fret	0
 	$do	$>64,	$flag	too many vectors in fs iframe
@@ -244,6 +246,19 @@ fs_xfer1?
 	$path
 
 	$include	fshare
+
+app_emergency_stop	. do this if stop needed before normal printf would work
+			. call ($HALT) so location of decision is on internal stack
+
+	push	-4,,xi
+	popA	fp
+
+	qpush	("HALT %x:%x":10:0)	. character string must be in memory
+	qpop	0, fp			. so the external stack
+
+	c	(__fprintf)     1,,xi	0, fp, i        0, sp   1, sp
+
+	ii	EXIT$
 
 	$do	$<256,$(0:256)
 	$do	$zenith>4096,	$flag	fs block overruns expected high address

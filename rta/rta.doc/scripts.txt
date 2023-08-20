@@ -4,36 +4,38 @@
 
 <ol>
         <li><a href="#build">Application Build</a></li>
-	<li><a href="#application_group">Loadable and NVRAM Applications</a></li>
-	<ol>
-		<li><a href="#singlemu">Single and Group Applications</a></li>
-	</ol>
+	<li><a href="#application_group">Single and Group Applications</a></li>
 	<li><a href="#application">How is an Application?</a></li>
         <li><a href="#source">How do Applications Look?</a></li>
         <ol>
                 <li><a href="#source">Source Code</a></li>
 		<li><a href="#loadfs">loadfs File: Launch Templates and Initial Data Load</a></li>
         </ol>
-	<li><a href="#run">How is the Application Run?</a></li>
-	<li><a href="#nvram">If Applications are ROM instead of Dynamic?</a>
-	<li><a href="#group">Multiple Applications in one Load or ROM Group</a></li>
+	<li><a href="#run">How are Applications Run?</a></li>
 	<ol>
-		<li><a href="#group">Application Collections</a></li>
-		<li><a href="#make_rel">make_rel File</a></li>
-		<li><a href="#link_u">Linking Assembly</a></li>
+		<li><a href="#run">Single Application Dynamic Load Launch</a></li>
+		<li><a href="#_app_launch">Direct Programmatic Application Launch</a></li>
+		<li><a href="#nvram">NVRAM vs Dynamic Load</a></li>
+		<li><a href="#run_nvram">Running NVRAM Applications from Telnet</a></li>
+		<li><a href="#run_dynamic">Running Dynamic Load Applications from Telnet</a></li>
+		<li><a href="#run_script">Running Applications from Script</a></li>
 	</ol>
-	<li><a href="#iframes">iframe Construction and Macro Language</a></li>
+	<li><a href="#_macros">Macros which frame Instruction Code</a></li>
 	<ol>
-		<li><a href="#_macros">Macros which frame Instruction Code</a></li>
 		<li><a href="#_catalog">catalog</a></li>
 		<li><a href="#_application">$application</a></li>
 		<li><a href="#_iframe">$iframe</a></li>
-		<li><a href="#_library">Independent Library Iframes</a></li>
-		<li><a href="#_without">Without any Framing by Macro</a></li>
-		<li><a href="#_app4kp">Simple 4K Application Iframes</a></li>
-		<li><a href="#_app4kq">Simplified Application Iframes</a></li>
-		<li><a href="#_app_launch">Application Launch</a></li>
 	</ol>
+	<li><a href="#_app4kq">Constructing Single Application Iframes</a>
+	<li><a href="#group">Constructing Application Groups</a></li>
+	<ol>
+		<li><a href="#group">Requirements</a></li>
+		<li><a href="#make_rel">make_rel File</a></li>
+		<li><a href="#link_u">Linking Assembly</a></li>
+		<li><a href="#loadfs">Embedded File System</a></li>
+	</ol>
+	<li><a href="#_large">Constructing Large Applications</a></li>
+	<li><a href="#_library">Constructing Independent Library Iframes</a></li>
 	<li><a href="#literal_tables">Literal Tables</a></li>
 </ol>
 <ul	type="none">
@@ -53,15 +55,16 @@
 		</ul>
 	</ul>
 	<li><a href="#auto">Appendix D: Scripts and Automatic Start</a></li>
+	<li><a href="#_without">Appendix E: Simple System Image Build in 4Kword Pages</a></li> 
 </ul>
 
 <a      name="build"/>
 <h3>1: Application Build</h3>
-An application is typically a subdirectory of <a style="color:#0000FF">$YOU/<a><a style="color:#FF0000">rta/target.rta/</a>
+An application is typically a subdirectory of <a style="color:#0000FF">$HOME/</a><a style="color:#FF0000">rta/target.rta/</a>
 
 <p>
 <a      name="amake"/>
-Directory path <a style="color:#FF0000">rta/target.rta/image.app</a> needs to be in your environment
+Directory path <a style="color:#FF0000">rta/target.rta/image.app</a> needs to be in the developer's environment
 <p>
 
 <pre    style="font-size:12pt;color:#0000FF">
@@ -72,22 +75,77 @@ Directory path <a style="color:#FF0000">rta/target.rta/image.app</a> needs to be
 </pre>
 
 <a	name="application_group"/>
-<h3>2: Loadable and NVRAM Applications</h3>
-
-<a	name="singlemu"/>
-<h4>2.1: Single and Group Applications</h4>
+<h3>2: Single and Group Applications</h3>
 <p>
-command <a style="color:#FF0000">amake</a> builds
+command <a style="color:#FF0000">amake</a> builds multiple or single applications of any size
 
-<ul     type="square">
-        <li>multiple or single dynamically loadable applications of any size</li>
+<p>
+Any application or group of applications can be dynamically loaded or catenated into an NVRAM system image
 
-        <li>multiple or single applications of any size for inclusion in NVRAM system image</li>
-
-</ul>
+<p>
 Multiple applications are applications with their instruction part in shared iframes in order to optimise instruction memory
 
 <p>
+Instruction frames contain an embedded file system which
+
+	<blockquote>
+	caches data segment initial values<br><br>
+	links a launch name to launch parameters
+	</blockquote>
+
+<pre	style="font-size:10pt;color:#0000FF">
+
+
+
+		Single Application Iframe					Application Group Iframe
+		_________________________					_________________________
+		|			|					|			|
+		|_______________________|					|_______________________|
+		| iframe return gate	|					| iframe return gate	|
+		|_______________________|					|_______________________|
+		| lookup directory mount| ----------.				| lookup directory mount| ------------------.
+		|_______________________|	    |				|_______________________|		    |
+	.----->	| launch parameters gate| ------.   |		    .--------->	| launch gate1		| --------------.   |
+	|	|_______________________|	|   |		    |		|_______________________|		|   |
+	|	| application code	| <-----+   |		  .-|--------->	| launch gate2		| ------------.	|   |
+	|	|			|	    |		  | |		|_______________________|	      |	|   |
+	|	|_______________________|	    |		.-|-|--------->	| launch gate3		| ---------.  |	|   |
+	|	| embedded file system	|	    |		| | |		|_______________________|	    | |	|   |
+	|	|_______________________|	    |		| | |		| application1 code	| <---------|-|-+   |
+	|	|			|	    |		| | |		|			|	    | |	    |
+	|	| initial data		|	    |		| | |		|_______________________|	    | |	    |
+	|	| load strings file	|	    |		| | |		| application2 code	| <---------|-+	    |
+	|	|_______________________|	    |		| | |		| 			|	    |	    |
+	|	| lookup directory	| <-------- +		| | |		|_______________________|	    |	    |
+	|	|_______________________|			| | |		| application3 code	| <---------+	    |
+	+------	| name lookup link	|			| | |		|			|		    |
+		|_______________________|			| | |		|_______________________|		    |
+								| | |		| embedded file system	|		    |
+								| | |		|_______________________|		    |
+								| | |		| 			|		    |
+								| | |		| initial data		|		    |
+								| | |		| load strings file1	|		    |
+								| | |		|_______________________|		    |
+								| | |		|			|		    |
+								| | |		| initial data		|		    |
+								| | |		| load strings file2	|		    |
+								| | |		|_______________________|		    |
+								| | |		|			|		    |
+								| | |		| initial data		|		    |
+								| | |		| load strings file3	|		    |
+								| | |		|_______________________|		    |
+								| | |		| lookup directory	| <-----------------+
+								| | |		|_______________________|
+								| | +----------	| name1 lookup link	|
+								| | 		|_______________________|
+								| +------------	| name2 lookup link	|
+								| 		|_______________________|
+								+--------------	| name3 lookup link	|
+										|_______________________|
+
+
+
+</pre>
 Memory is assignable in multiples of 4K-word pages and while large applications may be constructed in scores of memory pages, other applications may only take some dozens or hundreds of instructions and may be packed several in one 4K-word page
 
 <p>
@@ -96,15 +154,47 @@ The presence of a file <a href="#make_rel">make_rel</a> in the application direc
 <p>
 If the application directory has no file make_rel, amake command constructs a single application in absolute code
 
+<p>
+Applications are shared-code reentrant and each process instance unpacks its initial data file into memory on initialisation
+
+<p>
+Related components of application instruction frames are generated by <a href="#iframes">Macro Language</a> which inserts launch gates linked to a lookup directory
+
+<p>
+The instruction frame in entirety is the space of the embedded file system, which in turn is linked objects, enabling application launch to access initial data by address
+
+<p>
+Iframe return gate at location 64<sub>10</sub> of an instruction frame restores iframe page high index on return from far calls and interrupts so that iframes larger than one page continue to access all their pages. The return gate is sampled if the iframe:offset return tuple on the internal stack is flagged multi-page
+<pre	style="font-size:10pt;color:#0000FF">
+
+
+						return iframe:offset tuple on internal stack
+	_________________________		_________________________________________________
+	|	sp / sp_x	|		|F|	iframe		|	offset		|
+	|_______________________| ------------>	|_|_____________________|_______________________|
+						 |						 	return gate iframe + 40<sub>16</sub>
+					       0 | 1				_________________________________________________
+				_________________|_______________		|pppppp|	offset	|	iframe name	|
+				|				|		|______|________________|_______________________|		
+				|				|       	       |
+				|				|	page high index|
+				|				|
+		________________|________		________|________________
+		| restored B0 = iframe	|		| restored B0 = iframe	|
+		|_______________________|		|_______________________|
+		| restored iframe limit	|		| restored iframe limit	|
+		| = iframe		|		| = iframe + high index	|
+		|_______________________|		|_______________________|
+
+
+</pre>
+
 
 <a	name="application"/>
 <h3>3: How is an Application?</h3>
 
-An application or group of applications is realised in a subdirectory of
-<a style="color:#0000FF">{ $HOME | $YOU | $SOMEWHERE }/<a><a style="color:#FF0000">/rta/target.rta/</a>
-
 <p>
-<a style="color:#0000FF">$YOU</a><a style="color:#FF0000">/rta/target.rta/</a><a style="color:#0000FF">your.app.for_example/</a> contains two or more of these files
+<a style="color:#0000FF">$HOME</a><a style="color:#FF0000">/rta/target.rta/</a><a style="color:#0000FF">your.app.for_example/</a> contains two or more of these files
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -132,7 +222,7 @@ An application or group of applications is realised in a subdirectory of
 <h3>4: How do Applications look?</h3>
 <h4>4.1: Source Code</h3>
 
-How might a source file and a loadfs file look?
+How might a source file and a <a href="#loadfs">loadfs</a> file look? Application hello can be dynamic loaded or catenated in a system image
 <pre	style="font-size:10pt;color:#0000FF">
 
 cd rta/target/hello.app
@@ -151,7 +241,6 @@ $ cat hello.msm
 		$path		
 		$list					. any names after here are in your label lists
 							. source listing is by default this file
-							. to list includes $list 2 or more
 
 		$set_option	"z"			. string zero-padding
 
@@ -165,18 +254,19 @@ $(3:03000/$3)						. your static variable data goes in here
 from_all	"from all the crew!":0
 remember_who?	"Remember us?":0
 <a	name="__base"/>
-__BASE		$equ		HELLO_START_PAGE_INDEX	. start page index if you know it (fixed in system image)
-							. or if you don't for that matter (dynamic iframe load)
-							. HELLO_START_PAGE_INDEX is undefined, so hello is dynamic load
+__BASE		$equ		HELLO_START_PAGE_INDEX	. HELLO_START_PAGE_INDEX is undefined causing a load address to be imported
+							. either at NVRAM system image inclusion or dynamic RAM load
 $(0:0/$0)
 . hello*	$vector		jump2it	. (commented)	. the simplest way of having a vector (entry point) in a 4k-word iframe
 							. there are 64 $vector slots at the front of an iframe
-							. but hello is dynamic and is called a different way
+							. but hello is started in a different way
 
-		catalog					. catalog is the minimal startup macro for a single application of any size
-							.	-which is dynamic loadable or
-							.	-which is fixed and may be larger than one 4k page
-							.	-which is fixed and can be found by name
+		catalog					. catalog is the minimal startup macro for a single application which
+							.	-may be at a higher address than 256 megawords
+							.	-may be larger than a 4K page
+							.	-may be found by name
+							.	-may be NVRAM or dynamic load
+							.	-has automatic launch parameters in a launch gate
 
 							. for multiple applications macro $application is used instead of catalog
 
@@ -186,18 +276,19 @@ jump2it		$base_d		$zenith(3)-03000 1024	. you need 1K words external stack for e
 
 		c	(seg$load) 0,,xi (my_data_segment:L),,long
 
-							. kernel routine (seg$load) initialises static data
+							. kernel routine (seg$load) initialises static data $(3) and private data $(1) 
 							. for this process instance of this application
-							. 1st argument rom file system start page index zero
+							. 1st argument start page index zero
 							. means file system is inside this calling iframe (it is)
 							. 2nd argument is the 48-bit address of your static data load file
+							. within this instruction frame which is also the space of the embedded file system
 							.
-							. my_data_segment is included and named in a small text file loadfs
+							. my_data_segment is included and named by a small text file <a href="#loadfs">loadfs</a>
 							. you're ready to execute application code
 
-		printf	$3("Hello World %s %s":LF:0),,xi	; 	. the output string is unnecessarily three strings
-			from_all,,xi				;	. even more unnecessarily
-			*indirectp,,i					. the third string is addressed indirectly
+		printf	$3("Hello World %s %s":LF:0),,xi	; 	. three strings are collected here
+			from_all,,xi				;
+			*indirectp,,i
 
 							. string arguments are in static data literal table $3
 							. so other iframes can see them. Other iframes can't see this iframe
@@ -222,7 +313,7 @@ jump2it		$base_d		$zenith(3)-03000 1024	. you need 1K words external stack for e
 <a href="http:scripts.html#literal_tables">Literals</a> are automatic constants generated by reference and placed at the end of a program section, by default iframe, $(0)
 
 <p>
-More is explained about <a href="#literal_tables">literal tables</a> and <a href="#iframes">iframe Construction and Macro Language</a>
+For more on <a href="#literal_tables">literal tables</a> and <a href="#iframes">iframe Construction and Macro Language</a>
 
 <a	name="loadfs"/>
 <h4>4.2: loadfs File: Launch Template and Initial Data Load</h4>
@@ -233,13 +324,22 @@ loadfs describes a file system embedded and linked in the application image
 All applications are re-entrant shared code and application initial data is unpacked from the embedded file system
 
 <p>
-The file system is included in the link of the application group, exports the names of data sections which it contains, and imports execution parameter descriptors as file-system link targets of with class tag G
+The embedded file system
+
+	<blockquote>
+	is a link inclusion in the primary instruction frame of the application [ group ]<br><br>
+	contains and exports initial data sections<br><br>
+	links lookup names to run parameters in application launch gates
+	</blockquote>
 
 <p>
 volume, file and link names are developer-chosen. A single application has one data sections file and one launch link
 
 <p>
-The link entry shown here is not really needed to find hello, because a single loadable application is found by its <a href="#load_app">load</a> path name
+The link entry shown here is not needed to find hello if it is for dynamic load, because <a href="#load_app">load</a> application finds hello by path name in the file system
+
+<p>
+If hello is catenated into an NVRAM system image, directory (tree) applications_ templates and G link hello are needed for name search in the consecutive NVRAM instruction frames. See also <a href="#_app4kq">Single Application Iframes</a>
 
 <p>
 The name assigned on the link entry is a look-up name for execution
@@ -258,9 +358,13 @@ The name assigned on the link entry is a look-up name for execution
 macro <a style="color:#0000FF">catalog</a> exports application template launch_gate
 
 <a	name="run"/>
-<h3>5: How is the Application run?</h3>
+<h3>5: How are Applications Run?</h3>
+<h4>5.1: Single Application Dynamic Load Launch</h4>
 
-Hello is dynamic and is included in <a href="kernel.html#fsda">Device 1 file system</a> where it is located by pathname
+This is an example of rule <a href="#run_dynamic">Running Dynamic Load Applications from Telnet</a>
+
+<p>
+Hello is located by pathname in <a href="kernel.html#fsda">Device 1 file system</a>
 <pre	style="font-size:12pt;color:#0000FF">
 
 	$ telnet 172.29.7.7
@@ -277,7 +381,7 @@ Hello is dynamic and is included in <a href="kernel.html#fsda">Device 1 file sys
 	load>
 
 </pre>
-<a href="#load_app">load</a> is a fixed application in the system image
+<a href="#load_app">load</a> is a fixed application in NVRAM system image
 
 <p>
 <a href="#load_app">load</a> reads file system <a href="kernel.html#fsda">Device 1</a> which is read-only and constructed offline by the system administrator
@@ -296,88 +400,341 @@ Hello is dynamic and is included in <a href="kernel.html#fsda">Device 1 file sys
 
 </pre>
 
-<a	name="nvram">
-<h3>6: If Applications are ROM instead of Dynamic?</h3>
+<a	name="_app_launch"/>
+<h4>5.2: Direct Programmatic Application Launch</h4>
 
-Applications in NVRAM
+Application launch call from application code is <a href="kernel.html#spawn_ii">SPAWN$</a>
+<pre	style="font-size:12pt;color:#0000FF">
 
-<ul	type="square">
-	<li>export the name <a href="#__base">__BASE</a> equated to a known start page index:
-	<pre	style="color:#0000FF;font-size:14pt">
-	 __BASE*	$equ	APPLICATION(5)/*12
-	</pre></li>
+	ql	(vector, PRIORITY, STATIC_SIZE, -B1_FRAMES:q)
+	ii	SPAWN$
+
+</pre>
+Process primary thread identifier is returned in application register a
+
+<p>
+System call to <a href="kernel.html#tag_ii">TAG$</a> attaches a displayable name to thread [register a]
+<pre	style="font-size:12pt;color:#0000FF">
+
+	lb	$3("name":0),,xi	. leftside word zero means this thread 
+	ii	TAG$
+
+</pre>
+A thread calling TAG$ with zero in register a names itself
+
+
+<a	name="nvram"/>
+<h4>5.3: NVRAM vs Dynamic Load</h4>
+
+Applications are included in NVRAM system image by catenation
+
+<p>
+Their Start Page Index is derived from the NVRAM image to which they catenate
+
+<p>
+Applications are included at build if their directory contains a one-line text-file called amass
+
+<p>
+
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	$ cd rta/target.rta/simple.app
+	$ cat amass
+	insert simple ../initial.app/sysimage.rom
+	$
+
+</pre> 
+
+insert is a script in the same directory as rta/target.rta/image.app/amake and image.app must be in $PATH
+
+<p>
+sysimage.rom is the kernel and loader. Inserting on sysimage.rom means this application is start of chain
+
+<p>
+to insert at end of chain amass is instead
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	insert this ../last.app/sysimage.rom
+
+</pre
+
+the first argument of insert is the application name without file extension part. That is the binary loadstring file which can alternatively be loaded dynamically to RAM
+
+<a	name="run_nvram"/>
+<h4>5.4: Running NVRAM Applications from Telnet</h4>
+The applications in NVRAM can be run from telnet with command r for example
+<pre	style="font-size:12pt;color:#0000FF">
+
+	r simple
+
+</pre>
+If an application group is in the NVRAM system image, only the link name is used to run each application. Application group abbild contains three applications: abbild, fixity and seria
+<pre	style="font-size:12pt">
+
+        r seria
+        <a style="color:#0000FF">+1.111111111111111111113e+28671</a>
+        r fixity
+        <a style="color:#0000FF">storage to 000020 800000
+        highest component +1.538900380945052934017e+1241738
+        +1.949273815863733716420e+1241738 [800000]
+        highest component +0.734003200e+7 -> +2.693803855052800e+13</a>
+        r abbild
+        <a style="color:#0000FF">78cb80 753e00 01ca5f
+        4357c4 3fb9e0 00ee20
+        002929 -> 40003f
+        00292a -> 40007f
+        002946 -> 4000bf
+        002959 -> 000033
+        002a39 -> 400ebf
+        002b1a -> 4000ff
+        002b1f -> 00004c</a>
+
+</pre>
+<a	name="run_dynamic"/>
+<h4>5.5: Running Dynamic Load Applications from Telnet</h4>
+NVRAM system image has an application <a href="#load_app">load</a> which loads other applications dynamically from RTA1 Device 1 file system
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	r load /test/hello
+
+</pre>
+
+<p>
+If an application group is loaded, naming the containing file alone executes the first application in the group
+
+<p>
+To run the others the link name is added to the file name
+<pre	style="font-size:12pt">
+
+	r load /test/abbild*seria
+	<a style="color:#0000FF">+1.111111111111111111113e+28671</a>
+	<a style="color:#00FF00">load&gt;</a>abbild*fixity
+	<a style="color:#0000FF">storage to 000020 800000
+	highest component +1.538900380945052934017e+1241738
+	+1.949273815863733716420e+1241738 [800000]
+	highest component +0.734003200e+7 -> +2.693803855052800e+13</a>
+	<a style="color:#00FF00">load&gt;</a>abbild
+	<a style="color:#0000FF">78cb80 753e00 01ca5f
+	4357c4 3fb9e0 00ee20
+	002929 -> 40003f
+	00292a -> 40007f
+	002946 -> 4000bf
+	002959 -> 000033
+	002a39 -> 400ebf
+	002b1a -> 4000ff
+	002b1f -> 00004c</a>
+	<a style="color:#00FF00">load&gt;</a>
+
+</pre>
+<a	name="run_script"/>
+<h4>5.6: Running Applications from Script</h4>
+
+See also <a href="#auto">Appendix D: Scripts and Automatic Start</a>
+
+<p>
+Applications in NVRAM system image can be run from script without the preceding r which is a telnet command
+
+<p>
+A script might have text lines
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+	simple			# if simple is in NVRAM. Mostly it is not
+	load	/test/hello	# load always is
 	
-        <li>names <a style="color:#0000FF">APPLICATION(1..1024)</a> are switched in <a style="color:#FF0000">rta/target.rta/def.app</a> to inform kernel routines which NVRAM pages are the Start Page of a fixed application group. Each application group contains a search directory of launch names and parameters
-	<pre	style="color:#0000FF;font-size:14pt">
+</pre>
+scripts are text files which telnet command r can start. They are distinguished from embedded run binaries because they have a path name
+<pre	style="font-size:12pt;color:#0000FF">
 
-	APPLICATION(5)	$equ	02A000		. for example
-	</pre></li>
+	r /initial/scripts
 
-        <li>script <a style="color:#FF0000">target.rta/def.app/nvlist</a> generates datafile <a style="color:#FF0000">def.app/nvframes.rom</a> containing pointers to ROM application iframes
-	<pre	style="color:#0000FF;font-size:14pt">
+</pre>
+Scripts are read from RTA1 Device 1 file system which is read-only and constructed offline by the system administrator
 
-	$ cd rta/target.rta/def.app
+<p>
+The output of scripts is broadcast on UDP port 18. Scripts call other scripts by presenting their pathname as a command
 
-	$ cat iframes.def
-	APPLICATION(1)	$equ	00B000	. unless kernel and libraries get larger
-	APPLICATION(2)	$equ		. depends how many pages APPLICATION(1) takes
-					. and if any fixed library pages intervene
-	.
-	.
-	APPLICATION(5)	$equ	02A000	. for example
+<p>
+Application <a href="#load_app">load</a> stores up applications it has been commanded to load. By default it executes them on load
 
-	$ ./nvlist	# construct <a style="color:#FF0000">def.app/nvframes.rom</a>
+<p>
+Load without execute is suffixed *+
+<pre	style="font-size:12pt;color:#0000FF">
 
-	</pre></li>
+	r load /test/hello*+
 
-        <li><a style="color:#FF0000">nvframes.rom</a> is included in <a href="kernel.html#fsda">file system Device 1</a> and tabled in kernel vectors at system start. <a href="kernel.html#fsda">File system Device 1</a> is constructed offline:
-	<pre	style="color:#0000FF;font-size:14pt">
+</pre>
 
-	$ cd rta
-	$ ./mrand7
-	</pre></li>
+load stays in dialogue until dismissed @eof
+<pre	style="font-size:12pt;color:#0000FF">
 
-        <li>ROM application iframes are invidually searchable for launching applications by name</li><br>
+	@eof
 
-        <li>directory <a style="color:#FF0000">application_templates/</a> in each iframe embedded filesystem links a searchable name to each application:
-	<pre	style="color:#0000FF;font-size:14pt">
+</pre>
+@eof unloads all applications cached by that instance of load and ends that load process
 
-	$cat loadfs
-	volume embedded_fs
-	tree data_segments
-	file app1_data app1_lsegment
-        file app2_data app2_lsegment
-	.
-	<a style="color:#FF0000">tree application_templates
-	link request_name1 _launch_gate_app1 G
-        link request_name2 _launch_gate_app2 G</a>
-	.
-	.
-	</pre>
-	</li>
+<p>
+Dynamic loaded applications are executed again by typing their name into the load prompt without any path in front
+<pre	style="font-size:12pt;color:#0000FF">
 
-        <li>applications are constructed in ROM format and catenated to the system image</li><br>
+	hello
 
-        <li>have a script named <a style="color:#FF0000">amass</a> in their application directory to govern catenation to the system image:
-	<pre	style="color:#0000FF;font-size:14pt">
+</pre>
 
-	insert this_app.rom ../up2here.apps/sysimage.rom
-	</pre></li>
-	<li>are called with telnet command <a style="color:#0000FF">r </a><a style="color:#FF0000">name</a> or from a script by <a style="color:#FF0000">name</a> or programmatically at their fixed address</li>
+Dynamic applications can be individually unloaded by typing their name with suffix *-
+<pre	style="font-size:12pt;color:#0000FF">
 
-</ul>
+	hello*-
+
+</pre>
+load lists loaded applications on command @?
 
 <a	name="group"/>
-<h3>7: Multiple Applications in one Load or ROM Group</h3>
 
-<h4>7.1: Application Collections</h4>
+<a      name="_macros"/>
+<h3>6: Macros which frame Instruction Code</h3>
+
+<a      name="_catalog"/>
+<h4>6.1: catalog</h4>
+
+<a      name="_application"/>
+<h4>6.2: $application</h4>
+
+<a      name="_iframe"/>
+<h4>6.3: $iframe</h4>
+
+<a	name="_app4kq"/>
+<h3>7: Constructing Single Application Iframes</h3>
+
+<ul	 type="square">
+
+	<li>lookup and vector information is checked to correspond with load location derived from catenation</li>
+	<li>data sizes are carried forward automatically into launch parameters</li>
+	<li>the <a href="#nvram">application [group]</a> contains a directory of launch name[s] and parameters</li>
+	<li>the containing storage block is <a href="#nvram">listed at system start</a> for application lookup and launch</li>
+
+</ul>
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat simple.msm 
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	def.app/iframes.def
+	$include	language/catalog.def
+	$path
+	$include	../image.app/imports.def
+	$list	
+
+__BASE*	$equ	AN_UNDEFINED_NAME
+
+$(3:03000/$3)
+$(0:0/$0)
+simpl*	$vector	simple
+
+	<a style="color:#FF0000">catalog</a>
+
+simple	$base_d	$zenith(3)-03000 1024
+	c	(seg$load)	0,,xi	(mydata:d),,long
+	printf	$3("that ought to be simple enough 4u":10:0),,xi
+	fret	0
+	$do	$<256,$(0:256)
+
+</pre>
+
+<p>
+<a style="color:#0000ff">catalog.def<a> is included to explain <a style="color:#FF0000">catalog</a>
+
+<p>
+Two more lines in file loadfs assure a name lookup <a style="color:#0000ff">simple</a>
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat loadfs
+volume embedded
+file mydata lsegment
+tree application_templates
+link simple launch_gate G
+
+</pre>
+
+<p>
+Application simple can be loaded dynamically from file system device 1
+
+<p>
+To include application simple in an NVRAM system image instead, script simple.app/amass directs where to catenate simple and __BASE is derived from the catenated image
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat amass
+insert simple ../up2here.app/sysimage.rom
+
+</pre>
+The result of doing that is <a style="color:#0000FF">simple.app/sysimage.rom</a>
+
+All the application directories in the catenation have a file called sysimage.rom which starts with a kernel and contains a number of applications
+
+<p>
+To run any one of the resulting system images, in the debug shell
+
+<pre	style="font-size:12pt;color:#0000FF">
+	cd rta/tgen.smp
+	export RTA_IMAGE=../target.rta/simple.app/sysimage.rim	# for example
+	./ra	-ZR
+
+</pre>
+
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ telnet 172.29.7.7
+RTA1 smaragd7 OS shared console
+r simple
+00001f 
+that ought to be simple enough 4u
+
+</pre>
+
+Macro <a style="color:#FF0000">catalog</a> can be used to launch large and loadable single applications
+
+<p>
+Application framing  macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> automatically measure data section size and necessary heaps and stacks
+
+
+<h3>8: Constructing Application Groups</h3>
+
+<h4>8.1: Requirements</h4>
 Applications in shared iframes are assembled with relocatable instruction sections and linked
 
 <p>
-Their data sections are all at absolute 001000<sub>16</sub> and 003000<sub>16</sub> as all applications
+Their data sections are at absolute 001000<sub>16</sub> and 003000<sub>16</sub> as all applications
 
 <p>
-The application directory has a file <a href="#make_rel">make_rel</a> to command relocatable assemblies of each application for collection
+Instruction part of grouped applications is packed into a shared instruction frame. The directory contains a file <a href="#make_rel">make_rel</a> containing a rels command with application names
+
+<p>
+Instruction sections and literal pools inside instruction sections must specify relocatable in section headers
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$(0:*1/$0)		. *1 is an alignment factor instead of an address
+$(4:*1/$4)
+	$lit	4	. automatic literals in locator $(4)
+
+</pre>
+
+In the name-giving <a href="#link_u">linking assembly</a> literals in the instruction section must be in adresses [ 256..4095 ]
+
+<p>
+an extra section $(4) is used to get the iframe literals of all applications in the group into one place, either after instruction code if instruction code is short enough, or starting at address 256 before instruction code
+
+<p>
+Operands below address 256 are read from registers not storage, with the exception of execute target instructions
 
 <p>
 Applications for combining have no $vector lines at the front and the instruction code section declaration <a style="color:#0000FF;font-family:courier">$(0:*1/$0)</a> has instead of an address a relocation alignment term <a style="color:#0000FF;font-family:courier">*1</a>
@@ -436,14 +793,10 @@ $(0:*1/$0)		. relocatable instruction code section
 </pre>
 
 <a>
-A new relocatable section $(4:*1) also appears. This is explained at <a href="#literal_tables">literal tables</a>
-
-<p>
-Only instruction sections are constructed as relocatable. Data sections $(1) variable pointers / private data and $(3) static are at absolute 001000 hex and 003000 hex (but physically anywhere) for all instances of all applications
-
+The relocatable section $(4:*1) appears. See also <a href="#literal_tables">literal tables</a>
 
 <a	name="make_rel"/>
-<h4>7.2: make_rel File</h4>
+<h4>8.2: make_rel File</h4>
 
 
 Applications for linking in a group are named to command <a style="color:FF0000">rels</a>
@@ -460,10 +813,10 @@ in one-line text file <a style="color:#FF0000">make_rel</a>
 </pre>
 
 <a name="link_u"/>
-<h4>7.3: Linking Assembly</h4>
+<h4>8.3: Linking Assembly</h4>
 
 <p>
-Command <a style="color:#FF0000">amake</a> assembles the files on the <a href="#make_rel"/>rels</a> line then assembles another file to construct the load object (whether actually loadable or in NVRAM)
+Command <a style="color:#FF0000">amake</a> assembles the files on the <a href="#make_rel"/>rels</a> line then assembles another file to construct the load object
 
 <p>
 In this example the linking assembly  is apps_group.msm
@@ -527,7 +880,7 @@ make_rel also outputs *.txo files but segments from these do not have all the re
 <a	name="_macros"/>
 <h4>8.1: Macros which frame Instruction Code</h4>
 
-Three alternative macros construct iframes. Application and library iframes may alternatively be constructed <a href="#_without">without macro framing</a> 
+Three alternative macros construct iframes. Application system images Simple can alternatively be constructed from4K Pages may <a href="#_without">without macro framing</a> subject to some restrictions
 <ul     type="square">
 
         <li><a href="#_catalog">catalog</a> constructs a single application</li>
@@ -535,7 +888,7 @@ Three alternative macros construct iframes. Application and library iframes may 
         <li><a href="#_iframe">$iframe</a> constructs a block of subroutines</li>
 
 </ul>
-iframes can be constructed singly or in a related load group
+Instruction frames may contain one application or more
 
 <p>
 Each iframe is any size within direct addressing plus further space for metadata and data section load
@@ -618,19 +971,16 @@ developer tools indicate if iframe storage is insufficient and needs correction 
 
 </pre>
 
-<p>
-$iframe frames integrated in dynamically loadable application groups and are not callable from outside the loadable iframe group
+<a	name="_large"/>
+<h3>9: Constructing Large Applications</h3>
 
 <a	name="_library"/>
-<h4>8.5: Independent Library Iframes</h4>
-Independent libraries (libraries not specific to individual applications) at fixed and known addresses are suitable for construction <a href="#_without">without any framing by macro</a>
+<h3>10: Constructing Independent Library Iframes</h3>
 
 <p>
-Independent libraries may be constructed in 4k-pages using up to 64 vectors and 64 far returns in each page
+Libraries at known addresses may be constructed very simply in 4Kword-pages using up to 64 vectors and 64 far returns in each page
 
 
-<a      name="_without"/>
-<h4>8.6: Without any Framing by Macro</h4>
 <pre	style="font-size:12pt;color:#0000FF">
 
 	vector_name* $vector offset
@@ -647,224 +997,8 @@ Independent libraries may be constructed in 4k-pages using up to 64 vectors and 
 
 </pre>
 
-<a	name="_app4kp"/>
-<h4>8.7: Simple 4K Application Iframes</h4>
-A complete and efficient application system image can be constructed without any instruction framing macros if
-<ul	type="square">
-
-	<li>instruction frames are one page of 4096 words</li>
-	<ul	type="square">
-		<li>4K application iframes may contain multiple applications</li>
-		<li>4K application iframes may be joined together with <a href="rta.html#call">call</a> <a href="rta.html#fret">fret</a> and <a href="rta.html#go">go</a> instructions to construct large applications</li>
-	</ul>
-	<li>instruction frames are at fixed storage locations</li>
-
-	<li>library calls are programmatic because they always are</li>
-
-	<li>application startups are</li>
-	<ul	type="square"> 
-		<li>programmatic, or</li>
-		<li>have lookup by name programmed by the integrator, or</li>
-		<li>use framing macros <a href="#_catalog">catalog</a> for one application or <a href="#_application">$application</a> for application group iframes</li>
-	</ul>
-</ul>
-Vector values are exported<a href="#_application">*</a>. They are encoded information and not address labels
-
-<p>
-A vector value is the storage or register operand of instructions
-<a href="rta.html#gocall">go</a> and <a href="rta.html#call">call</a>
-
-<p>
-Application <a style="color:#0000FF">2simple</a> is constructed without framing macros
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cat 2simple.msm
-	$list		0
-	$path		../
-	$include	def/rta.def
-	$include	def/vector.def
-	$include	language/stack.def
-	$include	stream/stream.def
-	$path
-	$include	../image.app/imports.def
-	$list	
-
-$(3:03000/$3)
-$(0:0/$0)
-simpl*	$vector	simple
-	$list	0
-	$do	64-$,	fret	0
-	$list
-simple	$base_d	$zenith(3)-03000 1024
-	c	(seg$load)	0,,xi	(mydata:d),,long
-	printf	$3("that ought to be simple enough 4u":10:0),,xi
-	fret	0
-	$do	$<256,$(0:256)
-
-</pre>
-The directory must contain a text file loadfs
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cat loadfs
-volume embedded
-file mydata lsegment
-
-</pre>
-2simple is then built like this
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ amake 2simple
-$ slab 2simple 2simple.rom 4096
-$ cat ../up2here.apps/sysimage.rom 2simple.rom &gt; ./sysimage.rom		# for example
-
-</pre>
-Then the integrator must 
-<ul	type="square">
-
-	<li>keep track at what page address the application is catenated</li>
-	<li>use that Start Page Index * 64 as the application launch vector value [<i>PAGE</i>:000000<sub>2</sub>]</a></li>
-	<li>have a way if required of looking up the application by name</li>
-	<li>parameter needed for the launch service call <a href="#_app_launch">SPAWN$</a> are { vector, priority, static data size, -B1_frames }</li>
-
-</ul>
-
-<a	name="_app4kq">
-<h4>8.8: Simplified Application Iframes</h4>
-
-Application <a style="color:#0000FF">simple</a> is less work for the integrator than application <a style="color:#0000FF">2simple</a> because
-<ul	 type="square">
-
-	<li>lookup and vector information is checked to correspond with load location derived from catenation</li>
-	<li>data sizes are carried forward automatically into launch parameters</li>
-	<li>the <a href="#nvram">application [group]</a> contains a directory of launch name[s] and parameters</li>
-	<li>the containing storage block is <a href="#nvram">listed at system start</a> for application lookup and launch</li>
-
-</ul>
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cat simple.msm 
-	$list		0
-	$path		../
-	$include	def/rta.def
-	$include	def/vector.def
-	$include	language/stack.def
-	$include	stream/stream.def
-	$include	def.app/iframes.def
-	$include	language/catalog.def
-	$path
-	$include	../image.app/imports.def
-	$list	
-
-__BASE*	$equ	<a style="color:#FF0000">APPLICATION(4)</a>/*12
-
-$(3:03000/$3)
-$(0:0/$0)
-simpl*	$vector	simple
-
-	<a style="color:#FF0000">catalog</a>
-
-simple	$base_d	$zenith(3)-03000 1024
-	c	(seg$load)	0,,xi	(mydata:d),,long
-	printf	$3("that ought to be simple enough 4u":10:0),,xi
-	fret	0
-	$do	$<256,$(0:256)
-
-</pre>
-__BASE is exported
-
-<p>
-<a style="color:#0000ff">iframes.def</a> is introduced to explain <a style="color:#FF0000">APPLICATION(4)</a>
-
-<p>
-<a style="color:#0000ff">catalog.def<a> is introduced to explain <a style="color:#FF0000">catalog</a>
-
-<p>
-Two more lines in file loadfs assure a name lookup <a style="color:#0000ff">simple</a>
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cat loadfs
-volume embedded
-file mydata lsegment
-tree application_templates
-link simple launch_gate G
-
-</pre>
-Storage block <a style="color:#FF0000">APPLICATION(4)</a> is identified to the kernel as containing applications for lookup and launch
-
-<p>
-A file <a style="color:#0000ff">amass</a> in the directory checks the location of <a style="color:#FF0000">APPLICATION(4)</a> and does the catenation
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cat amass
-insert simple ../up2here.apps/sysimage.rom
-
-</pre>
-Application <a style="color:#0000FF">simple</a> is simpler. Build is just one command
-
-<pre	style="font-size:12pt;color:#0000FF">
-
-	$ amake simple
-
-</pre>
-The result of doing that is <a style="color:#0000FF">simple.app/sysimage.rom</a>
-
-<p>
-If simple is the last in the chain then
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ cd rta/rta.run
-$ export RTA_IMAGE=../target.rta/simple.app/sysimage.rom
-
-</pre>
-Otherwise the chain modules after <a style="color:#0000FF">simple</a> must be serially reinserted starting in the next application directory with a command in the <a style="color:#0000FF">amass</a> file
-<pre	style="font-size:12pt;color:#0000FF">
-
-insert this_module ../simple.app/sysimage.rom
-
-</pre>
-<a href="#nvram">def.app/nvframes.rom</a> must be constructed for the application number of application <a style="color:#0000FF">simple</a> and built into File System Device 1
-
-<p>
-Application <a style="color:#0000FF">simple</a> is fixed in the system image and available after restart
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ telnet 172.29.7.7
-RTA1 smaragd7 OS shared console
-r simple
-00001f 
-that ought to be simple enough 4u
-
-</pre>
-
-Macro <a style="color:#FF0000">catalog</a> can be used to launch large and loadable single applications
-
-<p>
-Application framing  macros <a href="#_catalog">catalog</a> <a href="#_application">$application</a> automatically measure data section size and necessary heaps and stacks
-
-<a	name="_app_launch">
-<h4>8.9: Application Launch</h4>
-Application launch call is <a href="kernel.html#spawn_ii">SPAWN$</a>
-<pre	style="font-size:12pt;color:#0000FF">
-
-	ql	(vector, PRIORITY, STATIC_SIZE, -B1_FRAMES:q)
-	ii	SPAWN$
-
-</pre>
-Process primary thread identifier is returned in application register a
-
-<p>
-System call to <a href="kernel.html#tag_ii">TAG$</a> attaches a displayable name to thread [register a]
-<pre	style="font-size:12pt;color:#0000FF">
-
-	lb	$3("name":0),,xi	. leftside word zero means this thread 
-	ii	TAG$
-
-</pre>
-A thread calling TAG$ with zero in register a names itself
-
-
 <a      name="literal_tables"/>
-<h3>9: Literal Tables</h3>
+<h3>11: Literal Tables</h3>
 
 Literals are data constants generated by reference
 
@@ -951,7 +1085,7 @@ Literals are placed in static if another iframe references them. That other ifra
 	c	(__sscanf)	<a style="color:#FF0000">$3("%s %d":0),,xi</a>	string,,xi	number,,xi
 
 </pre>
-By default literals are in the current iframe. Many iframe literals are call vectors to other iframes and must be constants or variables because the operand of instructions go and call is a constant or variable
+By default literals are in the current iframe, especially call vectors to other iframes. These are mostly constants and sometimes variables. The operands of go and call is the data word at EA, not any kind of immediate operand
 <pre	style="font-size:12pt;color:#0000FF">
 
 
@@ -963,7 +1097,7 @@ By default literals are in the current iframe. Many iframe literals are call vec
 Literals in the iframe must be in words 256..4095 of the iframe. Lower operand adresses than 256 are registers. Operand adresses 4096+ are not in the iframe. Only instructions can be obtained from addresses 4096+ of the iframe
 
 <p>
-The construct <a style="color:#0000FF">$do  $<256),$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
+The construct <a style="color:#0000FF">$do  $<256,$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
 
 <p>
 If instructions + literals > 4096 words, literals need to be placed in front of instructions, not after
@@ -1230,9 +1364,9 @@ ________________________________________________________________________________
 |_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">			|</a>
 <a style="background-color:#000080">|   $(2)	|       vector list B2 read-only	|      data memory space 002000..002FFF	|			|</a>
 <a style="background-color:#000080">|_______________|_______________________________________|_______________________________________|			|</a>
-|   $(3:03000)	|       data windows  B3..B31		| application data space 003000..01FFFF	|<a style="background-color:#000080">			|</a>
-|									      or C00000..7FFFFF |<a style="background-color:#000080">			|</a>
-|												|<a style="background-color:#000080">			|</a>
+|   $(3:03000)	|       data windows  B3..B31		|application static data 003000..01FFFF	|<a style="background-color:#000080">			|</a>
+|									      			|<a style="background-color:#000080">			|</a>
+|  $(5:100000)		data windows	..B31		 large linear arrays	 100000..7FFFFF	|<a style="background-color:#000080">			|</a>
 |												|<a style="background-color:#000080">			|</a>
 |												|<a style="background-color:#000080">			|</a>
 |_______________|_______________________________________|_______________________________________|<a style="background-color:#000080">_______________________|</a>
@@ -1780,7 +1914,7 @@ MASMX 7r3A Build 12
                                 	printf	$3("(%f + %f - %f) / %f = %f":LF:0),,xi	one,,float		;
                                 							two,,float		;
                                 							three,,float		;
-                                							altogether,,float;
+                                							altogether,,float	;
 00:000013  8FA010              +35 							handoff,,float
 00:000014  8FA00C              +35 
 00:000015  8FA008              +35 
@@ -1878,6 +2012,8 @@ multiple*applications3			# and another part
 read_the_post				# another application
 /another/script				# a nested script
 
+multiple				# run the first application in the group
+
 </pre>
 Although <a style="color:#FF0000">run_start</a> processes strictly sequentially, a caller may process multiple scripts simultaneously from separate threads
 
@@ -1919,6 +2055,89 @@ or else
 
 </pre>
 
+<a	name="_without"/>
+<div    style="border-radius:5pt;background-color:#F0F0F0">
+<h3>Appendix E: Simple System Image Build in 4Kword Pages</h3>
+A complete and efficient application system image can be constructed without any instruction framing macros if
+<ul	type="square">
+
+	<li>instruction frames are one page of 4096 words</li>
+	<ul	type="square">
+		<li>4K application iframes may contain multiple applications</li>
+		<li>4K application iframes may be joined together with <a href="rta.html#call">call</a> <a href="rta.html#fret">fret</a> and <a href="rta.html#go">go</a> instructions to construct large applications</li>
+	</ul>
+	<li>instruction frames are at fixed storage locations</li>
+
+	<li>library calls are programmatic because they always are</li>
+
+	<li>application startups are</li>
+	<ul	type="square"> 
+		<li>programmatic, or</li>
+		<li>have lookup by name programmed by the integrator, or</li>
+		<li>use framing macros <a href="#_catalog">catalog</a> for one application or <a href="#_application">$application</a> for application group iframes</li>
+	</ul>
+</ul>
+Vector values are exported<a href="#_application">*</a>. They are encoded information and not address labels
+
+<p>
+A vector value is the storage or register operand of instructions
+<a href="rta.html#gocall">go</a> and <a href="rta.html#call">call</a>
+
+<p>
+Application <a style="color:#0000FF">2simple</a> is constructed without framing macros
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat 2simple.msm
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$path
+	$include	../image.app/imports.def
+	$list	
+
+$(3:03000/$3)
+$(0:0/$0)
+simpl*	$vector	simple
+	$list	0
+	$do	64-$,	fret	0
+	$list
+simple	$base_d	$zenith(3)-03000 1024
+	c	(seg$load)	0,,xi	(mydata:d),,long
+	printf	$3("that ought to be simple enough 4u":10:0),,xi
+	fret	0
+	$do	$<256,$(0:256)
+
+</pre>
+The directory must contain a text file loadfs
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ cat loadfs
+volume embedded
+file mydata lsegment
+
+</pre>
+2simple is then built like this
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ amake 2simple
+$ slab 2simple 2simple.rom 4096
+$ cat ../up2here.apps/sysimage.rom 2simple.rom &gt; ./sysimage.rom		# for example
+
+</pre>
+Then the integrator must 
+<ul	type="square">
+
+	<li>keep track at what page address the application is catenated</li>
+	<li>use that Start Page Index * 64 as the application launch vector value [<i>PAGE</i>:000000<sub>2</sub>]</a></li>
+	<li>have a way if required of looking up the application by name</li>
+	<li>parameter needed for the launch service call <a href="#_app_launch">SPAWN$</a> are { vector, priority, static data size, -B1_frames }</li>
+
+</ul>
+</div>
+
 <pre	style="font-size:10pt;background-color:#FFFFFF00">
 <div	style="border-radius:5px;background-color:#FF0000;color:#FFFFFF;width:75pt;height:100pt;top:25pt;right:375pt;position:absolute">    NVRAM
 _____________
@@ -1947,8 +2166,8 @@ _____________
 	width:75pt;height:75pt;top:25pt;right:125pt;position:absolute">
 
 
-   fixed and
-    loadable
+      single
+   and group
 applications
 </div>
 </a>

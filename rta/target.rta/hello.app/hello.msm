@@ -1,17 +1,17 @@
 
 		$path		../			. some system headers
-		$list		0			. suppress kernel names from inflating your label lists
+		$list		0			. keep system names out of your label lists
 		$include	def/rta.def		. define the machine
 		$include	def/ii.def		. low-level system calls
 		$include	def/vector.def		. map of your vector list
 		$include	language/catalog.def	. application template and lookup anchor
 		$include	language/stack.def	. if the application calls out to anything at all
 		$include	stream/stream.def	. for example printf, sscanf
-		$include	fs/fs24.def		. a couple of system equates are needed from here
+		$include	fs/fs24.def		. a couple of file I/O equates may be  needed
 		$include	image.app/imports.def	. most of the kernel exports
 		$path
 		$list					. any names after here are in your label lists
-							. and source listing is by default main assembly (this) file
+							. source listing is by default this file
 
 		$set_option	"z"			. string zero-padding
 
@@ -25,17 +25,19 @@ $(3:03000/$3)						. your static variable data goes in here
 from_all	"from all the crew!":0
 remember_who?	"Remember us?":0
 
-__BASE		$equ		HELLO_START_PAGE_INDEX	. start page index if you know it (fixed in system image)
-							. or if you don't for that matter (dynamic iframe load)
-							. HELLO_START_PAGE_INDEX is undefined, so hello is dynamic load
+__BASE		$equ		HELLO_START_PAGE_INDEX	. HELLO_START_PAGE_INDEX is undefined causing a load address to be imported
+							. either at NVRAM system image inclusion or dynamic RAM load
 $(0:0/$0)
 . hello*	$vector		jump2it	. (commented)	. the simplest way of having a vector (entry point) in a 4k-word iframe
 							. there are 64 $vector slots at the front of an iframe
-							. but hello is dynamic and is called a different way
+							. but hello is started a different way
 
-		catalog					. catalog is the minimal startup macro for a single application of any size
-							.	-which is dynamic loadable or
-							.	-which is fixed and may be larger than one 4k page
+		catalog					. catalog is the minimal startup macro for a single application which
+							.	-may be at a higher address than 256 megawords
+							.	-may be larger than a 4K page
+							.	-may be found by name
+							.	-may be NVRAM or dynamic load
+							.	-has automatic launch parameters in a launch gat
 							.	-which is fixed and can be found my name lookup
 
 							. for multiple applications macro $application is used instead of catalog
@@ -46,18 +48,19 @@ jump2it		$base_d		$zenith(3)-03000 1024	. you need 1K words external stack for e
 
 		c	(seg$load) 0,,xi (my_data_segment:L),,long
 
-							. kernel routine (seg$load) initialises static data
+							. kernel routine (seg$load) initialises static data $(3) and private data $(1)
 							. for this process instance of this application
-							. 1st argument rom file system start page index zero
+							. 1st argument page index is zero
 							. means file system is inside this calling iframe (it is)
 							. 2nd argument is the 48-bit address of your static data load file
+							. within this instruction frame which is alsothe space of the embedded FS
 							.
-							. my_data_segment is included and named in a small text file loadfs
+							. my_data_segment is included and named by a small text file loadfs
 							. you're ready to execute application code
 
-		printf	$3("Hello World %s %s":LF:0),,xi	;	. the output string is unnecessarily three strings
-			from_all,,xi				;	. even more unnecessarily
-			*indirectp,,i					. the third string is addressed indirectly
+		printf	$3("Hello World %s %s":LF:0),,xi	;	. three strings are collected here
+			from_all,,xi				;
+			*indirectp,,i
 
 							. string arguments are in static data literal table $3
 							. so other iframes can see them. Other iframes can't see this iframe
