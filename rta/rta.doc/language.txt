@@ -92,10 +92,13 @@ c is a macro with <a href="rta.html#call">call</a> inside. It pushes arguments a
 called routines return a result if any in register a
 
 <p>
-c without argumentss is <a href="rta.html#call">call</a> instruction. Variadic far routines have a minimum one parameter. Zero-parameter lc has no parameter displacement index
+c without arguments is <a href="rta.html#call">call</a> instruction. Variadic far routines have a minimum one parameter. Zero-parameter lc has no parameter displacement index
 
 <p>
-Another instruction <a href="rta.html#go">go</a> also jumps between instruction frames. Coming back is not on the stack
+<a href="#far_call">Vector</a> operand may be indirected to a <a href="#gate">gate</a> value which allows large and dynamic target instruction frames 
+
+<p>
+Instruction <a href="rta.html#go">go</a> has operand as call and jumps between instruction frames, but does not programe any return on the stack
 
 <a	name="3words"/>
 <h2>2: Three Words that mean Return</h2>
@@ -183,7 +186,7 @@ or more frequently
 The handle value  encodes the target frame identifier and vector offset
 
 <p>
-See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</a>
+See also <a href="#gate">3.2: Pointer to Gate: Calling Instruction Frames of any Size at any Fixed or Loadable Locations</a>
 <pre	style="font-size:12pt;background-color:0000C0;color:#FFFFFF;border-radius:10px">
 
 
@@ -202,20 +205,20 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
         a constant or variable operand at location[EA]
 
 
-        23  21                 6|5    0
-        ________________________|_______
-        |00| 4K page identifier |offset|
-        |__|____________________|______|
+        23  21                  6|5    0
+        _________________________|_______
+        |00| 4K Start Page Index |offset|
+        |__|_____________________|______|
 
         the name of a 4K-word instruction frame
-        is its 4K page identifier represented in 22 bits and tagged 00 in two high-order bits
+        is its 4K Start Page Index represented in 22 bits and tagged 00 in two high-order bits
 
-	   |21                        0
-	___|____________________________
-	|00|     4K page identifier    |
-	|__|___________________________|
+	   |21                          0
+	___|_____________________________
+	|00|    4K Start Page Index	|
+	|__|____________________________|
 
-	page identifier becomes B0 window pointer on go or call
+	B0 window pointer is set to Start Page Index on go or call
 
         new B0 page identifier is copied to frame high index I/O port 64 on call or return into the frame
         indicating that the application may execute instructions in one page or 4096 words
@@ -223,10 +226,10 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 	far return and interrupt return retrieve the frame name
 	and next instruction offset from the internal stack
 
-	47  45                       24|23                            0   
-	_______________________________|________________________________
-	|00|     4K page identifier    |    next instruction offset    |
-	|__|___________________________|_______________________________|
+	47  45                        24|23                            0   
+	________________________________|________________________________
+	|00|    4K Start Page Index	|    next instruction offset    |
+	|__|____________________________|_______________________________|
 
 
 
@@ -245,10 +248,13 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
 
 
-        23|22                         0          47     41                   24|  |21                         0
-	__|_____________________________	_______________________________|__|_____________________________
-	|1|      pointer to gate       |------->|pppppp|   entry point offset  |00|   4k start page identifier |
-	|_|____________________________|	|______|_______________________|10|____________________________|
+        23|22                          0         47     41                    24|  |21                         0
+	__|______________________________	________________________________|__|_____________________________
+	|1|      pointer to gate	|------>|pppppp|  entry point offset	|00|     4K Start Page Index	|
+	|_|_____________________________|	|______|________________________|10|____________________________|
+						       |
+					Page High Index|
+					_______________|
 
 
 	bits 47..42 of the 48-bit gate are the target frame Page High Index
@@ -257,14 +263,14 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
 	iframe size is one page more than Page High Index
 
-        the name of the instruction frame is the start page identifier tagged { 00 | 10 } in two high order bits
+        the name of the instruction frame is the Start Page Index tagged { 00 | 10 } in two high order bits
 
 
 		00 if page high index is zero
 
 	           |21                         0
         	___|_____________________________
-	        |00|	Start Page Index	|
+	        |00|	  Start Page Index	|
         	|__|____________________________|
 
 
@@ -273,7 +279,7 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
         	   |21                         0
 	        ___|_____________________________
-        	|10|	Start Page Index	|
+        	|10|	  Start Page Index	|
 	        |__|____________________________|
 
 
@@ -287,10 +293,10 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
         far return and interrupt return retrieve the frame name
         and next instruction offset from the internal stack
 
-        47  45                       24|23                            0
-        _______________________________|________________________________
-        |F0|  4K start page identifier |    next instruction offset    |
-        |__|___________________________|_______________________________|
+        47  45                        24|23                            0
+        ________________________________|________________________________
+        |F0|    4K Start Page Index	|    next instruction offset	|
+        |__|____________________________|_______________________________|
 
 
 	the gate is not refetched on return from ISR or another instruction frame
@@ -307,9 +313,9 @@ See also <a href="#gate">1.2: Pointer to Gate: Calling Instruction Frames of any
 
 	|<--------------- page high index at iframe location 64
 	|
-	|_______________________________________________________________
-	|pppppp|     zero offset       |10|   4k start page identifier |
-	|______|_______________________|__|____________________________|
+	|________________________________________________________________
+	|pppppp|     zero offset       |10|     4K Start Page Index	|
+	|______|_______________________|__|_____________________________|
 	|47    |45                   24|                              0
 
 </pre>
