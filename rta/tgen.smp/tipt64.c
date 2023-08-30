@@ -627,9 +627,9 @@ void *emulate(smp *xcore)	/* thread start */
    for (;;)
    {
       #ifdef __X64
-      #define FORMAT1 "[%x %x %x %x %p %p %p %x %x %x %p %lx %p %x %x %x *%p *%p]\n"
+      #define FORMAT1 "[ %x %x %x %x | %p %p %p | %x %x %x | %p %p %lx %lx | %x %x *%p *%p ]\n"
       #else
-      #define FORMAT1 "[%x %x %x %x %p %p %p %x %x %x %p %x %p %x *%p *%p]\n"
+      #define FORMAT1 "[ %x %x %x %x | %p %p %p | %x %x %x | %p %p %x %x | %x %x *%p *%p ]\n"
       #endif
 
       if (flag['s'-'a']) general_indication |= LOCKSTEP;
@@ -637,9 +637,9 @@ void *emulate(smp *xcore)	/* thread start */
                           ||  ((flag['e'-'a']))))
       printf(FORMAT1, base[77], indication, general_indication, breakpoint,
 		      xcore, core, register_set,
-                      iselect, register_set - _register,
-        	      psr, apc, apc - ROM_PAGE->w, devices[0].pages,
-                      sp, touchpoint, touchpoint2);
+                      iselect, register_set - _register, psr,
+                      apc, apcz, apc - ROM_PAGE->w, apcz - ROM_PAGE->w,
+		      devices[0].pages, sp, touchpoint, touchpoint2);
 
       #ifdef METRIC
       gettimeofday(&time2, NULL);
