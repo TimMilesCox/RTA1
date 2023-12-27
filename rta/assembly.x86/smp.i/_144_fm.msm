@@ -1,0 +1,139 @@
+;	this is like fm: routine in fpu.msm
+;	except it has uconditionally different radix and repeat count
+;	and so exists separately to avoid condition jumps
+;	and to avoid messing with the original for new parameters
+
+_144_fm:
+	lea	edi, [esi+_OUTPUT]			; initialise final accumulation
+	call	zoutput
+
+	mov	ebx, dword ptr [esi+_INPUTR+1*4]	; read register-side signs
+	mov	eax, dword ptr [esi+_INPUTR+2*4]	; and high-end mantissa
+	xor	eax, ebx	 			; cache if-normalised in eax
+	xor	ebx, dword ptr [esi+_INPUT2+1*4]	; multiply signs
+	mov	dword ptr [esi+_OUTPUT+1*4], ebx	; save the output sign
+	and	eax, eax				; test the cached if-normalised
+	jns	_144_fmdont
+
+	mov	eax, dword ptr [esi+_INPUT2+1*4]	; is the multiplier normalised?
+	xor	eax, dword ptr [esi+_INPUT2+2*4]	; sign XOR normalising bit?
+	js	_144_fmgo				; yes, proceed
+
+_144_fmdont:
+	mov	dword ptr [esi+_OUTPUT+2*4], ebx
+	mov	dword ptr [esi+_OUTPUT+3*4], ebx
+	mov	dword ptr [esi+_OUTPUT+4*4], ebx
+	mov	dword ptr [esi+_OUTPUT+5*4], ebx
+	mov	dword ptr [esi+_OUTPUT+6*4], ebx
+	mov	dword ptr [esi+_OUTPUT+7*4], ebx
+	mov	dword ptr [esi+_OUTPUT], 0		; mantissa to go
+
+	ret					; no, effective zero multiplier
+
+_144_fmgo:
+	push	ecx
+	mov	eax, dword ptr [esi+_INPUTR+1*4]
+
+	mov	cl, 144				; beats count exactly mantissa size
+
+	and	eax, eax
+
+	jns	_144_fmp1
+	lea	edi, [esi+_INPUTR]
+	call	zover
+
+_144_fmp1:
+	mov	eax, dword ptr [esi+_INPUT2+1*4]
+	and	eax, eax
+	jns	_144_fmadd
+	lea	edi, [esi+_INPUT2]
+	call	zover
+
+_144_fmadd:
+	clc
+
+	lea	edi, [esi+_INPUTR]
+	rcr	dword ptr [edi+2*4], 1		; addend shift right
+	rcr	dword ptr [edi+3*4], 1
+	rcr	dword ptr [edi+4*4], 1
+	rcr	dword ptr [edi+5*4], 1
+	rcr	dword ptr [edi+6*4], 1
+	rcr	dword ptr [edi+7*4], 1
+
+	lea	edi, [esi+_INPUT2]
+
+	%if	1
+	rcl	dword ptr [edi+7*4], 1		; multiplier shift left
+	rcl	dword ptr [edi+6*4], 1
+	rcl	dword ptr [edi+5*4], 1		; multiplier mantissa is only 72 bits
+	%endif
+
+	rcl	dword ptr [edi+4*4], 1
+	rcl	dword ptr [edi+3*4], 1
+	rcl	dword ptr [edi+2*4], 1
+
+	lea	edi, [esi+_OUTPUT]
+	jnc	_144_fmadx
+						; 1 shifted from multiplier
+_144_fmadc:
+	mov	eax, dword ptr [esi+_INPUTR+7*4]	
+	add	dword ptr [edi+7*4], eax	; do not use carry
+	mov	eax, dword ptr [esi+_INPUTR+6*4]
+	adc	dword ptr [edi+6*4], eax	; start using carry
+	mov	eax, dword ptr [esi+_INPUTR+5*4]
+	adc	dword ptr [edi+5*4], eax
+	mov	eax, dword ptr [esi+_INPUTR+4*4]
+	adc	dword ptr [edi+4*4], eax
+	mov	eax, dword ptr [esi+_INPUTR+3*4]
+	adc	dword ptr [edi+3*4], eax
+	mov	eax, dword ptr [esi+_INPUTR+2*4]
+	adc	dword ptr [edi+2*4], eax
+
+_144_fmadx:
+	dec	cl
+	jnz	_144_fmadd
+
+_144_fmadz:
+	pop	ecx
+
+	mov	eax, dword ptr [edi+2*4] 	; normalised?
+	rcl	eax, 1
+	jc	_144_fm_normalised
+
+	add	dword ptr [esi+_INPUTR], -1		; take 1 from scale
+	rcl	dword ptr [edi+7*4], 1
+	rcl	dword ptr [edi+6*4], 1
+	rcl	dword ptr [edi+5*4], 1
+	rcl	dword ptr [edi+4*4], 1
+	rcl	dword ptr [edi+3*4], 1
+	rcl	dword ptr [edi+2*4], 1
+
+	jmp	_144_fm_inrange
+
+_144_fm_normalised:
+	lea	edi, [esi+_OUTPUT]
+	call	round2
+	jnc	_144_fm_inrange
+
+	rcr	dword ptr [edi+2*4], 1
+	rcr	dword ptr [edi+3*4], 1
+	rcr	dword ptr [edi+4*4], 1
+	rcr	dword ptr [edi+5*4], 1
+	rcr	dword ptr [edi+6*4], 1
+	rcr	dword ptr [edi+7*4], 1
+	add	dword ptr [esi+_INPUTR], 1
+
+_144_fm_inrange:
+	mov	eax, dword ptr [esi+_INPUTR]
+	add	eax, dword ptr [esi+_INPUT2]
+	add	eax, -00400000h
+	mov	dword ptr [edi], eax		; insert unsigned magnitude product scale
+	mov	eax, dword ptr [edi+1*4]
+	xor	dword ptr [edi+2*4], eax	; the mantissa gets polarised here
+	xor	dword ptr [edi+3*4], eax
+	xor	dword ptr [edi+4*4], eax
+	xor	dword ptr [edi+5*4], eax
+	xor	dword ptr [edi+6*4], eax
+	xor	dword ptr [edi+7*4], eax
+	ret
+

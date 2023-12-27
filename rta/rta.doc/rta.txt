@@ -210,7 +210,7 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 	vector</a>			a vector is a 24-bit value identifying an entry point in
 				a fixed one-page instruction frame in the first 256 Megawords of system memory
 
-				Start Page Index in a vector is 16 bits in size. Six bits are a vector offset
+				Start Page Index in a vector is 16 bits in size. Six bits are the vector offset
 
 
 						_________________________________________
@@ -218,11 +218,22 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 						|____|_________________________|________|
 						     |21		      6|5      0
 
+
+				$vector macro is coded at location offset of target page
+				it exports value page:offset and jumps to target routine
+
+					call_name*	$vector	routine
+
+				The 24-bit vector value is the operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
+
+				a high-order bit in the operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
+				flags the storage address of a <a href="#gate">gate</a> instead of a vector value
+
+
 	<a	name="gate"/>
 	<a	style="color:#0000FF">
 	gate</a>			a gate is the 48-bit descriptor of an entry point at any offset
-				in a an instruction frame up to 64 pages in size
-				at a fixed load image position or a dynamic loadable position
+				in a an instruction frame up to 64 pages in size anywhere in executable space
 
 				bits 47 to 42 of a gate descriptor are the Page High Index of the gate
 				Page High Index is instruction frame pages minus one
@@ -231,7 +242,6 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 
 				the second word of the gate descriptor is Iframe Name
 				flag bits 23:22 of Iframe Name are 10 if Page High Index is nonzero
-
 
 
 			_________________________________________________________________________________
@@ -244,7 +254,7 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 
 	<a	name="vector_list"/>
 	<a	style="color:#0000FF">
-	vector list</a>			the vector list is a 4K-word page of data pointers and structures
+	vector list</a>		the vector list is a 4K-word page of data pointers and structures
 				occupying addresses 002000<sub>16</sub>..002FFF<sub>16</sub> of applications
 
 				vector list places mostly data objects in application scope
@@ -992,7 +1002,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 <h3>2.8 Thread Switch and Address Space</h3>
 
 Thread current memory block pointers are not saved on thread switch because they are
-already mirrored in the thread control block at the point when the application selects memory
+already mirrored in the thread control block when the application selects memory
 
 <p>
 62 window pointers are reloaded in 31 instructions
@@ -4528,11 +4538,11 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|	the absolute pointer part of the storage	|
 				|	block identified in accumulator a is written 	|
-				|	to data window pointer I/O Port[EA]		|
+				|	to data window pointer I/O Port[EA/PAGE]	|
 				|							|
 				|	the storage block symbolic identifier is copied	|
 				|	from accumulator a to memory window 65 (thread	|
-				|	control block) offset 64 + EA			|
+				|	control block) offset 64 + EA/PAGE		|
 				|							|
 				|	value of EA may be 2..63			|
 				|							|
@@ -6715,18 +6725,18 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	are programmed for repeat execute with macro SIMD_CONTROL		|
 	|										|
 	|	RDATAC is repeat final count and may start at count-expired value -1	|
-	|	to trip initialisation of accumulator cursor and restart final count	|
+	|	to trip initialisation of accumulator vector and restart final count	|
 	|										|
 	|		SIMD_CONTROL	(-1, <a href="#size" style="color:#00AF6F">SIZE</a>, OBJECTS-1, <a href="#distance" style="color:#00AF6F">DISTANCE</a>:q)		|
 	|										|
 	|			<a style="color:#00AF6F">. q here means a 4-word literal -------^</a>		|
-	|			<a style="color:#00AF6F">. and has nothing to do with SIMD accumulator cursor</a>	|
+	|			<a style="color:#00AF6F">. and has nothing to do with SIMD accumulator vector</a>	|
 	|										|
         |       if final count is (-1 = expired) at start of rex instruction		|
-	|	  accumulator cursor q is initialised to internal stack pointer sp	|
+	|	  accumulator vector q is initialised to internal stack pointer sp	|
 	|	  and final count is restarted to OBJECTS-1 <a href="#sim_d2"style="color:#00AF6F"> diagram and description</a>	|
 	|										|
-	|	operation increments accumulator cursor q by <a href="#size" style="color:#00AF6F">SIZE</a> and the		|
+	|	operation increments accumulator vector q by <a href="#size" style="color:#00AF6F">SIZE</a> and the		|
         |       effective address by <a href="#distance" style="color:#00AF6F">DISTANCE</a> until final count again reaches -1	|
         |                                                       			|
         |       SIMD_CONTROL does need to be iterated except to change SIMD parameters 	|
@@ -6734,7 +6744,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	repeat operations stop at final count expiry and reconfigure at next	|
         |       rex instruction which encounters expired final count in RDATAC     	|
 	|										|
-	|	<a name="size" style="color:#00AF6F">SIZE</a> is the increment to accumulator cursor q, normally the number of 	|
+	|	<a name="size" style="color:#00AF6F">SIZE</a> is the increment to accumulator vector q, normally the number of 	|
 	|	registers used in the repeated operation: for floating operations	|
 	|	four registers and for integer operations one, two, or when storing	|
 	|	remainders of division, three registers					|
@@ -6749,13 +6759,13 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	|									|	
 	|	|		<a style="color:#00AF6F">aa ana or and xor accumulator a shifts la sa</a>		|
 	|	|									|		_________________________
-	|	|	operate in a left lane of registers at cursor  [q] --------------------------->	|    register lane A	|
+	|	|	operate in a left lane of registers at vector  [q] --------------------------->	|    register lane A	|
 	|	|									|		|_______________________|
 	|	|	and repeated instructions notionally accumulator b		|	------>	|    register lane B	|
 	|	|									|	|	|_______________________|
 	|	|		<a style="color:#00AF6F">ab anb orB andB xorB accumulator b shifts lb sb</a>		|	|	.		   A	.
 	|	|									|	|	.........................
-	|	|	operate in a right lane of registers at cursor [q + 1] -----------------	.		   B	.
+	|	|	operate in a right lane of registers at vector [q + 1] -----------------	.		   B	.
 	|	|									|		.........................
 	|	|		SIMD_CONTROL	(-1, 2, 50-1, 0q)			|		.		   A	.
 	|	|									|		.........................
@@ -8060,7 +8070,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 			<a href="#A2_5_1" style="text-decoration:none;color:0000FF">A2.5.1	Table Searches with Repeat Test and Skip Instructions</a>
 		<a href="#A2_6" style="text-decoration:none;color:0000FF">A2.6	SIMD_TARGET: Single Object Accumulator Vector Operation</a>
 		<a href="#A2_7" style="text-decoration:none;color:0000FF">A2.7	SIMD_TARGET: Multiple Object Accumulator Vector Operation</a>
-
+		<a href="#simd_resume" style="text-decoration:none;color:0000FF">A2.8   Resuming an Interrupted SIMD Sequence of Floating Operations</a>
 	</div>
 	<a	name="A1"/>
 	<a	style="font-size:12.75pt;color:0000FF">A1	Description</a>
@@ -8124,7 +8134,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		floating objects are four words
 
-	ACCUMULATOR_UPDATE is the increment to accumulator cursor q and is in most cases the size in words of the object
+	ACCUMULATOR_UPDATE SIMD_AU is the increment to accumulator vector q and is in most cases the size in words of the object
 
 	ACCUMULATOR_UPDATE is zero if multiple Data Point 2 operands are applied to one Data Point 1 accumulator
 
@@ -8146,7 +8156,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	except when macro <a href="#simd_target">SIMD_TARGET</a> changes Accumulator Vector to different set of internal stack registers for one complete
 	<a href="#sim_d2">rex</a> multiple operation
 
-	Accumulator Vector set by SIMD_TARGET inherits accumulator cursor update and ea increment parameters from SIMD_CONTROL
+	Accumulator Vector set by SIMD_TARGET inherits accumulator vector update and ea index increment parameters from SIMD_CONTROL
 
 	SIMD_TARGET macro does not change SIMD Frame.
 	SIMD Frame does not need reprogramming with SIMD_CONTROL except to change parameters
@@ -8248,29 +8258,32 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Data Points 1 are therefore concentrated on acquisition and results are distributed on storage
 	Data Points 2 need never be concentrated at all
 
-	Repeat operations traversing the internal register stack update the accumulator cursor
-        with the &plusmn;increment programmed in register <a style="color:#FF0000">RDATA</a>, most frequently
+	Repeat operations traversing the internal register stack update the accumulator vector
+        with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_AU</a>, most frequently
 
  		+1 * object size in words
 
 		for example <a style="color:#FF0000">increment +4</a> is for a list of 4-word floating numbers in the internal stack
 
-		_________________________________________________________________
-		| running count	| <a style="color:#FF0000">increment +4</a>	| restart count	|DATA2 increment| ------------> updates DATA2
-		|_______________|_______________|_______________|_______________|		index register
-			RDATAC		| RDATA		WDATAC		WDATA
-					|				
-					+-----------------------------------------------------> updates [ register q ] 
-												accumulator cursor ->
+			
+		+ ----------------------------- + <----------------------------------- 	SIMD_RESTART copied -> SIMD_RUNCOUNT
+		|									at operation start when runcount < 0
+		_________________________________________________________________	simultaneously accumulator vector q restarted
+		| running count	| <a style="color:#FF0000">increment +4</a>	|
+		|_______________|_______________|_______________|_______________|
+		  SIMD_RUNCOUNT	|    SIMD_AU	|  SIMD_RESTART	|  SIMD_XU 
+		    		|				+---------------------> updates index register of source-2 operand
+				+-----------------------------------------------------> updates [ register q ] accumulator vector 
 
 
-	Accumulator cursor increment zero is correct when the same internal stack register is DATA-1 each repeat, for example
+	Accumulator vector increment SIMD_AU zero is correct when the same internal stack register remains source-1 operand iteratively,
+	for example
 
 		the value in one internal stack register is stored to many locations
 
 		many values read from dispersed locations are accumulated in one internal stack register
 
-	Accumulator cursor increment +2 is correct when
+	Accumulator vector increment SIMD_AU +2 is correct when
 
 		pairs of single registers are treated as <a href="#rex_lane">left and right lanes</a> with for example
 
@@ -8305,7 +8318,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 			|_______________|	|_______________|	|
 				|					|
 			________|________	_________________	|
-			|  dest cursor	| <-----|      sp	|	|
+			|  dest vector	| <-----|      sp	|	|
 			|_______________|	|_______________|	|
 				|					|
 				|<--------------------------------------
@@ -8325,7 +8338,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|			|
 	|		________|________
 	|		| increment dest|
-	|		|register cursor|
+	|		|register vector|
 	|		|_______________|
 	|			|
 	|		________|________
@@ -8375,12 +8388,12 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	If the acquired instruction is not in the repeatable set then rex instruction no-ops
 
-	If register 20 RDATAC is negative two initialisation steps take place
+	If register 20 SIMD_RUNCOUNT is negative two initialisation steps take place
 
-		counter restart value in register 22 WDATAC is copied to final count RDATAC
+		counter restart value in register 22 SIMD_RESTART is copied to final count SIMD_RUNCOUNT
 
 		register 15 internal stack pointer is copied to
-		destination / Data Point 1 accumulator cursor q
+		accumulator vector q
 
 	Initial Data Point 2 effective address is generated from
 	the address fields of the acquired instruction
@@ -8388,19 +8401,19 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	X. The acquired instruction is executed using as accumulator[s]
 	the internal stack register[s] pointed by q <a href="#watch_it" style="color:#FF0000">**</a>
 
-	Register 21 RDATA is added to q
+	Register 21 SIMD_AU is added to q
 
 	If the acquired instruction uses an index register in the set [ x y a b fp sp ]
-	then register 23 WDATA is added to the index register
+	then register 23 SIMD_XU is added to the index register
 
-	Final count register 20 RDATAC is decremented
-	If RDATAC becomes negative repeat operation is complete and ceases
+	Final count register 20 SIMD_RUNCOUNT is decremented
+	If SIMD_RUNCOUNT becomes negative repeat operation is complete and ceases
 
 	If an interrupt request with urgency > interrupt mask is pending
 
 		absolute program counter is decremented
 		to cause rex instruction to start again at the next repeat instance
-		without initialising accumulator cursor or final count
+		without initialising accumulator vector q or final count SIMD_RUNCOUNT
 
 		repeat operation concludes and the interrupt is enabled
 
@@ -8416,20 +8429,21 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	<a	name="simd_c" style="font-size:12.75pt;color:0000FF">A1.6	Programming SIMD Frame and Accumulator Vector</a>
 
-	rex instruction uses registers [ q RDATAC RDATA WDATAC WDATA ]
-	which are also used programming bit stream read and write
+	rex instruction uses registers [ q SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]
 
-	Registers [ q RDATAC RDATA WDATAC WDATA ] are nonvolatile to the application
+	Registers [ q SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ] are nonvolatile to the application
+
+	They are the same registers [ 20..23 ] as bit stream channel registers [ RDATAC RDATA WDATAC WDATA ]
 
 	Filestream routines in kernels save and restore [ RDATAC RDATA WDATAC WDATA ]
-	and register [ q ] does not need to be directly programmed before repeat execute sequences
+	SIMD Accumulator pointer [ q ] does not need to be directly programmed before repeat execute sequences
 
 	Kernels launch all threads with <a href="#A2_2" style="text-decoration:none">SIMD array one object deep at the stack top</a>
 	so that the application has <a href="rta.html#A2_2">alternative accumulators</a> to [ a b mantissa2 mantissa3 ]
 
 		<a style="color:#00AF6F">SIMD_CONTROL	(-1, 0, 0, 0q)</a>
 
-	If accumulator cursor q designates any register outside the range 24..127	<a name="watch_it" style="color:#FF0000">**</a>
+	If accumulator vector q designates any register outside the range 24..127	<a name="watch_it" style="color:#FF0000">**</a>
 	the thread faults with interrupt GUARD$ latent parameter permission
 
 	Macro SIMD_CONTROL takes a quadword argument
@@ -8438,16 +8452,16 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		<a style="color:#00AF6F">SIMD_CONTROL	(-1, ACCUMULATOR_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)</a>
 
-	where -1 causes accumulator cursor initialisation and final count restart
+	where -1 causes accumulator vector initialisation and final count restart
 
 	ACCUMULATOR_UPDATE is the operand size in words unless
 
-		the operation is executed once and an accumulator cursor update is never used
+		the operation is executed once and an accumulator vector update is never used
 
-		the operation is repeated on one destination and accumulator cursor update is zero
+		the operation is repeated on one destination and accumulator vector update is zero
 
 		internal stack registers are organised in differently treated <a href="#rex_lane">lanes</a>
-		and accumulator cursor update is the number of registers in a sample
+		accumulator vector update is the number of registers in a sample pair
 
 		the repeated operation is <a href="#A2_5_1">test / skip</a> and does not use internal stack accumulators
 
@@ -8471,7 +8485,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		SIMD_CONTROL	(-1, ACCUMULATORS_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)
 
 	In the case operation[s] are required starting other than at the stack top,
-	a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> updates accumulator cursor q to Accumulator Vector [1st argument]<a href="#watch_it" style="color:#FF0000">**</a>
+	a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> updates accumulator vector q to Accumulator Vector [1st argument]<a href="#watch_it" style="color:#FF0000">**</a>
 	and suppresses automatic initialisation to the stack top
 	by writing <a href="#A2_7">RESTART_COUNT-1</a> of <a href="#A2_6">zero+</a> to final count register RDATAC
 
@@ -8483,7 +8497,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		<a href="#A2_7" style="text-decoration:none">SIMD_TARGET<a>	first_dynamic_object_name	HOW_MANY-1	. 2nd argument = objects - 1
 
-	Accumulator Vector set by <a href="#A2_7" style="text-decoration:none">SIMD_TARGET</a> inherits accumulator cursor update and ea increment parameters from SIMD_CONTROL
+	Accumulator Vector set by <a href="#A2_7" style="text-decoration:none">SIMD_TARGET</a> inherits accumulator vector update SIMD_AU 
+	and ea index register udpate SIMD_XU from SIMD_CONTROL
 
 
 	<a	name="A2"/>
@@ -8632,7 +8647,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	<a	style="font-size:12.75pt;color:0000FF">A2.6	SIMD_TARGET: Single Object Accumulator Vector Operation</a>
 
 	Accumulator Vector is <a href="#simd_frame">SIMD Frame</a> defined by <a href="#simd_c">SIMD_CONTROL</a>
-	and Repeat Execute instruction auto-initialises accumulator cursor q to the internal stack top
+	and Repeat Execute instruction auto-initialises accumulator vector q to the internal stack top
 
 		SIMD_CONTROL	(-1, REGISTERS_INCREMENT, RESTART_COUNT-1, EA_INCREMENT:q)
 
@@ -8646,7 +8661,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Objects called <a style="color:#00AF6F">params</a> and <a style="color:#00AF6F">scalars</a> are in the internal stack.
 	In this example object <a style="color:#00AF6F">one_off</a> is on the stack top
 
-	Macro <a style="color:#FF0000">SIMD_TARGET</a> updates register cursor q to an object
+	Macro <a style="color:#FF0000">SIMD_TARGET</a> updates accumulator vector q to an object
 	<a style="color:#FF0000">another1</a> at internal stack top + one float displacement for a single operation
 	and sets final count for one operation
 
@@ -8660,8 +8675,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
   :                            36 
 (+04)0f
 00:00001A  8F0009              +37 	SIMD_CONTROL	(-1, 0, 0, 0q)		. single operation at internal stack top
-00:00001B  870014              +37 
-  :                            38 						. and increment neither cursor
+00:00001B  870014              +37 						. no source-2 index register increment
+  :                            38 						. no accumulator vector increment
   :                            39						. kernels launch all threads with this setting
 (+04)0f
 00:00001C  740011              +40 	rex	(fd	(3.0e-60000))		. divide on stack top [object called one_off]
@@ -8688,7 +8703,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	<a	style="font-size:12.75pt;color:0000FF">A2.7	SIMD_TARGET: Multiple Object Accumulator Vector Operation</a>
 
         Accumulator Vector is <a href="#simd_frame">SIMD Frame</a> defined by <a href="#simd_c">SIMD_CONTROL</a>
-        and Repeat Execute instruction auto-initialises accumulator cursor q to the internal stack top
+        and Repeat Execute instruction auto-initialises accumulator vector q to the internal stack top
 
                 SIMD_CONTROL    (-1, REGISTERS_INCREMENT, RESTART_COUNT-1, EA_INCREMENT:q)
 
@@ -8705,7 +8720,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	Object <a style="color:#00AF6F">0, sp</a> is at the internal stack top and has value 1.0
 	
-        Macro <a style="color:#00AF6F">SIMD_TARGET</a> updates accumulator cursor q to an object
+        Macro <a style="color:#00AF6F">SIMD_TARGET</a> updates accumulator vector q to an object
         at internal stack top + six floats displacement for twelve floating operations
 
 
@@ -8800,14 +8815,88 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		SIMD_CONTROL	(-1, 0, 0, 0q)
 
-<i>
+
+	<a	name="simd_resume"/>
+	<a	style="font-size:12.75pt;color:#0000FF">A2.8	 Resuming an Interrupted SIMD Sequence of Floating Operations</a>
+
+	23-bit floating exponent will not normally underflow or overflow unless unintended data is encountered
+
+	Exponent underflow / overflow is the only error event specific to floating point operation
+
+	If a floating point exponent underflows or overflows interrupt <a href="kernel.html#xpo_ii">FP_XPO$</a> marks the event
+	in the Thread Control Block and the application thread can retrieve the indication with
+	service call interrupt <a href="kernel.html#fp_xpo_flag_ii">ii XPO$FLAG</a>
+
+	<a href="kernel.html#fp_xpo_flag_ii">FP_XPO$FLAG</a> skips an instruction on return if no exponent outflow has taken place since a
+	previous call. If <a href="kernel.html#fp_xpo_flag_ii">FP_XPO$FLAG</a> returns + zero (no skip), a jump or call can be made in the
+	application to process the event
+
+	<a href="kernel.html#xpo_ii">FP_XPO$</a> does not terminate the application thread, which may react to the event
+	intercepted on return from <a href="kernel.html#fp_xpo_flag_ii">FP_XPO$FLAG</a> in several ways
+
+	<a href="kernel.html#xpo_ii">FP_XPO$</a> fault during a SIMD sequence leaves outstanding operations in the SIMD sequence not executed
+
+	pointers and counters in SIMD control registers [ SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU q ] identify
+	the faulted operation and how many remain
+
+	an application handler should update these registers in order to process the next
+	oustanding operation
+
+	if the <a href="#simd_i">repeated instruction</a> uses an index register to generate its
+	source-2 operand effective address, SIMD_XU must be added to the index register
+
+	SIMD_AU must be added to accumulator vector q
+
+	SIMD_RUNCOUNT is the outstanding count and must be decremented to count past the faulted operation
+
+	If SIMD_RUNCOUNT becomes consequently negative, operations are already complete because the
+	faulted operation is the last in the sequence
+
+	In this example processing 192-bit floating numbers, the accumulator vector increment SIMD_AU
+	is eight words, and so in the example is the index register increment SIMD_XU
+
+  :                            224 
+  :                            225 island_coda		. exponent outflow. ISR stopped SIMD repeats
+  :                            226 			. without uppdating accumulator vector / operand index register
+  :                            227 			. both were left pointing at operands of failed operation
+  :                            228 
+  :                            229 			. if you want to do stuff like printf
+  :                            230 			. save any index register used in the SIMD -> target instruction
+  :                            231 
+00:000155  800017              +232 	ax	SIMD-XU	. increment you must know which index register
+00:000156  F80015              +233 	push	SIMD_AU	. advance accumulator vector
+00:000157  2F000D              +234 	popA	q	. 
+  :                            235 
+00:000158  1F0014              +236 	dec	SIMD_RUNCOUNT	. outstanding count relative zero
+00:000159  780014              +237 	tp	SIMD_RUNCOUNT	. if this transitions RDATAC to -1
+00:00015A  350000              +238 	lret	0	. it means fault was on last operation in list
+00:00015B  35FFFD              +239 	lret	-3	. otherwise restart SIMD operation to do outstanding operations
+	
+
+		--------------------------------------
+
+  :                            205 
+(+04)10
+00:00013D  550000              +206 	lx	table2,,xi
+(+04)0f
+00:00013E  8F00FF              +207 	SIMD_CONTROL	(-1, 8, 12-1, 8q)	. primed to initialise, 12 objects, 
+00:00013F  870014              +207 						. vector + source-2 increments 8 words
+00:000140  050008              +208 	on	fp$r				. 192-bit floating operations
+(+04)0f
+00:000141  740103              +209 	rex	(fm	0, x)			. operate
+00:000142  75004E              +210 	ii	FP_XPO$FLAG			. check
+(+00)0f
+00:000143  3E0155              +211 	lcal	island_coda			. there was a fault, react
+(+04)0f
+00:000144  8F0104              +212 	SIMD_CONTROL	(-1, 0, 0, 0q)		. reset SIMD defaults
+00:000145  870014              +212 
+
 
     <hr/>
 
+<i>
 
     LICENCE NOTICE
-
-
 
     Copyright Tim Cox, 2012
     TimMilesCox@gmx.ch

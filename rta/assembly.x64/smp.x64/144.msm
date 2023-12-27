@@ -1,0 +1,142 @@
+	%if	SIMD_192
+
+r_fa_192:
+	call	fp_192_concentrate
+	call	BIAS_POINTERS			; needs 1 octet of 8th platform word 
+	call	fa
+	movq	rsi, mm7
+	call	fp_192_store_left_right
+	jmp	_rex_accumulate
+
+r_fan_192:
+	call	fp_192_concentrate
+	call	BIAS_POINTERS			; needs 1 octet of 8th platform word
+	call	fan
+	movq	rsi, mm7
+	call	fp_192_store_left_right
+	jmp	_rex_accumulate
+
+r_fm_192:
+	call	fp_192_concentrate
+	call	fp_registers_m
+	call	_144_fm
+	call	fp_192_store
+	jmp	_rex_accumulate
+
+r_fd_192:
+	call	fp_192_concentrate
+	call	fp_registers_m
+	call	fd
+	call	fp_192_store
+	jmp	_rex_accumulate
+
+fp_192_concentrate:
+	push	rax
+	call	_rex_chex_120
+	mov	rax, qword ptr [rsp]
+	call	fp_operands
+	movq	rsi, mm7
+	lea	rdi, [rbp+8*4]
+	mov	ebx, dword ptr [rbp+Q]
+	add	ebx, 4				; starboard sum
+	call	_load_quad
+	lea	rdi, [rsi+_INPUTR]
+
+	call	pack_144
+; call ultrate
+	mov	ebx, 8
+	pop	rax				; ea
+	add	eax, 4				; +
+	call	_burst_read4
+	movq	rsi, mm7
+	lea	rdi, [rsi+_INPUT2]
+	call	pack_144
+
+	or	byte ptr [rsi+PSR], FP_R
+;	call	fp_registers_m			; moved to operations r_fa...
+	ret
+	
+fp_192_store:
+	movq	rsi, mm7
+	lea	rdi, [rsi+_OUTPUT]
+fp_192_store_left_right:			; fa / fan decide out-string ->
+	mov	ebx, dword ptr [rbp+Q]
+	call	_deliver_
+
+	mov	ebx, dword ptr [rbp+Q]
+	movq	mm6, qword ptr [rbp+8*4]
+	movq	qword ptr [rbp+rbx*4+4*4], mm6
+	movq	mm6, qword ptr [rbp+10*4]
+	movq	qword ptr [rbp+rbx*4+6*4], mm6
+	ret
+
+pack_144:
+	push	rdx
+	push	rcx
+	push	rbx
+	push	rax
+
+	mov	eax, [rbp+8*4]
+	xor	eax, [rbp+9*4]
+	test	eax, 00800000h			; is 2nd sum normalised?
+	jz	end_pack_144			; no? words 4..7 are alraady signs
+
+	mov	edx, dword ptr [rbp+11*4]	; read starboard end 2nd value
+	rol	edx, 16				; move 8 bits up
+	mov	ebx, dword ptr [rbp+10*4]	; to higher order word
+	shl	ebx, 8
+	mov	bl, dl
+	mov	eax, dword ptr [rdi+1*4]	; do partial longs register:register
+						; to avoid contemplating endianism
+	mov	dx, ax				; add 16 signs to low-order word
+
+	mov	eax, dword ptr [rbp+9*4]	; starboard mantissa high-order word
+
+	mov	ecx, dword ptr [rbp+8*4]	; starboard exponent in register 8
+						; loaded exponent is positive magnitude
+	and	ecx, 00FFFFFFh			; should be impossible to need that...
+	test	ecx, 00800000h			; this one may be 1s-complement
+	jz	exponent_magnitude_difference
+	xor	ecx, 00FFFFFFh			; 1s-complement RTA1 data word
+						; still won't compute
+exponent_magnitude_difference:			; if component numbers are out of order
+	neg	ecx				; 2s-complement platform integer
+	add	ecx, dword ptr [rdi]		; subtract it from
+						; the exponent you first thought of
+	add	ecx, -72
+	jz	_144_normalised			; net normalising count zero
+	js	end_pack_144			; bad one, values in wrong order
+						; just leave signs in bits 71..0
+	cmp	ecx, 71				; no use replacing 72+ signs
+	ja	end_pack_144			; with signs
+						; rspecially not millions of them
+	shl	eax, 8
+	mov	al, dl				; 8 sign bits
+	ror	eax, 8
+
+insert_sign:
+	sar	eax, 1				; normalising shift field <- signs
+	rcr	ebx, 1
+	rcr	edx, 1
+
+	dec	ecx
+	jnz	insert_sign
+
+_144_normalised:
+	mov	dword ptr [rdi+6*4], edx	; mantissa 15..0 : 16 signs
+	mov	dword ptr [rdi+5*4], ebx	; mantissa 47..16
+	mov	ebx, dword ptr [rdi+4*4]	; mantissa bits 79..72 : unknown
+	shl	eax, 8				; mantissa bits 71..48
+	rol	ebx, 8
+	mov	al, bl				; mantissa bits 79..72
+	ror	eax, 8				; mantissa bits 79..48
+	mov	dword ptr [rdi+4*4], eax
+
+end_pack_144:
+	pop	rax
+	pop	rbx
+	pop	rcx
+	pop	rdx
+	ret
+
+	%endif

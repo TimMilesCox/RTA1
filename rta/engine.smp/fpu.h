@@ -50,3 +50,9 @@ extern int  __fd(int ea, int target[], smp *xcore);
 #define __MANTISSA_1		target[1]
 #define	__MANTISSA_2		target[2]
 #define	__MANTISSA_3		target[3]
+
+#define	__CHARACTERISTIC_R	target[4]
+
+#define	__MANTISSA_4		target[5]
+#define	__MANTISSA_5		target[6]
+#define	__MANTISSA_6		target[7]

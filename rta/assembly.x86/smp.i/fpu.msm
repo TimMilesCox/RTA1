@@ -1,3 +1,4 @@
+
 compress4to8:			; readout floating operand
 				; and pack to 32-bit words
 				; for 1 bit-distance shifting
@@ -104,7 +105,8 @@ _normalise_residue:
 	xor	ebx, ebx			; residue all signs zero -> scale
 _residue_normalised:
 	test	ebx, 0FF800000h
-	jnz	_fpxpo				; nonzero mantissa
+						; likeliest $residue underflow
+	jnz	_fpxpo_low_order		; nonzero mantissa
 						; and exponent underflow / overflow
 						
 ;			residual mantissa on the stack now is
@@ -191,15 +193,13 @@ zoutput:
 ;	round before add or divide
 ;	XOR rounding pattern to guard field
 
-round1:	movzx	ebx, ch
-;	mov	eax, dword ptr [ebp+CORE_INDEX1]
-	movd	eax, mm7
-
-	mov	eax, dword ptr [eax+REGISTER+FP_GUARD]
+round1	movd	ebx, mm7
+	mov	eax, dword ptr [ebx+REGISTER+FP_GUARD]	; register 147 = guard bits
 	shr	eax, cl
 	shl	eax, 8
-	xor	dword ptr [edi+ebx*4+2*4], eax
 
+	movzx	ebx, ch
+	xor	dword ptr [edi+ebx*4+2*4], eax
 	ret
 
 round2:	movzx	ebx, ch
@@ -270,6 +270,8 @@ restore_trailing_ones:
 
 	ret
 	
+BIAS_FIELD	equ	8
+
 bias_addend:					; input mantissa [esi] is biased into location _BIAS
 	push	edi
 	mov	edi, esi
@@ -307,7 +309,7 @@ bias32:	mov	dword ptr [esi+ebx*4], eax	; write 1 word of signs
 	sub	ch, cl				; of instruction architectures
 						; with 2-register shifts
 biasup2:
-	cmp	ebx, 8
+	cmp	ebx, BIAS_FIELD
 	jz	bias_addx
 	add	edi, 4				; read new mantissa word
 	mov	edx, dword ptr [edi]		; it becomes word # new in edx
@@ -322,7 +324,7 @@ biasup2:
 	jmp	biasup2
 
 bias_fast:
-	cmp	ebx, 8
+	cmp	ebx, BIAS_FIELD
 	jz	bias_addx
 	add	edi, 4
 	mov	eax, dword ptr [edi]
@@ -488,10 +490,11 @@ fa_add:	;	call	frame_mantissa
 	and	eax, eax			; is + and either zero or not
 	jz	fa_addfast
 
-	cmp	eax, 191			; do they touch?
+	cmp	eax, 167			; do they touch?
 	ja	fa_nop
 
 	call	bias_addend
+
 ;	mov	esi, dword ptr [ebp+CORE_INDEX1] ; done inside bias_addend
 ;	anyway movd	esi, mm7
 ;	lea	esi, [esi+_BIAS]		; shifted added
@@ -504,13 +507,28 @@ fa_addfast:
 	movzx	ebx, cx				; index / count
 	ror	ecx, 16
 
+	%if	BIAS_FIELD=8
+	and	dword ptr [edi+7*4], 0FF000000h
+	and	dword ptr [esi+7*4], 0FF000000h
+	%endif
+
+; call ultrate
+	%if	0
+	mov	eax, dword ptr [esi+1*4]	; signs word in _OUTPUT 
+
+	rol	eax, 1
+
+	%else
 	clc
+	%endif
 
 fa_action:
 	mov	eax, dword ptr [esi+ebx*4]
 	adc	dword ptr [edi+ebx*4], eax
 	dec	ebx				; process word 1
 	jnz	fa_action			; leave word 0 alone
+
+; call ultrate
 
 	setc	bl				; boolean instructions following
 	push	ebx				; should not change carry but
@@ -565,6 +583,10 @@ fa_testcarry:
 	jmp	fa_normalised
 
 fa_normalise:
+	%if	BIAS_FIELD=8
+	call	fp_registers_m
+	%endif
+
 	call	renormalise				; in case the sum is plenty positions
 
 fa_normalised:
@@ -623,9 +645,13 @@ fmadd:	clc
 	rcr	dword ptr [edi+7*4], 1
 
 	lea	edi, [esi+_INPUT2]
-;	rcl	dword ptr [edi+7*4], 1		; multiplier shift left
-;	rcl	dword ptr [edi+6*4], 1
-;	rcl	dword ptr [edi+5*4], 1		; multiplier mantissa is only 72 bits
+
+	%if	0
+	rcl	dword ptr [edi+7*4], 1		; multiplier shift left
+	rcl	dword ptr [edi+6*4], 1
+	rcl	dword ptr [edi+5*4], 1		; multiplier mantissa is only 72 bits
+	%endif
+
 	rcl	dword ptr [edi+4*4], 1
 	rcl	dword ptr [edi+3*4], 1
 	rcl	dword ptr [edi+2*4], 1
@@ -749,7 +775,7 @@ fd_upright:
 
 	mov	edi, esp
 
-	mov	cl, 191			; maybe
+	mov	cl, 191			;
 
 fd_144:	stc				; add negative mantissa
 	call	_add_low		; to positive dividend
@@ -874,10 +900,17 @@ fd_z:		ret
 ;	| 64-bit mm7 = esi save + refresh 
 ;	|_______________________|
 
+
+	%if	BIAS_FIELD=8
+BIAS_POINTERS	equ	fp_registers_a
+	%else
+BIAS_POINTERS	equ	fp_registers_m
+	%endif
+
 _fa:	mov 	ebx, a
 _far:	push	ebx
 	call	fp_operands
-	call	fp_registers_a
+	call	BIAS_POINTERS
 	call	fa
 	pop	ebx
 	jmp	_deliver_
@@ -885,7 +918,7 @@ _far:	push	ebx
 _fan:	mov	ebx, a
 _fanr:	push	ebx
 	call	fp_operands
-	call	fp_registers_a
+	call	BIAS_POINTERS
 	call	fan
 	pop	ebx
 	jmp	_deliver_
@@ -935,7 +968,7 @@ fp_registers_a:
 	mov	ecx, 00040208h
 	test	dword ptr [esi+PSR], FP_R
 	jz	fp_registers_x
-	mov	ecx, 00060410h
+	mov	ecx, 00070410h
 fp_registers_x:
 	ret
 
@@ -961,8 +994,7 @@ _load_quad:
 	mov	dword ptr [edi], eax
 	ret
 
-
-	%if	0
+	%if	1
 ultrate:
 	mov	eax, dword ptr [edi]
 	mov	dword ptr [_ultra], eax

@@ -48,7 +48,9 @@
 #include "smp.h"
 #include "ii.h"
 #include "rw.h"
+#include "alu.h"
 #include "fpu.h"
+#include "trace.h"
 
 #define	GUARD_BITS	_register[128+19]
 			/*	default 0x00C00000	*/
@@ -158,10 +160,12 @@ static int addcarry(int startvalue, int words,
 	in registers 8:9:10:11
 *************************************************************/
 
-static int store_minor_result(int signs, int characteristic, int result[], smp *xcore)
+static int store_minor_result(int index, int signs, int characteristic, int result[], smp *xcore)
 {
    int		 normalising_count = 0;
    int		*register_set = xcore->register_set;
+
+   int		*selector = _register + index; /* register_set + index; */
 
    characteristic -= 72;
 
@@ -181,10 +185,17 @@ static int store_minor_result(int signs, int characteristic, int result[], smp *
 	the minor part cannot be represented
       **********************************************/
 
-      #ifdef XPO_INTERRUPT
-      XPO_INTERRUPT
-      return -3;
+      #if 1
+      #if 1
+      ii(II_XPO, index, xcore);
       #else
+      XPO_INTERRUPT
+      #endif
+
+      return -3;
+
+      #else
+
       characteristic = 0;
       result[0] = signs;
       result[1] = signs;
@@ -192,12 +203,57 @@ static int store_minor_result(int signs, int characteristic, int result[], smp *
       #endif
    }
 
+   #if 1
+
+   selector[4] = characteristic ^ signs;
+   selector[5] = result[0];
+   selector[6] = result[1];
+   selector[7] = result[2];
+
+   #else
+
    scalea  = characteristic ^ signs;
    mantissa1a = result[0];
    mantissa2a = result[1];
    mantissa3a = result[2];
+
+   #endif
+
    return 0;
 }
+
+/************************************************************
+
+	change floating value in two numbers
+	to one floating number
+	with signs rolled into normalising displacement
+	of 2nd part
+
+*************************************************************/
+
+static void pack(int signs, int characteristic_magnitude, int fractions[])
+{
+   int		 normalising_count = characteristic_magnitude
+                                   - (fractions[4] ^ signs)
+                                   - 72;
+
+   fractions[4] = fractions[5];
+   fractions[5] = fractions[6];
+   fractions[6] = fractions[7];
+   fractions[7] = signs;
+
+   if ((normalising_count < 0) || (normalising_count > 71))
+   {
+      fractions[4] = signs;
+      fractions[5] = signs;
+      fractions[6] = signs;
+   }
+   else
+   {
+      while (normalising_count--) sright(signs, 4, fractions+4);
+   }
+}
+
 
 /************************************************************
 
@@ -217,212 +273,236 @@ static int store_minor_result(int signs, int characteristic, int result[], smp *
 
 *************************************************************/
 
+#if 0
+
+#include "add_bias.c"
+
+#else
 
 static int add_bias(int bias, int left[], int biased_addend[], smp *xcore)
 {
-   /*****************************************************
+	/*****************************************************
 
-	bias is now guaranteed 0..+72
+	  bias is now guaranteed 0..+72
 
-	bit string right[] must be shifted right that much
+	  bit string right[] must be shifted right that much
 
-	the source of right[] is biased_addend[], which is
-	not yet biased, but still normalised
+	  the source of right[] is biased_addend[], which is
+	  not yet biased, but still normalised
 
-	both input strings left[] and biased_addend[] have
-	a word of signs at the start. The characteristics
-	are not represented.
+	  both input strings left[] and biased_addend[] have
+	  a word of signs at the start. The characteristics
+	  are not represented.
 
-	bias contains the magnitude difference between
-	the characteristics. It is a positive integer.
-	The string left[] is of higher magnitude, and the
-	string biased_addend[] is biased rightwards into
-	the working string right[]
+	  bias contains the magnitude difference between
+	  the characteristics. It is a positive integer.
+	  The string left[] is of higher magnitude, and the
+	  string biased_addend[] is biased rightwards into
+	  the working string right[]
 
-	the functional result is an alteration to scale
-	-1 or 0 or +1
+	  the functional result is an alteration to scale
+	  -1 or 0 or +1
 
-	word[0] of the resulting number is 24
-	resulting sign bits
+	  word[0] of the resulting number is 24
+	  resulting sign bits
 
-   *****************************************************/
+	 *****************************************************/
 
-   int			 scale = 0;
-   int			 carry = biased_addend[0];
-   int			 word_offset = bias / 24 + 1;
-   int			 bits_offset = bias % 24;
-   int			 leading_bits = 24 - bits_offset;
-   int			 transition = biased_addend[1];
-   int			 signs = left[0];
-   int			 to = 0;
-   int			 from = 2;
-   int			 mantissa_words = 3;
-   int			 inverse = 3;
-   int			 downscale = -71;
+	int			 scale = 0;
+	int			 carry = biased_addend[0];
+	int			 word_offset = bias / 24 + 1;
+	int			 bits_offset = bias % 24;
+	int			 leading_bits = 24 - bits_offset;
+	int			 transition = biased_addend[1];
+	int			 signs = left[0];
+	int			 to = 0;
+	int			 from = 2;
+	int			 mantissa_words = 3;
+	int			 inverse = 3;
+	int			 downscale = -71;
 
-   int			 right[8];
+	int			 right[8];
 
-   if (psr & FLOATING_RESIDUE)
-   {
-      mantissa_words = 6;
-      left[7] = left[4];
-      left[6] = signs;
-      left[5] = signs;
-      left[4] = signs;
-      biased_addend[7] = carry;
-      biased_addend[6] = carry;
-      biased_addend[5] = carry;
+	if (psr & FLOATING_RESIDUE)
+	{
+		mantissa_words = 6;
 
-      inverse = 6;
-      downscale = -143;
-      if (bias > 160) return 0;
+#if 0
+		left[7] = left[4];
+		left[6] = signs;
+		left[5] = signs;
+		left[4] = signs;
+		biased_addend[7] = carry;
+		biased_addend[6] = carry;
+		biased_addend[5] = carry;
+#endif
 
-      /* an unchanged double result has been formatted */
-   }
-   else if (bias > 80) return 0;
+		inverse = 6;
+		downscale = -143;
+		if (bias > 160) return 0;
+
+		/* an unchanged double result has been formatted */
+	}
+	else if (bias > 80) return 0;
 
 
-   while (to < word_offset) right[to++] = carry;
+	while (to < word_offset) right[to++] = carry;
 
-   for (;;)
-   {
-      carry <<= leading_bits;
-      carry |= transition >> bits_offset;
-      carry &= 0x00FFFFFF;
-      right[to] = carry;
-      if (to > mantissa_words) break;
-      to++;
-      carry = transition;
-      transition = biased_addend[from++];
-   }
+	for (;;)
+	{
+		carry <<= leading_bits;
+		carry |= transition >> bits_offset;
+		carry &= 0x00FFFFFF;
+		right[to] = carry;
+		if (to > mantissa_words) break;
+		to++;
+		carry = transition;
+		transition = biased_addend[from++];
+	}
 
-   /**********************************************************
+	/**********************************************************
 
-	carry now contains the same value as word 4 or 7 of
-	the biased string
+	  carry now contains the same value as word 4 or 7 of
+	  the biased string
 
-	subscript [to] contains the value 4 or 7
+	  subscript [to] contains the value 4 or 7
 
-	the add to target string left[] now takes place
+	  the add to target string left[] now takes place
 
-   **********************************************************/
+	 **********************************************************/
 
-   for (;;)
-   {
-      carry += left[to];
-      left[to] = carry & 0x00FFFFFF;
-      to--;
-      if (to < 0) break;
-      carry >>= 24;
-      carry += right[to];
-   }
+	for (;;)
+	{
+		carry += left[to];
+		left[to] = carry & 0x00FFFFFF;
+		to--;
+		if (to < 0) break;
+		carry >>= 24;
+		carry += right[to];
+	}
 
-   if ((left[0] ^ signs) & 0x00800000)
-   {
-      /******************************************************
+	if ((left[0] ^ signs) & 0x00800000)
+	{
+		/******************************************************
 
-	the polarity of the result is flipped
+		  the polarity of the result is flipped
 
-	necessary to add 1 to a +mantissa
-	          or signs to a -mantissa
+		  necessary to add 1 to a +mantissa
+		  or signs to a -mantissa
 
-      ******************************************************/
+		 ******************************************************/
 
-      signs ^= 0x00FFFFFF;
+		signs ^= 0x00FFFFFF;
 
-      carry = signs;
-      if (!carry) carry = 1;
+		carry = signs;
+		if (!carry) carry = 1;
 
-      while (inverse)
-      {
-        /***************************************************
-		invert [6:5:4] and always 3:2:1
-        ***************************************************/
+		while (inverse)
+		{
+			/***************************************************
+			  invert [6:5:4] and always 3:2:1
+			 ***************************************************/
 
-         carry += left[inverse];
-         left[inverse] = carry & 0x00FFFFFF;
-         carry >>= 24;
-         inverse--;
-         carry += signs;
-      }
+			carry += left[inverse];
+			left[inverse] = carry & 0x00FFFFFF;
+			carry >>= 24;
+			inverse--;
+			carry += signs;
+		}
 
-      /*******************************************************
-      FIXME why are signs added to carry every time except 1st?
-      this is the code from before double result was stored
+		/*******************************************************
+		  FIXME why are signs added to carry every time except 1st?
+		  this is the code from before double result was stored
 
-      carry += left[3];
-      left[3] = carry & 0x00FFFFFF;
-      carry >>= 24;
-      carry += left[2];
-      carry += signs;
-      left[2] = carry & 0x00FFFFFF;
-      carry >>= 24;
-      carry += left[1];
-      carry += signs;
-      left[1] = carry & 0x00FFFFFF;
-      *******************************************************/
-   }
+		  carry += left[3];
+		  left[3] = carry & 0x00FFFFFF;
+		  carry >>= 24;
+		  carry += left[2];
+		  carry += signs;
+		  left[2] = carry & 0x00FFFFFF;
+		  carry >>= 24;
+		  carry += left[1];
+		  carry += signs;
+		  left[1] = carry & 0x00FFFFFF;
+		 *******************************************************/
+	}
 
-   if ((left[0] ^ signs) & 1)
-   {
-      /*******************************************************
+	if ((left[0] ^ signs) & 1)
+	{
+		/*******************************************************
 
-	a non-sign has carried from mantissa bit 71
-        shift right, characteristic+
+		  a non-sign has carried from mantissa bit 71
+		  shift right, characteristic+
 
-      *******************************************************/
+		 *******************************************************/
 
-      sright(signs, mantissa_words + 1, left);
-      scale = 1;
-   }
-   else
-   {
-      while (((left[1] ^ signs) & 0x800000) == 0)
-      {
-         /****************************************************
+		sright(signs, mantissa_words + 1, left);
+		scale = 1;
+	}
+	else
+	{
+		while (((left[1] ^ signs) & 0x800000) == 0)
+		{
+			/****************************************************
 
-		mantissa bit 71 has become a sign bit
-		shift left, characteristic-
+			  mantissa bit 71 has become a sign bit
+			  shift left, characteristic-
 
-         ****************************************************/
+			 ****************************************************/
 
-         sleft(signs, mantissa_words, left + 1);
-         scale--;
-         if (scale < downscale) break;
-      }
-   }
+			sleft(signs, mantissa_words, left + 1);
+			scale--;
+			if (scale < downscale) break;
+		}
+	}
 
-   left[0] = signs;
-   return scale;
+	left[0] = signs;
+	return scale;
 }
+
+#endif
 
 /******************************************************************
 
-	ones complement adder does Floating Add
-	and Floating Add Negative
+  ones complement adder does Floating Add
+  and Floating Add Negative
 
-	for ADD, direction is zero
+  for ADD, direction is zero
 
-	for ADD NEGATIVE, direction is 0x00FFFFFF
-	and the right side operand is flipped on
-	acquisition
+  for ADD NEGATIVE, direction is 0x00FFFFFF
+  and the right side operand is flipped on
+  acquisition
 
-******************************************************************/
+ ******************************************************************/
 
 
 static int ones_add(int ea, int target[], int direction, smp *xcore)
 {
-   int		 normalised_addend[8];
+   int		 normalised_addend[8] = { __CHARACTERISTIC,
+					  __MANTISSA_1,
+					  __MANTISSA_2,
+					  __MANTISSA_3	} ;
+
    int		 biased_addend[8];
 
    int		 magnitude_characteristic_difference;
 
    int		 signs,
-                 signs_right,
-                 characteristic,
-                 carry;
+   		 signs_right,
+		 signs_quite_right,
+   		 characteristic,
+		 carry;
 
    int		*register_set = xcore->register_set;
+
+   int		 index = target - _register;
+
+   int		 magnitude_characteristic_left,
+		 magnitude_characteristic_right;
+
+   int		*normalised = normalised_addend;
+   int		*biased = biased_addend;
+
 
    if ((burst_read4(biased_addend, ea, xcore)) < 0) return -LP_ADDRESS;
 
@@ -434,123 +514,151 @@ static int ones_add(int ea, int target[], int direction, smp *xcore)
    signs       = 0x00FFFFFF & (0 - ((__CHARACTERISTIC >> 23) & 1));
    signs_right = 0x00FFFFFF & (0 - ((biased_addend[0] >> 23) & 1));
 
+   biased_addend[4] = signs_right;
+   normalised_addend[4] = signs;
+
+   magnitude_characteristic_left  = (target[0] ^ signs) & 0x00FFFFFF;
+   magnitude_characteristic_right = (biased_addend[0] ^ signs_right) & 0x00FFFFFF;
+   signs_quite_right = signs_right;
+
    if ((biased_addend[1] ^ signs_right) & 0x00800000)
    {
+      /***********************************************************
+         source 2 normalised?
+      ***********************************************************/
+
       if ((__MANTISSA_1 ^ signs) & 0x00800000)
       {
-         magnitude_characteristic_difference = ((__CHARACTERISTIC & 0x00FFFFFF) ^ signs)
-                              - ((biased_addend[0] & 0x00FFFFFF) ^ signs_right);
+         /********************************************************
+            register source normalised
+         ********************************************************/
+
+         if (psr & FLOATING_RESIDUE)
+         {
+            if ((index & 127) == A)
+            {
+               /**************************************************
+                  fixed accumulators operation has 96-bit operands
+                  and stores a 96-bit residue
+                **************************************************/
+
+               normalised_addend[4] = signs;
+               normalised_addend[5] = signs;
+               normalised_addend[6] = signs;
+               normalised_addend[7] = signs /* ^ GUARD_BITS */ ;
+
+               biased_addend[4] = signs_right;
+               biased_addend[5] = signs_right;
+               biased_addend[6] = signs_right;
+               biased_addend[7] = signs_right;
+            //  ?  biased_addend[0] = signs_right;
+            }
+            else
+            {
+               /**************************************************
+                  SIMD operation has 192-bit operands
+                  accumulators in internal stack
+               **************************************************/
+
+               if (index > 120) return -LP_AUTHORITY;
+
+               if ((burst_read4(biased_addend + 4, ea + 4, xcore)) < 0) return -LP_ADDRESS;
+
+               biased_addend[4] ^= direction;
+               biased_addend[5] ^= direction;
+               biased_addend[6] ^= direction;
+               biased_addend[7] ^= direction;
+
+               normalised_addend[4] = __CHARACTERISTIC_R;
+               normalised_addend[5] = __MANTISSA_4;
+               normalised_addend[6] = __MANTISSA_5;
+               normalised_addend[7] = __MANTISSA_6;
+
+               pack(signs, magnitude_characteristic_left, normalised_addend);
+               pack(signs_right, magnitude_characteristic_right, biased_addend);
+//               normalised_addend[7] ^= GUARD_BITS;
+            }
+         }
+
+         magnitude_characteristic_difference = magnitude_characteristic_left
+            - magnitude_characteristic_right;
 
          if (magnitude_characteristic_difference < 0)
          {
-            #if 0
-            if (magnitude_characteristic_difference < -72) return;
-            #endif
-
-            normalised_addend[0] = biased_addend[0];
-            normalised_addend[1] = biased_addend[1];
-            normalised_addend[2] = biased_addend[2];
-            normalised_addend[3] = biased_addend[3];
-            normalised_addend[4] = signs_right ^ GUARD_BITS;
-            
-            biased_addend[0] = signs;
-            biased_addend[1] = __MANTISSA_1;
-            biased_addend[2] = __MANTISSA_2;
-            biased_addend[3] = __MANTISSA_3;
-            biased_addend[4] = signs;
+            normalised = biased_addend;
+            biased = normalised_addend;
+            signs_quite_right = signs;
+            signs = signs_right;
 
             magnitude_characteristic_difference =
-               0 - magnitude_characteristic_difference;
-
-            signs = signs_right;
-         }
-         else
-         {
-            #if 0
-            if (magnitude_characteristic_difference > 72) return;
-            #endif
-
-            normalised_addend[0] = __CHARACTERISTIC;
-            normalised_addend[1] = __MANTISSA_1;
-            normalised_addend[2] = __MANTISSA_2;
-            normalised_addend[3] = __MANTISSA_3;
-            normalised_addend[4] = signs ^ GUARD_BITS;
-
-            biased_addend[4] = signs_right;
-            biased_addend[0] = signs_right;
+            0 - magnitude_characteristic_difference;
          }
 
-         characteristic = normalised_addend[0] ^ signs;
+         if (psr & FLOATING_RESIDUE) normalised[7] = signs ^ GUARD_BITS;
+         else                        normalised[4] = signs ^ GUARD_BITS;
 
-         normalised_addend[0] = signs;
-
-         #ifdef TRACE
-         printf("%6.6X:%6.6X:%6.6X:%6.6X:%6.6X+%6.6X:%6.6X:%6.6X:%6.6X:%6.6X:=\n",
-                normalised_addend[0], normalised_addend[1],
-                normalised_addend[2], normalised_addend[3],
-                normalised_addend[4], biased_addend[0],
-                biased_addend[1],     biased_addend[2],
-                biased_addend[3],     biased_addend[4]);
-         #endif
+         characteristic = normalised[0] ^ signs;
+         normalised[0] = signs;
+         biased[0] = signs_quite_right;
 
          carry = add_bias(magnitude_characteristic_difference,
-                          normalised_addend,
-                          biased_addend, xcore);
+                          normalised,
+                          biased, xcore);
 
          characteristic += carry;
-//         if (carry < -71) characteristic = 0x00400000;
 
          #ifdef XPO_INTERRUPT
          if (characteristic & 0xFF800000)
          {
             /***************************************************
-		exponent overflow or underflow
-		indicate for application
-		and take other default ISR action
+               exponent overflow or underflow
+               indicate for application
+               and take other default ISR action
             ***************************************************/
 
-            XPO_INTERRUPT
+            ii(II_XPO, index, xcore);
             return -3;
          }
          #endif
 
-         if ((normalised_addend[0] ^ normalised_addend[1]) & 0x00800000)
+         if ((normalised[0] ^ normalised[1]) & 0x00800000)
          {
          }
          else characteristic = 0;
 
          /******************************************************
 
-		carry is the change to scale
-		which is -1 or 0 or +1
+            carry is the change to scale
+            which is -1 or 0 or +1
 
-		the sign of the result is in bits 95..72
-		it may have flipped
+            the sign of the result is in bits 95..72
+            it may have flipped
 
-		however if it did, mantissa bits 71..0 are
-		already correct polarity
+            however if it did, mantissa bits 71..0 are
+            already correct polarity
 
          ******************************************************/
 
 
-         __CHARACTERISTIC = characteristic ^ normalised_addend[0];
-         __MANTISSA_1 = normalised_addend[1];
-         __MANTISSA_2 = normalised_addend[2];
-         __MANTISSA_3 = normalised_addend[3];
+         __CHARACTERISTIC = characteristic ^ normalised[0];
+         __MANTISSA_1 = normalised[1];
+         __MANTISSA_2 = normalised[2];
+         __MANTISSA_3 = normalised[3];
 
          if (psr & FLOATING_RESIDUE)
-         return store_minor_result(normalised_addend[0], characteristic, normalised_addend + 4, xcore);
+         return store_minor_result(index, normalised[0],
+                                   characteristic, normalised + 4, xcore);
       }
       else
       {
          /*************************************************************
 
-		the starboard operand is normalised but the
-		accumulator operand A:B:6:7 is not
+            the starboard operand is normalised but the
+            accumulator operand A:B:6:7 is not
 
-		therefore the accumulator operand is zero
-		and the starboard operand is copied to the
-		result register A:B:6:7
+            therefore the accumulator operand is zero
+            and the starboard operand is copied to the
+            result register A:B:6:7
 
          *************************************************************/
 
@@ -561,15 +669,12 @@ static int ones_add(int ea, int target[], int direction, smp *xcore)
 
          if (psr & FLOATING_RESIDUE)
          {
-            scalea = signs_right;
-            mantissa1a = signs_right;
-            mantissa2a = signs_right;
-            mantissa3a = signs_right;
+            scalea = signs_quite_right;
+            mantissa1a = signs_quite_right;
+            mantissa2a = signs_quite_right;
+            mantissa3a = signs_quite_right;
          }
       }
-      #ifdef TRACE
-      printf("%6.6X:%6.6X:%6.6X:%6.6X\n", a, b, mantissa2, mantissa3);
-      #endif
    }
    else if (psr & FLOATING_RESIDUE)
    {
@@ -604,21 +709,35 @@ int __fan(int ea, int target[], smp *xcore)
 
 int __fm(int ea, int target[], smp *xcore)
 {
-   int		 around[8] = { 0, 0, 0, GUARD_BITS, 0, 0, 0, GUARD_BITS} ;
+   int		 around[8] = { 0, 0, 0, GUARD_BITS, 0, 0, GUARD_BITS, 0 } ;
 
    int		 result[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 } ;
    int		 addend[8] = { __CHARACTERISTIC, __MANTISSA_1, __MANTISSA_2, __MANTISSA_3, 0, 0, 0, 0 } ;
 
-   int		 multiplier[4] = { 0, 0, 0, 0 } ;
+   int		 multiplier[8] = { 0, 0, 0, 0,   0, 0, 0, 0 } ;
 
    int		 index1, index2, shift, characteristic, signs;
    int		 add_words = (psr & FLOATING_RESIDUE) ? 7 : 3;
 
+   int		*register_set = xcore->register_set;
+   int		 index = target - _register;
+
+   int		 operative = 4;
+   int		 signs_left = 0;
+   int		 signs_right = 0;
 
    if ((burst_read4(multiplier, ea, xcore)) < 0) return -LP_ADDRESS;
 
    if (addend[0] & 0x00800000)
    {
+      /******************************************************
+         maultiplicand is negative
+         change characteristic result to 1s
+         invert polarity  multiplicand to plus
+      ******************************************************/
+
+      signs_left = 0x00FFFFFF;
+
       result[0] ^= 0x00FFFFFF;
       addend[0] ^= 0x00FFFFFF;
       addend[1] ^= 0x00FFFFFF;
@@ -638,11 +757,54 @@ int __fm(int ea, int target[], smp *xcore)
 
    if (multiplier[0] & 0x00800000)
    {
+      /******************************************************
+         multiplier is negative
+         invert characteristic result
+         invert polarity multiplier to plus
+      ******************************************************/
+
+      signs_right = 0x00FFFFFF;
+
       result[0]     ^= 0x00FFFFFF;
       multiplier[0] ^= 0x00FFFFFF;
       multiplier[1] ^= 0x00FFFFFF;
       multiplier[2] ^= 0x00FFFFFF;
       multiplier[3] ^= 0x00FFFFFF;
+   }
+
+   if (psr & FLOATING_RESIDUE)
+   {
+      around[3] = 0;
+     
+      if ((index & 127) == A)
+      {
+         /***************************************************
+            96 bit operation generating 96-bit residue
+         ***************************************************/
+      }
+      else
+      {
+         /***************************************************
+           192-bit SIMD operation
+         ***************************************************/
+
+         operative = 8;
+
+         if ((burst_read4(multiplier + 4, ea + 4, xcore)) < 0) return -LP_ADDRESS;
+
+         addend[4] = __CHARACTERISTIC_R ^ signs_left;
+         addend[5] = __MANTISSA_4       ^ signs_left;
+         addend[6] = __MANTISSA_5       ^ signs_left;
+         addend[7] = __MANTISSA_6       ^ signs_left;
+
+         multiplier[4] ^= signs_right;
+         multiplier[5] ^= signs_right;
+         multiplier[6] ^= signs_right;
+         multiplier[7] ^= signs_right;
+
+         pack(0, addend[0], addend);
+         pack(0, multiplier[0], multiplier);
+      }
    }
 
    signs = result[0];
@@ -661,7 +823,7 @@ int __fm(int ea, int target[], smp *xcore)
 
    if (addend[1] & multiplier[1] & 0x00800000)
    {
-      for (index1 = 1; index1 < 4; index1++)
+      for (index1 = 1; index1 < operative; index1++)
       {
          shift = multiplier[index1];
          index2 = 24;
@@ -706,7 +868,7 @@ int __fm(int ea, int target[], smp *xcore)
 
          #define FP_EITHER_OR
          #ifdef  FP_EITHER_OR
-         if (psr & FLOATING_RESIDUE) around[3] = 0;
+//         if (psr & FLOATING_RESIDUE) around[3] = 0;
          shift = add(add_words + 1, result + 1, around);
          characteristic += shift;                  /*      1 or 0     */
          if (shift) sright(shift, add_words, result + 1);
@@ -735,7 +897,7 @@ int __fm(int ea, int target[], smp *xcore)
       **************************************************************/
 
       #ifndef FP_EITHER_OR
-      if (psr & FLOATING_RESIDUE) around[3] = 0;
+//      if (psr & FLOATING_RESIDUE) around[3] = 0;
       shift = add(add_words + 1, result + 1, around);
       characteristic += shift;			/*      1 or 0     */ 
       if (shift) sright(shift, add_words, result + 1); 
@@ -750,7 +912,12 @@ int __fm(int ea, int target[], smp *xcore)
          ************************************************************/
 
          #ifdef XPO_INTERRUPT
+         #if 1
+         ii(II_XPO, index, xcore);
+         #else
          XPO_INTERRUPT
+         #endif
+
          return -3;
 
          /***************************************************
@@ -803,7 +970,7 @@ int __fm(int ea, int target[], smp *xcore)
    __MANTISSA_3 = result[3];
 
    if (psr & FLOATING_RESIDUE)
-   return store_minor_result(signs, characteristic, result + 4, xcore);
+   return store_minor_result(index, signs, characteristic, result + 4, xcore);
 
    return 0;
 }
@@ -828,7 +995,10 @@ int __fd(int ea, int target[], smp *xcore)
                  mantissa_words = 3,
                  carry;
 
+   int		 signs_left;
+
    int		*register_set = xcore->register_set;
+   int		 index = target - _register;
 
 
    if ((burst_read4(divisor, ea, xcore)) < 0) return -LP_ADDRESS;
@@ -838,17 +1008,21 @@ int __fd(int ea, int target[], smp *xcore)
    }
    else
    {
+      /*****************************************************
+         divisor not normalised. Return -0.0
+      *****************************************************/
+
       __CHARACTERISTIC = 0x00FFFFFF;
-      __MANTISSA_1 = 0x00FFFFFF;
-      __MANTISSA_2 = 0x00FFFFFF;
-      __MANTISSA_3 = 0x00FFFFFF;
+      __MANTISSA_1     = 0x00FFFFFF;
+      __MANTISSA_2     = 0x00FFFFFF;
+      __MANTISSA_3     = 0x00FFFFFF;
 
       if (psr & FLOATING_RESIDUE)
       {
-         scalea = 0x00FFFFFF;
-         mantissa1a = 0x00FFFFFF;
-         mantissa2a = 0x00FFFFFF;
-         mantissa3a = 0x00FFFFFF;
+         __CHARACTERISTIC_R = 0x00FFFFFF;
+         __MANTISSA_4       = 0x00FFFFFF;
+         __MANTISSA_5       = 0x00FFFFFF;
+         __MANTISSA_6       = 0x00FFFFFF;
       }
 
       return 0;
@@ -857,20 +1031,45 @@ int __fd(int ea, int target[], smp *xcore)
    if (divisor[0] & 0x00800000) signs = 0x00FFFFFF;
    else
    {
+      /*****************************************************
+         divisor is positive
+         so turn divisor mantissa negative
+         for trial negative adds
+      *****************************************************/
+
       divisor[1] ^= 0x00FFFFFF;
       divisor[2] ^= 0x00FFFFFF;
       divisor[3] ^= 0x00FFFFFF;
    }
 
+   /********************************************************
+      turn divisor characteristic positive in any case
+   ********************************************************/
+
    divisor[0] ^= signs;
 
    if (remainder[0] & 0x00800000) signs1 = 0x00FFFFFF;
 
+   /********************************************************
+      take a copy of dividend signs
+      before dividend signs converted to quotient signss
+   ********************************************************/
+   
+   signs_left = signs1;
+
+   /********************************************************
+      turn dividend positive
+   ********************************************************/
+   
    remainder[0] ^= signs1;
    remainder[1] ^= signs1;
    remainder[2] ^= signs1;
    remainder[3] ^= signs1;
 
+   /********************************************************
+      convert dividend signs to quotient signs
+   ********************************************************/
+   
    signs1 ^= signs;
 
    if (psr & FLOATING_RESIDUE)
@@ -878,6 +1077,43 @@ int __fd(int ea, int target[], smp *xcore)
       beats = 144;
       remainder[4] = 0;
       mantissa_words = 6;
+
+      if ((index & 127) == A)
+      {
+         /**************************************************
+             operation 96-bit dividend 96-bit divisor
+             produces 96-bit residue
+         **************************************************/   
+      }
+      else
+      {
+         /**************************************************
+            192-bit SIMD operation
+         **************************************************/   
+
+         if ((burst_read4(divisor + 4, ea + 4, xcore)) < 0) return -LP_ADDRESS;
+
+         remainder[4] = __CHARACTERISTIC_R ^ signs_left;
+         remainder[5] = __MANTISSA_4       ^ signs_left;
+         remainder[6] = __MANTISSA_5       ^ signs_left;
+         remainder[7] = __MANTISSA_6       ^ signs_left;
+
+         if (signs == 0)
+         {
+            /**********************************************
+               trial add negative magnitude
+            **********************************************/
+
+            divisor[4] ^= 0x00FFFFFF;
+            divisor[5] ^= 0x00FFFFFF;
+            divisor[6] ^= 0x00FFFFFF;
+            divisor[7] ^= 0x00FFFFFF;
+         }
+
+         pack(0, remainder[0], remainder);
+         pack(0x00FFFFFF, divisor[0], divisor);
+         remainder[7] ^= GUARD_BITS;
+      }
    }
 
    while(beats--)
@@ -934,7 +1170,12 @@ int __fd(int ea, int target[], smp *xcore)
 		and take default ISR action
       ***************************************************/
 
+      #if 1
+      ii(II_XPO, index, xcore);
+      #else
       XPO_INTERRUPT
+      #endif
+
       return -3;
    }
    #else
@@ -951,7 +1192,7 @@ int __fd(int ea, int target[], smp *xcore)
       reciprocal[4] ^= signs1;
       reciprocal[5] ^= signs1;
       reciprocal[6] ^= signs1;
-      return store_minor_result(signs1, reciprocal[0], reciprocal + 4, xcore);
+      return store_minor_result(index, signs1, reciprocal[0], reciprocal + 4, xcore);
    }
 
    return 0;
@@ -1217,4 +1458,6 @@ void fpp(int ea, int _stack_top[], smp *xcore)
 
    burst_write2(temp, ea, xcore);
 }
+
+#include "trace.c"
 

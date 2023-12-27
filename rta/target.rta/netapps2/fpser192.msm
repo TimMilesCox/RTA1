@@ -10,8 +10,8 @@ $(0)
 
 fp_server	$head_far	scalars(response_axw,	int	;
 					operator,	int	;
-					left,		8	;
-					right,		8	)
+					right,		8	;
+					left,		8	)
 
 	tz	socket1
 	j	fp_rx
@@ -100,7 +100,14 @@ fp_rx1	lb	s:udp:socket_inq.head, b
 	jnb	fp_again
 	lr	b
 
+FP_SIMDOPS	$equ	1
+
 fp_again
+	$if	FP_SIMDOPS
+	SIMD_CONTROL	(-1, 0, 0, 0q)
+	on	fp$r
+	$endif
+
 	la	operator
 
 	anu, xi	'+'
@@ -113,6 +120,33 @@ fp_again
 	jzb	fp_divide
 	j	fp_nop
 
+	$if	FP_SIMDOPS	. destination + aource1 is default
+				. object left at internal stack top
+fp_add
+fp_add1	rex	(fa	right)
+	jdr	fp_add1
+	j	fp_edit
+
+fp_add_negative
+fp_add1_negative
+	rex	(fan    right)
+	jdr	fp_add1_negative
+	j	fp_edit
+
+fp_multiply
+fp_multiply1
+	rex	(fm	right)
+	jdr	fp_multiply1
+	j	fp_edit
+
+fp_divide
+fp_divide1
+	rex	(fd	right)
+	jdr	fp_divide1
+	j	fp_edit
+
+	$else			. not FP_SIMOPS then
+				. operations are in registers [ a b 6 7 8 9 10 11 ]
 fp_add
 	ql	left+4
 	qs	$residue
@@ -183,6 +217,8 @@ fp_divide1
 
 	j	fp_edit
 
+	$endif		. FP_SIMOPS or not
+
 fp_nop	j	fp_edit
 	ql	left+4		. no operation
 	qs	$residue	. return scanned number if any
@@ -203,6 +239,13 @@ fp_edit
 
 	ii	FP_XPO$FLAG
 	lcal	fp_reactz
+
+	$if	FP_SIMDOPS
+	ql	left+4
+	qs	$residue
+	ql	left
+	off	fp$r
+	$endif
 	
 	call	(floating_edit192)
 

@@ -572,7 +572,7 @@ ea &= 0x00FFFFFF;
 #define	GUARD_INTERRUPT		ii(XBASE_U,LP_ADDRESS, xcore);
 #define	GUARD_AUTHORITY		ii(XBASE_U,LP_AUTHORITY, xcore);
 #define	EXIT_INTERRUPT		ii(II_TXIT,0, xcore);
-#define	XPO_INTERRUPT		ii(II_XPO,0, xcore);
+#define	XPO_INTERRUPT		ii(II_XPO, A, xcore);
 #define	RESTART			ii(RESTART1,0, xcore);
 #define	RESTART_SMP		ii(RESTART8,0, xcore);
 #define	GUARD_IIX(X)		ii(XBASE_U, LP_ADDRESS | (X << 4), xcore);

@@ -104,7 +104,7 @@ _normalise_residue:
 	xor	ebx, ebx			; rrsidue all signs zero -> scale
 _residue_normalised:
 	test	ebx, 0FF800000h
-	jnz	_fpxpo				; nonzero mantissa
+	jnz	_fpxpo_low_order		; nonzero mantissa
 						; and exponent underflow / overflow
 						
 ;			rrsidual mantissa on the stack now is
@@ -191,16 +191,12 @@ zoutput:
 ;	round before add or divide
 ;	XOR rounding pattern to guard field
 
-round1:	movzx	ebx, ch
-
-	movq	rax, mm7
-;	mov	eax, dword ptr [rbp+CORE_INDEX1]
-
-	mov	eax, dword ptr [rax+REGISTER+FP_GUARD]
+round1:	movq	rbx, mm7
+	mov	eax, dword ptr [rbx+REGISTER+FP_GUARD]
 	shr	eax, cl
 	shl	eax, 8
+	movzx	ebx, ch
 	xor	dword ptr [rdi+rbx*4+2*4], eax
-
 	ret
 
 round2:	movzx	ebx, ch
@@ -281,7 +277,9 @@ restore_trailing_ones:
 	or	dword ptr [rdi+rbx*4+2*4], eax
 
 	ret
-	
+
+BIAS_FIELD	equ	8
+
 bias_addend:					; input mantissa [rsi] is biased into location _BIAS
 	push	rdi
 	mov	rdi, rsi
@@ -320,7 +318,7 @@ bias32:	mov	dword ptr [rsi+rbx*4], eax	; write 1 word of signs
 	sub	ch, cl				; of instruction architectures
 						; with 2-register shifts
 biasup2:
-	cmp	ebx, 8
+	cmp	ebx, BIAS_FIELD
 	jz	bias_addx
 	add	rdi, 4				; read new mantissa word
 	mov	edx, dword ptr [rdi]		; it becomes word # new in edx
@@ -335,7 +333,7 @@ biasup2:
 	jmp	biasup2
 
 bias_fast:
-	cmp	ebx, 8
+	cmp	ebx, BIAS_FIELD
 	jz	bias_addx
 	add	rdi, 4
 	mov	eax, dword ptr [rdi]
@@ -470,7 +468,7 @@ fan:	lea	rdi, [rsi+_INPUT2]
 	not	dword ptr [rsi+_INPUT2+1*4]	; 32 signs
 
 fa:	lea	rdi, [rsi+_INPUTR]
-	lea	rsi, [esi+_INPUT2]
+	lea	rsi, [rsi+_INPUT2]
 
 	mov	eax, dword ptr [rsi+1*4]	; normalised?
 	xor	eax, dword ptr [rsi+2*4]	; normalising bit must ^ signs
@@ -507,7 +505,7 @@ fa_add:	;	call	frame_mantissa
 	call	bias_addend
 ;	mov	rsi, dword ptr [rbp+CORE_INDEX1] ; done inside bias_addend
 ;	from mm7 anyway
-;	lea	rsi, [esi+_BIAS]		; shifted added
+;	lea	rsi, [rsi+_BIAS]		; shifted added
 
 fa_addfast:
 	mov	eax, dword ptr [rdi+1*4]	; before look signs
@@ -521,6 +519,11 @@ fa_addfast:
 	ror	ecx, 16				; get containing compute words
 	movzx	ebx, cx				; index / count
 	ror	ecx, 16
+
+	%if	BIAS_FIELD=8
+	and	dword ptr [rdi+7*4], 0FF000000h
+	and	dword ptr [rsi+7*4], 0FF000000h
+	%endif
 
 	clc
 
@@ -538,7 +541,6 @@ fa_action:
 	%endif
 
 	movq	rsi, mm7
-;	mov	rsi, qword ptr [rbp+CORE_INDEX1]
 	
 	mov	eax, dword ptr [rdi+1*4]	; has sign switched ?
 
@@ -611,6 +613,10 @@ fa_testcarry:
 	jmp	fa_normalised
 
 fa_normalise:
+	%if	BIAS_FIELD=8
+	call	fp_registers_m
+	%endif
+
 	call	renormalise				; in case the sum is plenty positions
 
 fa_normalised:
@@ -672,9 +678,13 @@ fmadd:	clc
 	rcr	dword ptr [rdi+7*4], 1
 
 	lea	rdi, [rsi+_INPUT2]
-;	rcl	dword ptr [rdi+7*4], 1		; multiplier shift left
-;	rcl	dword ptr [rdi+6*4], 1
-;	rcl	dword ptr [rdi+5*4], 1		; multiplier mantissa is only 72 bits
+
+	%if	0
+	rcl	dword ptr [rdi+7*4], 1		; multiplier shift left
+	rcl	dword ptr [rdi+6*4], 1
+	rcl	dword ptr [rdi+5*4], 1		; multiplier mantissa is only 72 bits
+	%endif
+
 	rcl	dword ptr [rdi+4*4], 1
 	rcl	dword ptr [rdi+3*4], 1
 	rcl	dword ptr [rdi+2*4], 1
@@ -798,7 +808,7 @@ fd_upright:
 
 	mov	rdi, rsp
 
-	mov	cl, 191			; maybe
+	mov	cl, 191			; 
 
 fd_144:	stc				; add negative mantissa
 	call	_add_low		; to positive dividend
@@ -923,10 +933,16 @@ fd_z:		ret
 ;	| 64-bit mm7 = rsi save + refresh 
 ;	|_______________________|
 
+	%if	BIAS_FIELD=8
+BIAS_POINTERS	equ	fp_registers_a
+	%else
+BIAS_POINTERS	equ	fp_registers_m
+	%endif
+
 _fa:	mov 	ebx, a
 _far:	push	rbx
 	call	fp_operands
-	call	fp_registers_a
+	call	BIAS_POINTERS
 	call	fa
 	pop	rbx
 	jmp	_deliver_
@@ -934,7 +950,7 @@ _far:	push	rbx
 _fan:	mov	ebx, a
 _fanr:	push	rbx
 	call	fp_operands
-	call	fp_registers_a
+	call	BIAS_POINTERS
 	call	fan
 	pop	rbx
 	jmp	_deliver_
@@ -983,7 +999,7 @@ fp_registers_a:
 	mov	ecx, 00040208h
 	test	dword ptr [rsi+PSR], FP_R
 	jz	fp_registers_x
-	mov	ecx, 00060410h
+	mov	ecx, 00070410h
 fp_registers_x:
 	ret
 

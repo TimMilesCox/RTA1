@@ -637,15 +637,14 @@ void action(char request[], smp *xcore)
          printf("\tdefault breakpoint frame is current halted instruction frame\n");
          printf("\tto remove breakpoint g0:0\n\n");
 
-         printf("\n\n\t\tcommands l # + enter device address in decimal\n\n");
-
+         printf("\n\n\t\tdevice add commands : enter /device/ address in decimal\n\n");
          printf("/device/ device path\t\tload file system image\n");
          printf("/device/# device hexkey\t\tassign network interface relay array\n");
          printf("/device/+ device banks\t\tassign memory array\n");
          printf("/device/- device banks\t\tunmount memory array or filestore\n\n");
 
-         printf("\\\t\t\tinvert run option\n");
-         printf("..\t\t\texit emulator\n");
+         printf("\\\tinvert run option\n");
+         printf("..\texit emulator\n");
          break;
 
       case '.':

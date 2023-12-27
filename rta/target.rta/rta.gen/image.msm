@@ -358,12 +358,36 @@ fpxpo_ii
 	and		fp$r,,xi	. isolate residue indication
 	lk		a_x
 	ql		(-0.0)		. default decision
-	qs		a		. write major result
+	lx		0, sp		. accumulator index
+
+	lr		24,,xi		. this cludge is for older RTA1 steppings
+	jxge		fpxpo_idx	. which give latent parameter auth 1
+	lx		a,,xi		. instead of accumulator index
+
+fpxpo_idx		
+	tp		1, sp		. did an application do this?
+	lx		a_x,,xi		. no, mark interrupt accumulators
+	qs		0, x		. write major result
 	tz		k_x		. 192-bit operation?
-	qs		$residue	. write minor result
+	qs		4, x		. write minor result
+	tp		1, sp		. application?
+	j		fpxpo_iix	. no, don't to anything more
+
 	on		see$1		. look into the thread control block
 	la		(0800000s)	. flag this happened
 	sa		FP_XPO		. in case the application likes to know
+
+	$if		0
+	la		x_x		. SIMD or regular accumulators?
+	xor		4,,xi
+	jza		fpxpo_iix
+	la		RDATAC
+	sa		FP_FINAL_COUNT	. SIMD interrupted final count -> TCB
+	la		-1,,xi		.
+	sa		RDATAC		. force SIMD restart next rex
+	$endif
+
+fpxpo_iix
 	ir		0
 
 	$include	../timer/timer
@@ -1123,6 +1147,12 @@ fpxpo_read_clear_ii
 	tn		FP_XPO
 	ir		1		. indicate clear
 	z		FP_XPO		. clear underflow / overflow flag
+
+	$if		0
+	la		FP_FINAL_COUNT
+	sa		r		. for restarting SIMD operation
+	$endif
+
 	ir		0		. indicate not clear until here
 
 xint_bind_ii

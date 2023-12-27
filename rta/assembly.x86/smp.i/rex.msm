@@ -1,3 +1,4 @@
+SIMD_192	equ	1
 
 _rextable_1
 	dd	0, 0, 0, 0,		r_sa, r_sb, r_z, 0
@@ -145,6 +146,14 @@ _rex_chex_126:
 	jna	_rex_chex_low
 	jmp	_rex_chexit
 
+	%if	SIMD_192
+_rex_chex_120:
+	call	_rex_prime
+	cmp	ebx, 120
+	jna	_rex_chex_low
+	jmp	_rex_chexit
+	%endif
+
 _rex_chex_124:
 	call	_rex_prime
 	cmp	ebx, 124
@@ -160,25 +169,53 @@ _rex_chexit:
 ;	eax = EA
 ;	q -> target register selected
 
-r_fa:	call	_rex_chex_124
+r_fa:
+	%if	SIMD_192
+	test	byte ptr [esi+PSR], FP_R
+	jnz	r_fa_192
+
+	%endif
+
+	call	_rex_chex_124
 	call	_far
 	jmp	_rex_accumulate
 
-r_fan:	call	_rex_chex_124
+r_fan:
+	%if	SIMD_192
+	test	byte ptr [esi+PSR], FP_R
+	jnz	r_fan_192
+
+	%endif
+
+	call	_rex_chex_124
 	call	_fanr
 	jmp	_rex_accumulate
 
-r_fm:	call	_rex_chex_124
+r_fm:
+	%if	SIMD_192
+	test	byte ptr [esi+PSR], FP_R	; 192-bit operation?
+	jnz	r_fm_192			; yes
+						; no
+	%endif
+
+	call	_rex_chex_124
 	call	_fmr
 	jmp	_rex_accumulate
 
-r_fd:	call	_rex_chex_124
+r_fd:
+	%if	SIMD_192
+	test	byte ptr [esi+PSR], FP_R	; 192-bit operation?
+	jnz	r_fd_192			; yes
+						; no
+	%endif
+
+	call	_rex_chex_124
 	call	_fdr
 	jmp	_rex_accumulate
 
 r_tz:	call	_rex_prime_final_count
-	cmp	cl, 4			; may not be [ i xi ]
-	jnb	r_noskip		; but pointers are updated on no_op
+	cmp	cl, 4				; may not be [ i xi ]
+	jnb	r_noskip			; but pointers are updated on no_op
 	call	_operand_read
 	and	eax, 00FFFFFFh
 	jnz	r_noskip

@@ -1,8 +1,8 @@
-_on:	or	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+_on:	or	word ptr [rsi+PSR], ax	; only touch low-order 16 bits
 	ret
 
 _off:	xor	ax, 0000FFFFh
-	and	word ptr [esi+PSR], ax	; only touch low-order 16 bits
+	and	word ptr [rsi+PSR], ax	; only touch low-order 16 bits
 	ret
 
 RELOAD_SMPP	equ	1
@@ -36,13 +36,13 @@ _xix_beat?:
 	mov	qword ptr [rsi+REGISTER+DAYCLOCK_U], rbx
 	mov	ebx, dword ptr [rdi+IO_PORT+_TZONE]
 	mov	dword ptr [rsi+IO_PORT+_TZONE], ebx
-	and	byte ptr [esi+INDICATION], TPULSE^255
+	and	byte ptr [rsi+INDICATION], TPULSE^255
 
 _xix:	test	al, ATTENTION			; core2core interrupt
 	jz	near _xiy
 
-	mov	ebx, dword ptr [esi+IO_PORT+_MCAST_PENDING]
-	and	ebx, dword ptr [esi+IO_PORT+_CORES_MASK]
+	mov	ebx, dword ptr [rsi+IO_PORT+_MCAST_PENDING]
+	and	ebx, dword ptr [rsi+IO_PORT+_CORES_MASK]
 	mov	edx, -2
 	mov	rdi, _core
 
@@ -50,8 +50,8 @@ _xi_atn_sources:
 	shr	ebx, 1						; source pending
 	jnc	_xi_atn_source_next				; no
 								; yes
-	and	[esi+IO_PORT+_MCAST_PENDING], edx		; unpend
-	mov	ecx, dword ptr [edi+IO_PORT+_MCAST_TO]		; latent parameter from other core
+	and	[rsi+IO_PORT+_MCAST_PENDING], edx		; unpend
+	mov	ecx, dword ptr [rdi+IO_PORT+_MCAST_TO]		; latent parameter from other core
 
 	mov	eax, II_ATTENTION				; no
 	jmp	_ii_						; _ii_ takes ecx for
@@ -62,10 +62,10 @@ _xi_atn_source_next:
 	and	ebx, ebx					; any next attention flags left?
 	jnz	_xi_atn_sources
 								; any attention flags set anew?
-	test	dword ptr [esi+IO_PORT+_MCAST_PENDING], 00FFFFFFh
+	test	dword ptr [rsi+IO_PORT+_MCAST_PENDING], 00FFFFFFh
 	jnz	_xi_atn_new_sources				; if so keep ATTENTION request
 								; for next pass
-	and	byte ptr [esi+INDICATION], ATTENTION^255	; otherwise quiet request
+	and	byte ptr [rsi+INDICATION], ATTENTION^255	; otherwise quiet request
 
 _xi_atn_new_sources:
 	
@@ -84,7 +84,7 @@ _xiz:	ret
 _ii_instruction:
 	mov	ebx, eax
 	shr	ebx, 6
-	sub	ebx, dword ptr [esi+IO_PORT+_APP_THRESHOLD]	; application threshold
+	sub	ebx, dword ptr [rsi+IO_PORT+_APP_THRESHOLD]	; application threshold
 	jns	guard_ii_authority	; must have executed a character string
 					; like 757575
 	test	eax, -64
@@ -154,7 +154,7 @@ _ii_ii:
 
 ;	_ir	sign extended ea is in eax
 
-_ir:	test	dword ptr [esi+PSR], 00800000h		; eax = EA = variation on return offset
+_ir:	test	dword ptr [rsi+PSR], 00800000h		; eax = EA = variation on return offset
 	jz	guard_ii_authority			; not good to do Interrupt Return from application space
 
 							; r12 stays the same until return is finalised
