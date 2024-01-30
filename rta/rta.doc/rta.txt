@@ -754,7 +754,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	sequential address windows mapping continuous storage
 
 
-	Arrays less than the address space in size can also be addressed all at once
+	Arrays less than the address space in size can be addressed all at once
 	in one or more address windows
 
 				_________________________
@@ -773,8 +773,6 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 
-
-	An array is one or more storage blocks each of any size up to 16 gigawords
 
 
 	<a	name="large_array"/>
@@ -5172,18 +5170,18 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	<a	name="ii"/>
 	Internal Interrupt	ii					 interrupt frame -> internal stack
-	__________________	__
+	__________________	__					 sp is interrupt stack pointer sp_x
 	<div	style="font-size:11pt">
 
 									 23						       0
 	_________________________________________________________	_________________________________________________________
-	|							|	|			saved offset			|	
+	|							|	|			saved offset			| sp + 3
 	|	B0 * 4096 is subtracted from the value of	|	|_______________________________________________________|
-	|	the absolute program counter			|	| F 0 |			saved iframe Start Page Index	|
+	|	the absolute program counter			|	| F 0 |			saved iframe Start Page Index	| sp + 2
 	|							|	|_____|_________________________________________________|
-	|	the resulting instruction frame relative value	|	|   22			saved PSR			|
+	|	the resulting instruction frame relative value	|	|   22			saved PSR			| sp + 1
 	|	is pushed on the interrupt internal stack	|	|			________________________________|
-	|							|	|			latent parameter		|
+	|							|	|			latent parameter		| <-- sp
 	|	Iframe Name = Start Page Index + size flags	|	|			________________________________|
 	|	is pushed on the interrupt internal stack	|	|
 	|							|	|
@@ -5231,7 +5229,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	________________	__
 	<div	style="font-size:11pt">
 
-												interrupt / return internal stack frame
+								 	 interrupt / return internal stack frame
+									 sp is interrupt stack pointer sp_x
+
 
 									 23						       0
 	_________________________________________________________	_________________________________________________________
@@ -7336,7 +7336,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|_______________________________________________________________________________________________________________|
 	|	<a name="fp192"/>													|
 	|														|
-	|	192-bit Floating Point											|
+	|	192-Bit Floating Point		see also <a style="color:FFFFFF;background-color:#0000FF;border-radius:5px;font-size:14pt" href="#simd_fp">192-Bit Single-Instruction Floating Point in SIMD</a>	|
 	|_______________________________________________________________________________________________________________|
 	|														|
 	|														|
@@ -7552,22 +7552,40 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	Instruction Code 12.7	| 0 1 1 0 0 | 1 1 1 |		<a style="color:#00AF6F">  address</a>		|
 				|___________|_______|___________________________________|
 
+<a	name="fpexa"/>
 
+<div	style="left:400pt;position:absolute;width:400pt;border-radius:3px;color:#000080;background-color:#E0FFFF80">
+.	192-bit operation
+.	<a href="#simd_fp">SIMD_CONTROL</a> = (-1, 0, 0, 0q) = 1 object, default
 
-	operation sequence	ql	first_addend
-	192-bit values		on	fp$r
-				fa	second_addend
-				qs	sum
-				off	fp$r
-				ql	first_addend+4
-				fa	$residue
-				fa	second_addend+4
-				  on	fp$r		. force super-normalisation
-				  fa	sum		. between major and minor numbers
-				  off	fp$r
-				  qs	sum
-				  ql	$residue	. especially if this sequence is iterative
-				qs	sum+4
+	$include	array.app/array.def
+	$include	lib/octopop.def
+
+	octopush	first_addend
+	on		fp$r
+	rex		(fa	second_addend)
+	octopop		sum
+
+.	super-normalisation is not necessary
+</div>	<a	style="color:#00000060">
+.	approximate steps of equivalent library routine
+.	192-bit value calculated in 96-bit steps
+.	in regular accumulators
+
+		ql	first_addend
+		on	fp$r
+		fa	second_addend
+		qs	sum
+		off	fp$r
+		ql	first_addend+4
+		fa	$residue
+		fa	second_addend+4
+			on	fp$r
+			fa	sum
+			off	fp$r		. force super-normalisation
+			qs	sum		. between major and minor numbers
+			ql	$residue	. if necessary
+		qs	sum+4</a>
 
 
 
@@ -7617,21 +7635,40 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|___________|_______|___________________________________|
 
 
+<a	name="fpexan"/>
 
-	operation sequence	ql	minuend
-	192-bit values		on	fp$r
-				fan	subtrahend
-				qs	difference
-				off	fp$r
-				ql	minuend+4
-				fan	subtrahend+4
-				fa	$residue
-				  on	fp$r		. force super-normalisation
-				  fa	difference	. between major and minor numbers
-				  off	fp$r
-				  qs	difference
-				  ql	$residue	. especially if this sequence is iterative
-				qs	difference+4
+<div	style="left:400pt;position:absolute;width:400pt;border-radius:3px;color:#000080;background-color:#E0FFFF80">
+.	192-bit operation
+.	<a href="#simd_fp">SIMD_CONTROL</a> = (-1, 0, 0, 0q) = 1 object, default
+
+	$include	array.app/array.def
+	$include	lib/octopop.def
+
+	octopush	minuend
+	on		fp$r
+	rex		(fan	subtrahend)
+	octopop		difference
+
+.	super-normalisation is not ncessary
+</div>	<a	style="color:#00000060">
+.	approximate steps of equivalent library routine
+.	192-bit value calculated in 96-bit steps
+.	in regular accumulators
+
+		ql	minuend
+		on	fp$r
+		fan	subtrahend
+		qs	difference
+		off	fp$r
+		ql	minuend+4
+		fan	subtrahend+4
+		fa	$residue
+			on	fp$r
+			fa	difference
+			off	fp$r		. force super-normalisation
+			qs	difference	. between major and minor numbers
+			ql	$residue	. if necessary
+		qs	difference+4</a>
 				
 
 
@@ -7682,27 +7719,40 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|___________|_______|___________________________________|
 
 
-	operation sequence	ql	multiplicand
-	192-bit values		on	fp$r
-				fm	multiplier
-				off	fp$r
-				qs	product
-				ql	multiplicand+4
-				fm	multiplier
-				fa	$residue
-				  on	fp$r		. force super-normalisation
-				  fa	product		. between major and minor numbers
-				  off	fp$r
-				  qs	product
-				  ql	$residue	. especially if this sequence is iterative
-				qs	product+4
+<a	<a name="fpexm"/>
 
-				If the multiplier is represented in more than 96 bits, then the
-				192-bit multiplicand is also multiplied by the minor multiplier
-				and the two long products summed. Minor result <b>$residue</b> is
-				needed during both multiplication sequences and during the final
-				long addition
+<div	style="left:400pt;position:absolute;width:400pt;border-radius:3px;color:#000080;background-color:#E0FFFF80">
+.	192-bit multiplicand * 192-bit multiplier
+.	<a href="#simd_fp">SIMD_CONTROL</a> = (-1, 0, 0, 0q) = 1 object, default
 
+	$include	array.app/array.def
+	$include	lib/octopop.def
+
+	octopush	multiplicand
+	on		fp$r
+	rex		(fm	multiplier)
+	octopop		product
+
+.	super-normalisation is not necessary
+</div>	<a	style="color:#00000060">
+.	approximate steps of equivalent library routine
+.	192-bit multiplicand * 96-bit multiplier
+.	in 96-bit steps in regular accumulators
+
+	ql	multiplicand
+	on	fp$r
+	fm	multiplier
+	off	fp$r
+	qs	product
+	ql	multiplicand+4
+	fm	multiplier
+	fa	$residue
+		on	fp$r
+		fa	product
+		off	fp$r		. force super-normalisation
+		qs	product		. between major and minor numbers
+		ql	$residue	. if necessary
+	qs	product+4</a>
 
 
 
@@ -7751,32 +7801,40 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|___________|_______|___________________________________|
 
 
-	operation sequence	ql	dividend
-	192-bit values		on	fp$r
-				fd	divisor
-				off	fp$r
-				qs	quotient
-				ql	dividend+4
-				fd	divisor
-				fa	$residue
-				  on	fp$r		. force super-normalisation
-				  fa	quotient	. between major and minor numbers
-				  off	fp$r
-				  qs	quotient
-				  ql	$residue	. especially if this sequence is iterative
-				qs	quotient+4
+<a	name="fpexd"/>
 
+<div	style="left:400pt;position:absolute;width:400pt;border-radius:3px;color:#000080;background-color:#E0FFFF80">
+.	192-bit dividend / 192-bit divisor
+.	<a href="#simd_fp">SIMD_CONTROL</a> = (-1, 0, 0, 0q) = 1 object, default
 
-				If the divisor value is represented in more than 96 bits,
-				a quotient precise to 192 bits is obtained by multiplying
-				by the reciprocal of the divisor
+	$include	array.app/array.def
+	$include	lib/octopop.def
 
-				Divisor values with an equivalent decimal exponent less than zero
-				or greater than 31 are represented in more than 96 bits
- 
+	octopush	dividend
+	on		fp$r
+	rex		(fd	divisor)
+	octopop		quotient
 
+.	super-normalisation is not necessary
+</div>	<a	style="color:#00000060">
+.	approximate steps of equivalent library routine
+.	192-bit dividend / 96-bit divisor
+.	in 96-bit steps in regular accumulators
 
-
+	ql	dividend
+	on	fp$r
+	fd	divisor
+	off	fp$r
+	qs	quotient
+	ql	dividend+4
+	fd	divisor
+	fa	$residue
+		on	fp$r
+		fa	quotient
+		off	fp$r		. force super-normalisation
+		qs	quotient	. between major and minor numbers
+		ql	$residue	. if necesssary
+	qs	quotient+4</a>
 
 
 
@@ -7973,11 +8031,12 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 <div	style="font-size:11pt">
 												return address -> internal stack
+
 									 23						       0
 	_________________________________________________________	_________________________________________________________
-	|							|	|			saved offset			|
+	|							|	|			saved offset			| sp + 1
 	|	Call Iframe					|	|_______________________________________________________|
-	|							|	| F 0 |			saved Start Page Index		|
+	|							|	| F 0 |			saved Start Page Index		| <-- sp
 	|	Program Counter minus B0 * 4096			|	|_____|_________________________________________________|
 	|	is pushed to internal stack			|	      |21					       0
 	|							|
@@ -8048,7 +8107,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	<a	name="sim_d"/>
 	<div	style="margin-left:28pt;font-family:times-roman;font-size:12.75pt;color:0000FF">
-	<i>Appendix A: SIMD and Instruction Repeat
+	<i><a	style="font-size:24pt">Appendix A: SIMD and Instruction Repeat<a/>
 	
 	Repeat Execute feature in all RTA1 emulators
 	Stepping 14.02.2023 [USA 02.14.2023]</i></div>
@@ -8057,9 +8116,13 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 		<a href="#A1" style="text-decoration:none;color:0000FF">A1.1	Outline</a>
 		<a href="#simd_frame" style="text-decoration:none;color:0000FF">A1.2	SIMD Frame and Accumulator Vector</a>
 		<a href="#simd_i" style="text-decoration:none;color:0000FF">A1.3	Instructions in Scope of Repeat Execute</a>
-		<a href="#simd_iho" style="text-decoration:none;color:0000FF">A1.4	Data Points In / Severally and for Successive Multiple Operations / Out</a>
-		<a href="#sim_d2" style="text-decoration:none;color:0000FF">A1.5	Repeat Execute Instruction</a>
-		<a href="#simd_c" style="text-decoration:none;color:0000FF">A1.6	Programming SIMD Frame and Accumulator Vector</a>
+		<a href="#simd_fp" style="text-decoration:none;color:0000FF">A1.4	192-Bit Single-Instruction Floating Point in SIMD
+
+		<a href="#simd_fx" style="text-decoration:none;color:0000FF">A1.5	Fixed Point Multiply and Divide in SIMD	
+
+		<a href="#simd_iho" style="text-decoration:none;color:0000FF">A1.6	Data Points held for Successive Operations</a>
+		<a href="#sim_d2" style="text-decoration:none;color:0000FF">A1.7	Repeat Execute Instruction</a>
+		<a href="#simd_c" style="text-decoration:none;color:0000FF">A1.8	Programming SIMD Frame and Accumulator Vector</a>
 
 	<a href="#A2" style="text-decoration:none;color:0000FF">A2	Examples</a>
 		<a href="#A2_1" style="text-decoration:none;color:0000FF">A2.1	Loading / Storing the Internal Stack with Unrolled Push and Pop Operations</a>
@@ -8081,7 +8144,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		96-bit floating point operations
 
-		24-bit and and 48-bit integer arithmetic operations
+		<a href="#simd_fp">192-bit floating operations</a>
+
+		<a href="#simd_fx">24-bit and and 48-bit integer arithmetic operations</a>
 
 		Boolean algebra operations
 
@@ -8126,13 +8191,13 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 		SIMD_CONTROL	(-1, ACCUMULATOR_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)
 
-	RESTART_COUNT is the number of objects loaded in { 1 | 2 | 3 | 4 } registers of the frame where
+	RESTART_COUNT is the number of objects loaded in { 1 | 2 | 3 | 4 | 8 } registers of the frame where
 
 		integer objects are one or two words
 
 		integer dividend / quotient may have a third register reserved for storing remainder
 
-		floating objects are four words
+		floating objects are four words or eight words
 
 	ACCUMULATOR_UPDATE SIMD_AU is the increment to accumulator vector q and is in most cases the size in words of the object
 
@@ -8166,12 +8231,87 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 	Most instructions which are otherwise executed on the accumulator registers 4..11 are in the repeat model
 
+	See also <a href="rta.html#rex">rex instruction: operations</a>
+
 	Repeated instructions shall not necessarily operate with the exact behaviour of the instructions which they mirror
 
-	The four-function floating point instructions behave in repeat context as they behave in ordinary context,
-	but the working, within the repeat model, of PSR residue flag fp$r may be changed by future decision
+	<a	name="simd_fp" style="font-size:12.75pt;color:0000FF">A1.4	192-Bit Single-Instruction Floating Point in SIMD</a>
 
-	Integer multiplies and divides have the same instruction code assignments in repeat context as outwith
+	The four-function floating point instructions behave in repeat context as they behave executed directly,
+	except when PSR residue flag fp$r is set
+
+	Outwith SIMD, floating instructions have 96-bit inputs store a 96-bit result.
+	If fp$r is aet a 96-bit floating residue is also stored for constructing complex floating results
+
+	Within SIMD, flag fp$r selects 192-bit single-instruction floating operations
+	with sources-1 arrayed in the internal stack and sources-2 either in memory or in registers
+
+
+		source-1			 191		 167					      96
+		_________________		_________________________________________________________________
+		|	q 	|  ----------->	|s|  exponent	|		   mantissa			|
+		|_______________|		|_|_____________|_______________________________________________|
+						|s|  exponent	|		   mantissa			|
+		accumulator vector		|_|_____________|_______________________________________________|
+						 95		 71					       0
+		<a	style="color:#00000060">
+						   |
+						   |	source-1 + 
+						   |______________________________________________________________
+
+						      |
+						      |	   source-1 + +
+						      |_______________________________________________________________
+		</a>
+
+
+		source-2			 191		 167					      96
+		_________________		_________________________________________________________________
+		|	ea	| ------------> |s|  exponent	|		   mantissa			|
+		|_______________|		|_|_____________|_______________________________________________|
+						|s|  exponent	|		   mantissa			|
+		effective address		|_|_____________|_______________________________________________|
+						 95		 71					       0
+		<a	style="color:#00000060">
+				  ----------------> |
+					ea next	    |   source-2 next
+						    |_______________________________________________________________
+
+				  -------------------> |
+					ea next +      |   source-2 next +
+						       |______________________________________________________________
+		</a>
+
+	source-1 registers are also result registers
+
+	source-2 operands may be widely distributed structure members in memory
+
+	each operation is a calculation on 144 mantissa bits
+
+	mantissa is joined for operation by rolling sign bits into the normalising field of each minor number
+
+	minor normalising field is major exponent minus minor exponent minus 72
+
+	major and minor results are individually normalised at the end of each operation
+	minor exponent is major exponent minus 72 minus minor normalising count
+
+
+	<a href="#simd_c">SIMD_RESTART + 1  operations</a> take place
+
+	by default that is one operation at the internal stack top
+	<a	name="simd_mmor"/>
+        floating representation is 1s complement as all RTA1 floating arithmetic
+
+	constants of 192-bit format can be generated with macro major_minor
+
+		$include	lib/144.def
+
+		major_minor	4.848484848484848484848484848484848484848484e+1200000
+
+
+	<a	name="simd_fx" style="font-size:12.75pt;color:0000FF">A1.5	Fixed Point Multiply and Divide in SIMD</a>
+
+	Integer multiplies and divides have the same instruction code assignments in repeat (SIMD) context as outwith
 	but are slightly different instructions in repeat context
 
 		<a	name="rex_m"/>
@@ -8227,7 +8367,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	All instructions currently in the repeat repertoire are from the existing instruction set
 
 
-	<a	name="simd_iho" style="font-size:12.75pt;color:0000FF">A1.4	Data Points In / Severally and for Successive Multiple Operations / Out</a>
+	<a	name="simd_iho" style="font-size:12.75pt;color:0000FF">A1.6	Data Points held for Successive Operations</a>
 
 	Although operations on large arrays mostly cannot process faster than data can be transferred in and out of the core
 	multiple operation has the advantages
@@ -8369,7 +8509,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 </pre>
 </div>	
 
-	<a	style="font-size:12.75pt;color:0000FF">A1.5	Repeat Execute Instruction</a>
+	<a	style="font-size:12.75pt;color:0000FF">A1.7	Repeat Execute Instruction</a>
 
 	The repeat execute instruction is implemented as follows
 
@@ -8427,7 +8567,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 
 
-	<a	name="simd_c" style="font-size:12.75pt;color:0000FF">A1.6	Programming SIMD Frame and Accumulator Vector</a>
+	<a	name="simd_c" style="font-size:12.75pt;color:0000FF">A1.8	Programming SIMD Frame and Accumulator Vector</a>
 
 	rex instruction uses registers [ q SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]
 

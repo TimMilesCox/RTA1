@@ -241,6 +241,7 @@ tx	$head_far	 params(socket_p,	int	;
 
 .	lb	response
 .	sb	q
+	$do	0,	lcal	wherefore
 
 	la	xmit_flags
 	and	TCP_PSH,,xi
@@ -256,17 +257,19 @@ tx	$head_far	 params(socket_p,	int	;
 
 txx	la	bytes
 	call	(tcp_tx)
+	$do	0,	lcal	wherefore
 	jza	tx_zero
 	jpa	tx_complete
 
 tx_zero
 tx_minus
-	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outerrs,0,xi	1,,xi
+.	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outerrs,0,xi	1,,xi
 
 	j	tx_complete
 
 tx_mismatch	
-	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outdrops,0,xi	1,,xi
+	$do	0,	lcal	wherefore
+.	c	(tx_mib_update)	$if0p+INTERFACES+2+__IF_SIZE*5-__IF_SIZE+this_if:outdrops,0,xi	1,,xi
 
 tx_complete
 	qpop	RDATAC		. stream / simd registers saved at function head
@@ -287,7 +290,19 @@ close	$head_far	 params(close_hvport,		int	;
 
 close_y	la	-BAD_ARGUMENT,,xi
 close_z	$ret
-	
+
+	$if	0
+wherefore
+	lb     -061,,xi
+	ab     sp
+	jnzb   weh
+	lb     -0a6,,xi
+	ab     6, sp
+	jnzb    weh
+	lret	0
+weh	ii     GUARD$
+	$endif
+
 block_read
 	lb	r
 	lb	1, b, i		. containing transfer size

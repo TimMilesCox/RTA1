@@ -1424,13 +1424,15 @@ void execute(word instruction, smp *xcore)
 			write accumulator B to IO port
 
                   *******************************************************/
+
                   #if 1
                   oport(ea, b, xcore);
                   #else
                   if (ea < IO_PORTS) base[ea] = b;
                   if (ea == 102) indication |= b;
-                  break;
                   #endif
+
+                  break;
                }
 
                if (designator == XI)

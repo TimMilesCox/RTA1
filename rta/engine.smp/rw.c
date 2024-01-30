@@ -46,6 +46,7 @@
 #include "smp.h"
 #include "rw.h"
 #include "ii.h"
+#include "../include.rta/argue.h"
 
 #ifdef	LINUX
 #ifndef	GCC
@@ -1283,6 +1284,7 @@ int operand_write(int v, unsigned ea, int designator, smp *xcore)
 
    word			*w24p;
    page			*pagep;
+
 
    if (ea < 256)
    {

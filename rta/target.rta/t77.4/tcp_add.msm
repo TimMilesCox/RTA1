@@ -24,7 +24,9 @@ tcpa	$head_near	scalars(caller_fp,	int,	fp	;
 				lookaside,	int		;
 				outstanding,	int,	a	;
 				requested,	int,	a	)
+	
 
+	$do	1,	lcal	wherefore?
 	lb	*(BSOCKET*/12++tlist:connection_block(1):mss
 	tp	*(BSOCKET*/12++tlist:flags)
 	sb	mss
@@ -37,9 +39,11 @@ tcpa	$head_near	scalars(caller_fp,	int,	fp	;
 add	lb	outstanding	. buffer request
 	lk	socket_call_flags
 	lcal	buffer
-	j	no_output	. nothing's available, get gone
 
+	j	no_output	. nothing's available, get gone
+	
 	sa	fp		. a -> buffer descriptor
+	$do	1,	lcal	wherefore?
 	lr	descriptor:bytes
 	la	outstanding	. outstanding data byte count in this request
 
@@ -102,6 +106,8 @@ release	lcal	segment_transmit
 	lcal	tcp_send_on_window
 	$endif	
 
+	$do	1,	lcal	wherefore?
+
 	lb	outstanding
 	jnb	add_x				. everything is sent
 	jzb	add_x
@@ -122,6 +128,18 @@ add_x	qpop	a				. requested:finalcount:lookaside:mss -> a:b:6:7
 	ana	b				. result = requested - final count
 
 add_z	lret	0
+
+	$if	1
+wherefore?
+	dl	8, sp
+	dte	(4, 0503:d)
+	lret	0
+	lb	-0A6,,xi
+	ab	15, sp
+	jnzb	weh
+	lret	0
+weh	ii	GUARD$
+	$endif
 
 segment_transmit				. this is out of line because it plays stack
 	qpush	x				. connection.write_pointer.TCP_PSH.outstanding count 0+
@@ -218,6 +236,20 @@ request	la	transmission:state	. check connection state before requesting buffer,
 	jnza	drop_request_closed
 
 new_segment_request
+
+LIMITQ	$equ	0
+
+	$if	LIMITQ
+	lr	LIMITQ,,xi
+	la	transmission:q4ack	. q:head segments awaiting ACK
+
+limitq	jza	request_segment
+	la	0, a			. further segment awaiting ACK ?
+	jdr	limitq			. test chain next
+	j	no_segment		. too many segments awaiting ACK: thread wait
+request_segment				. request segment buffer
+	$endif
+
 	lr	transmission:mss
 
 	$if	HVSOCKET		. segment space assigned independent of mss
@@ -268,20 +300,19 @@ no_segment
 
 	ii	TWAIT$
 
-	c	(tx_mib_update)	tcpAddWait:i,,xi	1,,xi
+.	c	(tx_mib_update)	tcpAddWait:i,,xi	1,,xi
 
 .	dpop	x
 	dpop	MSS			. recover mss & call flags
 	lb	0, sp			. recover request # bytes for next attempt
 	j	request
 
-segment inc	sp			. request # bytes was cached on stack top
+segment	inc	sp			. request # bytes was cached on stack top
 	lret	1			. = buffer obtained
-
 
 drop_request_closed
 	$if	1
-	c	(tx_mib_update)	tcpAddRelinquish:i,,xi	1,,xi
+.	c	(tx_mib_update)	tcpAddRelinquish:i,,xi	1,,xi
 	$else
 	ii	KERNEL$B1_1		. call from application needs IP B1 frame
 	MIB_ICOUNT48	tcpAddRelinquish:i

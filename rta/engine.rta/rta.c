@@ -1396,8 +1396,9 @@ void execute(word instruction)
                   #else
                   if (ea < IO_PORTS) base[ea] = b;
                   if (ea == 102) indication |= b;
-                  break;
                   #endif
+
+                  break;
                }
 
                if (designator == XI)

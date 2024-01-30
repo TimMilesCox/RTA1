@@ -1,4 +1,4 @@
-#define	STEPPING "01.01.2024"
+#define	STEPPING "01.02.2024"
 #ifdef	__X64
 #define	RADIX	"64-bit"
 #else
