@@ -1,0 +1,97 @@
+	$if	1
+
+.	this routine turns a 144-bit mantissa in 6 registers
+.	into binary data values < 1000000 in 7 registers
+.	for editing. It works by fractional multiplies
+
+.	it's a replacement for a long-serving routine
+.	which is held in reserve below
+
+.	this replacement is developed because the old routine
+.	is not of methodical construction
+.	and would be difficult to update or adapt in any way
+
+.	note routine madd144 reduces its way thru values fractionL
+.	to produce sucessive values which this routine writes to responseL
+.	then pops to fixed accumulators
+
+mfractions $head_near	scalars(responseL,	float192,	a	;
+				fractionL,	6,		6	)
+
+	lx	responseL,,i			. 1st response word ->	8 words returned
+
+mrefract
+	lb	0,,xi				. madd144 needs b = zero
+
+	c	(madd144)	(1000000)	fractionL,,i	fractionL+5,,i
+
+	sa	0, x				. store value [ 0..999999 ]
+	ax	1,,xi
+	lr	responseL+8,,i			. have we had 7 responses?
+	jxl	mrefract			. no
+						. yes
+	push	6, sp, i			. drop the internal stack registers
+	pop	sp				. used by madd144
+						. 
+	qpop	a				. write accumulators	[ a b  6  7 ]
+	qpop	8				. a <- unchanged	[ 8 9 10 11 ]
+	lret	0
+
+	$else
+
+.	this older version below is badly constructed
+.	but it works and takes a few words less internal stack
+.	than the new cleaner version above
+.	so if register stack is tight
+.	the old routine could prevent some apps from failing
+
+.	that routine is set aside but not chucked out
+.	in case it could help at some time
+
+.	the bad things in it are
+
+.	it splits and overlaps dynamic variables in a fairly bad way
+.	which is how it saves a few internal stack registers
+
+.	it unrolls a macro which is not a very short macro
+.	taking extra instruction space for no advantage in efficiency
+
+.	that's how it can do asymmetric kludges on params / dynamic variables
+.	feel free to choose
+
+p	$proc
+mframe*	$name
+	lb	0,,xi
+	c	(madd144)	(1000000)	;
+				fraction,,i	;
+				fraction+5,,i
+	$do	?<4,	sa	ab67+?
+	$do	?>3,	sa	a+?
+	$end
+
+mfractions $head_near	scalars(fractioU, long,	10	;
+				fractioM, long,	8	;
+				fraction, long,	6	;
+				ab67,	float,	a	)
+?	$do	7,	mframe
+	ql	ab67
+	$ret
+
+	$endif
+
+fraction_6_7
+	lcal	mfractions	. produce 8 * million-radix fields
+				. point which ones to print
+	lx	11,,xi
+	lr	b,,xi
+significant?
+	tz	0, x
+	j	significant!
+	ax	-1,,xi
+	jxge	significant?	. the lowest return pointer is &b
+
+significant!
+	lr	x		. last significant field plus 1
+	lx	a,,xi 		. always printed either 3 or 6 columns
+	fret	0
+

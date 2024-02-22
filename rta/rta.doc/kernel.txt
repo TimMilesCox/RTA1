@@ -174,7 +174,13 @@ See also the licensing notice at the foot of this document
 <dl><a href="#diagnostic">Appendix I: File and Socket Error Codes</a>
 </dl>
 
-<dl><a href="#teraword">Appendix J: Teraword Arrays</a>
+<dl><a href="#teraword">Appendix J: Teraword Arrays API</a>
+</dl>
+
+<dl><a	href="#K_1">Appendix K: Sharing a Data Space between Application Processes</a>
+	<dd><a href="#K_1">Description</a></dd>
+	<dd><a href="#K_1">Constructing Shared Data</a></dd>
+	<dd><a href="#K_3">Accessing Shared Data</a></dd>
 </dl>
 
 </div>
@@ -2422,7 +2428,7 @@ NO_DATA         $equ    96	.					-96
 </pre>
 
 <a	name="teraword"/>
-<h3>Appendix J: Teraword Arrays</h3>
+<h3>Appendix J: Teraword Arrays API</h3>
 
 Macro language supported by service calls delivers
 
@@ -2433,19 +2439,62 @@ Macro language supported by service calls delivers
 	</blockquote>
 
 <p>
-Arrays are declared by reference and populated with memory by reference, and so may be sparse or dense
+Arrays are described in macro language
 
 <p>
-Arrays have initially no memory and memory is drawn into arrays granule for granule in realtime from executable space maximum 16 gigawords and up to 61 memory array devices each of maximum 16 gigawords
+Arrays are initially without memory and memory granules are assigned on procedural reference
+<ul	type="square">
+
+	<li>from memory array devices if available</li>
+	<br>
+	<li>from executable space device[0] as last option</li>
+
+</ul>
+Macro language references fix the requested granules into application space until another reference moves the focus to another array offset
 
 <p>
-Macro language interface serves from defining the array to deriving offsets from subscripts and placing the array element in application memory space, all in one macro call
+An application may focus on multiple array offsets simultaneously
+
+<div	style="font-size:18pt;color:#FF0000;
+	border-radius:10pt;border-style:solid;border-width:1px;margin-left:40pt;margin-right:40pt">
+<h3>&nbsp; Tip about Big Array Calls</h3>
+
+&nbsp;&nbsp;Teraword array calls return a pointer in register a pointing to the target object
 
 <p>
-It is alternatively possible to separate the array-defining macro call from subsequent access actions. The definition part does not contain any processing but informs the assembly of the array geometry and its reserved vector page locations
+&nbsp;&nbsp;Store the pointer in the B1 frame and it is an indirection pointer to the first object in the retrieved structure
+
+<pre	style="font-size:12pt">
+
+$(1)
+
+__array	$do	3,__focus	$do	5,focus(__array, __focus)	0
+
+$(3)
+instance	0L
+
+$(0)
+
+		dframe$	30:31	array2_start_vector	12	instance	[array_words[:cluster_granules]]
+		sa	focus(2, 4)
+		jza	not_delivered
+
+		.
+		.
+		.
+		ql	*focus{2, 4)
+		fa	*focus(1, 2)
+		qs	*focus(3, 4)
+
+</pre>
+
+</div>
 
 <p>
-API consists principally of macro calls <a style="color:#0000FF">dframe$</a> which defines and accesses an array held in 4096-word pages and <a style="color:#0000FF">dframe$bank</a> which defines and accesses an array held in 262144-word pages
+macro frame$ or dframe$bank may both define the array and call part of it into focus
+
+<p>
+<a style="color:#0000FF">dframe$</a> defines and accesses an array held in 4096-word pages and <a style="color:#0000FF">dframe$bank</a> defines and accesses an array held in 262144-word pages
 <pre	style="font-size:12pt">
 	<a	style="color:#0000FF">
 	dframe$[bank]	window[:window] vector object_size subscript[,,,S] [maximum_words[:cluster]]</a>
@@ -2476,20 +2525,287 @@ API consists principally of macro calls <a style="color:#0000FF">dframe$</a> whi
 	an array can be declared without <a style="color:#0000FF">maximum_words</a> and it is then definition-free
 	and may extend one memory granule per vector from <a style="color:#0000FF">vector</a> to vpointer(1792)
 
-	<a style="color:#0000FF">cluster</a> allows multiple large memory granules * 262144 words per vector in the range of the array
-	in order to allow arrays containing all available memories
-
 	without <a style="color:#0000FF">cluster</a> arrays are one granule per vector, maximum if all arrays are in pages of 4096 words 
 	7'340'032 words total, and if all arrays are in pages of 262144 words, 469'762'048 words total
 
-	<a style="color:#0000FF">cluster</a> must be a power 2 integer and may be any size which a memory device can supply
+        windows are only populated up to <a style="color:#0000FF">maximum_words</a> minus word offset
+        if at least one window cannot be populated then the pointer delivered to application accumulator a is zero
 
-	windows are only populated up to <a style="color:#0000FF">maximum_words</a> minus word offset
-	if at least one window cannot be populated then the pointer delivered to application accumulator a is zero
+        if part of requested windows is delivered then application reference beyond delivered windows faults
+	this includes the case of reference beyond array limit
 
-	if part of requested windows is delivered then application reference beyond delivered windows faults 
+	<a style="color:#0000FF">cluster</a> allows multiple large memory granules * 262144 words per vector in the range of the array
+        in order to allow arrays containing all available memories
+
+	<a style="color:#0000FF">cluster</a> is a power 2 integer
+
+	having 1.75 array devices of 16 Gwords in an array would need clusters 64 * 262144 words
+	clusters of 2048 * 262144 words enable 56 entire maximum memory devices to be in the array
 
 </pre>
+
+<a      name="K_1"/>
+<h4>Appendix K: Sharing a Data Space between Application Processes</h4>
+
+<h4>K.1: Description</h4>
+
+Kernel routine (appdata_share) is a method of sharing data between applications
+
+<p>
+An address space window outside application space and up to eight kernel vectors define shared data spaces
+
+<p>
+There is no data locking in the kernel service. Applications may lock data
+
+<p>
+To operate without locking writeable data is written by one application only and read by all
+
+<p>
+Application design may assign particular writeable areas each to a different application
+
+<h4>K.2: Constructing Shared Data</h4>
+An application constructs shared data in address space window <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">APP_BSHARE</a> which is separate from windows containing program data
+
+<p>
+Kernel routine <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">appdata_share</a> is called to assign a shared buffer 
+
+<p>
+<a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">appdata_share</a> obtains memory and caches the Start Page Index in the kernel and application copies of <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">DATA_SHARE_VECTOR(1..8)</a>
+
+<p>
+Memory acquired in this way is not in the application memory estate
+
+<p>
+<a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">appdata_share</a> is called before <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">seg$load</a> because most of the shared data is assembly time data
+
+<p>
+Address window number <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">APP_BSHARE</a> is also the program section containing shared data: $(35)
+
+<p>
+If locator $(35) information is assembled it is included in the application data load segment
+
+<p>
+That is why this application requests shared space before loading <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">all_my_data</a>
+
+<p>
+Argument 1 of <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">appdata_share</a> specifies which of <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">DATA_SHARE_VECTOR(1..8)</a> is programmed. Argument 2 is data words required 
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;width:880pt;border-radius:10px">
+
+$ masmx -lnke handoff
+MASMX 7r3A Build 12
+3/handoff.msm
+*EOF*
+  :                            11 	$list
+  :                            12 
+  :                            13 WINDOW	$equ	APP_BSHARE
+  :                            14 TABLE1	$equ	WINDOW*4096
+  :                            15 
+  :                            16 $(3:03000/$3)
+  :                            17 	$res	1
+  :                            18 
+  :                            19 $(WINDOW:TABLE1,x)
+23:000000  400001 C00000 000000 000000
+                              +20 one	+	1.5
+23:000004  400001 D00000 000000 000000
+                              +21 two	+	1.625
+23:000008  400001 E00000 000000 000000
+                              +22 three	+	1.75
+23:00000C  400001 F00000 000000 000000
+                              +23 altogether +	1.875
+23:000010  FFFFFF FFFFFF FFFFFF FFFFFF
+                              +24 handoff	-	0.0
+  :                            25 
+  :                            26 $(0:0)
+  :                            27 __BASE	$equ	HANDOFF_PAGE_INDEX
+  :                            28 
+[+0001]18
+[+0000]18*/30
+00:000040  000050 000000 001000 000000
+                              +29 	catalog
+00:000044  4D0003              +29 
+00:000045  000000              +29 
+[+0002]30
+00:000046  000000 000000        +29 
+[+0000]18
+[+0001]18*/48
+00:000048  800040 000007 001000 FFFFFF 000000 000000 000050 000000
+                              +29 
+00:000050  60207F              +30 	$base_d	$zenith(3)-03000	1024
+00:000051  340003              +30 
+00:000052  600100              +30 
+00:000053  75007A              +30 
+00:000054  654000              +30 
+00:000055  20000E              +30 
+  :                            31 
+00:000056  FD0064              +32 	c	(appdata_share)	DATA_SHARE_VECTOR(1),,xi	100,,xi		. 100 data words
+00:000057  FD2F3F              +32 
+00:000058  FCF002              +32 
+00:000059  FF0101              +32 
+00:00005A  38000F              +32 
+00:00005B  C60072              +33 	jza	"can't"
+00:00005C  340023              +34 	sabr	WINDOW				. outside program data space
+  :                            35 
+00:00005D  9F0102              +36 	c	(seg$load)	0,,xi	(all_my_data:L),,long
+00:00005E  FD0000              +36 
+00:00005F  FCF003              +36 
+00:000060  FF0104              +36 
+00:000061  38000F              +36 
+  :                            37 	
+00:000062  500105              +38 	lx	(TABLE1)
+00:000063  4FA000              +39 	ql	one
+00:000064  67A004              +40 	fa	two
+00:000065  6FA008              +41 	fan	three
+00:000066  7FA00C              +42 	fd	altogether
+00:000067  47A010              +43 	qs	handoff
+00:000068  F82F3F              +44 	printf	$3("shared data block 1 is %x":LF:0),,xi	DATA_SHARE_VECTOR(1)
+00:000069  FD3001              +44 
+00:00006A  FD0001              +44 
+00:00006B  FCF003              +44 
+00:00006C  FF0106              +44 
+00:00006D  38000F              +44 
+00:00006E  FD0001              +45 	fflush	stdout
+00:00006F  FCF001              +45 
+00:000070  FF0107              +45 
+00:000071  38000F              +45 
+  :                            46 
+00:000072  3D0000              +47 "can't"	fret	0
+  :                            48 
+  :                            49 	$do	$<256,$(0:256)	. literal table must > register addresses
+*EOF*
+00:000100+[0001]18:000000
+00:000101+0001F1
+00:000102+[0003]30:000000000000
+00:000104+0001CD
+00:000105+023000
+00:000106+0001DB
+00:000107+0001D6
+03:003001+736861726564206461746120626C6F636B20312069732025
+780A00
+:$(00):000000:000108 :$(02):002000:003000 :$(03):003000:00300A :$(23):023000:023014 
+
+</pre>
+
+
+<a      name="K_3"/>
+<h4>K.3: Accessing Shared Data</h4>
+
+Applications accessing shared data may also call kernel routine <a style="background-color:#0000C0;color:#FFFFFF;border-radius:3px">appdata_share</a>. Size argument zero words indicates that memory already assigned is sought
+
+<p>
+Applications may place shared memory in any window, but internal pointers within shared data remain congruent if the window where the data is constructed is also used to access it
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;width:880pt;border-radius:10px">
+
+$ masmx -lnke draw
+MASMX 7r3A Build 12
+3/draw.msm
+*EOF*
+  :                            9 	$list
+  :                            10 
+  :                            11 $(3:03000/$3)
+  :                            12 
+  :                            13 
+  :                            14 $(66::,x)			. void section x ->
+  :                            15 one		$res	4
+  :                            16 two		$res	4
+  :                            17 three		$res	4
+  :                            18 altogether	$res	4
+  :                            19 handoff		$res	4
+  :                            20 
+  :                            21 $(4:*1)
+  :                            22 	$lit
+  :                            23 $(0:*1)
+00:000000  60207F              +24 	$base_d	$zenith(3)-003000	1024
+00:000001  340003              +24 
+(+04)0f
+00:000002  600000              +24 
+[+0001]10
+00:000003  750000              +24 
+00:000004  654000              +24 
+00:000005  20000E              +24 
+(+04)0f
+00:000006  9F0001              +25 	c	(seg$load)	0,,xi	(and_all_mine:d),,long
+00:000007  FD0000              +25 
+00:000008  FCF003              +25 
+(+04)0f
+00:000009  FF0003              +25 
+00:00000A  38000F              +25 
+00:00000B  FD0000              +26 	c	(appdata_share)	DATA_SHARE_VECTOR(1),,xi	0,,xi	. is it there ?
+00:00000C  FD2F3F              +26 
+00:00000D  FCF002              +26 
+(+04)0f
+00:00000E  FF0004              +26 
+00:00000F  38000F              +26 
+(+00)0f
+00:000010  C6001E              +27 	jza	not_really
+00:000011  340023              +28 	sabr	APP_BSHARE
+(+04)0f
+00:000012  500005              +29 	lx	(APP_BSHARE*/12)
+  :                            30 
+                                	printf	$3("(%f + %f - %f) / %f = %f":LF:0),,xi	one,,float		;
+                                							two,,float		;
+                                							three,,float		;
+                                							altogether,,float	;
+00:000013  8FA010              +35 							handoff,,float
+00:000014  8FA00C              +35 
+00:000015  8FA008              +35 
+00:000016  8FA004              +35 
+00:000017  8FA000              +35 
+00:000018  FD3000              +35 
+00:000019  FD0001              +35 
+00:00001A  FCF016              +35 
+(+04)0f
+00:00001B  FF0006              +35 
+00:00001C  38000F              +35 
+(+00)0f
+00:00001D  B60023              +36 	j	away
+  :                            37 
+  :                            38 not_really
+00:00001E  FD3009              +39 	printf	$3("shared data structure not present":LF:0),,xi
+00:00001F  FD0001              +39 
+00:000020  FCF002              +39 
+(+04)0f
+00:000021  FF0006              +39 
+00:000022  38000F              +39 
+  :                            40 
+  :                            41 away	
+00:000023  3D0000              +42 	fret	0
+*EOF*
+03:003000+282566202B202566202D20256629202F202566203D202566
+0A0020
+03:003009+736861726564206461746120737472756374757265206E6F
+742070726573656E740A0020
+04:000000+[0000]18:000000
+04:000001+[0002]30:000000000000
+04:000003+[0003]18:000000
+04:000004+[0004]18:000000
+04:000005+023000
+04:000006+[0005]18:000000
+:$(00):000000:000024 :$(02):002000:003000 :$(03):003000:003015 :$(04):000000:000007 :$(42):000000:000014 
+
+</pre>
+
+<pre	style="font-size:12pt;background-color:#0000C0;color:#FFFFFF;width:880pt;border-radius:10px">
+
+	telnet	172.29.7.7
+	<a style="color:#0080FF">RTA1 smaragd7 OS shared console
+	</a>
+	r load /test/shareda
+	00001d
+	loader: load /test/shareda
+
+	<a style="color:#0080FF">[000058000018:00100000300a]</a>
+	000022 
+	shared data block 1 is 000025
+	<a style="color:#0080FF">load&gt;</a>shareda*draw
+	000022 shareda
+	(+1.500 + +1.625 - +1.750) / +1.875 = +0.733333333333333333333
+	<a style="color:#0080FF">load&gt;</a>
+
+</pre>
+
+</div>
 
 
 </div>

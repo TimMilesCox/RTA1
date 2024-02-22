@@ -4128,7 +4128,7 @@ MASMX 7r3
 Space available for static data is 29 pages of 4096 words totalling 118'784 words
 
 <p>
-This is can include considerable arrays. Static storage required is calculated in build
+For larger data see <a href="#linear">7.1.2. Large Linear Arrays</a> and <a href="#teraword">7.1.3: Teraword Arrays</a>
 
 <pre	style="font-size:12pt;color:#0000FF">
 
@@ -4139,49 +4139,94 @@ This is can include considerable arrays. Static storage required is calculated i
 
 </pre>
 
-If very much initial data within arrays is generated at assembly, the embedded file system linked at the end of iframes will need extra pages to hold initial data load strings
+If dense initial data is assembled for large  arrays, the file system embedded in the initial instruction frame needs extra pages for the quantity of data load strings
 
 <p>
-RTA1 applications are shared-code reentrant and each new process instance unpacks initial data to static space $(3) and private data space $(1)
+RTA1 applications are shared-code reentrant and each new process instance unpacks initial data to static space $(3, 5) and private data space $(1)
 
 <p>
-The file system embedded in the instruction frame must contain all the load strings for section $(1,3,5) of all applications in the group
+Build seeks to pack this data in unused space in the page[s] of first instruction frame, if parameters are not set for more space
 
 <p>
 If more space is needed for load strings the build gives an error message
-
 <pre	style="font-size:12pt;color:#0000FF">
 
 	Error: ../image.app/load.msm Line 21: add page[s] to iframe containing segment load FS
 
 </pre>
 
-Outsize of the space for iframe plus embedded file system is adjusted with macro $application or catalog
+The physical block containing application[s] leading instruction frame and startup / initial data files needs to be larger
+
+<p>
+Space can expanded with override FS_SAFE_LIMIT in the main or containing assembly of the <a href="scripts.html">application build</a>
 <pre	style="font-size:12pt;color:#0000FF">
 
-	$application[<a style="color:#FF0000">,PAGES</a>]	0:app1_entry	0:app2_label ...
+		$include	language/iframe.def
 
+FS_SAFE_LIMIT   $set    	SOME_PAGES*4096 . for example
+		application$	0:app1 0:app2 ...
 </pre>
 
-<a style="color:#FF0000">PAGES</a> corresponds to  the volume of all load strings including instruction code
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+
+	[iframe] pages >=					iframe + data-initial
+	instructions + fs					> [iframe] pages: expand
+	_________________					_________________   
+
+	_________________					_________________
+	| application[s]|					| application[s]|
+	| instruction	|					| instruction	|
+	| code		|					| code		|
+	|_______________|					|		|
+	| fs		|					|		|
+	| run templates	|					|		|
+	| +initial data	|					|_______________|
+	|_______________|					| fs		|
+	| /////////////	|					| run templates	|
+	|_______________|_________ next page boundary __________| +initial data	|
+								|		|
+								|_______________|
+								| /////////////	|
+								| /////////////	|
+			     subsequent page boundary __________|_______________|
+								
+</pre>
+
+<div	style="color:#00000040;margin-left:40pt">
+The containing block can alternatively be expanded by adjusting macro call $application or catalog
+
+
+<pre	style="font-size:12pt;color:#0000FF40">
+
+	$application[<a style="color:#FF0000">,PAGE_HIGH_INDEX</a>]	0:app1_entry	0:app2_label ...
+
+</pre>
+<p>
+This makes the instruction frame multi-page unnecessarily
 
 <p>
-In the absence of densely compiled arrays build derives <a style="color:#FF0000">PAGES</a> automatically
+Default <a style="color:#FF0000;font-size:12pt">PAGE_HIGH_INDEX</a> is zero = one page.
+Memory is <a style="color:#FF0000;font-size:12pt">PAGE_HIGH_INDEX</a>+1 pages
+
+</div>
+
+There is no practical restriction how many pages may contain the leading instruction frame
+and how many pages may be added for initial data
 
 <p>
-It is not less efficient to prime arrays by application action. That avoids large files on the build platform if initial array data is dense, plus large takeup of RAM on application image load
+However dense arrays require space on the build platform and in the target load strings image
 
 <p>
-A large densely populated array image in the instruction frame image means the array takes storage in the iframe image as well as each process instance RAM
+Application action primes arrays as efficiently as segment load. See also <a href="#density">Density of Array Load Data</a>
 
 <p>
-The application primes large and dense array data more efficiently than segment load. See also <a href="#density">Density of Array Load Data</a>
+Literals which must be addressable from other instruction frames are in static data $(3), typically format strings for passing to stream library
 
 <p>
-Literals in static data are beyond direct adressing if arrays in static extend to address 32768 or higher. Literals are at the end of their section
+Linear arrays in static may place $(3) literals outside the range of direct addressing
 
-<p>
-Only literals which must be addressable from other instruction frames are in static data $(3), typically format strings for passing to stream library
 <pre	style="font-size:12pt;color:#0000FF">	
 
 	00:000019  8F0008              +31 	printf	$3("%f":LF:0),,xi	8,,float
@@ -4189,34 +4234,112 @@ Only literals which must be addressable from other instruction frames are in sta
 	00:00001A  FDF000              +31 
 
 </pre>
-A pointer to the string is added by placing parentheses round it and stripping ,,xi (immediate)
+
+If static becomes larger than direct address space because of linear arrays, the arrays can be placed in $(5) instead of $(3) and positoned after $(3), either by linking or directly in absolute assembly
+
+<p>
+<a href="scripts.html">Application build</a> checks if the given margin is large enough if the instruction frame contains multiple applications
+
+<p>
+For single applications which are one assembly with no make_rel file, the check for a sufficient gap for $(3) literals is placed at the end of the assembly
+
+<p>
+In this example Section $(5) arrays leaves a 256-word gap for literals at the end of $(3). This is more than normally necessary
+
 <pre	style="font-size:12pt;color:#0000FF">
 
-	00:000019  8F0008              +31 	printf	($3("%f":LF:0))	8,,float
-	(+04)0f
-	00:00001A  F8000E              +31 
+	$include	array.app/origin5
 
-	03:01f000+25660A000000
+$(3:03000/$3)
+.	scalars
+$(5:03100)
+.	arrays
+$(0:0:/$0)
+	catalog
+	base_d	$zenith(5)-03000	1024		. $zenith(5) not $zenith(3)
 
-	04:00000e+01F000
+	.
+	.	application
+	.
+
+	$do	$<256,$(0:256)
+	
+	origin5		. is $(5) clear of $(3) literal table ?
 
 </pre>
-The outer parentheses generate a literal in the assembly default literal pool pointing to the string literal. The string address gets on the internal stack
+<p>
 
+example <a style="color:#0000FF">fardown</a> is part of a multiple application build
+
+<p>
+<a href="scripts.html">Application build</a> checks if the given margin at the start of $(5) is large enough for literals at the end of $(3)
+
+<p>
+$base_d macro at line 22 states static RAM requirement from 003000<sub>16</sub> to the end of $(5) and not as otherwise to the end of section $(3)
+
+<p>
+The kernel supplies a <a style="color:#FF0000">29-page block</a> as programmed for static consisting sections $(3) and $(5)
+
+<pre	style="font-size:12pt;color:#0000FF">
+
+$ masmx -lnke fardown -x
+MASMX 7r3A Build 12
+3/fardown.msm
+*EOF*
+  :                            12 	$list
+  :                            13 
+  :                            14 $(3:03000/$3)		. static scalar data goes in $(3)
+  :                            15 $(5:03100)
+  :                            16 table1	$res	<a style="color:#FF0000">29*4096</a>-0100-1024-4-5*80
+05:01FA6C  400001 E00000 000000 000000
+                              +17 occurrence((<a style="color:#FF0000">29*4096</a>-0100-1024-8-5*80)/4)	1.75
+  :                            18 $(4:*1)
+  :                            19 	$lit
+  :                            20 $(0:*1)
+  :                            21 fardown*
+00:000000  60207F              +22 	$base_d	$zenith(5)-03000	5*80	1024
+00:000001  340003              +22 
+00:000002  40207E              +22 
+00:000003  6D0004              +22 
+00:000004  54C001              +22 
+(+00)0f
+00:000005  F6000A              +22 
+
+</pre>
+External stack space is after array space and macro $base_d reserves for this example 5 * 80 + 1024 words
+
+<pre	style="font-family:times-roman;color:#0000FF">
+
+	5*80 words for 5 possible remote file states heaped at low addresses 
+
+	1024 words printf format space for one thread from external stack root
+	at 020000<sub>16</sub>, end page 31<sub>10</sub>
+
+	any more threads needing external stack are served by more terms on $base_d line
+	initial thread external stack size < the last term on the $base_d line
+
+</pre>
 
 <a      name="linear"/>
 <h4>7.1.2: Large Linear Arrays and macro fastarray$</h4>
 
-At least one window in windows [ 3..31 ] is $(3) static data
+Large linear arrays are in blocks of 262144 words in some of windows [ 4..31 ]
 
 <p>
-The large linear array is 262144-word memory blocks (banks) collected as program section $(5)
+At least one 4096-word page in windows [ 3..31 ] is $(3) static data and contains external stacks and open file states
+
+<p>
+$base_d macro argument 1 programs static space from 03000<sub>16</sub> to end section $(3) and does not obtain large array space
+
+<p>
+No contiguity or page sharing is possible between static data and the 262144-word banks of large linear arrays collected as program section $(5)
 
 <p>
 Large linear arrays may extend to seven megawords
 
 <p>
-These banks are obtained at process initialisation and populate windows not used for static data, maximally [ 4..31 ]
+Up to 28 banks are obtained at process initialisation after $base_d and before seg$load with macro fastarray$
+
 <pre	style="font-size:12pt;color:#0000FF">
 
 $(5:4*262144)		. if window 4 is array start window
@@ -4245,7 +4368,7 @@ On success or on shortfall without argument <a style=color"#0000FF">*</a>, fasta
 and register x = actual highest window populated + 1
 
 <p>
-Highest-window-served + 1 in x can be saved during seg$load by store to a static location which does not have an assembly-time value
+Highest-window-served + 1 in x can be saved during seg$load by store to a static location
 <pre	style="font-size:12pt;color:#0000FF">
 
 $(3)
@@ -4267,25 +4390,23 @@ $(5...
 Directive $res declares storage but no initial values. seg$load does not write $res locations
 
 <p>
-Language- or preference-dependent uniform initialisation of all $(3) static locations may follow $base_d and precede fastarray$
-
-<p>
-Initial data load strings in $(5) section can occupy up to about 64 pages for any array footprint up to the maximum 7 megawords. However this much load string data inflates the load size of instruction frame image and the size of files on the development platform
-
-<p>
 It is efficient to prime an array programmatically and that avoids tuning the instruction frame to accommodate extra-large segment load. See also <a href="#density">Density of Array Load Data</a>
 
 <p>
-fastarray$ uses service call TERAFRAME$. TERAFRAME$ prefers banks obtained from memory device arrays outwith executable space which is last resource of choice 
-
+fastarray$ requests requests 262144-word granules preferring memory array devices. Executable space device[0] is the last resource of request
 
 <a	name="teraword"/>
 <h4>7.1.3: Teraword Arrays</h4>
 
-Teraword arrays use application vectors vpointer(1..1792) to construct arrays of storage granules or clusters with footprint up to 4 terawords. These arrays can be populated to the extent of memory including memory array devices outwith executable space. Initially these arrays are not populated at all
+Teraword arrays use application vectors vpointer(1..1792) to construct arrays of storage granules or clusters with footprint up to 4 terawords
 
 <p>
-Teraword arrays become populated with memory as parts of them are called into application address space
+Initially teraword arrays are not populated at all
+
+<p>
+Teraword arrays become populated with memory in granules called into application address space,<br>
+and may become populated to the extent of available memory,<br>
+requested firstly from memory array devices and lastly from executable space device[0]
 
 <p>
 In view of possible scale of data, offsets and subscripts are 48 bits
@@ -4300,68 +4421,47 @@ In view of possible scale of data, offsets and subscripts are 48 bits
 masmx directive $res reserves storage without generating any load values for it
 
 <p>
-$res is therefore the best declarator for mapping large arrays, because value declarations generate load strings. Arrays may be billions of words and load string files may not
+$res is therefore the best declarator for mapping large arrays, because value declarations generate load strings
+
+<p>
+Arrays may be billions of words and load string files may not
 
 <p>
 The most efficient agent for priming a large array densely populated with values is the application
 
 <p>
-Application build tools allow about 0.25 megawords of data section load strings but this requires a large  application load image. Files on the developer platform have to be correspondingly large
+Application build tools allow about 0.25 megawords of data section load strings but this requires a large  application load image.<br>
+Files on the developer platform are correspondingly large
 
 <p>
-Array elements are either scalars or structures
-
-<p>
-A bad way of declaring 65536 floating numbers is
+This way of declaring 65536 * floating zero has high costs in platform space, target loading and processing
 <pre	style="font-size:12pt;color:#0000FF">
 
 floats
 	$do	65536,	0.0
 
 </pre>
-A good way of doing that is
+The lowest cost  way of doing this, and the most rapid, is
 <pre	style="font-size:12pt;color:#0000FF">
 
+$(5)
 floats	$res	65536*4
+$(0)
+	ql	(0.0)
+	lr	65536-1,,xi
+
+	$if	floats<32768	. if $(5) is relocatable this comparison is not allowed
+	lx	floats,,xi	. but this is. It's range-checked at link
+	$else
+	lx	(floats:s)	. this works whether $(5) is absolute or relocatable 
+	$endif
+
+again	qs	0, x
+	ax	4,,xi
+	jdr	again
+
 
 </pre>
-The application can zero that before use faster than segment load can do it
-
-<p>
-There a very few cases for seeding a large variable data array with a value varied at assembly time, because the varying values need not be found in an array at all. The application can generate a regularly varying value on reference
-
-<p>
-Reapeat structures on a large scale will cause faster build and load if their members are without many declared values
-
-<pre	style="font-size:12pt;color:#0000FF">
-
-$ masmx -lnke cells
-MASMX 7r3A Build 12
-3/cells.msm
-*EOF*
-  :                            1
-  :                            2 p       $proc
-  :                            3 cell*   $name
-  :                            4 *       $tree
-  :                            5 next    $res    1
-  :                            6 lock    $res    1
-  :                            7 value   $res    2
-  :                            8 size	$equ    $-next
-  :                            9         $root
-  :                            10         $end
-  :                            11 
-  :                            12 COUNT	$equ	1750000
-  :                            13 
-  :                            14 $(66::,x)
-  :                            15 cell1   cell
-  :                            16 
-  :                            17 $(5:4*262144)
-  :                            18 cells	$res	COUNT*cell1:size
-*EOF*
-:$(05):100000:7ACFC0 :$(42):000000:000004 
-
-</pre>
-cell1 could have values declared in it because the base + displacement pointer section $(66) generates no values
 
 <a      name="do"/>
 <h3>7.2: Iteration: Directive $do</h3>

@@ -175,7 +175,7 @@ Received payload is read from a single queue per port
 Ranges of TCP ports are assigned to high volume activity in a <a href="#config">configuration step</a> at system start
 
 <p>
-Application threads may claim ownership of part or all of a range of high volume ports with call hvsocket_xbind
+Application threads may claim ownership of a range of high volume ports with call hvsocket_xbind
 <pre	style="font-size:12pt;color:#000000">
 
 $(3)
@@ -304,32 +304,26 @@ Larger scale testing uses a second RTA1 on the same emulator platform as the lis
 <h4	style="color:#000000">3.1: Highest Performance and Connections Capacity</h4>
 
 <p>
-The highest measured performance of an RTA1 emulator is on a Linux 64-bit Pentium Gold platform delivering up to 35'700 responses per second per endpoint thread serving one half million simultaneous connections
+The highest TCP network performance of an RTA1 emulator is measured on a 64-bit Pentium Gold platform delivering up to 35'700 responses per second per RTA1 application endpoint thread serving one half million simultaneous connections
 
 <p>
-This measurement is obtained with two platform core threads driving two RTA1 cores
+This measurement is obtained with two platform core threads driving an emulated RTA1 with two cores
 
 <p>
 One RTA1 core is mostly occupied driving TCP / IP and the other is mostly occupied with an application receive / respond thread
 
 <p>
-A half million remote users request at once and all have a response routed to them
-[interface receive -> interface q2 transmission] within 14 seconds
+A half million remote users request at once. All have a response routed to them
+from the listening RTA1 within 14 seconds
 
 <p>
-Potential performance with 8+ platform core threads is over 200'000 reponses per second among 4'000'000 simultaneous connections. This is 20 seconds turnaround for 4'000'000 simultaneous requests
+A platform with numerous cores can emulate an 8-core RTA1 running 4'000'000 TCP connections. A 2-core RTA1 can run this this many connections, but since RTA1 software threads optimally run a half-million connections each (plus the application need of each connected client), the more core threads the platform can lend, the faster RTA1 emulated cores can service multi-millions of connections
 
 <p>
-Observed performance using two platform core threads is 25'000 responses per second among 4'000'000 simultaneous connections, with TCP / IP activity constant, and eight application software threads effectively sharing one platform core thread. This is 160 seconds of turnaround for 4'000'000 simultaneous requests, showing the advantage of upscaling with more cores
+These figures are of traffic generated and checked by machine. All remote users transmit a request at once and performance is measured by elapsed time until last turnaround. Resilience is tested with  multiple outstanding requests per connection but is not measured by time
 
 <p>
-All these figures suppose that each connected remote user transmits a request at once and they all send a new request as soon as they have a response. Requestors which are machines might do that, or may even have sent multiple requests
-
-<p>
-Remote users interacting with responses cannot request more often than total response time, which is responding system turnaround time + network time
-
-<p>
-A second RTA1 emulation on the same platform employs one core thread and generates connections and test traffic. This second RTA1 is doing the work of up to eight million remote users
+A second RTA1 emulation on the same platform generates connections and test traffic. This second RTA1 does the work of up to eight million remote users
 
 <p>
 RTA1 emulated cores do not hold platform core threads exclusively but release them when not 100% loaded
@@ -346,18 +340,20 @@ RTA1 on 32-bit Linux has capacity for a half million connections and can respond
 <a	name="test"/>
 <h3>4: Running Available Tests</h3>
 
+See also <a href="testlist.html#traffic">checklist</a>
+
 <a	name="tp1"/>
 <h4	style="color:#000000">4:1 Shared Network Trunk RTA1 / RTA1</h4> 
 
 <a	name="hvtrafic"/>
-The trunk between the two emulated RTA1s is made available with inert process lif which is called with script note.txt in directory rta/hvtrafic
+The trunk between the two emulated RTA1s is made available with inert process <a style="color:#000000">lif</a> which is called with script <a style="color:#000000">note.txt</a> in directory <a style="color:#000000">rta/hvtrafic</a>
 
 <p>
 This shared trunk is interface(5) on both the listening and the driving RTA1
 
 
 <p>
-note.txt replies with a device identifier of the new trunk and that must go on the command lines which start the RTA1 two emulations
+<a style="color:#000000">note.txt</a> replies with a device identifier of the new trunk and that must go on <a href="#tp4">listening</a> and <a href="#tp8">data-driving</a> emulator command lines
 
 <pre	style="font-size:12pt;color:#000000">
 
@@ -424,7 +420,7 @@ SMP cores and memory size are set with environmental variables
 </pre>
 
 <p>
-There is no any performance advantage in running more RTA1 cores ($RTA_SMP) than the platform has core threads
+There is no performance advantage in running more RTA1 cores ($RTA_SMP) than the platform has core threads
 
 <p>
 Each High-Volume port acquires a memory block ($RTA_MBANKS) of 262144 words when a first connection is added
@@ -514,7 +510,7 @@ Listening application <a style="color:#000000">proto</a> answers remote requests
 	$ telnet 172.29.7.7
 	stay
 	ifsync
-	smp FF
+	smp FF		# depending $RTA_SMP and which cores should engage
 	r load /test/proto
 	<a style="color:#FF0000">proto></a>
 
@@ -526,13 +522,14 @@ Listening application <a style="color:#000000">proto</a> answers remote requests
 The traffic-generating RTA1 can now start. The directories and scripts have names starting "a" for alternative RTA1. A new network trunk is started to connect the second RTA1 to terminal operation
 
 <p>
-Start scripts are executed in directory aportal or aportal.x64 or alixnet or alixnet.x64
+Start scripts are executed in directory <a style="color:#000000">aportal</a> / <a style="color:#000000">aportal.x64</a> / <a style="color:#000000">alixnet</a> / <a style="color:#000000">alixnet.x64</a>
 <pre	style="font-size:12pt;color:#000000">
 
-	$ cd aportal
-	$ arunL
+	$ cd aportal[.x64]	|	$ cd alixnet[.x64]
+	$ ./arunL		|	$ ./arunL
 
 </pre>
+32-bit or 64-bit network trunks all run equally with 64-bit or 32-bit RTA1 emulators
 
 <a	name="tp8"/>
 <h4     style="color:#000000">4.8: Data-driving RTA1</h4>
@@ -684,7 +681,7 @@ Send messages command is character <a style="color:#000000">&gt;</a> followed by
 	<a style="color:#00000040">stay</a>							<a style="color:#00000040">stay</a>
 	<a style="color:#FF000040">no timeout</a>						<a style="color:#FF000040">no timeout</a>
 	<a style="color:#00000040">ifswap</a>							<a style="color:#00000040">ifsync</a>
-	<a style="color:#FF000040">proto&gt;</a><a style="color:#00000040">r load /test/proton</a>				<a style="color:#FF000040">&gt;</a><a style="color:#00000040">smp FF</a>
+	<a style="color:#FF000040">proto&gt;</a><a style="color:#00000040">r load /test/proton</a>				<a style="color:#FF000040">&gt;</a><a style="color:#00000040">smp FF</a>	# depending $RTA_SMP and which cores should engage
 	<a style="color:#FF000040">proton&gt;</a><a style="color:#00000040">+10240/2000/500</a>					<a style="color:#FF000040">&gt;</a><a style="color:#00000040">r load /test/proto</a>
 	<a style="color:#FF000040"> 1000000 1000000 established</a>
 
