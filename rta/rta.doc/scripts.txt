@@ -992,7 +992,7 @@ This model of library construction adds 4Kword pages to NVRAM system image using
 
 </pre>
 
-<a href="kernel.html#genlib">Libraries of general application</a> supplied in minimal NVRAM system image are of this model
+<a href="kernel.html#library">supplied libraries</a> included with kernel part of system images are constructed in this way
 
 <a	name="apps_lib"/>
 <h3>11: Constructing Application Library Frames</h3>
@@ -1159,7 +1159,7 @@ Literals are placed in static if another iframe references them. That other ifra
 	c	(__sscanf)	<a style="color:#FF0000">$3("%s %d":0),,xi</a>	string,,xi	number,,xi
 
 </pre>
-By default literals are in the current iframe, especially call vectors to other iframes. These are mostly constants and sometimes variables. The operands of go and call is the data word at EA, not any kind of immediate operand
+By default literals are in the current iframe, especially call vectors to other iframes. These are mostly constants and sometimes variables. The operand of go and call is the data word at EA, not any kind of immediate operand
 <pre	style="font-size:12pt;color:#0000FF">
 
 
@@ -1167,11 +1167,73 @@ By default literals are in the current iframe, especially call vectors to other 
 	.
 	$do	$<256),$(0:256)
 
-</pre>
+</pre><a	name="lit_hidden"/>
 Literals in the iframe must be in words 256..4095 of the iframe. Lower operand adresses than 256 are registers. Operand adresses 4096+ are not in the iframe. Only instructions can be obtained from addresses 4096+ of the iframe
 
 <p>
 The construct <a style="color:#0000FF">$do  $<256,$(0:256)</a> at iframe end forces location counter to 256 if it has not reached 256, so that the automatic literal table is in memory address space
+
+
+<div	style="font-size:18pt;color:#FF0000;
+	border-radius:10pt;border-style:solid;border-width:1px;margin-left:40pt;margin-right:40pt">
+<h3>&nbsp; Tip: Referencing Literal Constant reads out wrong</h3>
+
+&nbsp;&nbsp;just above this space you see the literals in the instruction frame must be in storage locations 256<sub>10</sub>..4095<sub>10</sub>
+
+<p>
+&nbsp;&nbsp;especially writing absolute code it's easy to forget to do this after the code
+<pre	style="font-size:12pt">
+
+	$do	$<256,$(0:256)
+</pre>
+&nbsp;&nbsp;don't do that with relocatable code. A subsequent linking assembly must get everything in the right place
+
+<p>
+<h3>&nbsp; I fixed that and all it reads back is a word of zero</h3>
+
+&nbsp;&nbsp;you must have been in <a href="connect.html#debug">debug single step</a> to know that
+
+<p>
+&nbsp;&nbsp;did you look see if the next word is the value you want?
+
+<p>
+&nbsp;&nbsp;sometimes assembler decides you need a word of signs added on the front of an integer constant<br>
+&nbsp;&nbsp;whatever size in words it already is, because bit 23 isn't the same polarity as the sign of the value
+
+<p>
+&nbsp;&nbsp;like for example you have a flag bit in position 23
+
+<p>
+&nbsp;&nbsp;you need a size override on that literal so assembler doesn't force signs in front
+
+<pre	style="font-size:12pt">
+
+	la	(0800000:s)
+
+</pre>
+<h3>&nbsp; An almost Identical Cause of the same Kind of Problem</h3>
+
+&nbsp;&nbsp;are you asking another instruction frame to access your literal?
+
+<p>
+&nbsp;&nbsp;for example when you send a format string to printf, the string literal has to be in static
+
+<p>
+&nbsp;&nbsp;or anywhere except your B0 / B4  instruction frame or your B1 private data frame
+
+<p>
+&nbsp;&nbsp;code in another instruction frame can't address a parameter by reference in your instruction frame
+
+<p>
+&nbsp;&nbsp;Static is in $(3) and its literal pool tag is $3
+
+<pre	style="font-size:12pt">
+
+	printf	$3("%f":LF:0),,xi	total,,float
+
+</pre>
+</div>
+
 
 <p>
 If instructions + literals > 4096 words, literals need to be placed in front of instructions, not after

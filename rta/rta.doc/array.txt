@@ -2,9 +2,19 @@
 <h2>Single Instruction Multiple Data</h2>
 <pre>
 	<a style="color:#0000FF"><i>Repeat Execute feature in all RTA1 emulators
-	Stepping 14.02.2022 [ USA 02.14.2023 ]</i></a>
+	Stepping 01.01.2024 [ USA 01.01.2024 ]</i></a>
+
+<ol>
+	<li><a	href="#intro">Introduction</a></li>
+	<li><a	href="#stack_top">5 * Data Points computed at the Stack Top</a></li>
+	<li><a	href="#target">Single and Group Vectors inside the Frame</a></li>
+	<li><a	href="#fp192_bit">192-Bit Single-Instruction Floating Operations</a></li>
+</ol>
 
 </pre>
+<a	name="intro"/>
+<h2>1: Introduction</h2>
+
 <a href="rta.html#sim_d">Single Instruction Multiple DataPoint</a> is modelled as an instruction repeat paradigm in RTA1
 in order to be available with or without parallel hardware
 
@@ -14,39 +24,54 @@ See <a href="rta.html#rex">Repeat Execute instruction</a> and <a href="rta.html#
 
 <p>
 RTA1 SIMD uses an array of registers in the internal stack as accumulators
-for floating and integer math, boolean operations and shifts
-<pre>
-										<--------- internal stack root
-						_________________________
-						|	last object	|
-						|			|
+for floating and integer math, boolean operations and shifts with object sizes [ 1 2 4 8 ] words
+
+<p>
+These notes concern floating point with object sizes four or eight words
 
 
-						|	2nd object	|	
-						|_______________________|
-	_________________			|	1st object	|
-	| dest. cursor	|--------------------->	|_______________________|
-	|_______________|							<--------- internal stack top
+<pre	style="color:#0000FF;font-size:12pt">
+	
+								  <------------	low limit
+										register [ 24 ]
+
+            register_q	--------------> _________________________ <------------ internal stack top
+    accumulator vector			|	1st object	|		register [ sp ] 
+					|_______________________|
+					|	2nd object	|
+					|_______________________|
+					|			|
+
+					|_______________________|
+					|	last object	|
+					|_______________________|
+
+
+
+								  <------------	internal stack root
+										register [ --128  ]
 
 </pre>
-Destination cursor is by default initialised to the internal stack top and may instead point to another region of the internal stack
+Destination vector is initialised to the internal stack top and may point to a different internal stack register
 
 <p>
-At main program level SIMD can use all 104 internal stack registers which would contain 26 floating numbers, 52 long integers or 104 short integers
+At main program level SIMD can use all 104 internal stack registers which can contain 25+ * 96-bit floating numbers, 12+ * 192-bit floating numbers, 50+ long integers or 100+ integers
 
 <p>
-Loop-counting instructions and instructions updating the selection of destination register and source-2 data point are saved
+SIMD operation saves loop-counting instructions and instructions updating pointers
 
 <p>
 Multiple values may remain loaded in internal stack accumularos for successive operations
 
 
-<h2>Loadable Application Group array + 1off</h2>
-<p>
-This loadable suite of two applications demonstrating SIMD can be called from telnet
+<a	name="stack_top"/>
+<h2>2: &nbsp;&nbsp;&nbsp;5 * Data Points computed at the Stack Top</h2>
+
+<p> 
+An application named array loads source-1 operands with unrolled (not SIMD) quadword push instructions to the array of destination accummulators in the internal stack, and unrolled quadword pop instructions to write results to storage
 
 <p>
-One application is called array and uses standard quadword push instructions to load source-1 operands to the array of destination registers in the internal stack and standard quadword pop instructions top write results to storage
+Floating operations between load and store are <a href="rta.html#rex">Repeat Execute instruction</a> / SIMD
 
 <pre	style="color:#0000FF;font-size:12pt">
 
@@ -110,18 +135,49 @@ One application is called array and uses standard quadword push instructions to 
 	load><a style="color:#000000">@eof</a>
 
 </pre>
-The second application 1off demonstrates using the stack top as a <a href="rta.html#A2_2">second set of accumulators</a>
+
+<a	name="target"/>
+
+<h2>3: Single and Group Vectors inside the Frame</h2
+
+A second application 1off demonstrates using the stack top as a <a href="rta.html#A2_2">second set of accumulators</a>
 
 <p>
 1off also does a calculation in regular accumulators [ 4..7 ] then selects a destination inside the internal stack for a third calculation
 
 <p>
-Any registers in the internal stack can be selected for a operation on one or more objects (a VECTOR)  with macro SIMD_TARGET
+Any registers in the internal stack can be selected for a operation on one or more objects (a vector) with macro SIMD_TARGET
 
 <p>
 Parameters and dynamic variables are addressable by name as destination registers  
 
+<p>
+In this application named 1off an accumulator at <a style="color:#0000FF">stack top + 1 float</a>
+named <a style="color:#0000FF">another1</a> is source1 + destination
+
+
 <pre	style="color:#0000FF;font-size:12pt">
+
+	
+								  <------------	low limit
+										register [ 24 ]
+
+					_________________________ <------------ internal stack top
+					|	1st object	|		register [ sp ] 
+					|_______________________|
+	    register_q  -------------->	|	2nd object	|
+    accumulator vector			|_______________________|
+					|			|
+
+					|_______________________|
+					|	last object	|
+					|_______________________|
+
+
+
+								  <------------	internal stack root
+										register [ --128  ]
+
 
 	$ <a style="color:#000000">cat 1off.msm</a>
 		$list		0
@@ -178,67 +234,322 @@ Parameters and dynamic variables are addressable by name as destination register
 
 </pre>
 
-<h2>Construction Notes Loadable Application Group array + 1off</h2>
+<p>
+After operation repeat / SIMD parameters are always how <a style="color:#0000FF">SIMD_CONTROL</a> set them,
+for re-use without reconfiguration
 
-Directory contains files make_rel and loadfs
-<pre	style="font-size:12pt;color:#0000FF">
+<p>
+However temporary setting with macro <a style="color:#0000FF">SIMD_TARGET</a> lasts one operation (whether on one or many data points) and the <a style="color:#0000FF">SIMD_CONTROL</a> setting is restored
 
-	$ <a style="color:#000000">cat make_rel</a>
-	rels 1off array
 
-	$
-	
+<p>
+A second argument on SIMD_TARGET changes the vector group from default 1 object
+<pre	style="color:#0000FF;font-size:12pt">
 
-	$ <a style="color:#000000">cat loadfs</a>
-	volume embedded
-	file one_off_data 1off_lsegment
-	file array_data array_lsegment
-	tree application_templates
-	link 1off _launch_gate_stack_top G
-	link array _launch_gate_array G
-	.
-	.
-
-	$
-	
-</pre>
-
-Command amake arrays constructs load group arrays. Directory contains linking assembly arrays.msm
-
-<pre	style="font-size:12pt;color:#0000FF">
-
-	$ <a style="color:#000000">amake arrays</a>
-
-	$ <a style="color:#000000">cat arrays.msm</a>
-		$list		0
-		$path		../
-		$include	def/rta.def
-		$include	def/map1.def
-		$include	language/iframe.def
-		$include	fs/fs24.def
-		$include	image.app/imports.def
-		$path
-		$list
-
-	__BASE	$equ	ARRAY_LOADP
-
-	$(0:0)
-		$application	0:array	0:stack_top
-	stack_top
-		$include,$binary	1off.rel	$(0)
-	array	$include,$binary	array.rel	$(0)
-
-		$do	$<256,$(0:256)
-		$include,$binary	1off.rel	$(4)
-		$include,$binary	array.rel	$(4)
-
+	SIMD_TARGET	another1	HOW_MANY
 
 </pre>
 
-Inclusion clause in file system construction renames load group arrays as array in directory test (fsimages/baseload)
-<pre	style="font-size:12pt;color:#0000FF">
+<a	name="fp192_bit"/>
+<h2>4: 192-Bit Single-Instruction Floating Operations</h2>
 
-	file array target.rta/array.app/arrays
+192-bit floating computation has moved from library routines executing several instructions per 192-Bit operation to singleinstructions in SIMD, because SIMD happens in the internal stack, the simplest place to load operands eight data words in size
+
+<p>
+because there are a large number of operations in demonstration application clacq, the results are shown first and the instruction code afterwards
+
+<p>Here are the results which may be related to the instruction code 
+
+<pre	style="color:#0000FF;font-size:12pt">
+
+	load>array*clacq
+
++2.444444666666222222444444666666222222444445e+1100000
++3.666666999999333333666666999999333333666667e+1100000
++2.444444666666222222444444666666222222444445e+1100000
++1.222222333333111111222222333333111111222222e+1100000
++2.444444666666222222444444666666222222444445e+1100000
++1.222222333333111111222222333333111111222222e+1100000
++1.222222333333111111222222333333111111222222e+1100000
++4.888888444444888888444444888888444444888891e+1250000
++8.484848484848484848484848484848484848484866e-625000
++4.848484848484848484848484848484848484848486e+250000
++3.666666999999333333666666999999333333666666e+1250000
++3.666666999999333333666666999999333333666666e+1250000
+  +3.333333333333333333333333333333333333333333e+1
+  +2.857142857142857142857142857142857142857142e+1
+  +3.072e+1260000
+  +1.222222333333111111222222333333111111222222e+1250000
+  +3.072000000000000000000000000000000000000005e-1259997
+  +1.222222111111222222111111222222111111222222e+1250000
+  +4.040404040404040404040404040404040404040404e+1249999
+  +4.040404040404040404040404040404040404040409e-1250001
++3.072000000000000000000000000000000000000001e+630003
++1.222222111111222222111111222222111111222222e+1250000
++4.040404040404040404040404040404040404040404e+1249999
++4.040404040404040404040404040404040404040409e-1250001
++12.000
++1.400e+1
+-0.000
++2.764800
++1.222222333333111111222222333333111111222222e+950000
+	load>
+
+</pre>
+
+The last nine results are a single operation on four and then on five data points
+
+<p>
+Note that repeat execute instruction <a	href="rta.html#rex">rex</a> fires off all instructions in SIMD
+
+<p>
+In most cases shown <a href="rta.html#rex">rex</a> instruction is embedded in a subroutine call, because the call sequence gets the source-1 operands into the internal stack, which is also the SIMD accumulator stack
+
+<p>
+Note SIMD_CONTROL is the macro which defines how many objects * how large go in the internal stack
+
+<p>
+All application threads start as <a style="color:#0000FF">SIMD_CONTROL (-1, 0, 0, 0q)</a> which means any rex operation does one calculation to one single object of any size on the internal stack top
+
+<p>
+Some zeros in the parameter mean no operand address or accumulator vector needs updating
+
+<p>
+Final count -1 means initialise, and zero in third position means 0 + 1 operations
+
+<pre	style="color:#0000FF;font-size:12pt">
+
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	lib/144.def
+	$include	lib/ascii.def
+	$include	lib/octopop.def
+	$include	array.app/array.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+TRACHWEIT	$equ	1
+
+$(3:03000/$3)
+input1	major_minor	+1.222222333333111111222222333333111111222222e+1100000
+input2	major_minor	-1.222222333333111111222222333333111111222222e+1100000
+input4	major_minor	+3.666666999999333333666666999999333333666666e+1100000
+output1	$res		8
+output2	$res		8
+output3	$res		8
+mlpier1	major_minor	3.0e+150000
+dvisor1	major_minor	3.0e-150000
+recipro	$res		8
+compared $res		8
+two	major_minor	2.0
+
+GUID	$set		0479a22b58093bdf3bd90ba00
+EVIDENT	$res		8
+
+. SEED2	$equ		1*/71++0400000-72*/72
+SEED2	$equ		0c000931222b1f8e7d65d1181	. 03fff68e237da7aebaf5c1098
+
+$(4:*1/$4)
+	$lit
+
+$(0:*1)
+
+	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(clacq_data:d),,long
+
+accu	$equf	0, sp
+
+	on	fp$r			. switches 192-bit SIMD float
+	qpush	input1+4		. accumulator192 on stack top
+	qpush	input1
+	rex	(fa	input1)		. double input1
+	printf	$3("%Lf":LF:0),,xi	accu,,float192
+
+	on	fp$r
+	rex	(fa	input1)		. triple input
+
+	qpop	output1			. wanted later
+	qpop	output1+4
+	printf	$3("%Lf":LF:0),,xi	output1,,float192
+
+	on	fp$r
+	qpush	output1+4		. wanted now
+	qpush	output1
+	rex	(fa	input2)		. intput1 * 3 + input1
+	printf  $3("%Lf":LF:0),,xi     accu,,float192
+
+	on	fp$r
+	rex	(fa	input2)		. input1 * 3 + input2 * 2 = input1
+	qpop	a
+	qpop	8
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	on	fp$r			. edit will have blootered fp$r
+	qpush	output1+4
+	qpush	output1
+
+	rex	(fan	input1)		
+	printf  $3("%Lf":LF:0),,xi     accu,,float192
+
+	on	fp$r
+	rex	(fan	input1)
+	qpop	output2
+	qpop	output2+4
+
+	printf	$3("%Lf":LF:0),,xi	output2,,float192
+
+	ql	output1+4
+	qs	$residue
+	ql	output1
+	c	(fp192_add_negative)	input1,,i
+	c	(fp192_add_negative)	input1,,i
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	on	fp$r
+	octopush	(major_minor	+1.222222111111222222111111222222111111222222e+1000000)
+	rex	(fm	(major_minor	4.0e250000))
+	octopop	a
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	on	fp$r
+	octopush	(major_minor	+4.040404040404040404040404040404040404040409e-1250001)
+	rex	(fm	(major_minor	21.0e625000))
+	octopop	a
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	on	fp$r
+	octopush	(major_minor	+4.040404040404040404040404040404040404040404e+1249999)
+	rex	(fm	(major_minor	12.0e-1000000))
+	octopop	a
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	qpush	input1+4
+	qpush	input1
+	on	fp$r
+	rex	(fm	(major_minor	3.0e+150000))
+	qpop	a
+	qpop	8
+
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	ql	input1+4
+	qs	$residue
+	ql	input1
+	c	(fp192_multiply)	$3(major_minor	3.0e+150000),,xi
+
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+
+	lc	fdsim	(major_minor	20.0),,xi	(major_minor	0.6),,xi
+
+	lc	fdsim	(major_minor 20.0),,xi	(major_minor 0.7),,xi
+
+	lc	fdsim	(major_minor 9216.0*+630000-3),,xi	(major_minor 3.0e-630000),,xi
+
+	lc	fdsim	input4,,xi	(major_minor 3.0e-150000),,xi
+
+	lc	fdsim	(major_minor    9216.0),,xi	(major_minor 3.0e+1260000),,xi
+
+	lc	fdsim	(major_minor 4.888888444444888888444444888888444444888888e1000000),,xi	;
+			(major_minor 4.0e-250000),,xi
+
+	lc	fdsim	(major_minor 4.848484848484848484848484848484848484848484e250000),,xi	;
+			(major_minor 12.0e-1000000),,xi
+
+	lc	fdsim	(major_minor 8.484848484848484848484848484848484848484848e-625000),,xi	;
+			(major_minor 21.0e625000),,xi
+
+	octopush	(major_minor 8.484848484848484848484848484848484848484848e-625000)
+	octopush	(major_minor 4.848484848484848484848484848484848484848484e250000)
+	octopush	(major_minor 4.888888444444888888444444888888444444888888e1000000)
+	octopush	(major_minor    9216.0)
+
+$(4)
+table2		major_minor	0.6
+		major_minor	0.7
+		major_minor	1.04
+		major_minor	3.0e-630000
+		major_minor	0.333333333333333333333333333333333333333333333333e-150000
+
+table1		major_minor	3.0e-630000
+		major_minor	4.0e-250000
+		major_minor	12.0e-1000000
+		major_minor	21.0e625000
+
+$(0)
+	lx	table1,,xi
+	SIMD_CONTROL	(-1, 8, 4-1, 8q)	. accu + 8w, restart count 4, x += 8
+	on		fp$r
+	rex		(fd	0, x)		. postindex indirect
+
+getacc	octopop	a
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+	lx	sp
+	lr	128,,xi
+	jxl	getacc
+
+	octopush	input4
+	octopush	(major_minor 9216.0e629996)
+	octopush	(1.0e1262611)
+	octopush	(major_minor	20.0)
+	octopush	(major_minor	20.0)
+
+	lx	table2,,xi
+	SIMD_CONTROL	(-1, 8, 5-1, 8q)
+	on	fp$r
+	rex	(fm	0, x)
+	ii	FP_XPO$FLAG
+	lcal	island_coda
+	SIMD_CONTROL	(-1, 0, 0, 0q)		. reset SIMD defaults
+	
+getaccu	octopop	a
+	printf	$3("%Lf":LF:0),,xi	a,,float192
+	lx	sp
+	lr	128,,xi
+	jxl	getaccu	
+
+	ii	EXIT$
+
+	fret	0
+
+island_coda		. exponent outflow. ISR stopped SIMD repeats
+			. without updating accumulator cursor / operand index register
+			. both were left pointing at operands of failed operation
+
+			. if you want to do stuff like printf
+			. save any index register used in the SIMD -> target instruction
+
+	ax	WDATA	. increment you must know which index register
+	push	RDATA	. advance accumulator cursor
+	popA	q	. 
+
+	dec	RDATAC	. outstanding count relative zero
+	tp	RDATAC	. if this transitions RDATAC to -1
+	lret	0	. it means fault was on last in list
+	lret	-3	. otherwise restart SIMD operation
+
+
+fdsim	$head_near	 params(dividendp,	int		;
+				divisorp,	int	)	;
+								;
+			scalars(d_vidend,	float192,	*dividendp)
+
+quotient_r	$equf	d_vidend
+
+	on	fp$r
+	lx	divisorp
+	rex	(fd	0, x)
+
+	printf	$3("  %Lf":LF:0),,xi	quotient_r,,float192
+
+	qpop	a
+	qpop	8
+	lret	0
 
 </pre>
 </div>
