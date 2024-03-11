@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h>
+#include <sys/ipc.h>
 #include <sys/shm.h>
 #include <pthread.h>
 #include <errno.h>
@@ -511,12 +513,12 @@ int main(int argc, char *argv[])
 		trunk to be assigned here
          ******************************************************/
 
-	 blocks = container_key & 65535;
-         mhandle = shmget(container_key, blocks << 19, IPC_CREAT);
+	 blocks = (container_key & 65535) << 19;
+         mhandle = shmget(container_key, blocks, IPC_CREAT);
 
          if (mhandle < 0)
          {
-            printf("assignment failed trunk %x\n", container_key);
+            printf("assignment failed trunk %x : %x\n", container_key, blocks);
             printf("E %d\n", errno);
             return 0;
          }
