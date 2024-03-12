@@ -76,12 +76,21 @@ extern smp		 core[];
 
 extern device		 devices[];
 
+static void broadcast_trunk(int device_id, int block);
+
 void netbank()
 {
    static int		 trunk_key = 'aaaa';
 
    mm_netbuffer		*dpointer;
    int			 scope; 
+
+   struct shmid_ds	 info;
+
+   int			 sense,
+			 bytes,
+			 blocks,
+			 block;
 
    #ifdef SIGALERT
    int		*wrpid;
@@ -121,6 +130,35 @@ void netbank()
       printf("runL first\n");
       printf("code %d\n", errno);
       exit(0);
+   }
+
+   sense = shmctl(mhandle, IPC_STAT, &info);
+
+   if (sense < 0)
+   {
+      printf("trunk descriptor readout fail\n");
+      exit(0);
+   }
+
+   bytes = info.shm_segsz;
+   blocks = bytes >> 19;
+   block = blocks - 1;
+   printf("network trunk %d blocks\n", blocks);
+
+   if (block)
+   {
+      /***********************************************************
+         and if not the default setting 400000 is just fine
+      ***********************************************************/
+
+      if (block < 0)
+      {
+         printf("trunk size not operative\n");
+         exit(0);
+      }
+
+      broadcast_trunk(2, block);
+      /* core[0].BASE[128 + 2] = DATA16_FLAG | block; */
    }
 
    dpointer = (mm_netbuffer *) (void *) shmat(mhandle, NULL, 0);

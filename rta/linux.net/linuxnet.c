@@ -34,6 +34,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include <sys/ipc.h>
 #include <sys/shm.h>
 #include <pthread.h>
 

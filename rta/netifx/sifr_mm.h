@@ -43,7 +43,15 @@
 
 
 #define DEVICE_PAGE     2048
-#define DEVICE_PAGES    256
+
+#ifdef	IFT2_16B
+#define	DEVICE_PAGES	4096	/* I/F type 2, 16 banks	*/
+#elif	defined(IFT2_4B)
+#define	DEVICE_PAGES	1024	/* I/F type 2, 4 banks	*/
+#else
+#define DEVICE_PAGES    256	/* I/F type 1, 1 bank	*/
+#endif
+
 #define	DEVICE_COMPARTMENTS 2
 
 #define	CONTAINER_PAGES	256*8
