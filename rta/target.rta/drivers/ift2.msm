@@ -112,7 +112,8 @@ tx_space1?
 tx_data1?
 	lcal	readifq			. anything on default output queue?
 	jza	tx_data2?		. separate descriptor from queue
-	push	a			. before dualport_write clears frame-gather microstac
+
+	push	a
 
 	lcal	txq_ift1_oframe
 	lcal	update_tx_cursor	
@@ -128,11 +129,10 @@ tx_data1?
 
 	j	tx_space1?
 
-tx_data2?
-	$if	1
-
-	lcal	rqtxL
-	jza	txz
+tx_data2?				. there is always a free interface slot
+					. when arriving here
+	lcal	rqtxL			. dequeue a TX frame
+	jza	txz			. if there are any
 	push	a
 	lcal	txq_ift1_oframe
 	lcal	update_tx_cursor
@@ -146,8 +146,8 @@ tx_data2?
 	pop	x
 
 tx_space2?
-	tz	networkframe:flag, fp
-	j	txz
+	tz	networkframe:flag, fp	. is the next I/F slot free?
+	j	txz			. no
 
 	$if	THRESHOLD_QUANTUM_MS_IFT2
 	lcal	if2media?
@@ -155,63 +155,6 @@ tx_space2?
 	$endif
 
 	j	tx_data2?
-
-	$else
-
-	la	this_if:portP
-	jza	txz
-tx_block
-
-	sabr	BSOCKET
-	ly	(BSOCKET*/12++tlist:connection_block(1):q4ack:head)
-
-tx_data2_on_q?
-	la	xmit_list:head
-	jza	tx_next_transmissions_block
-
-	lb	descriptor:ifql, a	. separate descriptor from queue
-	sb	xmit_list:head		. before dualport_write clears frame_gather microstac
-
-	dpush	y			. [ y : a ]
-	lcal	txq_ift1_oframe
-	lcal	update_tx_cursor
-	dpop	y			. [ y . a ]
-
-	tp	descriptor:bytes, a	. upper protocol decides when to drop
-
-	j	tx_space2?
-
-	dpush	x
-	lx	*(BSOCKET*/12++tlist:txbu_p)
-	call	(if_sell1)
-	dpop	x
-
-
-tx_space2?
-	$if	0
-	lcal	if2media?		. is it also within safe demands on volume?
-	j	txz			. no
-	$endif
-
-	tz	networkframe:flag, fp	. can you practically?
-	j	txz			. no
-
-	$if	THRESHOLD_QUANTUM_MS_IFT2
-	lcal	if2media?		. is it also within safe traffic volume?
-	j	txz			. no
-	$endif
-		
-	j	tx_data2_on_q?		. is there any to send?
-
-tx_next_transmissions_block
-	
-	la	*(BSOCKET*/12++tlist:txchain)	. chain next
-	sa	this_if:portP			. is chain head
-	z	*(BSOCKET*/12++tlist:txchain)	. mark out of chain
-	jnza	tx_block
-	z	this_if:portQ			. mark there is no last
-
-	$endif
 
 txz	fret	0				. because that's used to test
 						. if already in chain

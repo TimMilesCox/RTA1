@@ -156,14 +156,14 @@ txq_ift1_relay
 	sb	fp
 
 txq_ift1_otraffic?		
-	tz	networkframe:flag, fp	. interface buffer available
+	tz	networkframe:flag, fp	. assure an interface slot
 	j	txq_next_interface	. not yet, next device array
 
 
-	lcal	readifq			. frames in this queue are in
-	jza	txq_next_queue		. default socket buffer pool
+	lcal	readifq			. dequeue a TX frame
+	jza	txq_next_queue		. from default socket buffer pool
 	push	a			. completely detach descriptor from queue before
-					. dualport_write clears frame-gather microstac
+
 	lcal	txq_ift1_oframe
 	lcal	txq_ift1_next_frame
 
@@ -179,13 +179,12 @@ txq_ift1_otraffic?
 
 	j	txq_ift1_otraffic?
 
-txq_next_queue
-
+txq_next_queue				. always an interface slot
+					. free when arriving here
 	$if	HVSOCKET
 
-	$if	1
-	lcal	rqtxL
-	jza	txq_next_interface
+	lcal	rqtxL			. dequeue a TX frame
+	jza	txq_next_interface	. if there is one
 	push	a
 	lcal	txq_ift1_oframe
 	lcal	txq_ift1_next_frame
@@ -198,53 +197,12 @@ txq_next_queue
 	pop	x
 
 txq_next_if_space?
-	tz	networkframe:flag, fp
-	j	txq_next_interface
-	j	txq_next_queue
+	tz	networkframe:flag, fp	. is another interface slot free?
+	j	txq_next_interface	. if not
+	j	txq_next_queue		. but if so dequeue another TX frame
 
-	$else
+	$endif	. HVSOCKET
 
-	la	this_if:portP		. large connections table output chain head
-	jza	txq_next_interface
-
-txq_block
-	sabr	BSOCKET
-	ly	(BSOCKET*/12++tlist:connection_block(1)+transmission:q4ack)
-
-txq_next_frame?
-	la	xmit_list.head
-	jza	txq_no_waiting_frames
-
-	lb	descriptor:ifql, a	. completely separated from queue before
-	sb	xmit_list.head		. dualport_write clears frame-gather microstac
-
-	dpush	y			. [ y : a ]
-	lcal	txq_ift1_oframe		. 1st time thru there is an I/F trunk buffer
-	lcal	txq_ift1_next_frame
-	dpop	y			. [ y . a ]
-
-	tp	descriptor:bytes, a	. TCP only so far
-	j	txq_ift1_next_frame_slot?
-
-	dpush	x			. but let's plan ahead
-	lx	*(BSOCKET*/12++tlist:txbu_p)
-	call	(if_sell1)
-	dpop	x
-
-txq_ift1_next_frame_slot?
-	tz	networkframe:flag, fp
-	j	txq_next_interface
-
-	j	txq_next_frame?
-
-txq_no_waiting_frames
-	la	*(BSOCKET*/12++tlist:txchain)	. next connections buffer
-	z	*(BSOCKET*/12++tlist:txchain)	. out of chain
-	sa	this_if:portP			. next = new chain head
-	jnza	txq_block			. if there is any
-	z	this_if:portQ			. there is no last because that is
-	$endif					. a test of being already in the chain
-	$endif
 txq_next_interface
 
 	fret	0
@@ -254,16 +212,12 @@ mplex_tx				. just in case
 
 
 txq_ift1_oframe
-	$if	0
-	push	x			. save interface pointer a moment
-	lx, i	networkframe:frame, fp	. point x to frame buffer after control header
-	$endif
 				
 	lb	descriptor:i_f, a	. translate RTA  interface number to osserv interface number
 
 	ab	-2,,xi			. xlate RTA1 i_f:id to trunk i_f:i_d in frame descriptor
 	jpb	txq_ift1_oframe_ahead	. ift2 sometimes loses this id. mark it for repeat route / send
-	$do	0,	ii	GUARD$
+	$do	1,	ii	GUARD$
 	lb	descriptor:frame, a	. mark it transmitted
 	z	nframe:stack_index, b	. so it may be retransmitted
 	lret	1			. skip call to update interface buffer pointer
@@ -284,23 +238,6 @@ txq_ift1_oframe_ahead
 	call	(if_dualport_txwrite)
 	pop	x				. retrieve  interface pointer
 
-	$if	0
-	lb	networkframe:protocol, fp
-	ab	-0800,,xi
-	jnzb	not_ip
-
-        push    networkframe:frame, fp, i
-        push    this_if:llhl
-        off     carry$
-        src     0, sp
-        popA    1, sp
-
-	c	(__recheck)	0, sp
-	inc	sp
-not_ip
-
-	$endif
-
 	push	TX_DATAGRAML		. release interface buffer for transmission
 	pop	networkframe:frame_length, fp
 	push	(008000)
@@ -311,23 +248,6 @@ not_ip
 
 txq_ift1_2x
 	lret	0
-
-	$if	0
-txq_oframe_bypass
-	pop	x			. inelegant but safe. ift2 frame has lost target i_f id
-	z	nframe:stack_index, a	. clear xmit staclet = qualify it for repeat route + retransmit if tcp
-					. calling routine already decoupled it from I / F queue
-					. note it is no use copying i_f:id from interface structure
-					. in ift1 that is always logical interface 2
-					. multiplexing all attached physical interfaces. For emulated RTA1
-					. copying i_f(2) identity indicates platform loopback to the trunk
-	$do	0,	ii	GUARD$	. change the 0 to 1 to get a diagnostic halt
-	push	-1,,xi
-	popA	this_if:outdrops+1	. log it to i_f(2) because interface identity is the problem
-	jnc	$+2			. unless this->i_f is pointing to the logical ift2 interface
-	inc	this_if:outdrops	. where this frame is intended, which is even better
-	lret	0
-	$endif
 
 txq_ift1_next_frame
 	lb, xi	IFT1_TPAGEW
@@ -365,79 +285,4 @@ start_ift1
 
 .	it's the only time a CONFIGURATION_PROTOCOL frame is output
 .	so it doesn't need much detail
-
-p	$proc
-restart_frame* $name
-	qs	1, x
-	sk	0, x
-	ax	0400,,xi
-	$end
-
-restart_xrelay_interface
-	inA	66				. kernel vector list
-	jza	restart_emergency		. system is not configured
-	jna	restart_emergency		. or has got deconfigured
-
-restart_from_configuration			. system appears to be configured
-						. soft restart attempt
-	on	see$2				. IP vector list
-	la	VECTOR_B1(1)			. IP B1 1st frame
-	outA	1
-	off	see$1				. make sure 1 and not 65
-	lx	01002				. ifxpointer(2)
-
-	dl	this_if:ift1:base_tx, x		. pick up the network trunk position
-						. and send restart requests from there
-restart_xrelay
-	jnza	restart_base_configured
-	la	(0400002)			. must be before interface configuration
-
-restart_base_configured
-	sabr	32				. this is already interrupt code
-	lx	b_x				. interrupt code, remember?
-
-	ql	(0, 0, 0, IFCONFIG:q)
-	lk	(008000)
-
-	lr	5,,xi
-	sr	8+128				. scratch register counter
-	lr	(33*/18s)
-	j	restart_frame_xmit
-
-restart_bank
-	lx	(32*/18++131072s)
-restart_frame_xmit
-	jxge	restart_bank
-	restart_frame
-	
-	dec	8+128
-	tz	8+128
-	j	restart_frame_xmit
-	
-	fret	0
-
-
-restart_emergency				. trouble before initialisation
-	la	(0400002)			. but we know really anyway
-	sabr	32
-	lx	(32*/18++131072s)
-	ql	(0, 0, 0, IFCONFIG:q)
-	lk	(008000)
-
-	lr	5-1,,xi
-
-restart_base_frame				. pump out some reconfigure frames
-	restart_frame				. at the start location of network trunk
-	jdr	restart_base_frame
-
-.	having done that it's likely the startup fault will fault again on restart
-.	so try to pull an intervention interface up in single step (LOCKSTEP)
-
-.	if that isn't featured do a 5-second processor sleep
-
-	dl	(CHILLDOWN++LOCKSTEP, 5000000d)
-	outB	chill$down
-	outA	INDICATION$
-
-	fret	0
 

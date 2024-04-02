@@ -759,28 +759,14 @@ memory_write4:					; store system memory 4 words
 	%endif
 
 memoreg_writeback:
-	%if	1
 	and	rdi, rdi
 	jnz	memory_direct
 	and	eax, 00FFFFFFh			; unchanged esi -> core.REGISTER	
-	mov	[rsi+rbx*4+REGISTER], eax	; platform endian
+	mov	[rsi+REGISTER+rbx*4], eax	; platform endian
 						; register writeback index ebx ->
 	ret
-	%else
 
-
-	test	ebx, -256			; save EA is ?
-	jnz	memory_direct			; a memory device
-	xchg	eax, ebx			; a register
-	and	ebx, 00FFFFFFh
-	jmp	_operand_write_register		; esi -> core.REGISTER
-
-;	if not a register rewrite
-;	n inc dec src slc sim popA
-;	write RTA memory at its saved platform address
-	%endif
-
-memory_direct:					; esi <- memory_offset
+memory_direct:
 	%if	__MOVBE
 	movbe	dword ptr [rdi+rsi*4], eax
 	%else
@@ -840,6 +826,7 @@ register_read_for_write:			; unchanged esi -> core.REGISTER
 ;	modify instructions do not lock memory between read and rewrite
 
 memory_read_lock:
+
 	call	memory_lock
 	%if	__MOVBE
 	movbe	eax, dword ptr [rdi+rsi*4]
@@ -861,16 +848,16 @@ memory_read_lock:
 memory_lock:					; point for update
 						; barred below RAM boundary as write is
 	call	base_write_pointer		; resolve device:block:offset from EA
-						; edi <- core.REGISTERS <- esi
+						; edi <- saved EA not used here
 						; eax <- memory block index
 						; esi <- memory word offset
 	movq	rdi, mm7
 ;	mov	rdi, qword ptr [rbp+CORE_INDEX1]
 
-	test	eax, 00400000h			; update block name is a big bank ?
+	test	eax, 00C00000h			; update block name is a big bank ?
 	jz	memory_lock_page		; no
 
-	and	eax, 003FFFFFh			; 64-bit shift won't rub off 00400000 bit
+;	and	eax, 003FFFFFh			; 64-bit shift won't rub off 00400000 bit
 						; on shift to page size
 
 	test	eax, 63				; a device outside executable space ?
@@ -890,16 +877,17 @@ memory_lock_page:
 ;	identify a platform read address of an RTA memory word
 
 memory_point:
-	call	base_read_pointer		; edi <- core.REGISTERS <- esi
+	call	base_read_pointer		; edi <- saved EA not used here
 						; esi <- word offset in memory block
-	test	eax, 00400000h			; eax <- page index
+	test	eax, 00C00000h			; eax <- page index
 	jz	_xspace_read4K
 
-	and	eax, 003FFFFFh			; 64-bit shift won't rub off 00400000 bit
+;	and	eax, 003FFFFFh			; 64-bit shift won't rub off 00400000 bit
 						; on shift to page size
 	test	eax, 63
-	jz	_xspace_read
-	jmp	_yspace_read			; ie a device either appropriate or not
+	jnz	_yspace_read			; device correct type or not
+	and	eax, 003FFFFFh
+	jmp	_xspace_read			; 262144-wprd page of system memory
 
 _xspace_read4K:
 	test	esi, 003F000h
@@ -912,32 +900,43 @@ _xspace_read:					; must be a read in a sysmem-like device
 	jmp	_memory_deliver			; device array zero
 
 _yspace_read:
-	test	eax, 00800000h			; a tripsy non-space?
+	test	eax, 00800000h			; a tripsy non-device?
 	jnz	_zspace_read			; not allowed
 
-	mov	rdi, rax
-	and	rdi, 63
-	mov	edi, dword ptr [rsi+IO_PORT+_DEVICE+rdi*4]
-	test	edi, SYSMEM_FLAG		; _DEVICE are 32-bit descriptors
+	shl	rax, 2
+	movzx	rbx, al				; rbx <- device bits * 4
+;	and	bl, 63
+	movq	rdi, mm7			; read out device descriptor
+	mov	ebx, dword ptr [rdi+IO_PORT+_DEVICE+rbx]
+
+	test	ebx, SYSMEM_FLAG		; must be	800000 sysmem	aligned array
 	jz	_zspace_read
-	test	edi, DATA16_FLAG
-	jnz	_zspace_read
+	test	ebx, DATA16_FLAG		; may not be	C00000 filestore packed array
+	jnz	_zspace_read			; may not be	400000 16-bit	network trunk
 
-	shl	eax, 2				; al = 4 * device index
-	movzx	rdi, al
-
-	mov	rdi, qword ptr [_devices+rdi*2]	; _devices are 64-bit pointers
-	xor	al, al				; necessary to lose the device bits now
+;	shl	rax, 2				; al = 4 * device index
+	movzx	rbx, al				; rbx = device bits * 4
+						; *2 gives *8
+	mov	rdi, qword ptr [_devices+rbx*2]	; _devices are 64-bit pointers
+;	xor	al, al				; necessary to lose the device bits now
 	shr	eax, 2				; eax = bank * 64 = page in 28 bits
+
+	and	eax, 003FFFC0h			; loose 400000 bit and device bits
+
 _memory_deliver:
 	shl	rax, 12				; multiply by page
 	add	rsi, rax			; bit 00400000 aleady removed
-
+						; end of memory_point memory_lock
+	%if	0
 	%if	__SMP
+	mov	eax, dword ptr [rdi+rsi*4]
+	bswap	eax
 	%else
-	mov	eax, dword ptr [edi+esi*4]
+	mov	eax, dword ptr [rdi+rsi*4]
 	bswap	eax
 	%endif
+	%endif
+
 	ret
 
 _zspace_read:

@@ -54,6 +54,7 @@ See also the licensing notice at the foot of this document
 		<li><a href="#snmp">SNMP Agent</a></li>
 		<li><a href="#telnet">Telnet Server</a></li>
 		<li><a href="#loader">ROM and Loadable Applications</a></li>
+		<li><a href="#viewer_app">Local and Remote File Viewer</a></li>
 	</ol>
 </ol>
 <ul	style="list-style-type:none">
@@ -543,8 +544,45 @@ as distinct from the traditional display of the primary address of the interface
 <a	name="route"/>
 <h3>5: Routing to RTA1</h3>
 
-A host communicating with RTA1 emulated on a different host must set direct routes onto Ethernet and / or Wifi<br>
+A host communicating with RTA1 emulated on a different host must set net routes onto Ethernet and / or Wifi<br>
 Script rta/client/rundum does this
+
+rundum is run from <a href="#client">client/prun</a> which must be run at start of platform runlife before PC programs can talk to an emulated RTA1 172.29.7.7 on the platform and any others around the network
+
+<p>
+If you aren't starting an RTA1 emulator on the platform but want to talk to some RTA1s on other platforms you can do ./rundum instead of ./prun
+<pre	style="font-size:11pt;color:0000FF">
+
+	$ cd rta/client
+	$ ./rundum
+
+</pre>
+
+<a	name="exponet"/>
+<div	style="font-size:18pt;color:#FF0000;
+	border-radius:10pt;border-style:solid;border-width:1px;margin-left:40pt;margin-right:40pt">
+<h3>&nbsp; My Platform is attached with One Interface not Two</h3>
+
+&nbsp;&nbsp;rundum splits the population of of RTA1 interfaced on your home net between wired ethernet and WiFi
+
+<p>
+&nbsp;&nbsp;If only one platform platform interface is attached you only need one route to your RTA1s
+
+<p>
+&nbsp;&nbsp;Your network box works hard to keep it looking like that
+
+<p>
+&nbsp;&nbsp;Equate NETWORK to an interface label in one of <a style="color:#000000">$YOU/.rta_net | .bash_profile | .bashrc</a>
+
+<pre	style="font-size:12pt;color:#000000">
+
+	export	NETWORK=en0	# macOS
+
+	export	NETWORK=eth0	# Linux
+
+</pre>
+</div>
+
 
 <pre    style="font-size:11pt;color:0000FF">
 
@@ -560,8 +598,15 @@ Script rta/client/rundum does this
 	GW=-iface	# OSX
 	fi
 
-	sudo route -nv add -net 172.29.7.0/26	$GW $ENET
-	sudo route -nv add -net 172.29.7.64/26	$GW $WIFI
+	if	[ "$NETWORK" = "" ]
+	then
+		echo	routes $ENET $WIFI
+		sudo route -nv add -net 172.29.7.0/26	$GW $ENET
+		sudo route -nv add -net 172.29.7.0/24	$GW $WIFI
+	else
+		echo	all routes $NETWORK
+		sudo route -nv add -net 172.16.0.0/12 $GW $NETWORK
+	fi
 
 	$
 
@@ -727,6 +772,99 @@ The network trunk process is a Berkeley Packet Filter application connecting RTA
 							<a style="color:FF0000"># can be stopped with command .</a><a style="background-color:#00FF00">CR</a>
 							<a style="color:FF0000"># entered twice</a>
 </pre>
+
+<a	name="ramifi"/>
+
+<div	style="font-size:18pt;color:#FF0000;
+	border-radius:10pt;border-style:solid;border-width:1px;margin-left:40pt;margin-right:40pt">
+<h3>&nbsp; Tips for Changing the Capacity of Network Trunks</h3>
+
+&nbsp;&nbsp;Shared memory is governed by parameters called <an style="color:#000000">kern.sysv</a>
+
+<p>
+&nbsp;&nbsp;Let's look
+
+<pre	style="font-size:12pt">
+
+	$ sysctl kern.sysv<a	style="color:#000000">
+	kern.sysv.shmmax: 4194304</a><a	style="color:#00FF00">
+	kern.sysv.shmmin: 1
+	kern.sysv.shmmni: 32
+	kern.sysv.shmseg: 8</a><a style="color:#000000">
+	kern.sysv.shmall: 1024</a>
+
+	$
+
+</pre>
+&nbsp;&nbsp;Platform depending <a style="color:#000000">shmall</a> is either total pages (macOSX) or total octets (Linux)<br>
+&nbsp;&nbsp;which may be shared between platform processes. These settings are in <a style="color:#000000">/etc/sysctl.conf</a><br>
+
+<p>
+&nbsp;&nbsp;Systems do not invariably action <a style="color:#000000">/etc/sysctl.conf</a>. See <a href="#manual_set">Manual Setting</a>
+
+<p>
+&nbsp;&nbsp;<a style="color:#000000">shmmax</a> is the largest shared  segment allowed
+
+<p>
+&nbsp;&nbsp;It may be important to see what shared memory segments you have
+<pre	style="font-size:12pt">
+
+
+	$ ipcs -m<a	style="color:#000000">
+
+	T     ID     KEY        MODE       OWNER    GROUP
+	Shared Memory:
+	m  65536 0x61616161 -----------     root    wheel
+	m  65537 0x70700004 -----------     root    wheel
+	m  65538 0x6161617a -----------     root    wheel</a>
+
+	$
+
+</pre>
+&nbsp;&nbsp;Sizes are not shown but out of the allowable 1024 pages we are using 1280
+
+<p>
+&nbsp;&nbsp;Restarting and resizing involves removing segments
+
+<p>
+&nbsp;&nbsp;The first number is a handle and the second a key
+<pre	style="font-size:12pt">
+
+	$ ipcrm	-m handle
+
+		<a	style="color:#000000;font-size:16pt">or</a>
+
+	$ ipcrm -M key
+
+</pre>
+&nbsp;&nbsp;Alternatively boot the platform
+
+<a	name="manual_set"/>
+<h3>&nbsp; Manual Setting Shared Memory</h3>
+&nbsp;&nbsp;Command for new shared memory settings is for example
+
+<pre	style="font-size:12pt">
+
+	$ sudo sysctl -w kern.sysv.shmmax=33554432 kern.sysv.shmall=8192
+
+</pre>
+
+&nbsp;&nbsp;If network trunk is started with <a style="color:#000000">{ linux.net | linuxnet.x64 | portal[.x64] }/runL</a><br>
+&nbsp;&nbsp;a platform block of 512K bytes is in RTA1 address space<br>
+&nbsp;&nbsp;as one 256K-word bank reading out 8 zero bits and 16 data bits per RTA1 word
+
+<p>
+&nbsp;&nbsp;alternative scripts <a style="color:#000000">4runL 16runL</a> are for 2 Mbytes or 8 Mbytes (4 or 16 blocks)
+
+<p>
+&nbsp;&nbsp;The default half-megabyte runL has transient receive capacity above most access needs<br>
+&nbsp;&nbsp;and supports thousands+ TCP connections testing at speed from networked PCs
+
+<p>
+&nbsp;&nbsp;Large trunks are used effectively between two emulated RTA1s on one platform<br>
+&nbsp;&nbsp;testing millions+ connections traffic
+
+</div>
 
 <a	name="emu"/>
 <h4>6.3: RTA1 Emulators and Run Flags</h4>
@@ -1025,6 +1163,9 @@ See <a href="#apps">7: Applications in the Download RTA1 Target System Image</a>
 <a      name="debug"/>
 <h3>7: Debug Console</h3>
 
+Debug is the platform startup shell which runs RTA1 emulator in rta/tgen.smp
+
+<p>
 Entering letter s plus return while the emulator is running or starting the emulator with -s flag produces the single step debug console
 
 <p>
@@ -1316,7 +1457,7 @@ algorithm engine
 
 </div></a>
 
-<a	href="program.html#programs1">
+<a	href="#viewer_app">
 <div	style="right:480pt;top:480pt;position:absolute;background-color:#FF0000;color:#FFFFFF;width:100pt;height:60pt;border-radius:5px;text-decoration:none">
 
     file viewer
@@ -1743,6 +1884,34 @@ See also <a href="program.html">Constructing Applications: Embedded System Model
 </pre>
 </a>
 
+<a	name="viewer_app"/>
+<h4>8.9: Local and Remote File Viewer</h4>
+
+view is a ROM-embedded applcation present in all system images
+
+<p>
+view browses RTA1-local and remote files in dump format
+
+<p>
+point of view is changed by entering a file offset word number 1234<sub>10</sub> or 012a4<sub>16</sub>
+
+<pre	style="font-size:11pt;color:#0000FF">
+
+	r <a style="color:#FF0000">view</a> /local/constructs/construct15
+
+	<a style="color:#FF0000;font-size:14pt">.</a>
+
+	r <a style="color:#FF0000">load</a> components@remote_platform
+
+	<a style="color:#FF0000;font-size:14pt">.</a>
+
+</pre>
+
+view is ended with with command <a style="color:#FF0000;font-size:20pt">.</a> (fullstop / period)
+
+<p>
+names like remote_platform are built are in loadable lookup application <a href="kernel.html#fs_nfs">dialplan</a>
+
 
 <a	name="suse"/>
 <h3>Appendix A: Installing openSUSE Linux</h3>
@@ -1910,7 +2079,13 @@ outputs from RAM file system initialisation in the benchmark outputs.
 readout utility allows selective walk and display of RTA1 system memory pages of 4096 or 262144 words
 
 <p>
-readout does not display NVRAM or filestore arrays
+readout application oes not display NVRAM, network trunks or filestore arrays
+
+<p>
+Data files (and remote files) can be browsed in dump format with embedded <a href="#viewer_app">view application</a>
+
+<p>
+Network trunks and RTA1-local filestores can be examined structurally with <a href="#debug">debug console</a> in RTA1 machine single step, which is not networked. Debug is the platform startup shell in rta/tgen.smp
 
 <p>
 I / O Port 124 <a href="rta.html#iomem">ram$boundary</a> contains the lowest RAM Page Index which is also the lower limit of readout in Device Zero (executable space)
@@ -2097,13 +2272,15 @@ The call operand constant at 0005e0<sub>16</sub> is indirect pointer 803058<sub>
 	<li><a	href="kernel.html#tiperary" style="color:#FFFFFF;text-decoration:none">Tip about Teraword Array Calls</a></li>
 	<li><a	href="scripts.html#lit_hidden" style="color:#FFFFFF;text-decoration:none">Reference to Literal Constant reads out wrong</a></li>
 </ul>
-<a	name="tips_running/">
+<a	name="tips_running"/>
 <h3>D.3b: Tips for overcoming Operating Problems</h3>
 <ul	type="square">
 	<li><a	href="#ORZ" style="color:#FFFFFF;text-decoration:none">Tip about Restarting an Emulator and Network Trunk</a></li>
 	<li><a	href="8million.html#fine_ram" style="color:#FFFFFF;text-decoration:none">Tip about Running an Emulator on Slender Memory</a></li>
+	<li><a  href="#ramifi" style="color:#FFFFFF;text-decoration:none">Tips for Changing the Capacity of Network Trunks</a></li>
+	<li><a	href="#exponet" style="color:#FFFFFF;text-decoration:none">My Platform is attached with One Interface not Two</a></li>
 </ul>
-</div
+</div>
 
 <a	name="emu_trad">
 <h3>Appendix E: Available Previous Emulators</h3>

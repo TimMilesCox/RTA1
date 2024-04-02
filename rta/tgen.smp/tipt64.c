@@ -50,7 +50,7 @@ static step_second32		 step_second;
 
 static unsigned int		 clockr[2];
 
-static int			 interval_seconds_mask;
+static long			 interval_seconds_mask;
 static int			 platform_interval = PLATFORM_INTERVAL;
 
 /********************************************************

@@ -2,8 +2,10 @@
 
 
 #ifdef	INTEL
+#define	DISCRIMINATOR(X) ((X >> 8) | (X << 8) & 0xFFFF)
 #define	PORT(X)	((X >> 8) | (X << 8) & 0xFFFF)
 #else
+#define	DISCRIMINATOR(X) X
 #define	PORT(X)	X
 #endif
 
