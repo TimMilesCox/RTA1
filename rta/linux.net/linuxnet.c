@@ -414,7 +414,19 @@ static void outputq()
    {
       if (net_revision < 50000) net_revision += net_granule;
       if (flag['y'-'a']) printf("[%d]\n", net_revision);
-      usleep(net_revision);
+
+      if (net_revision < (net_granule << 1))
+      {
+         /*************************************************
+		RX and TX both wipe net_revision out
+                pause if they didn't for couple of passes
+
+		by default setting 1 granules = 1000 usecs
+		granule = 500 usecs
+		changeable with command < in debug screen
+         *************************************************/
+      }
+      else usleep(net_revision);
    }
 
    txdata = q;

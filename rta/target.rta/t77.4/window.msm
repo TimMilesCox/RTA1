@@ -2,10 +2,45 @@
 window	$tree
 	qpush	r				. calulate in b
 						. return calculated window in b
-	$if	0
-	tz	transmission:receiveq:head	. dont get above 2 segments
-	j	zero				. waiting pro connection
-	$endif
+
+						. base it on configured ration
+						. per connection minus buffered input
+	$if	1				. don't base it on momentarily
+						. free input buffers
+						. they get unfree asynchronously
+
+	lb	*(+(BSOCKET*/18++tlist:connection_block(1):mss)s)
+	ly	transmission:receiveq:head
+	j	auction1x
+
+auction1					. the starting price is MSS
+	la	descriptor:bytes, y		. because that is also the ration
+	and	(07FFFFF)			. you never know
+	anb	a
+	jnb	zero				. you cut too much off
+	ly	descriptor:next, y
+
+auction1x
+	tz	y
+	j	auction1
+						. include deferq because it holds
+	ly	transmission:deferq:head	. segments beyond local ACK
+	j	auction2x			. not beyond local window
+
+auction2
+	la	 descriptor:bytes, y
+	and	(07FFFFF)
+	anb	a
+	jnb	zero
+	ly	descriptor:next, y
+
+auction2x
+	tz	y
+	j	auction2
+
+	j	final			
+						. 
+	$else
 
 	ly	*(+(BSOCKET*/18++tlist:rxbu_p)s)
 	lb	pool:next, y
@@ -31,6 +66,7 @@ window	$tree
 						. forget counting freechains
 						. you have a buffer pool free-heap compressor
 						. working hard to do that			
+	$endif
 
 zero	lb	0,,xi
 final	qpop	r				. calculation returns in b

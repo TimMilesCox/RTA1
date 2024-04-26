@@ -318,7 +318,9 @@ tcp4_list_processed
 	lret	0
 
 tcp4_outstanding
-	$head_near	scalars(transmission_p,	int,	x	;
+	$head_near	scalars(transmission_p,	int,	x		;
+				transfer_fp,	int,	fp		;
+				proto_apdata,	long,	RX_APDATA	;
 				tra_remote_ack,	long,	6)
 tcp4_outstanding_next
 	la	transmission:q4ack:head
@@ -392,6 +394,8 @@ tcp4_outstanding_release
 
 tcp4_outstanding_later
 	dpop	0, sp
+	dpop	RX_APDATA
+	pop	fp			. current input frame descriptor pointer
 	pop	x			. transmission control block pointer
 	lret	0
 
@@ -540,9 +544,9 @@ tcp4_construct_x
 
 tcp_auto_accept
 	lcal	tcp_add_connection
-	lret	0			. no connection block
+	lret	0				. no connection block
 	lcal	tcp_add_incoming_defaults
-	lret	1			. input segment bad
+	lret	1				. input segment bad
 
 	MIB_ICOUNT48	tcpPassiveOpens:i
 
@@ -564,11 +568,15 @@ tcp_auto_accept
 tcp_hv_accept
 	lcal	tcp_restart_timer2
 	call	(tcp_accept)
-	lret	1			. could not respond yet
+	j	tcp_accept_fail			. could not respond yet
         dl      transmission:sequence_ackx, x
         da      (1*/16:d)
         ds      transmission:sequence_ackx, x
-	lret	2			. good
+	lret	2				. good
+
+tcp_accept_fail
+	MIB_ICOUNT48	tcpAttemptFails:i
+	lret	1
 
 tcp_xaccept
 	la	transmission:q4ack:head
@@ -725,11 +733,13 @@ tcp_ripdown
 	pop	transmission:state
 	lret	0
 
+	$if	0
 tcp_refuse
 	lcal	tcp_reset	. send a reset if possible
 	j	$+1	
 	lcal	tcp_ripdown
 	fret	0
+	$endif
 
 tcp_locate_connection		. passive connect from remote
 	lx	descriptor:uproto

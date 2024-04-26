@@ -185,7 +185,11 @@ i_f_pointer_array	. who wants to go multiplying subscripts?
 "$if2p"*	$equ	ifxpointer(2)		. 1st external interface pointer
 						. exported for self-configuring
 						. device drivers
-"$ifzp"*	$equ	i_f_last
+"$ifzp"*	$equ	i_f_last		. this is the address of a variable
+						. pointer to actual last
+
+INTERFACES_HIGH_INDEX*	$equ	interface(INTERFACES)
+
 
 i_f_last +	interface(1)
 
@@ -208,86 +212,6 @@ IF_WORDS
 
 $(0)
 
-revise_interface_class
-	push	a
-	lb	platform_relay2,,xi
-	sb	this_if:type
-	dl	( __initial_ift2, __rxtx_ift2:d)
-	ds	this_if:initial
-	pop	a
-	lret	0
-
-locate_interfaces
-	lr, xi	interface(INTERFACES)
-	ly, xi	2
-	lx, xi	interface(2)		. interface(1) is software loopback
-	lk	(0C00000s)
-
-locate_interfaces_again
-	inA	128, y
-	mta	(IF16)
-	j	locate_interfaces_next_device
-	sx	i_f_last
-	lcal	locate_primed_interface?
-	j	thats_enough_interfaces		. no
-						. yes
-	lb	this_if:type
-	ab	-platform_relay,,xi		. if it's ift1
-	jnzb	type_as_marked
-	lb	a				. descriptor from I/O port
-	andB	(03FFFFF)			. is it really just 1 bank?
-	jzb	type_as_marked			. yes
-						. no
-	lcal	revise_interface_class		. it needs this driver
-
-type_as_marked
-	call	this_if:initial			. yes
-	sx	i_f_last			 primed logical interfaces trunk traffic
-
-	jxge	thats_enough_interfaces
-	ax, xi	interface(2)-interface(1)
-
-locate_interfaces_next_device
-	ay, xi	1
-	la	y
-	aa, xi	-64
-	jnc	locate_interfaces_again
-
-	$if	0				. can't remember what
-						. these comments mean
-						. but output queue redirection
-						. is now this_if:q2
-						. this_if:flags is used for
-						. something else
-
-	lr	interface(IFGW)+IF_WORDS,,xi	. if there is routing to here
-	jxge	thats_enough_interfaces		. add a logical interface
-	ax	-IF_WORDS,,xi			. to service the traffic
-	push	x
-	lx	interface(IFGW),,xi
-	pop	this_if:flags
-	push	IFGW,,xi
-	pop	i_f_pointer_array
-
-	$endif
-
-thats_enough_interfaces
-	lx	i_f_last
-	push	this_if:id
-	push	0, sp
-	pop	i_f_pointer_array
-	pop	ifNumber:i
-	lret	0
-
-locate_primed_interface?
-	tz	this_if:initial
-	lret	1				. interface is trunk master
-	jxge	located_no_primed_interface
-	ax	interface(2)-interface(1),,xi
-	j	locate_primed_interface?
-located_no_primed_interface
-	lret	0
-	
 
 frames	lx, xi	interface(1)
 test_if	tz	this_if:flags

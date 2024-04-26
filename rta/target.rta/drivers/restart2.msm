@@ -1,0 +1,63 @@
+
+restart_device2	$tree
+	lcal	restart_iftxx		. whichever type it is
+	dl	(CHILLDOWN++LOCKSTEP, 5000000d)
+	outB	chill$down
+	outA	INDICATION$		. wait 5 seconds
+	fret	0			. so operator can see
+					. if it's the same crash cyclimg
+
+restart_iftxx
+
+.	change all output frame headers in device 2
+.	to configuration protocol trunk restart	
+.	whether device 2 is I / F type 1 or 2
+.	this is the only configuration protocol PDU
+.	which goes outward from RTA1 machine toward I / F
+
+	inA	128+2
+	lk	(03FFFFF)
+	mta	(0)			. banks 0 = 1 = iftype1 ?
+	j	iftype2			. no
+					. yes, set high half of bank
+	la	(0400002)		. device 2 : bank 0
+	sabr	32
+	lx	(32*/18++03FC00s)	. highest frame
+	lr	(32*/18++020000s)	. stop halfway down one bank
+	lcal	write_restarts
+
+	lret	0
+					. set higher complete banks
+iftype2	lb	0, a, i			. or a_x (called from ISR)
+	sbr	1			. / 2 rounded down
+	andB	(01FFFFF)
+	sal	6			. bank high index	
+	or	(0400002)
+
+next_bank_down
+	sabr	32
+	lx	(32*/18++03FC00s)		. highest frame in bank
+	lr	(32*/18s)		. stop after all frames in bank
+
+	lcal	write_restarts
+
+	aa	-64,,xi			. down a bank
+	ab	-1,,xi			. his goes negative
+	jpb	next_bank_down		. after half the banks
+	lret	0			. = the output buffers
+
+write_restarts
+	dpush	a_x
+	ql	(008000, 0, 0, 0q)
+	lk	(IFCONFIG)
+
+write_restart
+	sk	4, x			. protocol discriminator
+	qs	0, x			. 
+	ax	-1024,,xi		. down 1 frame
+	jxge	write_restart
+
+	dpop	a_x
+	lret	0
+
+	$root

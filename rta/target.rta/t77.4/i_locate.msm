@@ -1,0 +1,68 @@
+i_locate	$tree
+
+.	vector name locate_interfaces
+
+locate_interfaces
+	lr, xi	INTERFACES_HIGH_INDEX		. interface(INTERFACES)
+	ly, xi	2
+	lx	$if2p				. interface(2) pointer
+						. interface(1) is software loopback
+	lk	(0C00000s)
+
+locate_interfaces_again
+	inA	128, y
+	mta	(IF16)
+	j	locate_interfaces_next_device
+	sx	$ifzp				. i_f_last
+	lcal	locate_primed_interface?
+	j	thats_enough_interfaces		. no
+						. yes
+	lb	this_if:type
+	ab	-platform_relay,,xi		. if it's ift1
+	jnzb	type_as_marked
+	lb	a				. descriptor from I/O port
+	andB	(03FFFFF)			. is it really just 1 bank?
+	jzb	type_as_marked			. yes
+						. no
+	lcal	revise_interface_class		. it needs this driver
+
+type_as_marked
+	call	this_if:initial			. yes
+	sx	$ifzp				. i_f_last, so far
+
+	jxge	thats_enough_interfaces
+	ax, xi	__IF_SIZE			. interface(2)-interface(1)
+
+locate_interfaces_next_device
+	ay, xi	1
+	la	y
+	aa, xi	-64
+	jnc	locate_interfaces_again
+
+thats_enough_interfaces
+	lx	$ifzp				. i_f_last
+	push	this_if:id
+	push	0, sp
+	pop	$if0p				. i_f_pointer_array
+	pop	IFNUMBER_I
+	fret	0
+
+locate_primed_interface?
+	tz	this_if:initial
+	lret	1				. interface is trunk master
+	jxge	located_no_primed_interface
+	ax	__IF_SIZE,,xi			. interface(2)-interface(1),,xi
+	j	locate_primed_interface?
+located_no_primed_interface
+	lret	0
+	
+revise_interface_class
+	push	a
+	lb	platform_relay2,,xi
+	sb	this_if:type
+	dl	( __initial_ift2, __rxtx_ift2:d)
+	ds	this_if:initial
+	pop	a
+	lret	0
+
+	$root
