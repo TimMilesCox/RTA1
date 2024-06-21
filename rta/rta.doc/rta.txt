@@ -99,7 +99,7 @@ SNMP, HTTP, ICMP and floating point servers interact with other computers
 			<ol>
 				<li><a href="#xlimit">Execution Protection</a></li>
 				<li><a href="#safety">Operand Protection</a></li>
-				<li><a href="#optimal_safe">Optimal Safe Storage Practice</a></li>
+				<li><a href="#optimal_safe">Elective Safe Storage Practice</a></li>
 				<li><a href="#device">Device Array Protection</a></li>
 			</ol>
 			<li><a href="#thread">Thread Switch and Address Space</a></li>
@@ -180,11 +180,32 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 <a	name="glossary"/>
 <h3>1.1 Essential Glossary</h3>
 <pre	style="font-size:11pt">
+	<a	name="pagex"/>
+	<a	style="color:#0000FF">
+	page</a>			4096 data memory words on a 4096-word boundary in executable space
+	<a	name="bankx"/>
+	<a	style="color:#0000FF">
+	bank</a>			262144 data memory words on a 262144-word boundary
+				in executable space <a href="#devicex">device<a>[0] or another <a href="#devicex">device<a>[1..63] 
+	<a	name="devicex"/>
+	<a	style="color:#0000FF">
+	device</a>			a memory space up to 16 gigawords which may be
 
+					device[0] executable space
+					maximum 16 gigawords in 4194304 pages
+
+					devices[1..63] peripheral arrays
+					maximum 16 gigawords per device in 65536 banks of
+
+						24-bit array memory with system memory characteristics
+
+						24-bit filestore static memory
+
+						16-bit network trunk shared memory
 	<a	name="start_pagex"/>
 	<a	style="color:#0000FF">
-	Start Page Index</a>	Start Page Index is the starting page number of some assigned memory
-				for example an instruction frame or an application data memory
+	Start Page Index</a>	Start Page Index is the address / 4096 of some assigned memory
+				for example an instruction frame or application data memory
 	<a	name="iframe"/>
 	<a	style="color:#0000FF">
 	instruction frame</a>	an instruction frame is one or more pages of memory containing instructions and constants
@@ -214,22 +235,28 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 
 
 						_________________________________________
-				vector		| 00 |	   Start Page Index    | offset	|
+				vector		| 00 |	   Start Page Index    | <a style="color:#0000FF">offset</a>	|
 						|____|_________________________|________|
 						     |21		      6|5      0
 
+						call	<a style="color:#0000FF">(PAGE*/6++OFFSET)</a>	. 24-bit constant or variable
 
-				$vector macro is coded at location offset of target page
-				it exports value page:offset and jumps to target routine
+				$vector macro is coded at location <a style="color:#0000FF">offset</a> of target page
+				it exports value page:offset and jumps to target <a style="color:#0000FF">routine</a>
 
-					call_name*	$vector	routine
+					call_name*	$vector	<a style="color:#0000FF">routine</a>
 
-				The 24-bit vector value is the operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
+				The 24-bit vector value is the storage operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
+	<a	style="color:#0000FF">
+	pointer to gate</a>		a high-order bit in the operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
+				flags a pointer in program memory to a <a href="#gate">gate</a> instead of a vector value
 
-				a high-order bit in the operand of <a href="#call">call</a> and <a href="#go">go</a> instructions
-				flags the storage address of a <a href="#gate">gate</a> instead of a vector value
+						_________________________________________
+				pointer to gate	| 1 |		address of <a href="#gate">gate</a>		|
+						|___|___________________________________|
+						    |22				       0
 
-
+						call	<a style="color:#0000FF">(1*/23++GATE_ADDRESS:s)</a>	. 24-bit constant or variable
 	<a	name="gate"/>
 	<a	style="color:#0000FF">
 	gate</a>			a gate is the 48-bit descriptor of an entry point at any offset
@@ -243,22 +270,22 @@ The addressable storage location is the 24-bit computer word. Instructions are o
 				the second word of the gate descriptor is Iframe Name
 				flag bits 23:22 of Iframe Name are 10 if Page High Index is nonzero
 
+				dynamic load instruction frames are called by gate
+				any instruction frame larger than one page is called by gate
 
-			_________________________________________________________________________________
-	gate		| pppppp |		offset		| 00 |		Start Page Index	|
-			|________|______________________________| 10 |__________________________________|
-			       42|			      24|    |21			       0
 
+				gate
+				_________________________________________________________________________________
+				| pppppp |		offset		| 00 |		Start Page Index	|
+				|________|______________________________| 10 |__________________________________|
+			    	       42|			      24|    |21			       0
 
 
 
 	<a	name="vector_list"/>
 	<a	style="color:#0000FF">
 	vector list</a>		the vector list is a 4K-word page of data pointers and structures
-				occupying addresses 002000<sub>16</sub>..002FFF<sub>16</sub> of applications
-
-				vector list places mostly data objects in application scope
-				and mostly is not a list of call entry point vectors and gates
+				vector list is in application addresses 002000<sub>16</sub>..002FFF<sub>16</sub>
 
 				vector list is constructed at process launch, is application read-only
 				and  is common to all threads of the application
@@ -858,13 +885,15 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	A kernel invariably contains both application code and ISRs
 
-	Instruction execution advance or jump outside the current instruction frame raises interrupt GUARD$
+	Application path traverses among instruction frames with far <a href="#go">go</a>, <a href="#call">call</a> and <a href="#fret">return</a> instructions
+
+	Execution outside instruction frame range raises interrupt GUARD$
 
 	Instruction frame starts at the page indexed in Port B0. Port 64 points to the Instruction Frame final page
 
 		Port 64 = B0 + Instruction Frame Pages - 1
 
-	Some pages at memory start are reserved for interrupt code
+	Two or more pages at memory start are reserved for interrupt code
 
 	Applications cannot enter ISR space via far <a href="#call">call</a> or <a href="#go">go</a> instruction
 	although ISRs can <a href="#call">call</a>, <a href="#go">go</a> and <a href="#fret">far return</a> in this space,
@@ -882,10 +911,18 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	Application Threshold is set by the system image at startup
 
-	Applications may not make service call interrupts to any pages except ISR space
-	or into page zero termed the restart page
+	Applications and ISRs may not make service call interrupts to any pages except ISR space
+	Applications may not make service call interrupts into page zero termed the restart page
 
-	The restart page is reserved for interrupts which are not service calls. These include
+		_________________________________page 0
+                |       restart page	|
+	ISR	|_______________________|________page 1
+	space	|  service call ISRs	|
+                |_______________________|________application threshold
+
+
+	The restart page is reserved for interrupts which are not service calls for applications.
+	These include
 
 		restart
 
@@ -899,7 +936,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 		SMP core to core alert unicast / multicast raised by writing I/O Port 79 MCAST_TO$
 
-	ISR space is the first part of NVRAM space
+	Some service call ISRs are only callable from designated kernel instruction frames
 
 	The end of NVRAM space is defined by ROM / RAM threshold page pointer I/O Port 124
 
@@ -957,8 +994,8 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 
 	<a	name="optimal_safe"/>
-	Optimal Safe Storage Practice
-	_____________________________
+	Elective Safe Storage Practice
+	______________________________
 
 	Applications may place any block of executable memory except ISR space in an address space window
 
@@ -1248,13 +1285,10 @@ The PSR flags shown as 0 are not currently used
 PSR flags 15..0 are directly application programmable with instructions <b>on</b> and <b>off</b>
 
 <p>
-Flag 23 <b>I</b> is on during an interrupt. CPU-side registers, that is those which receive computation results
-or are stack pointers, index registers, the target of load instructions or the source of store instructions, automatic
-counter or mask register, are in interrupt mode in the range 128..255. The application registers are 0..127
+Flag 23 <b>I</b> is on during an interrupt: <a href="#register">accumulator, index, mask and counter registers</a> are in the range 128..255. Application registers are 0..127.
 
 <p>
-Registers addressed as storage operands are absolute locations in a 256-word array
-regardless of ISR / application mode. However applications cannot write the interrupt registers
+All 256 registers  are absolutely addressable like storage operands, but <a href="#register">applications cannot write interrupt registers</a>.
 
 <p>
 Flags 18..16 <b>iii</b> are the interrupt mask. Both applications and ISRs can swap and restore the
@@ -1389,7 +1423,7 @@ The conditional jump instructions which examine carry$ or a register or storage 
 RTA1 registers occur twice. The application has 128 registers and interrupts have 128 registers
 
 <p>
-All 256 registers are in the operand address space as one linear array
+All 256 registers are in the operand address space as one linear array, but applications cannot write interrupt registers
 
 <p>
 Some registers are implicitly addressed as the register operand of an instruction.
@@ -7848,7 +7882,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	Inter-iframe jumps <b>go</b> and <b>call</b>			|
 	|	read a single word operand of format		|	<a	name="gate"/>
 	|							|
-	|							|	48-bit gate to execution space location
+	|							|	48-bit gate to executable space location
 	|	   22                         0			|
 	|	________________________________		|	________________________________________________________________
 	|	|1|	  gate address	       |---------------------->	|pagehx|   instruction offset  |ff|  iframe start page index   |
@@ -7960,16 +7994,16 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
         |                                                       |                                                                       |
         |               bit 22 is reserved                      |                                                                       |
         |                                                       |                                                                       |
-        |               bits 21:6 are a 16-bit index of the 1st |                                                                       |
-        |               4K page of the target iframe            |        gate to target iframe:offset					|
+        |               16 bits 21:6 are the Page Index		|                                                                       |
+        |               of a 4096-word target iframe            |        gate to target iframe:offset					|
         |                                                       |                                                                       |
         |               bits 5:0 are an entry point vector      |        47          42                                       24        |
         |               to locations 0..63 of the target iframe |       _________________________________________________________       |
-        |                                                       |       | page high idx|        target instruction offset       |	| 
-        |_______________________________________________________|       |______________|________________________________________|<------+
-        | 00 |       pointer to 4K-aligned page   |       vector|       | F 0 |                 iframe start page index         |
-        |____|21__________________________________|5___________0|       |_____|_________________________________________________|
-        |                                                       |              21                                              0
+        |                                                       |       | page high idx|        target instruction offset       |<------+ 
+        |_______________________________________________________|       |______________|________________________________________|
+        | 00 |		Page Index of 4K Iframe	  |   vector	|       | F 0 |                 iframe start page index         |
+        |____|____________________________________|_____________|       |_____|_________________________________________________|
+        |     21                                   5           0|              21                                              0
         |                                                       |
         |               B0 = operand bits 21..6 >> 6            |              B0 = gate bits 21..0 Start Page Index
         |               Page High Index = 0                     |              Page High Index = bits 47..42 of gate
@@ -8043,16 +8077,16 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|							|									|
 	|		bit 22 is reserved			|									|
         |                                                      	|									|
-        |       	bits 21:6 are a 16-bit index of the 1st |									|
-        |       	4K page of the target iframe         	|	 gate to target iframe:offset					|
+        |       	16 bits 21:6 are the Page Index		|									|
+        |       	of a 4096-word target iframe         	|	 gate to target iframe:offset					|
         |                                                       |									|
         |       	bits 5:0 are an entry point vector	|	 47          42                                       24	|
         |       	to locations 0..63 of the target iframe |	_________________________________________________________	|
-	|							|	| page high idx|        target instruction offset       |	|
-	|_______________________________________________________|	|______________|________________________________________|<------+
-	| 00 |       pointer to 4K-aligned page   |       vector|	| F 0 |                 iframe Start Page Index         |
-	|____|21__________________________________|5___________0|	|_____|_________________________________________________|
-	|							|	       21					       0
+	|							|	| page high idx|        target instruction offset       |<------+
+	|_______________________________________________________|	|______________|________________________________________|
+	| 00 |		Page Index of 4K Iframe   |   vector	|	| F 0 |                 iframe Start Page Index         |
+	|____|____________________________________|_____________|	|_____|_________________________________________________|
+	|     21				   5	       0|	       21					       0
 	|							|
 	|		B0 = operand bits 21..6	>> 6		|		B0 = gate bits 21..0 Start Page Index
 	|		Page High Index = 0			|		Page High Index = bits 47..42 of gate
