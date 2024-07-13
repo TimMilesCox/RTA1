@@ -35,6 +35,9 @@
 RTA1 high-volume TCP supports one half million to one million connections at each of multiple endpoints
 
 <p>
+High volume TCP has an API different from the universally used handle-oriented TCP, which serves most applications on RTA1 and carries the user interface to all applications. 
+
+<p>
 One million connections per endpoint has been operated without problem. Currently performance is more optimal at one half million connections per endpoint
 
 <p>
@@ -630,7 +633,7 @@ Command <a style="color:#000000">ifswap</a> mirrors access to the shared network
 Application <a style="color:#000000">proton</a> is commanded to connect, in this example, one million connections
 
 <p>
-Command <a style="color:#000000">+</a> connects outwards on a range of ports. 500 connections per port are commanded here. See also <a href="#tuning">Configuration and Tuning</a>
+Command <a style="color:#000000">+</a> connects outwards on a range of ports. 500 connections per port are commanded here. See also <a href="#config">Configuration and Tuning</a>
 
 <pre	style="font-size:12pt;color:#000000">
 
@@ -722,11 +725,10 @@ Stop command for listening application <a style="color:#000000">proto</a> is <a 
 
 A range of high-volume ports is assigned by a clause immediately following any network address in any interface declaration in platform file $HOME/.rta_net or for a second RTA1 $HOME/.arta_net, for example
 
-<p>
-export RTA_WIFI=172.29.7.12/26+172.29.7.14/26@192.168.1.0/24+10.0.0.5/8:<a style="color:#FF0000">10240/tcp/16384/501</a>@172.29.7.0/26
-
-<p>
-The first subclause is the starting port number in the range and the third part is the number of ports. The last part is the maximum connections per port which is recommended not to exceed 500 + 1. One extra connection is used for traffic concentration
+<pre	style="font-size:12pt;color:#000000">
+	export RTA_WIFI=172.29.7.12/26+172.29.7.14/26@192.168.1.0/24+10.0.0.5/8:<a style="color:#FF0000">10240/tcp/16384/501</a>@172.29.7.0/26
+</pre>
+The first subclause is the starting port number in the range and the third part is the number of ports. The last part is the maximum connections per port which is recommended not to exceed 500 + 1. One extra connection is used for traffic demultiplexing
 
 <p>
 The larger inputs and outputs expected per connection, the less the maximum number of connections per port should be
@@ -740,7 +742,8 @@ This formula allows for many segment transmissions which maintain TCP flow contr
 <a	name="fine_ram"/>
 <p>
 High volume TCP port assignmnts are declared on any interface but are attached to none
-<pre>
+
+<pre	style="font-size:12pt;color:#000000">
 
 	export RTA_WIFI=172.29.7.72/12:10240/tcp/8192/501
 
@@ -766,7 +769,7 @@ The declaration in .rta_net does not bind traffic for high volume ports to any i
 <p>
 &nbsp;&nbsp;terms about TCP ports that look like
 
-<pre	style="font-size:12pt">
+<pre	style="font-size:12pt;color:#000000">
 
 	:10240/tcp/8192/501
 
@@ -781,7 +784,7 @@ The declaration in .rta_net does not bind traffic for high volume ports to any i
 <h3>6: Memory reserved at Startup</h3>
 
 If many TCP ports are assigned for high-volume traffic and an emulator with small memory is started for example
-<pre>
+<pre	style="font-size:12pt;color:#000000">
 
 	export	RTA_MBANKS=2
 
@@ -792,19 +795,38 @@ then some initial server threads [ telnet fponline snmp http i_server ] may not 
 Start-up configuration assigns a 4096-word page of storage per 512 high-volume TCP ports and may exhaust free memory if a high-volume TCP configuration in .rta_net has been overlooked
 
 <p>
-If for example $HOME/.rta_net has <a style="color:#FF0000">:10240/tcp/8192/501</a> on line RTA_WIFI or RTA_ENET then 16 pages are taken on boot to model 8192 TCP ports
-
-<p>
-<a style="color:#000000">RTA_MBANKS=4 or 8</a> could be better, even if running 500 * 8000 TCP connections is <a style="color:#FF0000">not</a> planned
-
-<p>
-If it <a style="color:#FF0000">is</a> planned to run four million connections then the environment needs <a style="color:#000000">RTA_MBANKS=8192</a>
+If for example $HOME/.rta_net has <a style="color:#FF0000;font-family:courier">:10240/tcp/8192/501</a> on line <a style="color:#000000;font-family:courier">RTA_WIFI</a> or <a style="color:#000000;font-family:courier">RTA_ENET</a> then 16 pages * 4096 words are taken on boot to model 8192 TCP ports at eight words per port
 
 <p>
 Each High-Volume TCP port acquires a 262144-word block of storage when connections start to be added
 
 <p>
 Each 256K-block buffers up to 500 connections and their traffic
+
+<p>
+<a style="color:#000000">RTA_MBANKS=4 or 8</a> could be better, even if running 500 * 8000 TCP connections is <a style="color:#FF0000">not</a> planned
+
+<p>
+If it <a style="color:#FF0000">is</a> planned to run four million connections then the environment needs <a style="color:#000000;font-family:courier">RTA_MBANKS=8192</a> for 2 gigawords RTA1 executable space
+
+<p>
+Alternatively startup[s] in rta/tgen.smp [ and rta/arta ] take an <a style="color:#FF0000">argument</a> (macOS)
+<pre>
+
+	<a style="color:#000000">./r -Z</a> [<a style="color:#000000">/3/#70700004</a>] <a style="color:#FF0000">/63/+8000</a> [ and <a style="color:#000000">./ar8 -Z</a> [<a style="color:#000000">/3/#70700004</a>] <a style="color:#FF0000">/63/+8000</a> ] for exactly 4'000'000 connections 
+
+</pre>
+or (Linux)
+<pre>
+
+	<a style="color:#000000">./xra -Z</a> [<a style="color:#000000">/3/#70700004</a>] <a style="color:#FF0000">/63/+8000</a> [ and <a style="color:#000000">./xra -Z</a> [<a style="color:#000000">/3/#70700004</a>] <a style="color:#FF0000">/63/+8000</a> ]
+
+</pre>
+The peripheral array is for preference highest device number <a style="color:#FF0000;font-family:courier">/63/</a> because large buffering for millions of connections is searched from highest device to lowest. 
+
+<p>
+The <a href="#tp1">extra network trunk</a> device <a style="color:#000000;font-family:courier">/3/#70700004</a> carries traffic between two RTA1s on one platform
+
 
 <a	href="index.html" style="color:#FFFFFF;text-decoration:none;width:150pt;height:30pt;">
 <blockquote	style="border-radius:5px;font-size:16pt;font-family:helvetica;

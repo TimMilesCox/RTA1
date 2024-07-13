@@ -347,8 +347,8 @@ relocation values the width of I/O ports. Each relocation register is implemente
 			 |_____________________|________________________|
 
 
-				    array space 1 teraword
-				    ______________________
+				    peripheral + array space 1 teraword
+				    ___________________________________
 
 		_________________________________________________________
 		| device | 16 bank select bits |          18 offset bits|
@@ -400,10 +400,9 @@ Device arrays can be placed in the address space in ranges of 262144-word blocks
 	|										|
 	|	Different memory can be in the address space at different times		|
 	|										|
-	|	Executable space is all configured memory that can be used for both	|
-	|	code and data								|
+	|	Executable space is memory that can contain both instructions and data	|
 	|										|
-	|	In RTA1 case that's the maximum 16 Gigawords of Device 0		|
+	|	In RTA1 that's the maximum 16 Gigawords of device [ 0 ]			|
 	|	which is 1024 times the address space					|
 	|										|
 	|	RTA1 needs program memory to be						|
@@ -422,9 +421,11 @@ Device arrays can be placed in the address space in ranges of 262144-word blocks
 	|		able to do atomic read-modify-write on a single word		|
 	|		at least when in SMP configuration				|
 	|										|
+	|	Storage from <a href="#device">Array devices</a> [ 1..63 ] is <a href="#sabr">based</a> only in 256K-word blocks	|
+	|	and may be of type SYSMEM which supports atomic read + write		|
 	|										|
-	|	Arrays outside executable space cannot be based at 4K-word granularity	|
-	|	and need not necessarily read-rewrite atomically			|
+	|	Peripheral array devices of types filestore and network trunk 		|
+	|	are not required to support atomic update cyles				|
 	|										|
 	|_______________________________________________________________________________|
 
@@ -1018,18 +1019,52 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	Device Array Protection
 	_______________________
 
+	Device arrays are  typed in the high order two bits of values read from I / O ports [ 128..191<sub>10</sub> ]
 
-	Peripheral arrays outside system memory can only be based by interrupt code
 
-	This is to prevent accidental damage or disruption to static RAM file systems and network frame trunks
+					|5     
+		________________________|________
+ 		|10|	memory banks	| pages	| 24-bit system memory: applications may <a href="#sabr">base</a> blocks of these devices
+		|__|____________________|_______|	
+		|01|000000| network trunk banks	| 16-bit memory shared with platform: ISRs <a href="#sabr">base</a> banks of these devices
+		|__|______|_____________________|
+		|11|000000|	filestore banks	| 24-bit filestore memory: only ISRs <a href="#sabr">base</a> banks of these devices
+		|__|______|_____________________|
+			16|			
 
-	An inadvertant attempt to base a device from an application raises the guard interrupt
-	See Section 2.10: <a href="#iassign">Interrupt Assignments</a>
+		*	the sizes are granule high index = [ pages / banks ] minus one
 
-	ISRs which base peripheral blocks are only callable from kernel iframes
+		*	type 00<sub>2</sub> indicates no device or storage
 
-	Applications requiring access to a peripheral array call a kernel iframe which
-	may apply a credential check
+		*	applications and ISRs may <a href="#sabr">base</a> pages or banks of device [ 0 ] executable space
+
+				<a href="#sabr">base</a> value in accumulator a
+				_________________________________
+				|00|		page		|
+				|__|____________________________|
+
+			applications and ISRs may <a href="#sabr">base</a> banks of any other device [ 1..63 ] of type SYSMEM(10<sub>2</sub>)
+
+				<a href="#sabr">base</a> value in accumulator a
+
+				_________________________________
+				|01|		bank	 |device|
+				|__|_____________________|______|
+							 |5
+
+
+
+	Peripheral arrays of types network trunk and filestore can only be based by interrupt code.
+	This is to prevent accidental damage to static RAM file systems  or disruption in network frame trunks
+
+        These rules are applied when <a href="#sabr">sabr</a> instruction places storage in the address space,
+        not when storage is read or written
+
+	An inadvertant attempt to base storage of a filestore or network trunk device from an application
+	raises the <a href="#iassign">Guard Interrupt</a>
+
+	Service call ISRs which base peripheral blocks are only callable from kernel iframes.
+	Kernel routines unbase peripheral storage and kernel data before returning to applications
 
 </pre>
 
@@ -8288,8 +8323,8 @@ The four-function floating point instructions behave in repeat context as they b
 except when PSR residue flag fp$r is set
 
 <p>
-Outwith SIMD, floating instructions have 96-bit inputs store a 96-bit result, and if fp$r is set,
-a 96-bit floating residue is also stored for constructing complex floating results
+Outwith SIMD, floating instructions have 96-bit inputs, store a 96-bit result, and if fp$r is set,
+a 96-bit floating residue is also stored for constructing long floating results
 
 <p>
 Within SIMD, flag fp$r selects 192-bit single-instruction floating operations
