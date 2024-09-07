@@ -1056,7 +1056,7 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 	Peripheral arrays of types network trunk and filestore can only be based by interrupt code.
 	This is to prevent accidental damage to static RAM file systems  or disruption in network frame trunks
 
-        These rules are applied when <a href="#sabr">sabr</a> instruction places storage in the address space,
+        These rules are applied when <a href="#sabr">sabr</a> instruction places storage in address space,
         not when storage is read or written
 
 	An inadvertant attempt to base storage of a filestore or network trunk device from an application
@@ -1064,6 +1064,8 @@ A push is a load into CPU registers in RTA1, and a pop is a store
 
 	Service call ISRs which base peripheral blocks are only callable from kernel iframes.
 	Kernel routines unbase peripheral storage and kernel data before returning to applications
+
+	Device ports [ 128..191 ] define what storage may be selected in address space ports [ 0..71 ]
 
 </pre>
 
@@ -1161,7 +1163,7 @@ The incrementer is restarted by writing Port 76
 	103	chill$down	powersave programmable microseconds
 	124	ram$threshold	ROM / RAM threshold
 	128			system memory 4K-block high index
-	129:191			devices 1:63 attributes / array size
+	129..191		devices [ 1..63 ] attributes / array size
 
 </pre>
 
@@ -1198,7 +1200,7 @@ Three service ISRs are raised automatically and also callable with <a href="#ii"
 			and is a decrementing instruction ration graded by thread priority 
 
 	1:6	<a href="kernel.html#exit_ii">EXIT$</a>	is application callable
-			and is also raised by lret or fret instruction
+			and is also raised by <a href="#lret">lret</a> or <a href="#fret">fret</a> instruction
 			on internal stack empty sp = 128 in application mode
 
 	1:31	<a href="kernel.html#guard_ii">GUARD$</a>	is raised automatically on instruction fault
@@ -4604,11 +4606,10 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|							|
 				|	the absolute pointer part of the storage	|
 				|	block identified in accumulator a is written 	|
-				|	to data window pointer I/O Port[EA/PAGE]	|
+				|	to data window pointer I/O Port[EA]		|
 				|							|
-				|	the storage block symbolic identifier is copied	|
-				|	from accumulator a to memory window 65 (thread	|
-				|	control block) offset 64 + EA/PAGE		|
+				|	the storage block symbolic identifier is also	|
+				|	written to thread control block offset 64 + EA	|
 				|							|
 				|	value of EA may be 2..63			|
 				|							|
@@ -4621,9 +4622,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	of a filestore or network relay device array	|
 				|	in a data address space window			|
 				|							|
-				|	applications may place executable memory	|
-				|	and device arrays with the same bus behaviour as|
-				|	executable space in data address space windows	|
+				|	applications may place pages of executable space|
+				|	and <a href ="#device">device arrays with system memory behaviour</a>	|
+				|	in address space windows with sabr instruction	|
 				|							|
 				|	neither applications nor interrupt code may base|
 				|	executable pages below the <a href="#thresho">application threshold</a>|
@@ -4637,25 +4638,26 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	C00001<sub>16</sub> to the address window and		|
 				|	does not fault					|
 				|							|
-				|	bank handle C00001<sub>16</sub> raises interrupt GUARD$	|
-				|	on memory read or write	in the assigned window	|
+				|	memory read or write with value C00001<sub>16</sub> in	|
+				|	base port[WINDOW] raises interrupt GUARD$	|
 				|							|
-				|	ISRs write C00001<sub>16</sub> to unused window basess	|
+				|	ISRs write C00001<sub>16</sub> to unused window bases	|
 				|	and to close windows opened by kernel routines
 				|	 						|
 				|			la	(0C00001s)		|
 				|			sabr	WINDOW			|
 				|							|
-				|	only interrupt code may sabr with value C00001<sub>16</sub>|
+				|	interrupt code may sabr with value C00001<sub>16</sub>	|
 				|	because the value is an (invalid) device block	|
 				|							|
-				|	Applications can cause sabr to write C00001<sub>16</sub> to|
-				|	a base register by loading zero the accumulator	|
-				|	page 0 is ISR space and will not be assigned	|
-				|							¡
+				|	Applications can set base a port to C00001<sub>16</sub>	|
+				|	by executing sabr with accumulator value = zero	|
+				|							|
+				|	Page 0 is ISR space and will not be assigned	|
+				|							|
 				|			la	0,,xi			|
 				|			sabr	WINDOW 			|
-				|
+				|							|
 				|_______________________________________________________|
 
 
@@ -8263,37 +8265,45 @@ SIMD Frame is a number of Data Point 1 objects at the internal stack top. SIMD F
 SIMD Frame remains programmed until the thread updates it and can be used for successive multiple operations until a parameter change is needed
 <pre	style="font-size:12pt">
 
-	SIMD_CONTROL	(-1, ACCUMULATOR_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)
+	SIMD_CONTROL	(<i style="color:#00A000">-1</i>, <i style="color:#00A000">accumulator_vector_increment</i>, <i style="color:#00A000">restart_count</i>-1, <i style="color:#00A000">ea_index_increment</i>:q)
 
 </pre>
-RESTART_COUNT is the number of objects loaded in the frame where
+<i style="color:#00A000">-1</i> in register 20 SIMD_RUNCOUNT triggers on <a href="#sim_d2">repeat execute</a> instruction <a href="#rex">rex</a>
+<pre	style="font-family:times-roman;color:0000FF">
+
+	initialisation of SIMD_RUNCOUNT from SIMD_RESTARTC register 22
+
+	initialisation of accumulator vector register q from internal stack pointer register sp
+
+</pre>
+<i style="color:#00A000">restart_count</i> (register 22 SIMD_RESTARTC) is the number of objects loaded in the frame where
 <pre	style="font-family:times-roman;color:0000FF">
 
 	integer objects occupy one or two registers
 
 	integer dividend / quotient may have a third register reserved for storing remainder
 
-	floating objects occupy four or eight regosters
+	floating objects occupy four or eight registers
 
-	SIMD_RESTART register 22 is the value RESTART_COUNT-1
+	SIMD_RESTART register 22 contains the value <i>restart_count</i>-1
 
 </pre>
-Accumulater update (register 21 SIMD_AU) is the increment to accumulator vector q and is in most cases the size in words of the object
+<i style="color:#00A000">accumulator_vector_increment</i> (register 21 SIMD_AVECTORU) is the increment to accumulator vector q and is in most cases the size in words of the object
 
 <p>
-Accumulator update is zero if multiple Data Point 2 operands are applied to one Data Point 1 accumulator
+<i style="color:#00A000">accumulator_vector_increment</i> is zero if multiple Data Point 2 operands are applied to one Data Point 1 accumulator
 
 <p>
-&plusmn; EA increment (register 23 SIMD_XU) is applied to an <a style="color:#0000FF">index register</a> generating operand effective address of the repeated instruction
+&plusmn;<i style="color:#00A000">ea_index_increment</i> (register 23 SIMD_INDEXU) is applied to an <a style="color:#0000FF">index register</a> generating operand effective address of the repeated instruction
 <pre	style="font-size:12pt">
 
 	rex	(da	OFFSET_IN_CONTAINER, <a style="color:#0000FF">x</a>)
 
 </pre>
-EA increment corresponds to the the structure size of an array object containing Data Point 2
+<i style="color:#00A000">ea_index_increment</i> corresponds to the the structure size of an array object containing Data Point 2
 
 <p>
-EA increment is zero if one Data Point 2 operand is applied to multiple Data Point 1 accumulators
+<i style="color:#00A000">ea_index_increment</i> is zero if one Data Point 2 operand is applied to multiple Data Point 1 accumulators
 
 <p>
 Register 20 SIMD_RUNCOUNT is final count set at -1 = expired / awaiting initialisation
@@ -8305,10 +8315,10 @@ Initialisation steps are
 
 	register q accumulator vector	&lt;-	internal stack pointer
 
-	register 20 SIMD_RUNCOUNT	&lt;-	register 22 SIMD_RESTART
+	register 20 SIMD_RUNCOUNT	&lt;-	register 22 SIMD_RESTARTC
 
 </pre>
-SIMD_RESTART contains objects count minus one
+SIMD_RESTARTC contains objects count minus one
 
 <p>
 Kernels start all process threads with a <a href="rta.html#A2_2">default SIMD Frame</a> of one object to allow calculations on the internal stack top
@@ -8518,7 +8528,7 @@ Data Points 2 are acquired on computation from locations which may be widely spa
 
 <p>
 Repeat operations traversing the internal register stack update the accumulator vector
-with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_AU</a>, most frequently
+with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_AVECTORU</a>, most frequently
 <pre	style="font-size:10pt">
 
 	+1 * object size in words
@@ -8531,12 +8541,12 @@ with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_
 	_________________________________________________________________	simultaneously accumulator vector q restarted
 	| running count	| <a style="color:#FF0000">increment +4</a>	|
 	|_______________|_______________|_______________|_______________|
-	  SIMD_RUNCOUNT	|    SIMD_AU	|  SIMD_RESTART	|  SIMD_XU 
+	  SIMD_RUNCOUNT	| SIMD_AVECTORU	|  SIMD_RESTART	|  SIMD_INDEXU 
 	    		|				+---------------------> updates index register of source-2 operand
 			+-----------------------------------------------------> updates [ register q ] accumulator vector 
 
 </pre>
-Accumulator vector increment SIMD_AU zero is correct when the same internal stack register remains source-1 operand iteratively,
+Accumulator vector increment SIMD_AVECTORU zero is correct when the same internal stack register remains source-1 operand iteratively,
 for example
 <pre	style="font-family:times-roman;color:0000FF">
 
@@ -8545,7 +8555,7 @@ for example
 	many values read from dispersed locations are accumulated in one internal stack register
 
 </pre>
-Accumulator vector increment SIMD_AU +2 is correct when
+Accumulator vector increment SIMD_AVECTORU +2 is correct when
 <pre	style="font-size:12pt">
 
 	pairs of single registers are treated as <a href="#rex_lane">left and right lanes</a> with for example
@@ -8665,10 +8675,10 @@ The repeat execute instruction is implemented as follows
 	X. The acquired instruction is executed using as accumulator[s]
 	the internal stack register[s] pointed by q <a href="#watch_it" style="color:#FF0000">**</a>
 
-	Register 21 SIMD_AU is added to q
+	Register 21 SIMD_AVECTORU is added to q
 
 	If the acquired instruction uses an index register in the set [ x y a b fp sp ]
-	then register 23 SIMD_XU is added to the index register
+	then register 23 SIMD_INDEXU is added to the index register
 
 	Final count register 20 SIMD_RUNCOUNT is decremented
 	If SIMD_RUNCOUNT becomes negative repeat operation is complete and ceases
@@ -8696,13 +8706,13 @@ The repeat execute instruction is implemented as follows
 
 
 <p>
-rex instruction uses registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]</a>
+rex instruction uses registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a>
 
 <p>
-Registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]</a> are nonvolatile to the application
+Registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a> are nonvolatile to the application
 <pre	style="font-family:times-roman">
 <p>
-	because <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]</a> are the same registers as <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]</a>
+	because <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a> are the same registers as <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]</a>
 	filestream libraries save and restore <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]</a>
 </pre>
 Kernels launch all threads with <a href="#A2_2" style="text-decoration:none">SIMD array one object deep at the stack top</a>
@@ -8716,7 +8726,7 @@ If accumulator vector q designates any register outside the range 24..127
 the thread faults with interrupt GUARD$ latent parameter permission
 
 <p>
-Macro SIMD_CONTROL takes a quadword argument containing <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU ]</a>
+Macro SIMD_CONTROL takes a quadword argument containing <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a>
 
 <p>
 The frame defined by SIMD_CONTROL is the <a href="#A2_7">default accumulator vector</a> starting internal stack top with length RESTART_COUNT = SIMD_RESTART+1 objects
@@ -9092,7 +9102,7 @@ If <a href="kernel.html#fp_xpo_flag_ii">FP_XPO$FLAG</a> returns + zero (no skip)
 a jump or call can be made in the application to process the event
 
 <p>
-pointers and counters in SIMD control registers [ SIMD_RUNCOUNT SIMD_AU SIMD_RESTART SIMD_XU q ] identify
+pointers and counters in SIMD control registers [ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU q ] identify
 the faulted operation and how many remain
 
 <p>
@@ -9100,9 +9110,9 @@ an application handler should update these registers to resume executing outstan
 
 <pre	style="font-family:times-roman;color:#0000FF">
 	if the <a href="#simd_i">repeated instruction</a> uses an index register to generate its
-	source-2 operand effective address, SIMD_XU must be added to the index register
+	source-2 operand effective address, SIMD_INDEXU must be added to the index register
 
-	SIMD_AU must be added to accumulator vector q
+	SIMD_AVECTORU must be added to accumulator vector q
 
 	SIMD_RUNCOUNT is the outstanding count and must be decremented to count past the faulted operation
 
@@ -9110,8 +9120,8 @@ an application handler should update these registers to resume executing outstan
 	faulted operation is the last in the sequence
 
 </pre>
-In this example processing 192-bit floating numbers, the accumulator vector increment SIMD_AU
-is eight words, and so in the example is the index register increment SIMD_XU
+In this example processing 192-bit floating numbers, the accumulator vector increment SIMD_AVECTORU
+is eight words, and so in the example is the index register increment SIMD_INDEXU
 <pre	style="color:#00AF6F;font-size:12pt">
 
   :                            224 
@@ -9123,7 +9133,7 @@ is eight words, and so in the example is the index register increment SIMD_XU
   :                            230 			. save any index register used in the SIMD -> target instruction
   :                            231 
 00:000155  800017              +232 	ax	SIMD-XU	. increment you must know which index register
-00:000156  F80015              +233 	push	SIMD_AU	. advance accumulator vector
+00:000156  F80015              +233 	push	SIMD_AVECTORU	. advance accumulator vector
 00:000157  2F000D              +234 	popA	q	. 
   :                            235 
 00:000158  1F0014              +236 	dec	SIMD_RUNCOUNT	. outstanding count relative zero
