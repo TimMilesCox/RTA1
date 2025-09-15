@@ -57,7 +57,9 @@ platform_relay2	$equ	PLATFORM_RELAY2
 SOFTWARE_I_F $equ 1
 THRESHOLD_PACKETS	$equ	480*50	. in packets
 
-i_f*	$proc	*
+__IFLOCQ	$equ	1	. change to 1 if ip / interface queueing > 1 thread
+
+i_f*	$proc
 			. now a 2-pass proc to count bytes in
 			. interface name
 *	$tree		
@@ -65,7 +67,7 @@ i_f*	$proc	*
 id	+	?
 flags	+	?=1
 address_list +	net_address(?)
-.	address_list + i_f(?, 1)
+
 type	+	i_f(?, 3)
 
 THISMTU	$set	i_f(?, 2)
@@ -101,21 +103,27 @@ oqlen	+	THRESHOLD_PACKETS	. restart value packets allowed remaining until restar
 oqremaining +	THRESHOLD_PACKETS	. packets allowed remaining until restart
 threshold_time	0			. millisecond dayclock time restart packets allowed
 
-description_bytes + IF_DESCRIPTION_BYTES
+		$if	$r=1
+description		+	$1("i_f(?, 3)")	. it's the interface getting assembled
+description_bytes	+	$bits/$byte
+		$else
+description	0			. it's a structure descriptor for pointer
+description_bytes	0		. and can't do the $1(literal)
+		$endif
 
-description	"i_f(?, 3)"
-	$do	$-description>8,	$flag	interface description too long
-	$do	description+8-$,	0
+q2	+	0			. output diversion to another i_f trunk
 
-IF_DESCRIPTION_BYTES $equ	$bits/$byte
+		$if	__IFLOCQ	. only ip thread touches interface queues
+lock_cell_q1 +	0			. locks buffer pool q2 -> / dq
+lock_cell_q2 +	0			. locks high volume q2 -> / dq
+		$endif
 
-q2	+	0
+iq_rxfragments	+	i_f(?, *6)*/23s	. yes / no permission configurable per I / F
+fragment_engine_descriptor	0	. in case it's ever decided to delete fragment engine
+iq_buffer			0	. fragment engine
 
-lock_cell_q1 +	0
-lock_cell_q2 +	0
-
-oq	dq
-oq2	hvdq
+oq	dq	0, 0
+oq2	hvdq	0, 0, 0, 0
 
 initial		+	i_f(?, 4)
 rxtx_interface	+	i_f(?, 5)

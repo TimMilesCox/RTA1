@@ -46,10 +46,46 @@
 
 
 rxtx_softwareloopback
-	fret	0
 
 			. x -> interface
 
+	$if	1
+	push	x
+	lcal	readifq
+	jza	rxtx_regain_i_f_pointer
+
+	tp	descriptor:i_f, a		. the original dgram
+	j	rxtx_drop_supergram?		. 
+
+	lb	descriptor:frame, a
+	ly	descriptor:dgram, a
+
+	push	a
+
+	lr	dgram:bytes, y
+
+	la	nframe:llh:generic:protocol, b
+
+	call	(frame_to_protocol)
+	pop	a
+
+rxtx_drop_supergram?				. you get here when a dgram is copied to RX or declined
+						. you don't need to know when RX app has consumed data
+	lx	tx_buffers
+	tn	descriptor:bytes, a		. high order bit = resending protocol
+	call	(if_sell1)			. usually tcp, which drops segment on remote ack
+						. only flagged on original unfragmented datagram
+						. the dynamic fragment wrappers are dropped here
+rxtx_regain_i_f_pointer
+	pop	x
+	MIB_ACOUNT48	this_if:outoctets	TX_DATAGRAML
+	MIB_ICOUNT48	this_if:outpackets
+						. instead of looping back here
+	fret	0				. await next pass of protocol stack
+
+	$else
+
+	fret	0				. so the rest of it never had to work
 	la	this_if:oq:head
 	jza	rxxx_software_loopback
 
@@ -60,13 +96,15 @@ rxtx_softwareloopback
 	ab	0, b
 
 	ly	1, b
-	lr	0, b	
+	lr	0, b
 
+	push	a
 	push	x
 	call	(frame_to_protocol)
 	pop	x
+	pop	a
 
-	lcal	readifq
+.	lcal	readifq
 
         MIB_ACOUNT48    this_if:outoctets       TX_DATAGRAML
         MIB_ICOUNT48    this_if:outpackets
@@ -74,7 +112,7 @@ rxtx_softwareloopback
 	tp	descriptor:bytes, a
 	j	rxtx_softwareloopback
 
-	lx	rx_buffers
+	lx	strx_buffers
 	call	(if_sell1)		. this is just until something wants
 					. to read the datagram
 
@@ -95,4 +133,6 @@ rxtx_softwareloopback
 
 rxxx_software_loopback
 	fret	0
+
+	$endif
 

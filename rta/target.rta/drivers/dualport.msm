@@ -1,33 +1,38 @@
 
 if_dportw	. vector name is if_dualport_txwrite
 
-	push	a
+	push	a				. frame
         z       TX_DATAGRAML
-        la, i   nframe:stack_index, a
+        la, i   nframe:stack_index, a		. -> [ FFFFFA .. FFFFFE ]
 
         lb      0, a
-        aa      b
+        aa      b				. + frame = -> tuple
 
-        jpb     if_osentq
+        jpb     if_osentq			. mistakenly queued, no action
 
 if_osendq
-        dpush   a
-        ly      1, a
-        la      0, a
+        dpush   a				. [ tuple -> : stack_index ]
+        ly      1, a				. data from -> 
+        la      0, a				. octets
 
-        jza	if_oblank
+        jza	if_oblank			. void tuple
         push    a
         popA    TX_DATAGRAML
 
-        call	(if_tx_nocheck)
+	$if	0
+	lr	256,,xi		. destination not somehow zeroed ?
+	jxge	$+2
+	ii	GUARD$		. stop and inspect
+	$endif
+
+        lcal	i_f_write			. x must -> to
 if_oblank
         dpop     a
-        aa, xi  2
-        ab, xi  2
-        jnb     if_osendq
+        aa, xi  2				. up stack index
+        ab, xi  2				. tuple ++
+        jnb     if_osendq			. while stack index < 0 = itself
 
 if_osentq
-	pop	a
-	z	nframe:stack_index, a
+	pop	a				. mark the frame
+	z	nframe:stack_index, a		. written to i / f or buffer
 	fret	0
-

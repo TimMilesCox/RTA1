@@ -6,6 +6,8 @@ terapage*	$name	12
 teraframe*	$name	18
 
 __CLUSTER	$set	1
+__CLUSTER_LOG	$set	0
+
 		$do	$t("p(2, 1)_CLUSTER")^=0,;
 __CLUSTER	$set	"p(2, 1)_CLUSTER"
 __ARRAY		$equ	p(2, 1)			. application declared name [ __ARRAY_A .. ARRAY_Z ]
@@ -24,8 +26,9 @@ WINDOW		$set	p(1, 1)
 
 __SEVERAL	$set	p(1, 1:2)-p(1, 1:1)
 	$do	__SEVERAL<0,__SEVERAL	$set	0
-	$do	__SEVERAL>15,__SEVERAL	$set	0
+	$do	__SEVERAL>27,__SEVERAL	$set	0
 
+		$do	WINDOW<4,		$flag	window < 4 disallowed
 		$do	WINDOW+__SEVERAL>31,	$flag	window > 31 disallowed
 		$do	__ARRAY+(__LIMIT//__GRANULE//__CLUSTER)>02FFF,	$flag	vector out of range
 
@@ -38,7 +41,16 @@ __SEVERAL	$set	p(1, 1:2)-p(1, 1:1)
 
 
 array		$equf	p(2)
-CONTAINER_SIZE	$set	p(3, 1)
+
+__CONTAINER	$set	p(3, 1)
+		$if	__CONTAINER<32768
+		$note	size in immediate range
+CONTAINER_SIZE	$equf	__CONTAINER,,xi
+		$else
+		$note	size 
+CONTAINER_SIZE	$equf	(__CONTAINER)
+		$endif
+
 instance	$equf	p(4)
 
 		$do	(p()>4)**(p(5, *1)=0)**(p(5, 2)=0)**($t(p(5, 1:1))^=127),;
@@ -48,7 +60,7 @@ __CHEX_LIMIT	$set	__LIMIT//__GRANULE
 __CHEX_ESCAPE	$set	p(5, 4)
 
 LOG_TRUE*	$func
-LOG	$do	18,	$do	1*/LOG=CONTAINER_SIZE,	$return	LOG
+LOG	$do	18,	$do	1*/LOG=__CONTAINER,	$return	LOG
 		$return	0
 		$end
 
@@ -58,23 +70,23 @@ __SCALE		$set	LOG_TRUE
 __SCALE		$set	0
 	$do	(instance\2^=0)++(p(4, *1))++(instance^=b),	lb	p(4)
 
-		mf	CONTAINER_SIZE,,xi
+		mf	CONTAINER_SIZE
 
-		$elseif	__SCALE++(CONTAINER_SIZE=1)
+		$elseif	__SCALE++(__CONTAINER=1)
 	$do	(instance\2^=0)++(p(4, *1))++(instance^=a),	dl	instance
 
 		$else
 		$if	__KEEP_SIMD_SETTING
 		dpush	instance
 		pop	b
-		m	CONTAINER_SIZE,,xi
+		m	CONTAINER_SIZE
 		sb	6
 		pop	b
-		mf	CONTAINER_SIZE,,xi
+		mf	CONTAINER_SIZE
 		aa	6
 		$else
 		dpush	instance
-		rex	(m	CONTAINER_SIZE,,xi)
+		rex	(m	CONTAINER_SIZE)
 		dpop	a
 		$endif
 		$endif
@@ -95,7 +107,7 @@ chex_load*	$name
 
 		dsl	24-__GRANULE_LOG+__SCALE		. a <- target memory block 
 
-		orB	WINDOW
+		orB	WINDOW,,xi
 		rbr	24-__GRANULE_LOG
 
 		$if	__APPLY_GUARD++(p()>4)++__SEVERAL	. concerns page index relative to array
@@ -113,16 +125,22 @@ chex_load*	$name
 
 		$do	__GRANULE_LOG=18,	sal	6
 
-		aa	array				. relative page index + absolute
-		sabr	WINDOW
+		$do	__CLUSTER_LOG^=0,	sar	__CLUSTER_LOG
+		lx	a
+		ax	array				. relative page index + absolute
+		
+		lr	__SEVERAL/__CLUSTER,,xi
+		ly	WINDOW,,xi
+		la	-1+(__CLUSTER*/__GRANULE_LOG-12),,xi
+__ACQUIRE	la	0, x
+		jpa	$+2
+		ii	TERAFRAME$
+		jza	__END_DATAFRAME
+		sabr	0, y
+		ax	1,,xi
+		ay	1,,xi
+		jdr	__ACQUIRE
 
-__MORE*		$proc
-		call	(array_round)			. make sure there is a continue block
-
-		la	1*/__GRANULE_LOG-12, a, i	. so that is checked as normal operation
-		sabr	WINDOW+?			. base the continue block or none
-		$end
-
-?		$do	__SEVERAL,	__MORE	p(0, 0)
+__END_DATAFRAME
 
 		$end

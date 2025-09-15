@@ -19,6 +19,10 @@
 	$include	t77.4/lockfree.def
 	$include	t77.4/pointers.def
 	$include	t77.4/socket.def
+	$include	t77.4/k.def
+	$include	t77.4/udp.def
+	$include	t77.4/rx_jumbo.def
+	$include	t77.4/if_write.def
 	$include	fs/response.def
 	$include	table/names.def
 	$path
@@ -28,7 +32,6 @@
 	$include	if2media.def
 	$list
 
-	
 $(66::,x)
 ?	$set	1
 this_if i_f
@@ -49,8 +52,22 @@ pool		mpool
 $(66::, x)
 nframe  	netframe
 
+	$if	0
+$(66::,x)
+ifaddr		netv4
+
+$(71::,sp)
+dgram		datagram
+	$endif
+
 $(66::, x)
 ro		route
+
+$(69::,b)
+so		$socket
+
+$(66::, x)
+uugram	udgram
 
 $(66::, x)
 transmission	tcp_connection
@@ -61,7 +78,7 @@ transfer	segment
 $(66::, x)
 tlist		tbank
 
-$(0::DRIVERS_BANK1)
+$(0::DRIVERS_BANK1/$0)
 
 "$rxtx_lo"*	$vector		rxtx_softwareloopback
 "$rxtx_ift1"*	$vector		ift1_rxtx
@@ -99,6 +116,18 @@ __recheck*	$vector		recheck
 tx_mib_update*	$vector		mib_scope_update:variable48
 locate_interfaces* $vector	i_locate
 
+rasmgram*	$vector		rx_jumbo
+jumboq2*	$vector		jumbo_txq:q2oq
+g_checksum*	$vector		gchecksum
+rasm_time*	$vector		rx_jumbo:reassembly_time?
+
+tx_nocheck*	$vector		if_write
+rx_nocheck*	$equ		tx_nocheck
+
+jumbo_drive*	$vector		jumbo_txq		
+
+		$do	$>48,	$flag	driver vectors too many
+
 .	frame handling at interface
 
 	$do	48-$,	fret	0
@@ -115,11 +144,11 @@ connection_array* $vector	hvsocket:locate
 hvsocket_xbind*	$vector		hvsocket:xbind
 hvsocket_close*	$vector		hvsocket:close
 hvsocket_write_rxq* $vector	hvsocket:write_rxq
-tcp_window*	$vector		window
 	$endif
 
-
+	fret	0		. spare
 tnet_callstring*	$vector	net_callstring
+tcp_timer(1)*	$vector		tmetric:timer(1)
 
 	$do	64-$,	fret	0
 
@@ -130,6 +159,7 @@ tnet_callstring*	$vector	net_callstring
 	$include	restart2
 	$include	lladdres
 	$include	dualport
+	$include	../t77.4/if_write
 	$include	ifconfig
 	$include	log2mask
 	$include	route_in
@@ -146,11 +176,14 @@ tnet_callstring*	$vector	net_callstring
 	$include	arp.def
 	$include	../t77.4/ipv4.def
 
+	$if	1	. moved
 $(66::,x)
 ifaddr	netv4
 
 $(71::,sp)
 dgram	datagram
+	$endif
+
 
 	$list		3
 	$include	arp_enet
@@ -168,12 +201,15 @@ $(0)
 	$include	t77.4/hvsocket.def
 	$list		2
 	$include	t77.4/hvsocket
-	$include	t77.4/window
+.	$include	t77.4/new_mark
+	$include	t77.4/tcp_lib1
+
+	$include	t77.4/rx_jumbo
+	$include	t77.4/tx_jumbo
+	$include	t77.4/gchecksum
 
 	$path
 	$endif
-
-
 
 net_callstring
 

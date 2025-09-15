@@ -20,18 +20,7 @@ ipq_write
 	lb	TX_DATAGRAM
 	sb	nframe:frame_axw(TX_DESCRIPTORS):word_pointer, y
 
-	lb	MTU
-	anb	11
-	lb	11
-	jc	ipq_write2q
-
-	ii	GUARD$
-
-	$if	TX_FRAGMENTS
-	lcal	ipq_source_fragment
-	jpa	ipq_write2q
-	$endif
-	lret	0
+	lb	TX_DATAGRAML
 
 ipq_write2q
 	ly	TX_DATAGRAM
@@ -44,89 +33,6 @@ ipq_write2q
 	lcal	q2ifoq
 	lret	0
 
-ipq_source_fragment
-	$if	TX_FRAGMENTS=0
-
-.	call ipq_write2q from here with no recursion
-.	updating his pointer / counter tuple stacklet in the front of his buffer
-.	and his datagram header + checksum
-.	until the payload is small enough to return and drop into ipq_write2q
-.	run a test with a large udgram
-
-	$else
-
-	lb	*TX_DATAGRAM
-	la, xi	0
-
-	lcal	ip_buy_datagram	
-	jnza	ipq_fragment
-
-	la, xi	-5
-	lret	0
-
-ipq_fragment
-	sa	y		. we already dropped the
-				. interface pointer in x
-	lx	TX_FRAME
-	la	descriptor:frame, y
-	qpush	0, x
-	qpop	0, a	
-	qpush	4, x
-	qpop	4, a
-
-	lb	MTU
-	andB,xi	-8
-	anb	HEADER_BYTES
-	tz	TX_FLAG_OFFSET
-	andB,xi	-8
-
-	push	b
-	sbr	3
-	ab	TX_FLAG_OFFSET
-	orB	IP_MORE
-	sb	TX_FLAG_OFFSET
-
-	lb	TX_DATAGRAML
-	anb	0, sp
-	sb	TX_DATAGRAML
-	pop	b
-
-	push	b	
-	lcal	ipq_write_channel_program
-
-	pop	b
-	ab	HEADER_BYTES
-	ly	descriptor:dgram, y
-	lx	TX_DATAGRAM
-	lcal	ipq_repro_datagram_header	
-
-	lx	I_F
-	la	fp
-	lcal	q2ifoq
-
-					. test if this is the last fraction
-	la	TX_DATAGRAML
-	aa	HEADER_BYTES
-	lb	MTU
-	anb	a
-
-	jnc	ipq_refraction
-	
-	la	TX_FRAME
-	ly	TX_AXW
-					. rewrite the channel program
-	lb	TX_DATAGRAML		. of the original buffer
-	lcal	ipq_write_channel_program
-
-	lb	TX_DATAGRAML
-	ab	HEADER_BYTES
-
-	la	TX_FLAG_OFFSET
-	and,xi	01FFF
-	sa	TX_FLAG_OFFSET
-	$endif
-	lret	0
-
 ipq_construct_datagram_header
 	la	HEADER_BYTES
 	sar	2
@@ -135,6 +41,14 @@ ipq_construct_datagram_header
 
 	la	dgram:vers_ihl_tos, y
 	sb	dgram:bytes, y
+
+	 $if	0
+	 push	b
+	 ab	-21,,xi
+	 pop	b
+	 jc	$+2
+	 ii	GUARD$
+	 $endif
 
 	push	TX_FLAG_OFFSET
 	pop	dgram:flags_fragment, y
@@ -171,63 +85,6 @@ ipq_write_sum
 
 	lret	0
 
-	$if	TX_FRAGMENTS
-ipq_repro_datagram_header
-	la	HEADER_BYTES
-	sar	2
-	aa, xi	-5
-	lr	a
-
-	la	dgram:vers_ihl_tos, y
-	ds	dgram:bytes, x
-
-	qpush	dgram:ipsource, y
-	push,xi	0
-	push	dgram:ttl_protocol, y
-	push	TX_FLAG_OFFSET
-	push	dgram:id, y
-
-	da	0, sp
-	da	2, sp
-	da	4, sp		. this said 3, sp before, surely some mistake
-	da	6, sp
-
-	tp	r
-	lr, xi	0
-
-	push	x
-
-	j	ipq_repro_option?
-
-ipq_repro_option!
-	dpush	10, y
-	da	0, sp
-
-	dpop	10, x
-
-	ax, xi	2
-	ay, xi	2
-
-ipq_repro_option?
-	jdr	ipq_repro_option!
-
-	pop	x
-
-ipq_repro_sum
-	aa	b
-	dsr	16
-	sbr	8
-	jnza	ipq_repro_sum
-
-	xorB	(00FFFF)
-	sb	3, sp
-
-	qpop	2, x
-	qpop	6, x
-
-	lret	0
-	$endif		. TX_FRAGMENTS
-
 ipq_write_channel_program
 					. b = payload length
 					. a = frame buffer
@@ -247,12 +104,7 @@ ipq_write_channel_program
         sb      10
         sbl     3
 
-        $if     DYNAMIC_IP_HEADER
-        ab      TP_HEADER
-        anb     HEADER_BYTES
-        $else
         ab      TX_DATAGRAM
-        $endif
 
         sb      nframe:frame_axw(TX_DESCRIPTORS):word_pointer, a
 	

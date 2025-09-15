@@ -1198,7 +1198,7 @@ Three service ISRs are raised automatically and also callable with <a href="#ii"
 	1:1	<a href="kernel.html#yield_ii">YIELD$</a>	is application callable and is also raised on expiry of timeslice
 			timeslice applies when REALTIME$_CLOCK is nonzero and interrupt mask is zero
 			and is a decrementing instruction ration graded by thread priority 
-
+	<a	name="rexit"/>
 	1:6	<a href="kernel.html#exit_ii">EXIT$</a>	is application callable
 			and is also raised by <a href="#lret">lret</a> or <a href="#fret">fret</a> instruction
 			on internal stack empty sp = 128 in application mode
@@ -1217,7 +1217,8 @@ PAGE_1 system call ISRs in the <a href="kernel.html">prototype kernel</a> are at
 	1:3	<a href="kernel.html#bank_ii">BANK$</a>		acquire storage
 	1:4	<a href="kernel.html#array_ii">ARRAY$</a>		acquire large storage
 	1:5	<a href="kernel.html#bank_free_ii">BANK$FREE</a>	relinquish storage
-	1:6	<a href="kernel.html#exit_ii">EXIT$</a>		terminate process or thread
+	1:6	<a href="kernel.html#exit_ii">EXIT$</a>		terminate calling process or thread
+				see also instructions <a href="#rexit">lret fret</a>
 	1:7	<a href="kernel.html#thread_ii">THREAD$</a>		launch thread
 
 	1:8	<a href="kernel.html#total_free_ii">TOTAL$FREE</a>	amount of storage free 
@@ -4629,8 +4630,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 				|	neither applications nor interrupt code may base|
 				|	executable pages below the <a href="#thresho">application threshold</a>|
 				|							|
-				|	a sabr operations which are not permitted	|
-				|	for example window not in [ 2..63 ] faults 	|
+				|	sabr operations which are not permitted		|
+				|	for example window not in [ 2..63 ] fault 	|
 				|	with interrupt GUARD$				|
 				|							|
 				|	if the device does not have the requested page	|
@@ -7467,7 +7468,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|														|
 	|		returns + 1 instruction: exponent overflow/underflow has not been raised since last examined	|
 	|														|
-	|		returns + 0 : overflow/underflow has been asserted and assertion has been cleared		|
+	|		returns + 0 : overflow/underflow has been asserted. Assertion is cleared			|
 	|														|
         |       Call sequence FP_XPO$FLAG is                                            				|
         |                                                                                                               |
@@ -8268,15 +8269,15 @@ SIMD Frame remains programmed until the thread updates it and can be used for su
 	SIMD_CONTROL	(<i style="color:#00A000">-1</i>, <i style="color:#00A000">accumulator_vector_increment</i>, <i style="color:#00A000">restart_count</i>-1, <i style="color:#00A000">ea_index_increment</i>:q)
 
 </pre>
-<i style="color:#00A000">-1</i> in register 20 SIMD_RUNCOUNT triggers on <a href="#sim_d2">repeat execute</a> instruction <a href="#rex">rex</a>
+<i style="color:#00A000">-1</i> in register 20 RDATAC triggers on <a href="#sim_d2">repeat execute</a> instruction <a href="#rex">rex</a>
 <pre	style="font-family:times-roman;color:0000FF">
 
-	initialisation of SIMD_RUNCOUNT from SIMD_RESTARTC register 22
+	initialisation of RDATAC from WDATAC register 22
 
 	initialisation of accumulator vector register q from internal stack pointer register sp
 
 </pre>
-<i style="color:#00A000">restart_count</i> (register 22 SIMD_RESTARTC) is the number of objects loaded in the frame where
+<i style="color:#00A000">restart_count</i> (register 22 WDATAC) is the number of objects in the frame less 1
 <pre	style="font-family:times-roman;color:0000FF">
 
 	integer objects occupy one or two registers
@@ -8285,10 +8286,10 @@ SIMD Frame remains programmed until the thread updates it and can be used for su
 
 	floating objects occupy four or eight registers
 
-	SIMD_RESTART register 22 contains the value <i>restart_count</i>-1
+	WDATAC register 22 contains the value <i>restart_count</i>-1
 
 </pre>
-<i style="color:#00A000">accumulator_vector_increment</i> (register 21 SIMD_AVECTORU) is the increment to accumulator vector q and is in most cases the size in words of the object
+<i style="color:#00A000">accumulator_vector_increment</i> (register 21 RDATA) is the increment to accumulator vector q and is in most cases the size in words of the object
 
 <p>
 <i style="color:#00A000">accumulator_vector_increment</i> is zero if multiple Data Point 2 operands are applied to one Data Point 1 accumulator
@@ -8306,7 +8307,7 @@ SIMD Frame remains programmed until the thread updates it and can be used for su
 <i style="color:#00A000">ea_index_increment</i> is zero if one Data Point 2 operand is applied to multiple Data Point 1 accumulators
 
 <p>
-Register 20 SIMD_RUNCOUNT is final count set at -1 = expired / awaiting initialisation
+Register 20 RDATAC is final count set at -1 = expired / awaiting initialisation
 in order to trip initialisation of operations to the start of SIMD frame
 
 <p>
@@ -8315,10 +8316,10 @@ Initialisation steps are
 
 	register q accumulator vector	&lt;-	internal stack pointer
 
-	register 20 SIMD_RUNCOUNT	&lt;-	register 22 SIMD_RESTARTC
+	register 20 RDATAC	&lt;-	register 22 WDATAC
 
 </pre>
-SIMD_RESTARTC contains objects count minus one
+WDATAC contains objects count minus one
 
 <p>
 Kernels start all process threads with a <a href="rta.html#A2_2">default SIMD Frame</a> of one object to allow calculations on the internal stack top
@@ -8396,7 +8397,8 @@ with sources-1 arrayed in the internal stack and sources-2 either in memory or i
 
 	each operation is a calculation on 144 mantissa bits
 
-	mantissa is joined for operation by rolling sign bits into the normalising field of each minor number
+	floating instructions roll sign bits into the normalising field of the second mantissa for operation
+	and normalise both numbers at operation completion
 
 	minor normalising field is major exponent minus minor exponent minus 72
 
@@ -8405,7 +8407,7 @@ with sources-1 arrayed in the internal stack and sources-2 either in memory or i
 	minor exponent is major exponent minus 72 minus minor normalising count</a>
 
 </pre>
-<a href="#simd_c">SIMD_RESTART + 1  operations</a> take place
+<a href="#simd_c">WDATAC + 1  operations</a> take place
 
 <p>
 by default that is one operation at the internal stack top
@@ -8528,7 +8530,7 @@ Data Points 2 are acquired on computation from locations which may be widely spa
 
 <p>
 Repeat operations traversing the internal register stack update the accumulator vector
-with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_AVECTORU</a>, most frequently
+with the &plusmn;increment programmed in register <a style="color:#FF0000">RDATA</a>, most frequently
 <pre	style="font-size:10pt">
 
 	+1 * object size in words
@@ -8536,17 +8538,17 @@ with the &plusmn;increment programmed in register <a style="color:#FF0000">SIMD_
 	for example <a style="color:#FF0000">increment +4</a> is for a list of 4-word floating numbers in the internal stack
 
 			
-	+ ----------------------------- + <----------------------------------- 	SIMD_RESTART copied -> SIMD_RUNCOUNT
+	+ ----------------------------- + <----------------------------------- 	WDATAC copied -> RDATAC
 	|									at operation start when runcount < 0
 	_________________________________________________________________	simultaneously accumulator vector q restarted
 	| running count	| <a style="color:#FF0000">increment +4</a>	|
 	|_______________|_______________|_______________|_______________|
-	  SIMD_RUNCOUNT	| SIMD_AVECTORU	|  SIMD_RESTART	|  SIMD_INDEXU 
+	  RDATAC	| RDATA		|  WDATAC	|  SIMD_INDEXU 
 	    		|				+---------------------> updates index register of source-2 operand
 			+-----------------------------------------------------> updates [ register q ] accumulator vector 
 
 </pre>
-Accumulator vector increment SIMD_AVECTORU zero is correct when the same internal stack register remains source-1 operand iteratively,
+Accumulator vector increment RDATA zero is correct when the same internal stack register remains source-1 operand iteratively,
 for example
 <pre	style="font-family:times-roman;color:0000FF">
 
@@ -8555,7 +8557,7 @@ for example
 	many values read from dispersed locations are accumulated in one internal stack register
 
 </pre>
-Accumulator vector increment SIMD_AVECTORU +2 is correct when
+Accumulator vector increment RDATA +2 is correct when
 <pre	style="font-size:12pt">
 
 	pairs of single registers are treated as <a href="#rex_lane">left and right lanes</a> with for example
@@ -8662,9 +8664,9 @@ The repeat execute instruction is implemented as follows
 
 	If the acquired instruction is not in the repeatable set then rex instruction no-ops
 
-	If register 20 SIMD_RUNCOUNT is negative two initialisation steps take place
+	If register 20 RDATAC is negative two initialisation steps take place
 
-		counter restart value in register 22 SIMD_RESTART is copied to final count SIMD_RUNCOUNT
+		counter restart value in register 22 WDATAC is copied to final count RDATAC
 
 		register 15 internal stack pointer is copied to
 		accumulator vector q
@@ -8675,19 +8677,19 @@ The repeat execute instruction is implemented as follows
 	X. The acquired instruction is executed using as accumulator[s]
 	the internal stack register[s] pointed by q <a href="#watch_it" style="color:#FF0000">**</a>
 
-	Register 21 SIMD_AVECTORU is added to q
+	Register 21 RDATA is added to q
 
 	If the acquired instruction uses an index register in the set [ x y a b fp sp ]
 	then register 23 SIMD_INDEXU is added to the index register
 
-	Final count register 20 SIMD_RUNCOUNT is decremented
-	If SIMD_RUNCOUNT becomes negative repeat operation is complete and ceases
+	Final count register 20 RDATAC is decremented
+	If RDATAC becomes negative repeat operation is complete and ceases
 
 	If an interrupt request with urgency > interrupt mask is pending
 
 		absolute program counter is decremented
 		to cause rex instruction to start again at the next repeat instance
-		without initialising accumulator vector q or final count SIMD_RUNCOUNT
+		without initialising accumulator vector q or final count RDATAC
 
 		repeat operation concludes and the interrupt is enabled
 
@@ -8706,15 +8708,18 @@ The repeat execute instruction is implemented as follows
 
 
 <p>
-rex instruction uses registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a>
+rex instruction uses registers <a style="font-family:courier">[ q RDATAC RDATA WDATAC SIMD_INDEXU ]</a>
 
 <p>
-Registers <a style="font-family:courier">[ q SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a> are nonvolatile to the application
-<pre	style="font-family:times-roman">
+Registers <a style="font-family:courier">[ q RDATAC RDATA WDATAC SIMD_INDEXU ]</a> are nonvolatile to the application
+
 <p>
-	because <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a> are the same registers as <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]</a>
-	filestream libraries save and restore <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]</a>
-</pre>
+filestream libraries save, use and restore <a style="font-family:courier">[ RDATAC RDATA WDATAC WDATA ]
+
+<p>
+WDATA is the same register as SIMD_INDEXU</a>
+
+<p>
 Kernels launch all threads with <a href="#A2_2" style="text-decoration:none">SIMD array one object deep at the stack top</a>
 so that the application has <a href="rta.html#A2_2">alternative accumulators</a> to <a style="font-family:courier">[ a b mantissa2 mantissa3 ]</a>
 <pre	style="color:#00AF6F;font-size:12pt">
@@ -8726,19 +8731,29 @@ If accumulator vector q designates any register outside the range 24..127
 the thread faults with interrupt GUARD$ latent parameter permission
 
 <p>
-Macro SIMD_CONTROL takes a quadword argument containing <a style="font-family:courier">[ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU ]</a>
+Macro SIMD_CONTROL takes a quadword argument containing <a style="font-family:courier">[ RDATAC RDATA WDATAC SIMD_INDEXU ]</a>
 
 <p>
-The frame defined by SIMD_CONTROL is the <a href="#A2_7">default accumulator vector</a> starting internal stack top with length RESTART_COUNT = SIMD_RESTART+1 objects
+The frame defined by SIMD_CONTROL is the <a href="#A2_7">default accumulator vector</a> starting internal stack top with length <i>restart_count</i> = WDATAC+1 objects
 <pre	style="color:#00AF6F;font-size:12pt">
 
-	<a style="color:#00AF6F">SIMD_CONTROL	(-1, ACCUMULATOR_UPDATE, RESTART_COUNT-1, EA_INCREMENT:q)</a>
+	<a style="color:#00AF6F">SIMD_CONTROL	(<i>runnning_count, &plusmn;accumulator_vary, restart_count, &plusmn;effective_address_increment</i>:q)</a>
 
 </pre>
-where -1 causes accumulator vector initialisation and final count restart
+
+<i>restart_count</i> is objects - 1
 
 <p>
-ACCUMULATOR_UPDATE is the operand size in words unless
+<i>runnning_count</i> = -1 causes
+<pre	style="color:#00AF6F;font-size:12pt">
+
+	accumulator vector q initialised to internal sp
+
+	<i>runnning_count</i> RDATAC initialised to <i>restart_count</i> WDATAC
+
+</pre>
+<p>
+<i>&plusmn;accumulator_vary</i> is the operand size in words unless
 <pre	style="font-family:times-roman;color:#0000FF">
 
 	the operation is executed once and an accumulator vector update is never used
@@ -8751,20 +8766,20 @@ ACCUMULATOR_UPDATE is the operand size in words unless
 	the repeated operation is <a href="#A2_5">test / skip</a> and does not use internal stack accumulators
 
 </pre> 
-RESTART_COUNT-1 in register SIMD_RESTART restarts final count when <a href="#sim_d2">rex</a> instruction starts with final count = -1 = EXPIRED
+<i>restart_count</i> - 1 in register WDATAC restarts final count when <a href="#sim_d2">rex</a> instruction starts with final count = -1 = EXPIRED
 
 <p>
-RESTART_COUNT-1 is one less than iterations, which stop when final count RDATAC reaches -1 = EXPIRED
+<i>restart_count</i> - 1 is one less than iterations, which stop when final count RDATAC reaches -1 = EXPIRED
 
 <p>
-EA_INCREMENT is the &plusmn; index register update which may be widely dispersed to gather structure members
+&plusmn;<i>effective_address_increment</i> is the &plusmn; index register update which may access widely dispersed structure members
 
 <p>
 
 <a	name="simd_target"/>
 
 To operate on an object inside the stack top frame,
-a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> updates accumulator vector q 1st argument
+a macro <a href="#A2_6" style="text-decoration:none">SIMD_TARGET</a> updates accumulator vector q to point 1st argument named in the internal stack<br>
 and writes zero or 2nd argument - 1 to final count register RDATAC
 
 <p>
@@ -8992,7 +9007,7 @@ Macro SIMD_TARGET updates accumulator vector to stack top + 6 floats for 12 floa
 </pre>
 
 <p>
-SIMD_RUNCOUNT decrements to -1.
+RDATAC decrements to -1.
 Subsequent Repeat Execute instructions reinitialise Accumulator Vector to SIMD_CONTROL setting
 
 <p>	
@@ -9102,7 +9117,7 @@ If <a href="kernel.html#fp_xpo_flag_ii">FP_XPO$FLAG</a> returns + zero (no skip)
 a jump or call can be made in the application to process the event
 
 <p>
-pointers and counters in SIMD control registers [ SIMD_RUNCOUNT SIMD_AVECTORU SIMD_RESTART SIMD_INDEXU q ] identify
+pointers and counters in SIMD control registers [ RDATAC RDATA WDATAC SIMD_INDEXU q ] identify
 the faulted operation and how many remain
 
 <p>
@@ -9112,15 +9127,15 @@ an application handler should update these registers to resume executing outstan
 	if the <a href="#simd_i">repeated instruction</a> uses an index register to generate its
 	source-2 operand effective address, SIMD_INDEXU must be added to the index register
 
-	SIMD_AVECTORU must be added to accumulator vector q
+	RDATA must be added to accumulator vector q
 
-	SIMD_RUNCOUNT is the outstanding count and must be decremented to count past the faulted operation
+	RDATAC is the outstanding count and must be decremented to count past the faulted operation
 
-	If SIMD_RUNCOUNT becomes consequently negative, operations are already complete because the
+	If RDATAC becomes consequently negative, operations are already complete because the
 	faulted operation is the last in the sequence
 
 </pre>
-In this example processing 192-bit floating numbers, the accumulator vector increment SIMD_AVECTORU
+In this example processing 192-bit floating numbers, the accumulator vector increment RDATA
 is eight words, and so in the example is the index register increment SIMD_INDEXU
 <pre	style="color:#00AF6F;font-size:12pt">
 
@@ -9132,12 +9147,12 @@ is eight words, and so in the example is the index register increment SIMD_INDEX
   :                            229 			. if you want to do stuff like printf
   :                            230 			. save any index register used in the SIMD -> target instruction
   :                            231 
-00:000155  800017              +232 	ax	SIMD-XU	. increment you must know which index register
-00:000156  F80015              +233 	push	SIMD_AVECTORU	. advance accumulator vector
+00:000155  800017              +232 	ax	SIMD_XU	. increment you must know which index register
+00:000156  F80015              +233 	push	RDATA	. advance accumulator vector
 00:000157  2F000D              +234 	popA	q	. 
   :                            235 
-00:000158  1F0014              +236 	dec	SIMD_RUNCOUNT	. outstanding count relative zero
-00:000159  780014              +237 	tp	SIMD_RUNCOUNT	. if this transitions RDATAC to -1
+00:000158  1F0014              +236 	dec	RDATAC	. outstanding count relative zero
+00:000159  780014              +237 	tp	RDATAC	. if this transitions RDATAC to -1
 00:00015A  350000              +238 	lret	0	. it means fault was on last operation in list
 00:00015B  35FFFD              +239 	lret	-3	. otherwise restart SIMD operation to do outstanding operations
 	

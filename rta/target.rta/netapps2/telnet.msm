@@ -50,7 +50,6 @@ telnet_tpaside	0
 
 tn_help		"commands are":HT:"h":HT:"help":LF:;
 		HT:HT:"e":HT:"echo":LF:;
-		HT:HT:"w":HT:"webhost threads":LF:;
 		HT:HT:"m":HT:"memory free":LF:;
 		HT:HT:"stay":HT:"no timeout":LF:;
 		HT:HT:"t":HT:"threads active":LF:;
@@ -189,9 +188,6 @@ telnet_text_command
 	anu	('m'*/16:s)
 	jzb	telnet_memory
 
-	anu	('w'*/16:s)
-	jzb	webhost_threads
-
 	anu	('e'*/16:s)
 	jzb	telnet_echo
 
@@ -231,7 +227,15 @@ telnet_text_command
 	dan	("ifswap")
 	jdz	telnet_mirror_trunk
 
+	dl	10
+	dte	("ufree")
+	j	tnet_tcp_free?
+	j	telnet_free_udp_port
+
+tnet_tcp_free?
+	dte	("tfree")
 	j	telnet_prompt
+	j	telnet_free_tcp_port
 
 telnet_threads
 	lb, xi	$3("console threads display":10)
@@ -364,20 +368,6 @@ telnet_memory
 	
 	j	telnet_respond
 
-webhost_threads
-	la	http_threads
-	push	tn_editline,,xi
-	pop	p
-	z	BYTES
-	call	(ieditua)
-	wsr	16
-	la	BYTES
-	lb	tn_editline,,xi
-	lcal	telnet_insert
-	lb, xi	$3(" webhost threads":10)
-	la, xi	$bits/$byte
-	j	telnet_respond
-
 telnet_run
 	la	160,,xi
 	lb	telnet_run_name,,xi
@@ -431,21 +421,47 @@ telnet_run_report
 	lret	0
 
 telnet_align_trunk
+	lcal	co_ordinate_platform
 	lx	5,,xi
 	call	(__ift2_align)
 	j	telnet_zout
 
 telnet_mirror_trunk
+	lcal	co_ordinate_platform
 	lx	5,,xi
 	call	(__ift2_mirror)
 	j	telnet_zout
 
 telnet_smp
+	lcal	co_ordinate_platform
 	call	(scanhex)
 	and	-2,,xi
 	lk	a
 	ii	$SMP
 	j	telnet_zout
+					. stopgap until files auto-closed
+telnet_free_udp_port
+	lk	usockb(1),,xi
+	j	telnet_free_port 
+
+telnet_free_tcp_port			. free a service listening port
+	lk	tsockb(1),,xi
+
+telnet_free_port
+	lcal	co_ordinate_platform	. if server application did not
+	call	(iscan)
+	dsl	8+7			. integer in b 7 port-id bits -> a
+	orB	31,,xi			. zone window ++ offset
+	and	127,,xi			. kernel tcp ports vector offset
+	rbr	12			
+	or	k			. 02000++128 2000++256
+	la	0, a			. read kernel vector ip port pages
+	jza	telnet_zout		. already so free it isn't there?
+	sabr	31			. look in the page of port descriptors
+	qpush	(0q)
+	qpop	s:socket_address	. suppress bound adresss fields b ->
+	z	s:flags			. and flags b ->
+	j	telnet_zout		. no need to close window 31
 
 telnet_thread_term
 	call	(scanhex)
@@ -755,4 +771,18 @@ tn_edit	lx	tn_ostringp
 	pop	q
 	pop	BYTES
 	lret	0
+
+co_ordinate_platform
+	lx	telnet_tpaside
+	la	transmission:receiveq:head
+	lb	descriptor:i_f, a
+	ab	-2,,xi
+	jnzb	restricted
+	dl	10
+	lret	0
+
+restricted
+	lb	$3("platform keeper only":0),,xi
+	la	$bits/8,,xi
+	j	telnet_respond
 

@@ -15,7 +15,7 @@
 #include "../include.rta/address.h"
 
 #undef	TRACE
-#define	DATA	480
+#define	DATA	16480
 #define	LF	10
 
 #ifdef	LINUX

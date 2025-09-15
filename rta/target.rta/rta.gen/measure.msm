@@ -47,10 +47,6 @@ B4			$equ	128+8
 
 .	measure is once-only initialisation code
 .	called at kernel start up
-.	it is in a lcal subroutine to make it
-.	modular and include-compatible with
-.	any other bank management routines
-.	in this file
 
 $(65)
 
@@ -72,16 +68,20 @@ tdescriptor_high_index		$res	1
 
 ?	$do	PRIORITIES,stem(?)	$res	4
 
+?	$do	63,device_key(?)	$res	2
+
 uq_head				$res	1
 uq_tail				$res	1
 
 first_bdx			$equ	$
 
-. $(65:$bank_address($(64)+7**-8))
 
 next_page_descriptor		$res	2
 
-?	$do	63,device_key(?),	$res	2
+.	?	$do	63,device_key(?),	$res	2	. this can't be here
+								. first_bdx & next_page_descriptor
+								. are the 1st + 2nd instances
+								. of a dynamic variable table
 $(0)
 
 stem_link
@@ -198,8 +198,6 @@ large_system
 	lr	64+3+1,,xi
 	lb	BANKS		. 2 * memory banks of 262144 words
 	sbl	5		. calculate page address highest bank + 1
-.	orB	(0400000)	. think big one moment later
-				. in case of maximum memory
 
 base_management_bank		. where decrement is from 0400000
 	ax	-1,,xi
@@ -217,7 +215,7 @@ base_management_bank		. where decrement is from 0400000
 
 memory_configured
 	z	0, x
-	sr	1, x		. store the available small banks index
+	sr	1, x		. store the available small pages index
 	sx	next
 	
 	sa	large_bank_descriptor_sp
@@ -352,59 +350,33 @@ memory_configured
 ?	$do	63,	z	free_chain(?)
 	z	free_chain(64)
 
+				. management memory is 1+ pages at RAM start
+				. or 1+ * 262144 words (banks) at high RAM
+				. and contains measurements sensed at startup
+				. plus 4 dynamic tables
 
-				. the stack of four-word task descriptors
-				. grows downwards from the position below
-				. the lowest possible big bank descriptor
+				. 8-word thread descriptors stack downwards
+				. from positions reserve for descriptors of
+				. banks assigned in groups of 256K-words
 
 				. the lowest big-bank pointer
-				. is the small-banks upper limit pointer
+				. is the thread descriptors stack root
 
-				. next_tdescriptor_sp
-				. is the also the upper edge for
-				. small-banks DESCRIPTORS
+				. next_tdescriptor_sp is the top limit for the heap
+				. of descriptors of memory assigned in groups of pages
 
-				. write the pointer to the descriptor
-				. This pointer decrements as 2-word
-				. big-bank descriptors are added
+				. base of page group descriptor heap follows
+				. a list of device_key(1..63) of peripheral spaces
+				. and non-executable memory arrays
+				. with internal organisational structures
 
-.	sa	large_bank_descriptor_sp
-.
-.	ana	BANKS
-.
-.	sa	next_tdescriptor_sp
+				. *next points to available descriptor
+				. at pages groups heap top
 
-				. *next points to next_descriptor
-				. for small banks
-				. this is the next available two-word
-				. descriptor in the upward-growing
-				. small banks decriptor list
-
-				. *next and the initial descriptor
-				. where *next points are constructed
-				. here at system start, so all
-				. system images are restartable
-				. and may be in ROM
-
-				. The buffer pointer in the initial
-				. *next descriptor  points to the
-				. first available RAM page after
-				. the kernel ROM or kernel load
-
-				. there are 64 free-chains into the
-				. "small" banks heap and one free-chain 
+				. there are 64 free-chains by size into the
+				. pages groups heap and one free-chain 
 				. into the big-banks stack
 	
-				. The small-banks free-chains are one
-				. per size, 1..64 pages (4096 words
-				. to 262144 words)
-
-				. a "small" bank of 262144 words is
-				. possible, because a smaller bank
-				. may get bigger if the next assignment
-				. does not fit in the same 262144-word
-				. physical bank
-
 				. small banks are assigned from low-order
 				. locations upwards. The free chains
 				. reassign free storage at the lowest
@@ -425,99 +397,9 @@ memory_configured
 
 				. A single large bank may contain nearly
 				. 1024 times the 16 Megaword Address space
-				.          -16 gigawords in total-
-				. for large arrays which need to be contiguous
 
-				. An array needs to be contiguous if
-				. multiword operands to single instructions
-				. straddle physical 256K bank boundaries.
-
-				. Developers can also structure arrays
-				. so that quad or double word operands
-				. are safely inside one bank, even if
-				. the containing structure straddles two
-				. non-contiguous banks addressed with
-				. two adjacent relocation base-registers
-
-				. Operand EA is translated to an absolute
-				. address once for each operand read or write
-
-				. However very large contiguous bank
-				. arrays are obtained with one ARRAY$ call
-				. and accessed with one bank handle
-
-				. Arrays larger than the address space
-				. are addressed a part at
-				. a time. Structures straddling bank boundaries
-				. are accessed using two adjacent base registers
-				. to address two adjacent banks
-
-	.
-	.	lb	instance_index		. read the subscript
-	.	m, xi	STRUCTURE_SIZE		. convert to table offset
-	.	dsl	6			. split into relative
-	.	sal	6			. bank/word offsets
-	.	sbr	6
-	.	aa	array_base_bank_handle	. bank handle obtained from
-	.					. large_bank_request routine
-
-	.					. set bits 23..18 of address
-	.					. to the address region which
-	.	orB	(BASE_REGISTER_TAG*/18)	. we shall base
-
-	.	sabr	BASE_REGISTER_TAG	. base the bank where the 
-	.					. structure starts
-
-	.	la, i	64, a			. and base the next bank after
-	.	sabr	BASE_REGISTER_TAG+1	. in the next range of the
-	.					. address space
-
-				. where for addresses > 262143, the
-				. storage operand address is resolved
-				. with the base register indicated in
-				. effective address bits 23..18
-
-				.	_____________________________
-				.	|baseid|xxxxxx xxxxxx xxxxxx|
-				.	|______|____________________|
-				.
-				. and for addresses 256..262143, the 
-				. storage operand address is resolved
-				. with the base register indicated in
-				. effective address bits 17..12
-				.
-				.	_____________________________
-				.	|000000|baseid|xxxxxx xxxxxx|
-				.	|______|______|_____________|
-				.
-				. instructions are always fetched from
-				. the bank based with base register zero
-				. whatever the effective address of the
-				. instruction
-				.
-				. storage operands in the
-				. address range 256..4095 are also in
-				. instruction bank 0.
-
-				. storage operands at effective address <
-				. 256 are registers.
-
-				. large banks are assigned from high-order
-				. memory downwards, in size multiples of
-				. one bank (262144 words) The highest-addressed
-				. contiguous area large enough for each
-				. request is assigned. This is achieved
-				. by recombining and reshaping the
-				. available contiguous collections of
-				. 262144-word banks
-
-				. "small" banks may accidentally become
-				. an aligned bank of 64 pages, if the next
-				. assignment steps to the next bank edge
-				. ("small" banks don't straddle physical
-				. bank edges). Because of this, a task
-				. requesting more storage may already
-				. have it
+				. Arrays larger than address space
+				. are accessed in moving address windows
 
 	lret	0		. the end of the measure subroutine
 				. initialisation routine at startup
@@ -1583,9 +1465,15 @@ v64*	$name
 	
         sa	 RSAVE+sp	. set user SP
 
+	$if	1
+	z	UPACKET
+	z	UPACKET+1	. default thirdword-sensitive
+	$else
+
 	dl	(080:d)		. default halfword-sensitive
 				. just for now
 	ds	UPACKET
+	$endif
 
 
 	lcal	tdescriptor

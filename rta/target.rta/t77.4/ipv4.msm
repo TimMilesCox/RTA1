@@ -37,9 +37,10 @@
 .
 .
 
+	$include	k.def
 
-HEADER_LONGWORDS $equ	d$save	. 16 used in receive
-TP_HEADER	$equ	d$save1	. 17 used in receive and transmit
+. HEADER_LONGWORDS $equ	d$save	. 16 used in receive			. moved to ../t77.4/pointers.def
+. TP_HEADER	$equ	d$save1	. 17 used in receive and transmit	. moved to ../t77.4/pointers.def
 
 I_F_IDX		$equ	10	.   used in receive
 UPROTOCOL_BYTES	$equ	11	.   used in receive
@@ -183,8 +184,9 @@ ip_send				. destination is already in 6:7
 				. but you are not likely to do this
 
 	lcal	construct_xdgram
-	sy	TX_DATAGRAM
 
+ip$sendx*
+	sy	TX_DATAGRAM
 	sx	8		. the descriptor
 	andB	(03FFFFF)	. reassembled datagram length
 				. i.e first IP header + payload
@@ -206,7 +208,8 @@ ip_send				. destination is already in 6:7
 	tp	r
 	dl	ro:next_hop	. indirect route = gateway from route table
 
-
+	push	ro:mtu		. either zero
+	pop	MTU		. or an MTU tuned for the route
 
 	ly	8		. the descriptor
 	lx	descriptor:frame, y
@@ -219,6 +222,7 @@ ip_send				. destination is already in 6:7
 	sx	TX_FRAME
 
 	la	r		. the interface #
+	$do	1,	and	32767,,xi	. indirect route bit now 
 	jnza	ip_homed_route
 	ly	TX_DATAGRAM
 	dl	dgram:ipsource, y
@@ -231,52 +235,68 @@ ip_send				. destination is already in 6:7
 				. when not TCP
 ip_homed_route
 
-	and, xi	32767
+	$do	0,	and, xi	32767		. this needed to happen earlier
+
+	$if	0
+	lx	8			. descriptor
+	sa	descriptor:i_f, x
+	$endif
+
 	aa, xi	i_f_pointer_array
 
-	lx	0, a		. the interface pointer address
+	lx	0, a			. the interface pointer address
 	sx	I_F
 
-	$if	1		. do source fragmentation in advance
-				. at datagram acquisition
-	dl	10		. DNF flag, length
-	push	this_if:mtu
+	dl	10			. and oversize DNF is filtered at the same time
+
+	tz	MTU			. already got route -> mtu ?
+	j	ip_send_now		. yes
+					. no
+	push	this_if:mtu		. take interface MTU
 	pop	MTU
-	jza	ip_send_now
+
+	$if	0			. dealt with earlier
+
+ip_dnf?	and	IP_DNF,,xi		. in case forwarding routes fragment values 
+	jza	ip_send_now		. only DNF matters here
 
 	la	MTU
 	ana	b
 
-	la	8		. the descriptor
+	la	8			. the descriptor
 	jc	ip_send_now1
 
-.	lcal	net_free_txbx	. leave it to source fragmentation
-.	lb, xi	-OVERSIZE
-.	j	ip_send_x
+	lx	tx_buffers		. pool the buffer
+	tp	descriptor:bytes, a	. unless it's TCP
+	lcal	sell1
+
+	la, xi	-OVERSIZE
+	dsa	24
+	j	ip_send_x
 
 	$endif
 
 ip_send_now
-	la	8		. the descriptor
+	la	8			. the descriptor
 ip_send_now1
 
 	push	11
 	lcal	ipq_write
 
-	pop	b
+	pop	b			. ie the + send result ?
 
 ip_send_x
-				. call before return B1$ takes B1
-				. from caller's vector bank
-				. so if you nest calls that both
-				. change to a service B1
-				. you may have to repeat KERNEL$B1
-				. but you are not likely to do this
+					. call before return B1$ takes B1
+					. from caller's vector bank
+					. so if you nest calls that both
+					. change to a service B1
+					. you may have to repeat KERNEL$B1
+					. but you are not likely to do this
 
 
-	ii	B1$		. if the caller is a protocol in this task,
-	fret	0		. the IP task, it's the same B1
-				. otherwise it isn't
+	ii	B1$			. if the caller is a protocol in this task,
+	fret	0			. the IP task, it's the same B1
+					. otherwise it isn't
 
 
 .	ipv4_rx, input driver for a system with fixed dual ported
@@ -297,7 +317,7 @@ ip_send_x
 .	checksumming during transfer
 
 
-ONE_TIME_SAVE1	$equ	x$save1
+. ONE_TIME_SAVE1	$equ	x$save1
 
 ipv4_rx
 	$if	1
@@ -323,17 +343,17 @@ ipv4_rx
 
 	la	r		. frame large enough for datagram?
 	ana	dgram:bytes
-	jnc	ipv4_rxz
+	jnc	ipv4_rxz_hdr
 
 	la	dgram:vers_ihl_tos
 	dsr	12
 	aa	-4,,xi		. is the header IPv4?
-	jnza	ipv4_rxz	. otherwise forget it
+	jnza	ipv4_rxz_hdr	. otherwise forget it
 
 	sbr	20
 	sb	HEADER_LONGWORDS
 	ab	-5,,xi		. does it have >= minimal IP header?
-	jnc	ipv4_rxz	. not much use otherwise
+	jnc	ipv4_rxz_hdr	. not much use otherwise
 
 	lb	HEADER_LONGWORDS
 	sbl	1
@@ -375,6 +395,8 @@ ipv4_qcheckin(15-?)	da	dgram:vers_ihl_tos+15*2-?*2	. add 2 words[28..2]
 	j	ipv4_rxz
 
 ipv4_yesforus
+
+	$if	0
 	la	dgram:flags_fragment
 	and	IP_MORE++IP_OFFSET_MASK,,xi
 
@@ -382,6 +404,7 @@ ipv4_yesforus
 	jnza	ipv4_fragment
 	$else
 	jnza	ipv4_rxz
+	$endif
 	$endif
 
 . ipv4_rxbuffer_rq
@@ -432,6 +455,8 @@ ipv4_uproto_rx
 	and	255,,xi
 	lx	TP_HEADER
 
+	lcal	preport
+
 	aa	-IPPROTO_UDP,,xi
 	jza	udp_rxq
 	aa	IPPROTO_UDP-IPPROTO_TCP,,xi
@@ -441,30 +466,34 @@ ipv4_uproto_rx
 
 	j	icmp_noproto
 
+ipv4_rxz_hdr
+	push	1,,xi
+	popA	IPINHDRERRS_I+1
+	jnc	ipv4_rxz
+	inc	IPINHDRERRS_I
+	j	ipv4_rxz
+
 	$else			. IPV4_OVERHAUL 
 
 	$endif		. not IPV4_OVERHAUL
 
-ipv4_drop
-	la	fp
-	lx	rx_buffers
-	tz	x
-	lcal	sell1
+ipv4_drop			. only jump here if a dgram > 160 bytes
+	la	fp		. has been buffered and is then wrong
+	lx	rx_buffers	. for example checksum fail
+	tz	x		. nothing gets socket-buffered if not addressed
+	lcal	sell1		. to an upper protocol port which is bound
 
-			. this was acquired to simplify the
-			. task for the upper protocol
-			. but we can give it back now:
-			. the protocol requested is not
-			. on offer
+	. when UDP / TCP / ICMP, see decisions above, want a datagram,
+	. they take it from circular network buffers
+	. to descriptor-controlled socket buffers
+	. between locations: ipv4_uproto_rx ... ipv4_rxz
 
-. the upper protocol receive routines can jump here to finish
-. but they need not.
+. if a an upper protocol does not finish its RX scan  here
+. if must restore sp in the same way as this
 
-. they do need to restore K and SP in the same way as this
-
-ipv4_rxz
-	lx	ONE_TIME_SAVE1
-	sx	sp
+ipv4_rxz*
+	lx	ONE_TIME_SAVE1	. in interrupt register which this code
+	sx	sp		. cannot write by accident but can read
 	lret	0
 
 ip_buy_datagram
@@ -489,6 +518,10 @@ ip_buy_datagram_alternate	. buying in a private bank (large volume TCP)
 	z	0, x	. routing buffer
 	z	1, x
 	z	2, x	. default destination
+
+	z	3, x
+	z	4, x
+	z	5, x	. default source physa
 
 	push,xi IP
 	pop	nframe:llh:generic:protocol
@@ -541,9 +574,13 @@ ipv4_address_this_if?
 	ds	6
 	lx	this_if:address_list
 ipv4_address_test
+
+	$if	0
 	la	ifaddr:i_f
 	aa, xi	-1
 	jza	ipv4_next	. not an external i/f
+	$endif
+
 	dl	ifaddr:net
 	dan	6
 	jdz	ipv4_address_hit

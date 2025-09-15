@@ -58,7 +58,10 @@ transfer	segment
 
 $(1)
 
+	$if	TCP_NOQ
+	$else
 tcpq	dq
+	$endif
 
 tcp_lsegment_noport + tcp_reset_deflect	. default vector RX large segment no port bound:
 					. TCP_RST without preliminary checksum. Avoids
@@ -166,6 +169,15 @@ tcp4_service_next_connection
 
 				. closewait
 tcp4_established!
+
+	$if	MSG_WAITALL
+	lb	transmission:sequence_ackx+1
+	andB	(00FFFF)		. ask this question once only here
+	jzb	tcp4ser	
+	lcal	tcp_fast_launch
+	$endif
+
+tcp4ser
 	$if	1
 	tz	transmission:q4window
 	lcal	tcp_send_on_window
@@ -318,10 +330,12 @@ tcp4_list_processed
 	lret	0
 
 tcp4_outstanding
-	$head_near	scalars(transmission_p,	int,	x		;
+	$head_near	 params(tra_remote_ack,	long)			;
+									;
+			scalars(transmission_p,	int,	x		;
 				transfer_fp,	int,	fp		;
-				proto_apdata,	long,	RX_APDATA	;
-				tra_remote_ack,	long,	6)
+				proto_apdata,	long,	RX_APDATA	)
+
 tcp4_outstanding_next
 	la	transmission:q4ack:head
 	jza	tcp4_outstanding_later
@@ -393,7 +407,9 @@ tcp4_outstanding_release
 	j	tcp4_outstanding_next
 
 tcp4_outstanding_later
-	dpop	0, sp
+
+.	dpop	0, sp			. mpved to parameter stream
+
 	dpop	RX_APDATA
 	pop	fp			. current input frame descriptor pointer
 	pop	x			. transmission control block pointer
@@ -403,17 +419,17 @@ tcp4_retransmit1
 	$head_near	scalars(txbloc_p,	int,	x			;
 				txq_p,		int,	transmission:q4ack:head	)
 
-				. scalar descriptor from queue head
-				. must be on stack top for tcp_xmit
+					. scalar descriptor from queue head
+					. must be on stack top for tcp_xmit
 
-	$if	1
+	$if	0
 	lcal	tcp_restart_timer2
 	$else
 	la	DAYCLOCK$
-	aa, xi	TCP_TIMER2
-	sa	transmission:timer(2)
+	aa	TCP_TIMER2*8,,xi	. large backoff time
+	sa	transmission:timer(2)	. for any subsequent resend
 	$endif
-
+					. this function is called only if q4ack
 tcp4_retransmit_next
 	la	txq_p			. descriptor must stay on stack top
 	jza	tcp4_retransmitted	. until after tcp_xmit
@@ -428,26 +444,21 @@ tcp4_retransmit_next
 	ly	descriptor:uproto, a
 	sy	TP_HEADER
 
-	dl	transfer:ack, y
-	aa	transfer:window, y
-	ab	transfer:checksum, y
-
-tcp4_retransmit_rewind
-	aa	b
-	dsr	16
-	sbr	8
-	jnza	tcp4_retransmit_rewind
-
-	xorB	(00FFFF)
-	sb	transfer:checksum, y
-
+	$if	PROTOCOL_CACHE
+	$else
+	lcal	tcp_rewind_checksum	. reverse variables [ window ack ] from cksum
+	$endif
+					. current values get added
 	lx	txbloc_p		. may be looped round from tcp_xmit / (ipsend)
 					. and got a different structure in x ->
 	lcal	tcp_award_window
+
+	$if	0
 	dl	transmission:ack_window
 	dsr	8
 	sbr	8
 	ds	10
+	$endif
 
 	$if	TCP_SEEK_ANOMALY
 	lcal	tcp_seek_anomaly
@@ -469,6 +480,30 @@ tcp4_retransmitted
 	pop	x			. connection
 
 	lret	0
+
+	$if	PROTOCOL_CACHE
+	$else
+
+tcp_rewind_checksum
+	dl	transfer:ack, y		. reverse transmitted ACK ++ WINDOW
+
+	$if	1
+	da	transfer:window, y	. 2 words window : checksum
+	$else
+	ab	transfer:window, y	. 2 words checksum : window
+	aa	transfer:checksum, y
+	$endif
+
+tcp_rewind
+	aa	b			. + subtractions from - checksum
+	dsr	16
+	sbr	8
+	jnza	tcp_rewind
+
+	xorB	(00FFFF)		. write reduced positive sum back
+	sb	transfer:checksum, y 	. for tcp_xmit to complete
+	lret	0
+	$endif
 
 tcp_free_rxtx $head_near	scalars(xy, long, x)
 	ly, i	transmission:receiveq
@@ -647,6 +682,7 @@ tcp_connection_made
 	lb	*(BSOCKET*/12++tlist:connection_block(1):mss)
 	$endif
 
+	la	0,,xi
 	ds	transmission:ack_window
 	lret	1
 
@@ -814,7 +850,15 @@ tcp_tbloc_found
 
 	lret	0
 
-tcp_rxq	la	transfer:hl_code
+tcp_rxq
+
+	$if	TCP_GATE_VOID_SEGMENT
+	la	UPROTOCOL_BYTES
+	aa	-20,,xi
+	jnc	ipv4_rxz		. can't even measure tcp header
+	$endif
+
+	la	transfer:hl_code
 	sa	HL_FLAGS
 	la	dgram:bytes		. TP_HEADER is in x
 	lk	transfer:checksum, x
@@ -830,10 +874,17 @@ tcp_rxqexact				. datagram is all in internal stack
 	xorB	k
 	jnzb	tcp_rx_error
 
+	$if	__SOCHECK=0
+	dl	SOCKET_LPOINTER
+	jza	tcp_reset_deflect
+	$else
 	la	transfer:destp, x
 	lcal	tcp_socket
+	dte	SOCKET_LPOINTER
+	ii	GUARD$
 	jza	tcp_reset_deflect	. the port is not tabled
-	ds	SOCKET_LPOINTER		. there is no buffer descriptor yet
+	$endif
+					. there is no buffer descriptor yet
 	la	s:socket_address+1, b	. netaddress|0.0.0.0:port_number if bound
 	and	(00FFFF)
 	jza	tcp_reset_deflect	. the port is not bound
@@ -842,7 +893,7 @@ tcp_rxqexact				. datagram is all in internal stack
 
 	lr	dgram:bytes
 	lcal	t_ibuffer
-	jza	tcp_rxbu_error		. no buffer available
+	jza	ipv4_rxz		. no buffer available
 					. descriptor is in fp
 	lb	dgram:bytes		. buffer the datagram
 	ab	-1,,xi			. calculate 8-byte blocks less 1
@@ -876,9 +927,11 @@ tcp_log_rx_error
 	MIB_ICOUNT48	tcpInErrs:i
 	lret	0
 
+        $if	0
 tcp_rxbu_error
 	MIB_ICOUNT48	tcpInDrops:i
 	j	ipv4_rxz
+	$endif
 
 tcp_rx_error				. get here if socket buffer 
 	lcal	tcp_log_rx_error	. not yet assigned
@@ -901,13 +954,18 @@ tcp_escape				. get here if it's not an error
 
 tcp_rxqlong
 	lcal	check_part1		. uses HEADER_LONGWORDS
+
+	$if	__SOCHECK=0
+	dl	SOCKET_LPOINTER
+	jza	*tcp_lsegment_noport
+	$else
 	la	transfer:destp, x
 	lcal	tcp_socket
-
+	dte	SOCKET_LPOINTER
+	ii	GUARD$
 	jza	*tcp_lsegment_noport	. without even checksum. default is reset
-					. it might stop more junk coming
+	$endif				. it might stop more junk coming
 
-	ds	SOCKET_LPOINTER	
 	la	s:socket_address+1, b	. netaddress|0.0.0.0:port_number if bound
 	and	(00FFFF)
 	jza	*tcp_lsegment_noport
@@ -916,7 +974,7 @@ tcp_rxqlong
 
 	lr	dgram:bytes
 	lcal	t_ibuffer		. this call saves / restores y and b
-	jza	tcp_rxbu_error
+	jza	ipv4_rxz
 					. fp -> descriptor
 	lx	descriptor:dgram
 	la	dgram:bytes		. obtain the datagram second part length
@@ -1017,9 +1075,6 @@ tcp_deflect_frame_safe
 .	the vector for tcp_respond_syn_ack
 .	is tcp_accept
 
-.	the vector for tcp_send_i
-.	is tcp_send_push
-
 tcp_send_syn
 	lr	0,,xi
 	ql	(06000++TCP_SYN, 04500, 0204, 0q)
@@ -1047,10 +1102,13 @@ tcp_respond_syn_ack
 tcp_respond_fin_ack
 	lr, xi	0
 	dl	(05000++TCP_FIN++TCP_ACK, 04500L)
+
+	$if	0
 	j	tcp_message_segment_i
 
 tcp_send_i
 	dl	(05000++TCP_ACK++TCP_PSH, 04500L)
+	$endif
 
 tcp_message_segment_i
 	lcal	tcp_startbuffer
@@ -1074,7 +1132,11 @@ tcp_message_segment_i
 
 	lx	TP_HEADER
 	xorB	(00FFFF)	. it won't be right until it was to be wrong
+
+	$if	PROTOCOL_CACHE
+	$else
 	sb	transfer:checksum, x
+	$endif
 
 .	lx	TP_HEADER
 .	aa	TPAYLOAD_BYTES
@@ -1083,13 +1145,20 @@ tcp_message_segment_i
 	lx	0, sp
 	la	1, sp
 
+	$if	PROTOCOL_CACHE
+	ly	descriptor:frame, a
+	sb	nframe:protocol_cache, y
+	$endif
+
 	lcal	tcp_write_txq
 
 	pop	x			. the connection
 	pop	a			. the descriptor
 
+	$if	1			. force outputs after signal transmission
 	tz	transmission:q4window
 	lcal	tcp_send_on_window
+	$endif
 
 	fret	1
 
@@ -1103,60 +1172,77 @@ WINDOW	$equ	d$save3
 
 tcp_award_window
 
-	lb	MAXIMUM,,xi
+	push	y
+	push	r
 
-	$if	HVSOCKET
-	tp	*(BSOCKET*/12++tlist:flags)
-	call	(tcp_window)		. window calculatiom
-	$endif				. returns in b
+	la	transmission:ack_window+1	. read existing window
+	dsr	16				. leave bits 7..0 of ack in a
+	sbr	8				. isolate window in b
 
-	lk	(00FFFF)		. needed for masked load
-	sb	WINDOW			. new calculation
-					. but don't roll back residual window
-	lb	transmission:ack_window+1
-	la	b
-	and	k			. update residual window
-	ana	WINDOW			. if new calculation is larger
-	jnc	tcp_award_new_window
-	andB	k			. otherwise don't update connection block
-	sb	WINDOW			. decision is positively stored at WINDOW
-	lret	0			. for checksum
+	ly	b
+	lr	MAXIMUM,,xi
+	jyge	tcp_store_window		. include case zero
 
-tcp_award_new_window
-	mlb	WINDOW		. K still contains 00FFFF
-	sb	transmission:ack_window+1
+	tz	transmission:receiveq.head	. any RX data buffered?
+	j	tcp_store_window		. yes, keep window depleted or not
+	lb	MAXIMUM,,xi			. no, restart window
+	tp	*(BSOCKET*/12++tlist:flags)			. high volume TCP ?
+	lb	*(BSOCKET*/12++tlist:connection_block(1):mss)	. restart smaller window
+
+	sal	16				. bits 7..0 of ack << 16
+	or	b				. ++ 16 bits updated window
+	sa	transmission:ack_window+1 	. update transmission control block
+						. drop thru to cache window
+tcp_store_window
+	sb	WINDOW				. store for checksum
+
+	pop	r
+	pop	y
 	lret	0
 
-
-
 tcp_send_on_window
-	$head_near	scalars(xmitted,	int		;
-				tconnection_p,	int,	x	)
-
-.	push,xi 0	. count of transmissions
-.	push	x	. the connection
+	$head_near	scalars(remote_ack_plus_window,	long	;
+				xmitted,	int		;
+				tconnection_p,	int,	x	;
+			segment_descriptor,	int		)
 
 			. remote ACK + window >=
 			. sequence + size = send
 
+tcp_send_on_window_next
+	la	transmission:q4window:head	. <- x is reloaded before looping
+	jza	tcp_sent_all
+	sa	segment_descriptor
+
+	ly	a
 
 	dl	transmission:remote_ack_window, x
-	ds	8
+
+	ds	remote_ack_plus_window
 	dsl	32
 	dsr	16
-	da	8
-	ds	8
-.	lcal	tcp_award_window
+	da	remote_ack_plus_window
+	ds	remote_ack_plus_window
+
+	$if	0
 	dl	transmission:ack_window, x
 	dsr	8
 	sbr	8
 	ds	10
+	$endif
 
-tcp_send_on_window_next
-	la	transmission:q4window:head, x
-	jza	tcp_sent_all
+	$if	0
+	lb	descriptor:i_f, y
+	jpb	tcp_segment_complete?
+					. has gone through tcp_xmit
+	lb	descriptor:frame	. it's in source fragmentation
+	tz	nframe:stack_index	. completed?
+	j	tcp_sent_possible	. no
 
-	ly	a
+	j	tcp_move2q4ack		. 100% transferred to medium
+	$endif
+
+tcp_segment_complete?
 	la	descriptor:bytes, y
 	jpa	tcp_sent_all		. the sticky bit = send
 					. otherwise the segment
@@ -1169,28 +1255,32 @@ tcp_send_on_window_next
 	lb	descriptor:uproto, y	. the negative of the size
 	sb	TP_HEADER
 
-	jnzb	$+2
-	ii	GUARD$
+	$if	0
 
-	tnz	descriptor:apdata, y
-	ii	GUARD$
-
-	anb	descriptor:apdata, y	. of the segment header
-	sbl	1			. in bytes at 16/24 bits/word
+	lb	transfer:hl_code, b
+	sbr	12-2
+	andB	15*/2,,xi
+	ana	b			. = payload
 	
-	ab	a			. segment minus header
-					. = payload
-	la, xi	0
-	dsl	16
+	$else	
+
+	anb	descriptor:apdata, y
+	sbl	1
+	aa	b			. = payload
+	
+	$endif
+
+	dsr	24			. align payload size
+	dsl	16			. with  sequence
 	ds	6
 
-	ly	TP_HEADER
+	ly	TP_HEADER		. align sequence with payload size
 	dl	transfer:seq, y
 
 	sbl	8
-	dsl	8	. sequence
+	dsl	8			. sequence
 
-	da	6	. sequence + payload
+	da	6			. sequence + payload
 	ds	6
 
 .	maybe cache the sum of remote window + remote ack
@@ -1199,25 +1289,12 @@ tcp_send_on_window_next
 .	so this sum would not be done here
 
 
-	dl	8	. remote ack plus remote window
+	dl	remote_ack_plus_window	. remote ack plus remote window
+	dan	6			. minus local seqence + payload
+	jna	tcp_sent_possible	. may not send more yet. Leave on q4windoe
 
-	dan	6
-	jna	tcp_sent_possible
+	lx	tconnection_p		. connection is on the stack top + 1
 
-
-	lcal	tcp_read_txq	. remove atomically from queue
-
-	$if	1
-	jza	tcp_sent_all	. when traced the q4window.tail is already on q4ack
-	$else			. so this loop restarted or something else moved q2q
-	jza	rum_do		. this routine can be called from applications
-	$endif			. which may be time-sliced
-
-	lx	tconnection_p		. connection is on the stack top
-					. scalar names tconnection_p and xmitted
-					. displaced by 5 pushed words
-	qpush	8			. the cached state variables
-	push	a			. descriptor must be on stack top for tcp_xmit
 	lcal	tcp_award_window	.
 
 	$if	TCP_SEEK_ANOMALY
@@ -1226,92 +1303,83 @@ tcp_send_on_window_next
 
 	lcal	tcp_xmit
 
-	pop	a			. the descriptor
-	qpop	8			. the cached state variables
-					. scalar names at restored displacements
-
 	lx	tconnection_p		. the connection pointer on the stack top
-	ly, i	transmission:q4ack
 
-	lcal	q2first?		. write the q4ACK
-	j	tcp_ackq_started	. but
+	lcal	tcp_read_txq		. take from q4window
+	ly, i	transmission:q4ack	. add to q4ack
 
-	$if	0
-	$if	1
-	lcal	tcp_restart_timer2
-	$else
+	lcal	q2first?		. write q4ack
+	j	tcp_ackq_started	. q4ack had not been empty
 
-	lb, xi	TCP_TIMER2		. only start this timer
-	ab	DAYCLOCK$		. if the ACK q was empty
-	sb	transmission:timer(2)	. before
-	$endif
-	$endif
-
+	lcal	tcp_restart_timer2	. q4ack had been empty
+					. x -> connection is not changed
 tcp_ackq_started
 
 	inc	xmitted			. count of transmissions
 
-	j	tcp_send_on_window_next
+	$do	1,	j	tcp_send_on_window_next
 
 tcp_sent_possible
-	$if	0			. check ACK up to date in R10:11
-					. before switching this back on
-					. and check this is an advantage anyway
-					. I have traffic and no window
-	la	1, sp			. reasonable if I have sent any segments
-	jnza	tcp_sent_all
-
-	la	DAYCLOCK$		. well I'm waiting to send
-	ana	transmission:timer(2)	
-	jpa	tcp_sent_all
-					. periodically say so
-					. can be done with a 1-byte sample
-
-	dl	transmission:ack_window
-	dsr	8
-	sbr	8
-	ds	10			. tcp_xmit needs that there
-
-	lcal	tcp_send_ack		. or try to
-	lcal	tcp_ack_dropped		. nop, send_ack skips on succesful return
-.	lcal	tcp_restart_timer2
-	$endif
-
 tcp_sent_all
-.tcp_sent_enough
-					. the connection pointer is now at the stack top
-	pop	x			. $$frame was exactly 2 words
+	inc	sp			. temporary descriptor pointer 
+	pop	x			. connection pointer
 	pop	a			. count of transmissions
+
+	inc	sp
+	inc	sp			. temporary pointer remote ack + window
 	lret	0
 
 	$if	0
 rum_do	ii	GUARD$
 	$endif
 
+	$if	0
 tcp_ack_dropped
 	MIB_ICOUNT48	tcpOutAckDrops:i
 	lret	0
+	$endif
 
 tcp_xmit 
-        dl      10      . this should be ACK
+	$if	1
+	lx	2, sp			. connection pointer in internal stack
+	dl	transmission:ack_window
+	dsr	8
+	sbr	8
+	lx	TP_HEADER		. segment
+	$else
+        dl      10			. this should be ACK
+	lx	TP_HEADER
+	$endif
 
-        lx      TP_HEADER
         ds      transfer:ack, x
         ab      a
 
-	$if	0
-	la, xi	8192
-	$else
         la      WINDOW
-	$endif
 
         sa      transfer:window, x
+
+	$if	PROTOCOL_CACHE
+	ly	1, sp
+	ly	descriptor:frame, y
+	aa	nframe:protocol_cache, y
+	$else
         aa      transfer:checksum, x
+	$endif
 
 	lcal	check_complete
-        sb      transfer:checksum, x
 
-        lx      1, sp		. the descriptor
+	$if	TCP_CATCH
+	la	transfer:checksum, x	. previous checksum or seed magnitude
+	$endif
+
+        sb      transfer:checksum, x	. sum including actual ACK + WINDOW
+
+	$if	TCP_CATCH
+	ly	1, sp
+	lcal	tcp_catch		. y -> descriptor x -> segment
+	$endif
+
+        lx      1, sp			. buffer descriptor in internal stack
 
         ly      descriptor:dgram, x
 	ql      dgram:ipsource, y
@@ -1495,8 +1563,11 @@ tcp_reset		. this is when TCP_RST must be sent
 
 tcp_send_ack
 	lr, xi	0
+
+	$if	TCP_ACK_OVERTAKE
 	dl	(05000++TCP_ACK, 04504L)
 	j	tcp_sendq2
+	$endif
 
 tcp_sendq
 	dl	(05000++TCP_ACK, 04500L)
@@ -1508,15 +1579,16 @@ tcp_sendq2
 .	check conversions between words and bytes
 .	in calls to startbuffer, txbuffer
 
-
+tcp_ajoint				. if buffer is already obtained
 	push	x			. the connection
-	push	a			. new descriptor must be on stack top
+	push	a			. descriptor -> internal stack top
 					. for tcp_xmit
-
+	$if	0
 	dl	transmission:ack_window
 	dsr	8
 	sbr	8
 	ds	10
+	$endif
 
 	lcal	tcp_award_window
 	
@@ -1526,11 +1598,17 @@ tcp_sendq2
 
 	lcal	tx_payload		. payload address if any
 					. is in Y
-
 	lx	TP_HEADER
 	xorB	(00FFFF)		. it's become too right to be wrong enough
 	ab	TPAYLOAD_BYTES
+
+	$if	PROTOCOL_CACHE
+	ly	0, sp
+	ly	descriptor:frame, y
+	sb	nframe:protocol_cache, y
+	$else
 	sb	transfer:checksum
+	$endif
 
 	$if	0
 	ly	0, sp
@@ -1544,11 +1622,6 @@ tcp_sendq2
 	pop	y			. the descriptor
 	pop	x			. the connection
 	lret	1
-
-
-
-
-
 
 
 .	this primes a buffer to accumulate output
@@ -1575,8 +1648,6 @@ tcp_sendq2
 .	not included here
 
 tcp_startbuffer	$tree
-
-	$if	1
 
 	$head_near	scalars(addresses,	float,	transmission:socket_address	;
 				option_string,	float192,	a			;
@@ -1675,155 +1746,6 @@ txp_nostart
 	qpop	0, sp
 	lret	0		. buffer not obtained		
 
-	$else
-
-	push	x		. connection block
-	push	a		. header length / flags
-	push	6,,xi		. address of options program
-	sr	TPAYLOAD_BYTES	. payload bytes
-	sar	12
-	sal	2
-	aa	r		. buffer required for TCP segment
-	push	y
-
-	lcal	tcp_txbufferx	. tlist block must be at BSOCKET or you crash
-				. if you are process *ip the system restarts
-
-	pop	y		. quite likely the user data pointer
-
-	dpop	6		. address of options, header format word
-
-	pop	x		. connection
-	jza	tcp_nostart
-
-	sb	descriptor:bytes, a
-	
-	push	y		. user buffer if any
-	push	a		. the new descriptor
-
-	ly	TP_HEADER
-	z	transfer:urgent, y
-	z	transfer:checksum, y
-
-
-	qpush	transmission:socket_address, x
-	qpop	8
-
-	push, xi   0		. window
-	
-	push	7		. header format word
-
-	push, xi   0
-	push, xi   0		. ACK
-
-	dl	transmission:sequence_ackx, x
-	dsr	8
-	sbr	8
-	dpush	a		. SEQ
-
-	la	9
-	sal	8
-	lb	11
-	sbl	8
-	dsr	8
-
-	dpush	a		. ports
-
-	lb	7
-	sbr	12
-
-	sb	HEADER_LONGWORDS
-	
-	lb, xi	0
-	la, xi	IPPROTO_TCP
-
-	da	transfer:sourcep, sp
-	da	transfer:seq, sp
-.	da	transfer:ack, sp	. zero just now
-	da	transfer:hl_code, sp
-
-	dpush	6		. default options list
-
-	ds	HEADER_SUM
-
-	dpop	d$save
-
-	qpop	transfer:sourcep, y
-	qpop	transfer:ack, y
-
-	z	transfer:urgent, y
-
-	lb	HEADER_LONGWORDS
-
-	ab, xi	-5
-
-	ay, xi	20/2
-	jzb	tcp_sendno_options
-
-	la	d$save,,xi
-	lcal	tcp_send_options
-
-tcp_sendno_options
-	la	0, sp		. the descriptor
-	sy	descriptor:apdata, a
-	lb	HEADER_LONGWORDS
-
-	sbl	2
-	lr	TPAYLOAD_BYTES
-	sb	descriptor:bytes, a
-
-
-				. only the header byte count
-				. should go in the descriptor
-				. because this may be called
-				. to prime a buffer for
-				. streamed writing
-
-				. R is for how much space
-				. is required, not how much
-				. data is available
-
-	ab	r
-	sb	TPAYLOAD_BYTES	. save the total for
-				. direct message writes
-
-	sy	AP_DATA
-	ly	TX_DATAGRAM
-	dl	8
-	dsr	8
-	sbr	8
-	ds	dgram:ipsource, y
-	ds	8
-	da	HEADER_SUM	. the checksum
-	ds	HEADER_SUM
-	dl	10
-	dsr	8
-	sbr	8
-	ds	10
-	ds	dgram:ipdest, y
-	da	HEADER_SUM
-	ds	HEADER_SUM
-	pop	a		. the descriptor
-	pop	y
-	lret	1		. return +1 = buffer found
-
-tcp_nostart
-.	lx	y		. ? that looks deadly ? return without connection pointer
-
-				. removed instruction was bad for some callers
-				. and didn't appear good for any other callers
-
-				. callers are (indirectly) far calls tcp_add and tcp_addx
-				. which certainly need x -> connection block unchanged on return
-
-				. and otherwise far calls tcp_accept tcp_ack_fin tcp_send_push
-				. and local calls tcp_send_ack tcp_sendq tcp_sendq2
-				. none of which appears to need the connection pointer lost
-
-	lret	0		. return +0 = no buffer found
-
-	$endif
-
 	$root
 
 
@@ -1844,26 +1766,6 @@ tcp_send_option?
 	pop	x		. the connection
 	lret	0
 	
-	$if	0
-tcp_send
-	fret	0
-
-tcp_complete_segment?
-	tz	transmission:q4window:head
-	lret	0
-tcp_complete_segment!
-	ly	transmission:q4window:tail
-	la	descriptor:bytes, y
-	jna	tcp_segment_completed
-	jza	tcp_segment_void		. would happen with send of zero
-
-
-tcp_segment_completed
-	lret	0
-tcp_segment_void
-	lret	1
-	$endif
-
 tcp_txbufferx
 	lx	*(BSOCKET*/12++tlist:txbu_p)	. tlist block must be at BSOCKET or you crash
 .	lb, xi	04500	. preloaded		. if you are process *ip the system restarts
@@ -1972,55 +1874,21 @@ tcp_read_rxq
 
 tcp_write_txq
 
-	$if	1
-
 	LOCK	transmission:tsq
 	ly	transmission:q4window,,i
 	lcal	q2
 	FREE	transmission:tsq
 	lret	0
-
-	$else
-
-	push,xi	MAX_INT_MASK
-	sim	0, sp
-	ts	transmission:tsq
-	j	$-1
-	ly, i	transmission:q4window
-	lcal	q2
-	z	transmission:tsq
-	sim	0, sp
-	inc	sp
-	lret	0
-
-	$endif
 
 .	tcp calls tcp_read_txq when it moves segments
 .	from q4window to q4ack
 
 tcp_read_txq
-	$if	1
 	LOCK	transmission:tsq
 	ly	transmission:q4window,,i
 	lcal	readq
 	FREE	transmission:tsq
 	lret	0
-
-	$else
-
-	push,xi	MAX_INT_MASK
-	sim	0, sp
-	ts	transmission:tsq
-	j	$-1
-	ly, i	transmission:q4window
-	lcal	readq
-.	z	0, a		. you might didn't get no address in a
-	z	transmission:tsq
-	sim	0, sp
-	inc	sp
-	lret	0
-	$endif
-
 				. low level far calls
 				. for message-based TCP traffic
 
@@ -2228,18 +2096,6 @@ tcp_xfin_upsequence
 	ds	transmission:sequence_ackx
 	fret	0
 
-	$if	RX_FRAGMENTS
-tcp_rx_rasm
-	lx	descriptor:uproto
-	push	transfer:checksum, x
-	lcal	rasm77_gcheck
-	xorB	0, sp
-	pop	transfer:checksum, x
-	la	fp
-	jnzb	net_free_chain
-	lx, xi	tcpq
-	j	net_add_chain
-	$endif
 
 .	do not call tcp_socket from application threads
 .	even in kernel routines called by applications
@@ -2252,30 +2108,10 @@ tcp_rx_rasm
 
 tcp_socket
 
-	$if	1
-
 	push	x
 	lx	tsockb(1),,xi
 	lcal	protocol_socket
 	pop	x
-
-	$else
-
-        lb, xi  BSOCKET*/9      .       000 000 000 bbb bbb 000 000 000
-
-                                .       000 000 000 000 000 00p ppp ppp : A
-        dsr     9               .       ppp ppp ppp 000 000 000 bbb bbb : B
-	and	127,,xi
-        aa, xi  tsockb(1)       .       000 000 000 010 000 11p ppp ppp : A
-
-        la      0, a            .       is there even storage where the
-                                .       bound socket structure should be?
-
-        jza     tcp_socketx
-
-        rbr     12              .       000 000 bbb bbb ooo ooo ooo 000
-
-	$endif
 
         sabr    BSOCKET         .       look at the port socket structure
 tcp_socketx

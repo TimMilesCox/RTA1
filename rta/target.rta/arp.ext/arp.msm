@@ -52,8 +52,6 @@ arp_next	+	arp_line(1)
 arpq_tscell	+	0
 	$endif
 
-arp_free	+	0
-
 broadcast_line	broadcast_cache
 
 ARP_HASH_LIST(1)	$set	arp_hash
@@ -164,7 +162,6 @@ caller_i_f	$equf	2, sp		. still in x as well so far
 NET_ADDR	$set	6
 LL_H		$set	TX_FRAME
 CHAIN_HEAD	$set	10
-BLANK		$set	9		. spare slot pointer
 AXW		$set	8		. it was where we are called from
 
 					. find the hash chain
@@ -173,42 +170,7 @@ AXW		$set	8		. it was where we are called from
 	lr	this_if:id		. the calling xmit routine has the I/F
 	lcal	find_in_cache		. entry point precaches target protocol address
 	tz	y
-	j	consider		. found in ARP cache
-	ly	BLANK
-	tz	y
-	j	construct_request	. found a cache row in same # chain
-	lcal	search_heap
-	tz	y
-	j	insert_construct_request . found a new cache row
-
-	j	return
-
-consider				. remote physa may be requested but not responded
-	dl	arp_row:tha
-?	$do	HLEN//2-2,	;
-	orB	arp_row:tha+2+?-1
-	jdz	return
-	j	deliver
-
-insert_construct_request
-	la	*CHAIN_HEAD		. read address of 1st in chain by pointer
-	sa	arp_row:next		. write next of new 1st
-	sy	*CHAIN_HEAD		. write chain head location by pointer
-
-	la	this_if:id		. this is a necessary identification
-	sa	arp_row:i_f		. otherwise this ARP row is not used
-					. and blows up the timer test
-construct_request
-	z	arp_row:tha
-	z	arp_row:tha+1
-	z	arp_row:tha+2
-
-	dl	NET_ADDR
-	ds	arp_row:tpa
-
-	la	DAYCLOCK$
-	aa	(ARP_REFRESH)
-	sa	arp_row:refresh
+	j	deliver			. consider found in ARP cache
 
 	la	TX_DATAGRAM
 
@@ -255,6 +217,7 @@ xmit	$head_far	 params(operation,	int	  ;
 	sb	descriptor:dgram
 	la	ARP_MSG_WORDS*2,,xi
 	ds	nframe:frame_axw(2), y
+	sa	TX_DATAGRAML
 	z	nframe:frame_axw(3), y		. no third buffer needed
 	z	nframe:next_hop, y		. a value here is irrelevant
 	z	nframe:next_hop+1, y		. so clear residual value
@@ -316,11 +279,10 @@ find_in_cache
 
 find_in_cacheq
 	andB	ARP_HASH-1,,xi
-.	andB	arp_store(ARP_STORE)-1,,xi
+
 	ly	arp_hash,,xi
 	ay	b
 	sy	CHAIN_HEAD
-	z	BLANK
 
 	lk	32767,,xi
 	
@@ -331,13 +293,9 @@ forward	la	arp_row:next
 	mta	r			. with ideas like autoconf being used
 	j	forward			. and platforms all multihomed
 	dl	arp_row:tpa		
-	jdz	spare
+
 	dan	NET_ADDR
 	jdz	hit
-	j	forward
-
-spare	tnz	BLANK			. 1st spare in chain is best
-	sy	BLANK
 	j	forward
 
 miss	dl	NET_ADDR
@@ -351,14 +309,22 @@ big_hit	ly	broadcast_line,,xi
 	
 search_heap				. is the heap used up?
 	ly	arp_next
+search_heap_again
 	lr	arp_line(ARP_STORE)+ARP_CACHE_WORDS,,xi
 	jyge	eoheap
 	lr	ARP_CACHE_WORDS, y, i
 	sr	arp_next
-.	lcal	at_pointer_array:insert
+	lcal	at_pointer_array:insert
 	lret	0
-eoheap	ly	0,,xi
-	lret	0
+eoheap	ly	at_pointer_array:arp_pointer_array,,xi	. start building the heap again
+	sy	at_pointer_array:arp_next_insert
+	ly	arp_line(1),,xi
+
+	dsr	48
+	$do	ARP_HASH///2,	$flag	ARP_HASH must be power 2
+?	$do	ARP_HASH/2,	qs	arp_hash+2*?-2
+
+	j	search_heap_again
 
 glean_and_push
 	lx	descriptor:dgram
@@ -377,16 +343,7 @@ glean_and_push
 	lcal	find_in_cacheq	. target protocol address already in 6:7
 	tz	y
 	j	update
-	ly	BLANK		. it's free information if
-				. we have a slot to store it
-	tz	y
-	j	update		. found a spare row same # chain
 	lcal	search_heap
-	tz	y
-	j	insert_update
-
-	j	gleanx		. can't keep this information until
-				. a cache row times out
 
 insert_update
 	lx	descriptor:dgram . because search_heap

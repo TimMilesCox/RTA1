@@ -27,6 +27,7 @@ extern char **environ;
 #include "../engine.smp/emulate.h"
 #include "../engine.smp/smp.h"
 #include "../engine.smp/ii.h"
+#include "../engine.smp/io.h"
 #include "../engine.fs/device24.h"
 #include "idisplay.h"
 #include "../rta.run/settings.h"
@@ -355,6 +356,7 @@ extern			 int print7_registers(int index, smp *xcore);
 #ifdef	METRIC
 static void		 accumulate_metric(smp *);
 #endif
+static void		 step(); /* write step code to core[0].BASE[100] */
 
 #include "dayclock.c"
 #include "fifoprio.c"
@@ -510,6 +512,8 @@ int main(int argc, char *argv[])
 
    cores = RTA_SMP - 1;
 
+   step();	/* write encode stepping to core[0].BASE[100] */
+
    while (cores--)
    {
       ascor->APC  = ROM_PAGE->w + RESTART6;
@@ -518,6 +522,7 @@ int main(int argc, char *argv[])
       ascor->B0P = ROM_PAGE;
       ascor->BASE[124] = core[0].BASE[124];
       ascor->BASE[128] = core[0].BASE[128];
+      ascor->BASE[_STEPPING] = core[0].BASE[_STEPPING];
       ascor++;
    }
 
@@ -1021,3 +1026,14 @@ static void accumulate_metric(smp *xcore)
    total_delta += delta;
 }
 #endif
+
+static void step()
+{
+   static char dmy[] = STEPPING;
+
+   int	day, month, year;
+
+   sscanf(dmy, "%d.%d.%d", &day, &month, &year);
+   core[0].BASE[_STEPPING] = (year << 9) | (month << 5) | day;
+}
+

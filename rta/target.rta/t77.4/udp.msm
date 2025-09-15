@@ -45,7 +45,7 @@ $(66::,b)
 s	$socket
 
 $(1)
-udpq	dq
+udpq*	dq
 udp_nosocket_rxgrams	0		. value for controlling proliferation of DU ports
 
 udp_ldgram_noport +	icmp_du_port	. default vector of RX large segment no port bound:
@@ -57,14 +57,17 @@ udp_ldgram_noport +	icmp_du_port	. default vector of RX large segment no port bo
 					. DU + drop or silent drop
 $(0)
 udp4	lk	(00FFFF)
-	ly, xi	udpq
+.	ly, xi	udpq
 udp_next
+	ly	udpq,,xi
 	la	udpq.head
 	jza	udp4_x
 	sa	fp
 
 	$if	IPV4_OVERHAUL
 	dl	descriptor:sobdi
+.	dte	(000029,02f090L)
+.	ii	GUARD$
 	sabr	BSOCKET
 	$else	. IPV4_OVERHAUL
 	$endif	. IPV4_OVERHAUL
@@ -84,7 +87,7 @@ udp_next
 udp_socket_closed
 	lcal	icmp_nosocket
 
-	lcal	net_drop
+	lcal	net_free		. net_drop
 	j	udp_next
 
 udp4_x
@@ -117,13 +120,13 @@ udp_rxq					. TP_HEADER is in x
 
 	lb	uugram:udgraml, x
 	ab	-8,,xi
-	jnc	ipv4_drop
+	jnc	ipv4_rxz			. no socket buffer acquired yet
 
 	lb	HEADER_LONGWORDS
 	sbl	2
 	ab	uugram:udgraml, x
 	ana	b
-	jnc	ipv4_drop
+	jnc	ipv4_rxz			. no socket buffer acquired yet
 
 	la	dgram:bytes
 	anu	IPV4_OVERHAUL,,xi
@@ -141,10 +144,16 @@ udp_exact
 	jnzb	ipv4_rxz
 
 udp_socket?
+	$if	__SOCHECK=0
+	dl	SOCKET_LPOINTER
+	jza	icmp_du_port
+	$else
 	la	uugram:destp, x
 	lcal	udp_socket
+	dte	SOCKET_LPOINTER
+	ii	GUARD$
 	jza	icmp_du_port			. socket structure not stored
-	ds	SOCKET_LPOINTER
+	$endif
 
 	la	s:socket_address+1, b
 	and	(65535)
@@ -185,10 +194,17 @@ udp_rxqlong
 	lcal	check_part1
 
 udp_uportbound?
+	$if	 __SOCHECK=0
+	dl	SOCKET_LPOINTER
+	jza	*udp_ldgram_noport
+	$else
 	la	uugram:destp, x
 	lcal	udp_socket
+	dte	SOCKET_LPOINTER
+	ii	GUARD$
 	jza	*udp_ldgram_noport		. drop large ugrams to no port
-	ds	SOCKET_LPOINTER			. without checking sum
+	$endif					. without checking sum
+
 	la	s:socket_address+1, b
 	and	(65535)				. silently or not
 	jza	icmp_du_port			. according to nuisance levels
@@ -211,72 +227,20 @@ udp_uportbound?
 	tz	k
 	j	udp_store	
 
-udp_qup	lcal	rx_nocheck
-	j	udp_rxqthru
+udp_qup	call	(rx_nocheck)
+	j	udp_rxqthru			. socket buffer acquired, check waived
 
 udp_store
 	lcal	rx_payload
 	jnzb	$+2
 	lb	(65535)
 	xorB	k
-	jzb	udp_rxqthru
-	j	ipv4_drop
+	jzb	udp_rxqthru			. socket buffer acquired, payload checks 
+	j	ipv4_drop			. socket buffer acquired but checksum fail
 
 	$else	. IPV4_OVERHAUL
 	
 	$endif	. IPV4_OVERHAUL
-
-.	this is the feed to udpq for reassembled datagrams
-.	which are already in a chain of rx_buffer with ACW
-.	descriptors
-
-.	each fragment has the checksum addition of its data
-.	in the ACW, to exploit the chance of checksum
-.	generation during copy to rx_buffer
-
-.	it has been second-guessed in all cases that checksum
-.	is specified in the UDP header (the UDP header may not
-.	be the first fragment of the datagram to arrive).
-
-.	also, it is unlikely that UDP payload large enough
-.	to need reassembly would be exempt from checksum
-
-.	no-checksum is usually a feature of high-speed
-.	media traffic which is transmitted in much smaller
-.	packets than any MTU
-
-.	large reassembly is more likely to be traffic like
-.	NFS in 8KByte slabs (or 3KByte slabs where RTA is the
-.	NFS client). Checksum would certainly apply
-
-.	So all the data arriving here has been end-around
-.	added and the positive sum left in the ACW
-
-.	if the UDP header has a nonzero checksum, the data sums
-.	are now summed with network address, protocol index
-.	and user datagram length, then inverted and if finally
-.	zero inverted again. Then compared.
-
-	$if	RX_FRAGMENTS
-udp_rx_rasm
-	lx	descriptor:uproto
-	la	uugram:checksum, x
-	jza	udp_rx_rasm_nocheck
-	push	a
-	z	uugram:checksum, x
-	lcal	rasm77_gcheck
-	tnz	b		. because zero isn't
-	xorB,xi	-1		. a UDP checksum
-	xorB	0, sp
-	pop	uugram:checksum, x
-	la	fp
-	jnzb	net_free_chain
-udp_rx_rasm_nocheck
-	la	fp
-	lx, xi	udpq	
-	j	net_add_chain
-	$endif
-
 
 udp_buy_txaw
 	lb, xi	04500		. no option bytes, TOS default 0
@@ -479,7 +443,7 @@ udp_txaw_nocheck
 	jdz	udp_nosource
 	lb	descriptor:uproto, x
 	la	descriptor:bytes, x
-	la	8, a, 1			. add udp header length
+	la	8, a, i			. add udp header length
 	sa	descriptor:bytes, x
 	and	(07FFFFF)		. unlikely you want a sticky bit
 					. on a datagram you didn't want checked
@@ -612,42 +576,6 @@ in8nocheck* $proc
 	qpop	?*4-4, x
 	$end
 
-tx_nocheck
-rx_nocheck
-	dsr	6
-	lr	a	
-	dsl	3
-	and, xi	7
-	j	rx64?
-rx64!
-?	$do	8,	in8nocheck
-	ax, xi	32
-	ay, xi	32
-rx64?	jdr	rx64!
-	lr	a
-	j	rx8?
-rx8!	qpush	0, y
-	qpop	0, x
-	ax, xi	4
-	ay, xi	4
-rx8?	jdr	rx8!
-	dsl	2
-	and, xi	3
-	lr	a
-	j	rx2?
-rx2!	push	0, y
-	pop	0, x
-	ax, xi	1
-	ay, xi	1
-rx2?	jdr	rx2!
-	jpb	rxnocheckZ
-	la	0, y
-	and	(00FF00)
-	sa	0, x
-rxnocheckZ
-	lret	0
-
-
 check_payload_tx
 	ly	descriptor:apdata, x
 check_payload
@@ -722,11 +650,15 @@ udp_check_payload_tx
 .	the socket structure is in x
 
 udp_write_rxq
+	lcal	readq
+	jza	udp_noqdata
 
 	LOCK	s:udp:tsq, x
-	la, i	s:udp:socket_inq, x
-	lcal	net_transfer
+	ly, i	s:udp:socket_inq, x
+	lcal	q2
 	FREE	s:udp:tsq, x
+
+udp_noqdata
 	lret	0
 
 
@@ -755,42 +687,19 @@ udp_read_rxq
 .	traffic on loopback will just be copied
 
 udp_drop_dgram
-	$if	RX_FRAGMENTS
-	LOCK	s:udp:tsq, x
-	ly, i	s:udp:socket_inq, x
-	lcal	net_drop
-	FREE	s:udp:tsq, x
-	fret	0
-	$else
 	lcal	udp_read_rxq
 	lcal	net_free
 	fret	0
-	$endif
 
 udp_socket
-	$if	1
-
 	push	x
 	lx	usockb(1),,xi
 	lcal	protocol_socket
 	pop	x
 
-	$else
-
-        lb, i   BSOCKET*/9      .       | 000 000 000 101 111 000 000 000 |
-        dsr     9               .       | sss sss sss 000 000 000 101 111 |
-        and, xi 127
-        aa, xi  usockb(1)
-        la      0, a
-	rbr	12
-	
-	$endif
-
         jza     udp_socketx
         sabr    BSOCKET
 
-.	la      s:socket_address+1, b	. socket storage page is there
-.	and     (65535)			. is it bound? Let the caller ask
 udp_socketx
 	lret	0
 

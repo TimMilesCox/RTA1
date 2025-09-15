@@ -11,6 +11,7 @@
 #define	_MCAST_PENDING		78	/* mask of cores which have multicast to here	*/
 #define	_MCAST_TO		79	/* -> latent parameter			*/
 					/* destinations mask in register k	*/
+#define	_STEPPING		100
 #define	_TZONE			101
 
 #define	_APP_THRESHOLD		72	/* lowest application code page / limit ISRs	*/

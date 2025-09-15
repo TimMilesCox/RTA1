@@ -26,7 +26,7 @@ tcpa	$head_near	scalars(caller_fp,	int,	fp	;
 				requested,	int,	a	)
 	
 
-	$do	1,	lcal	wherefore?
+	$do	0,	lcal	wherefore?
 	lb	*(BSOCKET*/12++tlist:connection_block(1):mss
 	tp	*(BSOCKET*/12++tlist:flags)
 	sb	mss
@@ -43,7 +43,7 @@ add	lb	outstanding	. buffer request
 	j	no_output	. nothing's available, get gone
 	
 	sa	fp		. a -> buffer descriptor
-	$do	1,	lcal	wherefore?
+	$do	0,	lcal	wherefore?
 	lr	descriptor:bytes
 	la	outstanding	. outstanding data byte count in this request
 
@@ -65,13 +65,33 @@ transfer
 	ab	a
 	sb	descriptor:bytes
 
-	lb	descriptor:uproto
-	sb	TP_HEADER
+	ly	descriptor:uproto
+	sy	TP_HEADER
+	lb	transfer:hl_code, y
+	sbr	12-1		. descriptor:apdata may be used differently
+	andB	15*/1,,xi
+	ay	b
+	lb	TP_HEADER	. TP_HEADER about to be required
+	sy	AP_DATA		. AP_DATA about to be required
+
+	$if	0		. TP_HEADER checks out
 	jnzb	$+2
 	ii	GUARD$
+	$endif
 
+	$if	0
 	ly	descriptor:apdata
 	sy	AP_DATA
+	$endif
+
+
+	$if	0		. AP_DATA checks out
+	push	-256,,xi
+	popA	AP_DATA
+	sy	AP_DATA
+	jc	$+2
+	ii	GUARD$
+	$endif
 
 	off	carry$
 	src	r		. halve the byte count up before now, carry = remainder
@@ -83,6 +103,16 @@ transfer
 	aa	-1,,xi		. obtain the next byte and add to checksum in b
 				. down the outstanding byte count for this transfer
 add_words
+
+	$if	0
+	push	y
+	push	-256,,xi
+	popA	0, sp
+	inc	sp
+	jc	$+2
+	ii	GUARD$
+	$endif
+
 	lcal	w2buffer	. target address in y
 				. byte count passed to w2buffer in a
 				. checksum returned in a
@@ -106,7 +136,7 @@ release	lcal	segment_transmit
 	lcal	tcp_send_on_window
 	$endif	
 
-	$do	1,	lcal	wherefore?
+	$do	0,	lcal	wherefore?
 
 	lb	outstanding
 	jnb	add_x				. everything is sent
@@ -129,7 +159,7 @@ add_x	qpop	a				. requested:finalcount:lookaside:mss -> a:b:6:7
 
 add_z	lret	0
 
-	$if	1
+	$if	0
 wherefore?
 	dl	8, sp
 	dte	(4, 0503:d)
@@ -166,6 +196,12 @@ segment_transmit				. this is out of line because it plays stack
 	sb	descriptor:bytes		. descriptor fp ->
 
 	popA	r				. add segment total to checksum
+
+	$if	PROTOCOL_CACHE
+	lb	descriptor:frame
+	sr	nframe:protocol_cache, b
+	$endif
+
 	sr	transfer:checksum, a
 
 	pop	b				. retrieve the payload length
@@ -206,7 +242,7 @@ insert_byte					. this is out of line because it plays stack
 .	oustanding transmission count is in b
 
 
-buffer
+buffer					. b <- outstanding  <- flags
 	$if	0
 	inA	65
 	aa	-11,,xi
@@ -236,26 +272,33 @@ request	la	transmission:state	. check connection state before requesting buffer,
 	jnza	drop_request_closed
 
 new_segment_request
-
-LIMITQ	$equ	0
-
-	$if	LIMITQ
-	lr	LIMITQ,,xi
-	la	transmission:q4ack	. q:head segments awaiting ACK
-
-limitq	jza	request_segment
-	la	0, a			. further segment awaiting ACK ?
-	jdr	limitq			. test chain next
-	j	no_segment		. too many segments awaiting ACK: thread wait
-request_segment				. request segment buffer
+	$if	HVSOCKET
+	tp	*(+(BSOCKET*/18++tlist:flags)s)
+	j	high_volume_segment_request
 	$endif
 
+	$if	TCP_PACE
+	la	SOCKET_CALL_FLAGS
+	and	TCP_PACE,,xi
+	jza	segment_request_read__mss
+	$endif
+
+	lcal	tcp_gauge_segmemt 
+	j	no_segment		. ruled out until caller has
+
+segment_request_read__mss
 	lr	transmission:mss
+	j	segment_request_in_mss_range?
 
 	$if	HVSOCKET		. segment space assigned independent of mss
-	tp	*(+(BSOCKET*/18++tlist:flags)s)
+high_volume_segment_request
 	lr	*(+(BSOCKET*/18++tlist:connection_block(1):mss)s)
 	$endif				. size cached in contentrator table
+
+segment_request_in_mss_range?
+	la	r			. outstanding[b] > mss[r] ?
+	ana	b
+	jnc	request_maximum_segment_buffer	. keep request within mss
 
 	la	k
 	and	TCP_PSH,,xi
@@ -290,7 +333,7 @@ no_segment
 	dpush	MSS			. shield registers [ 26 27 ]
 .	dpush	x
 
-	dl	(10d)			. don't call tcp_add from IP main thread
+	dl	(7d)			. don't call tcp_add from IP main thread
 
 	$if	0
 	ii	KERNEL$B1_1		. call from application needs IP B1 frame
@@ -327,4 +370,3 @@ drop_request_zero
 	lret	0
 
 	$root
-

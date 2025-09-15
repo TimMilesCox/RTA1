@@ -193,18 +193,18 @@ INTERFACES_HIGH_INDEX*	$equ	interface(INTERFACES)
 
 i_f_last +	interface(1)
 
-?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384,softwareLoopback,	;
-						0, $rxtx_lo			;
-										;
-					net_address(2),2048-14-10,platform_relay,	;
-					$initial_ift1, $rxtx_ift1,,,,, 00:012:01c:00:00:5	;
+?	$do	INTERFACES,interface(?)	i_f	net_address(1),16384+64,softwareLoopback,	;
+						0, $rxtx_lo, *					;
 												;
-					net_address(3), 1500, ethernet_relay, 0, $light_flight	;
+				net_address(2),2048-14-10,platform_relay,			;
+				$initial_ift1, $rxtx_ift1, *					;
 												;
-					net_address(4), 1500, ethernet_relay, 0, $light_flight	;
+				net_address(3), 1500, ethernet_relay, 0, $light_flight, *	;
 												;
-					net_address(5), 2048-10-14, platform_relay2,		;
-					__initial_ift2, __rxtx_ift2
+				net_address(4), 1500, ethernet_relay, 0, $light_flight,	*	;
+												;
+				net_address(5), 2048-10-14, platform_relay2,			;
+				__initial_ift2, __rxtx_ift2, *
 
 $(66::,x)
 this_if	i_f
@@ -221,6 +221,7 @@ test_if	tz	this_if:flags
 	ax, xi	interface(2)-interface(1)
 	j	test_if
 i_f_leave
+	call	(jumbo_drive)
 	lret	0
 
 						. i_f should be x->
@@ -266,6 +267,7 @@ q2ifree						. called from ARP a -> acw x -> i_f
 	tz	this_if:write_llh		. link layer header to write?
 	call	this_if:write_llh
 
+	$if	1
 	push	this_if:id
 
 	$if	1
@@ -275,6 +277,7 @@ q2ifree						. called from ARP a -> acw x -> i_f
 	$endif
 
 	pop	descriptor:i_f, a
+	$endif
 
 	$if	HVSOCKET
 	lk	(63*/18:s)
@@ -282,6 +285,7 @@ q2ifree						. called from ARP a -> acw x -> i_f
 	j	q2ifoq1
 
 	lb	descriptor:dgram, a
+
 	lb	dgram:vers_ihl_tos, b
 	andB	4,,xi
 	jzb	q2ifoq_low
@@ -294,8 +298,15 @@ q2ifoq_low
 	lret	0
 	$endif
 
-q2ifoq1						. LOCK	this_if:lock_cell_q1
-						. ly, i	this_if:oq
+q2ifoq1	lb	MTU
+	anb	11
+
+	jc	q2if_unit_datagram
+
+	call	(jumboq2)		. cascaded device driver   a -> descriptor
+	lret	0			. for source fragmentation x -> i_f
+
+q2if_unit_datagram
 	call	(write_ifq)
 						. FREE	this_if:lock_cell_q1
 q2ifreex lret	0
@@ -318,16 +329,16 @@ frame2proto
 	aa	IFCONFIG-ROUTE_CONFIG,,xi
 	jza	call_route_config
 
-	$if	0		. anu is a 2-instruction macro so a bit slower
+	$if	0			. anu is a 2-instruction macro so a bit slower
 	anu, xi	IP
-	jzb	ipv4_rx		.  ipv4_rx does lret back into frame2p
+	jzb	ipv4_rx			.  ipv4_rx does lret back into frame2p
 	anu, xi	ARP
-	jzb	arp_rx		.   arp_rx does lret back into frame2p
+	jzb	arp_rx			.  arp_rx does lret back into frame2p
 
 	anu, xi	IFCONFIG
-        jzb	call_ifconfig	. call_ifconfig does lret back into frame2p
+        jzb	call_ifconfig		. call_ifconfig does lret back into frame2p
 	anu, xi	ROUTE_CONFIG
-	jzb	call_route_config . call_route_config does lret back into frame2p
+	jzb	call_route_config	. call_route_config does lret back into frame2p
 	$endif
 
 	MIB_ICOUNT48	this_if:inoproto
@@ -338,10 +349,11 @@ call_ifconfig
 	lret	0
 
 call_route_config
+	z	5+6, fp			. default optional route->mtu
 	call	(__route_config)
 	lret	0
 
-	$if	0	. moved to ../drivers/queue.msm
+	$if	0			. moved to ../drivers/queue.msm
 
 if_rq1		. vector name is if_readq1
 	LOCK	this_if:lock_cell_q1
@@ -352,9 +364,9 @@ if_rq1		. vector name is if_readq1
 
 	$endif
 
-if_initpool			. vector name far_initpool
-	lcal	init_pool	. called from other iframes wanting
-	fret	0		. a message buffer initialised
+if_initpool				. vector name far_initpool
+	lcal	init_pool		. called from other iframes wanting
+	fret	0			. a message buffer initialised
 
 
 ifsellmsg	. vector name is if_sell1
@@ -374,8 +386,9 @@ ifq2ifree	. vector name is if_q2ifree
 	lcal	q2ifree
 	fret	0
 
-
+	$if	0
 iftx_nocheck	. vector name is if_tx_nocheck
 	lcal	tx_nocheck
 	fret	0
+	$endif
 

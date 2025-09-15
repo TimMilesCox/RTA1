@@ -83,8 +83,62 @@ socket_connect
 	j			tcp_connect
 	mta			(IPPROTO_UDP*/16)
 	j			socket_nane
-							. place UDP connect here
-	j			connect_x
+
+	tz			handle_encoding+1	. did they bind a local  port?
+	j			connection_port_bound
+							. not if it isn't in a storage block
+							. they are allowed not to
+	c	(bind)		handle1	(0L),,long
+	jna			connect_y
+	dl			10			. socket structure long virtual address
+	sabr			BSOCKET
+	drr			24
+	la			s:socket_address+1, a						
+
+connection_port_bound
+	and			511,,xi			. UDP connect = 
+	or			BSOCKET*/12-3,,xi	. associate with remote address:port
+	sal			3
+	lx			a
+	la			b
+	sabr			BSOCKET
+	dl			target_address+2
+	ds			s:remote_address, x
+							. return a status
+	dl			target_address		. source address from caller?
+	andB			(0FF0000s)
+	jdz			no_new_source
+
+write_derived_source
+	lk			(00FFFF)		. port must be bound first
+	mlb			s:socket_address+1, x
+	ds			s:socket_address, x
+
+	j			udp_connect_status
+
+no_new_source
+	dl			s:socket_address, x
+	andB			(0FF0000s)
+	jdnz			udp_connect_status	. source address already found
+	
+	dl			target_address+2
+	dsr			8			. into network format
+	sbr			8
+	ds			6
+	sx			8
+	lcal			route_outward_interface	. derive a come_from address
+	j			socket_nane		. if possible
+	lx			this_if:address_list
+	dl			ifaddr:net
+	sbl			8
+	dsl			8
+	lx			8
+	j			write_derived_source
+
+udp_connect_status
+	sa			8			. 1st word of address.port.address.port§
+	la			0,,xi			. net buffers were not accessed
+	j			connect_y		. only BSOCKET
 
 socket_nane
 	la			-NO_HANDLE,,xi			
@@ -119,6 +173,7 @@ update_tcp_handle
 
 connect_x
 	ii	FREE_NETB$
+connect_y
 	ii	FREE_SOCKB$
 	$ret
 
@@ -200,8 +255,8 @@ connect_fixport
 connect_socket_storage_assigned			. this storage unconditionally
 	$endif
 
-	jza	port_structure_unprepared
-	sabr	BSOCKET
+	jza	connections_tank_unprepared
+	sabr	BSOCKET				. change space 2F000 to connections tank
 						. 1: any sending address in the parameter
 	dl	addresses
 	andB	(255*/16s)
@@ -209,12 +264,15 @@ connect_socket_storage_assigned			. this storage unconditionally
 	j	connect_source_net
 
 						. 2: any sending address bound to the port
-connect_bound_source?
+	$if	1
+connect_bound_source?				. same address as connect_routed_source
+	$else
+connect_bound_source?				. ports socket just got unbased
 	dl	s:socket_address, y
 	andB	(255*/16s)
 	jdz	connect_routed_source
 	j	connect_source_net
-
+	$endif
 
 						. 3: the default interface address on the default
 						.    route to the remote destination
@@ -307,7 +365,7 @@ connect_review
 . if it wasn't bound before the attempt at outward connection
 . unless it's OK that companion connections on this port stop getting traffic
 
-port_structure_unprepared
+connections_tank_unprepared
 	lr	-99,,xi	
 	j	connect_reverse
 
@@ -369,7 +427,13 @@ tcp_await_connection $head_far	 params(port_socket,	int)	;
 	lx	(BSOCKET*/12++tlist:chain(1))
 	
 	la	6
+
+	$if	1
+	sa	9	. subroutine does shave it
+	$else		. but it must be in 9
 	and	(00FFFF)
+	$endif
+
 	call	(tcp_hash_localsocket)
 	ax	a
 
@@ -411,7 +475,7 @@ tcp_awaitx
 	$ret
 
 tcp_newhandle
-	la	(TCP_TCB*/16:s)
+	la	(IPPROTO_TCP*/16:s)		. must be IPPROTO_TCP -> TCP_TCB
 	ii	HANDLE$
 	jna	tcp_newhandle_x
 	ii	USOCKET$C			. complete the new handle encoding
@@ -425,10 +489,15 @@ tcp_newhandle_x
 net_disengage
 	$head_far	 params(close_handle,	int)
 
+	$if	0			. state TCP_TIMEWAIT should cover this
+	dl	(200L)			. for outgoing close with traffic still queued
+	ii	TWAIT$			. this is in application thread
+	$endif
+
 	la	close_handle
 	ii	READ_SOCKET$
 
-	lk	(256*/16s)
+	lk	(255*/16s)
 	mta	(TCP_TCB*/16s)
 	j	disengage_port?
 
@@ -436,14 +505,40 @@ net_disengage
 	lcal	sock_structure_connection
 	lx	b
 
-	$if	1
-	n	transmission:state
+	$if	0
+
+	dl	(400L)
+	ii	TWAIT$
+	j	disengage_handle
+	$else
+
+	lr	150-1,,xi
+	
+traffic_free?
+	tz	transmission:q4window:head
+	j	traffic_gate
+	tz	transmission:q4ack:head
+	j	traffic_gate
+
+	$if	1			. all clear
+	n	transmission:state	. start state unwind
 	$else
 	la	DAYCLOCK$
 	sa	transmission:timer(1)
 	$endif
 
-	j	disengage_handle
+	j	disengage_handle	. in state machine
+
+traffic_gate				. in application try to disengage at application speed
+	dl	(2L)			. msecs
+	ii	TWAIT$
+
+	jdr	traffic_free?
+
+	lcal	tcp_restart_timer1	. connection times out in minutes
+	j	disengage_handle	. and separates now from application
+					. incoming acks may prompt tx traffic until close
+	$endif
 
 disengage_port?
 	mta	(IPPROTO_UDP*/16s)
@@ -461,11 +556,23 @@ disengage_tcp_port?
 	j	disengage_handle
 
 	jzb	disengage_handle
-	lcal	sock_structure_port
-	lx	b
 
+	$if	0
+	drr	24
+	sabr	BSOCKET
+	andB	511,,xi
+	orB	BSOCKET*/12-3,,xi
+	sbl	3
+	lx	b
+	ql	(0q)
+	tn	s:flags, x
+	qs	s:socket_address, x
+	$else
+	lcal	sock_structure_port
+.	lx	b
 	tn	s:flags				. do not disengage a TCP multiport
 	call	(__port_disengage)
+	$endif
 
 disengage_handle
 	la	close_handle
@@ -480,15 +587,20 @@ disengage_handle
 
 port_disengage_udp				. for ports which have a buffer q
 	ly	s:udp:socket_inq,,i		. as UDP does
-	push	x				. drop user datagrams on receive q
-	lcal	tcp_freerxq
-	pop	x
+	push	b				. retain socket pointer b
+	lcal	tcp_freerxq			. drop user datagrams on receive q
+	pop	b				. recover socket pointer b
 
 port_disengage					. vector name is __port_disengage
 
+	$if	1				. no use zeroing b
+	qpush	(0q)				. it is the operational pointer
+	qpop	s:socket_address
+	$else
 	dsr	48				. for ports which have no buffer queue
 	ds	6				. as TCP does not
-	qs	s:socket_address		. that's the port no longer bound
+	qs	s:socket_address 	 	. that's the port no longer bound
+	$endif
 	
 port_disengage_z
 	fret	0
@@ -570,6 +682,19 @@ tcp_disconnect_z
         fret    0
 	fret	0				. successful return is here
 
+	$if	1				. input is handle encoding
+sock_structure_connection			. 24-word block
+	sar	3				. as notional 3-word code
+						. 501 is max connections / page
+sock_structure_port				. port ** 511 : page
+	drr	24
+	sabr	BSOCKET
+	andB	511,,xi
+	orB	BSOCKET*/12-3,,xi
+	sbl	3				. port * 8 = structure size
+	lret	0
+
+	$else
 sock_structure_port
 	push	a				. save encoding 1st word
 	sal	12
@@ -586,6 +711,7 @@ sock_structure
 	drr	24
 	sabr	BSOCKET
 	lret	0
+	$endif
 
 tcp_port_socket		. vector name __tcp_socket far call get TCP port encoding
 	lcal	tcp_socket

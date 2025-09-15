@@ -37,17 +37,46 @@
 
 .	vector name write_ifq
 
+.	these sequences only lock off interrupts
+.	there is no object locking because
+.	only ip thread touches interface queues
 
+	$if	__IFLOCQ
+
+QLOCK*	$proc
+	LOCK	QLOCK()
+	$end
+
+QFREE*	$proc
+	FREE	QFREE()
+	$end
+
+	$else
+
+QLOCK*	$proc
+	push	MAX_INT_MASK,,xi
+	sim	0, sp
+	$end
+
+QFREE*	$proc
+	sim	0, sp
+	inc	sp
+	$end
+
+	$endif
+
+	$if	0
 rewindq	sim	1, sp
 	ii	YIELD$
 	sim	1, sp
 	lret	-2
+	$endif
 
 q2if	push	x
 	tz	this_if:q2		. diversion to trunk handling
 	lx	this_if:q2		. at another logical interface
 
-	LOCK	this_if:lock_cell_q1	. rewindq
+	QLOCK	this_if:lock_cell_q1	. rewindq
 
 	tz	this_if:oq:head
 	j	q2ifz
@@ -61,7 +90,7 @@ q2ifz	lb	this_if:oq:tail
 	sa	this_if:oq:tail
 	z	descriptor:ifql, a
 
-q2ifzx	FREE	this_if:lock_cell_q1
+q2ifzx	QFREE	this_if:lock_cell_q1
 	pop	x
 	fret	0
 
@@ -69,13 +98,13 @@ q2ifzx	FREE	this_if:lock_cell_q1
 					. only drivers call it in IP thread
 					. for physical transmission queued frames
 
-readifq	LOCK	this_if:lock_cell_q1	. rewindq
+readifq	QLOCK	this_if:lock_cell_q1	. rewindq
 	la	this_if:oq:head
 readifq2
 	jza	rqifz
 	lb	descriptor:ifql, a
 	sb	this_if:oq:head
-rqifz	FREE	this_if:lock_cell_q1
+rqifz	QFREE	this_if:lock_cell_q1
 	lret	0
 
 	. long address (inter bank) queues
@@ -84,7 +113,7 @@ rqifz	FREE	this_if:lock_cell_q1
 					. only drivers call it in IP thread
 					. for physical transmission queued frames
 
-rqtxL	LOCK	this_if:lock_cell_q2	. rewindq
+rqtxL	QLOCK	this_if:lock_cell_q2	. rewindq
 	dl	this_if:oq2:head
 	jza	rqtxL_z
 	sabr	BSOCKET			. base containing memory
@@ -92,7 +121,7 @@ rqtxL	LOCK	this_if:lock_cell_q2	. rewindq
 	dpop	this_if:oq2:head
 	z	descriptor:sobdi, b	. prevent delayed wrong updates along chain
 	la	b			. return containing pointer
-rqtxL_z	FREE	this_if:lock_cell_q2
+rqtxL_z	QFREE	this_if:lock_cell_q2
 	lret	0			. called from this iframe = drivers
 
 q2txL_head
@@ -100,7 +129,7 @@ q2txL_head
 	tz	this_if:q2
 	lx	this_if:q2
 
-	LOCK	this_if:lock_cell_q2	. rewindq
+	QLOCK	this_if:lock_cell_q2	. rewindq
 
 					. socket memory is based
 	dpush	this_if:oq2:head	. and stays based
@@ -108,12 +137,12 @@ q2txL_head
 	on	see$1
 	la	ABT+BSOCKET
 	off	see$1
-	tnz	0, sp			. anything already on this queue?
+	tnz	1, sp			. anything already on this queue?
 	ds	this_if:oq2:tail	. if not the new object is head + tail
 	ds	this_if:oq2:head	. new becomes 1st
 	dpop	descriptor:sobdi, b	. 1st becomes 2nd if any
 
-	FREE	this_if:lock_cell_q2
+	QFREE	this_if:lock_cell_q2
 
 	pop	x			. I / F pointer at call
 	fret	0			. called from protocol iframe
@@ -123,7 +152,7 @@ q2txL_tail
 	tz	this_if:q2
 	lx	this_if:q2
 
-	LOCK	this_if:lock_cell_q2	. rewindq
+	QLOCK	this_if:lock_cell_q2	. rewindq
 
 	lb	a
 	on	see$1
@@ -149,6 +178,6 @@ q2txL_catenate
 q2txL_final
 	ds	this_if:oq2:tail	. always from here
 
-	FREE	this_if:lock_cell_q2
+	QFREE	this_if:lock_cell_q2
 	pop	x			. I / F pointer at call
 	fret	0			. called from protocol iframe
