@@ -129,17 +129,35 @@ chex_load*	$name
 		lx	a
 		ax	array				. relative page index + absolute
 		
-		lr	__SEVERAL/__CLUSTER,,xi
-		ly	WINDOW,,xi
-		la	-1+(__CLUSTER*/__GRANULE_LOG-12),,xi
-__ACQUIRE	la	0, x
-		jpa	$+2
-		ii	TERAFRAME$
-		jza	__END_DATAFRAME
-		sabr	0, y
+		lb	__SEVERAL//__CLUSTER-1,,xi	. requested banks / cluster round up minus 1
+		ly	WINDOW,,xi			. first window
+
+__CLUSTER_HIGH_PAGE $set	-1+(__CLUSTER*/__GRANULE_LOG-12) . pages request - 1 per cluster
+
+__ACQUIRE	la	0, x				. read vector location
+		jpa	populated?
+
+		$if	__CLUSTER_HIGH_PAGE<32768
+		la	__CLUSTER_HIGH_PAGE,,xi	.	cluster pages - 1
+		$else
+		la	(__CLUSTER_HIGH_PAGE)
+		$endif
+
+		ii	TERAFRAME$			. get cluster, write leading bank -> vector
+populated?	jza	__END_DATAFRAME
+
+		$do	__CLUSTER>1,	lr	__CLUSTER-1,,xi
+vector2base	sabr	0, y
+
+		$if	__CLUSTER>1
+		la	64,a,i				. next bank of cluster
 		ax	1,,xi
 		ay	1,,xi
-		jdr	__ACQUIRE
+		jdr	vector2base
+		$endif
+
+		dec	b
+		jpb	__ACQUIRE
 
 __END_DATAFRAME
 
