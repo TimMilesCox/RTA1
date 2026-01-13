@@ -55,7 +55,6 @@
 #include "ones_add.h"
 #include "trace.h"
 
-#define	GUARD_BITS	_register[128+19]
 			/*	default 0x00C00000	*/
 #undef	TRACE
 

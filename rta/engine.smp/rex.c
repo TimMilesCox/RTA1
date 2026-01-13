@@ -268,19 +268,47 @@ void rex(int rex_ea, smp *xcore)
                   break;
 
                case FA:
-                  if ((__fa(ea, targetp, xcore)) < 0) return;
+                  if (psr & FLOATING_PACKED)
+                  {
+                     if ((__fa48(ea, targetp, xcore)) < 0) return;
+                  }
+                  else
+                  {
+                     if ((__fa(ea, targetp, xcore)) < 0) return;
+                  }
                   break;
 
                case FAN:
-                  if ((__fan(ea, targetp, xcore)) < 0) return;
+                  if (psr & FLOATING_PACKED)
+                  {
+                     if ((__fan48(ea, targetp, xcore)) < 0) return;
+                  }
+                  else
+                  {
+                     if ((__fan(ea, targetp, xcore)) < 0) return;
+                  }
                   break;
 
                case FM:
-                  if ((__fm(ea, targetp, xcore)) < 0) return;
+                  if (psr & FLOATING_PACKED)
+                  {
+                     if ((__fm48(ea, targetp, xcore)) < 0) return;
+                  }
+                  else
+                  {
+                     if ((__fm(ea, targetp, xcore)) < 0) return;
+                  }
                   break;
 
                case FD:
-                  if ((__fd(ea, targetp, xcore)) < 0) return;
+                  if (psr & FLOATING_PACKED)
+                  {
+                     if ((__fd48(ea, targetp, xcore)) < 0) return;
+                  }
+                  else
+                  {
+                     if ((__fd(ea, targetp, xcore)) < 0) return;
+                  }
                   break;
 
                case MTA:
