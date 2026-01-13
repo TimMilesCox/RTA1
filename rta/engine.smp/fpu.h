@@ -56,3 +56,5 @@ extern int  __fd(int ea, int target[], smp *xcore);
 #define	__MANTISSA_4		target[5]
 #define	__MANTISSA_5		target[6]
 #define	__MANTISSA_6		target[7]
+
+#define	GUARD_BITS	_register[128+19]

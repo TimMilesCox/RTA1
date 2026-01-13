@@ -1,12 +1,31 @@
 
 compress $tree
 
+.	format 12:36
 .	vector name __fpp
 
 fpcompress
 	dpush	a
 
 FP_QUAD	$equf	4, sp		. save a:b + far:return
+
+	$if	0
+	la	FP_QUAD
+	dsa	48
+	sa	FP_QUAD+3
+	xorB	fp$guard
+	drr	36-24
+	da	FP_QUAD+1
+	ds	FP_QUAD+1
+	jnc	along
+	sc	a
+	src	FP_QUAD+1
+	src	FP_QUAD+2
+	xor	FP_QUAD+3
+	aa	FP_QUAD
+	sa	FP_QUAD
+	$endif
+
 				.			      71			48
 	dl	FP_QUAD		. Smxxxx xxxxxx xxxxxx xxxxxx MMMMMM MMMMMM MMMMMM MMMMMM
 	dsr	10		. 000000 0000Sm xxxxxx xxxxxx xxxxxx xxxxMM MMMMMM MMMMMM
@@ -23,20 +42,60 @@ FP_QUAD	$equf	4, sp		. save a:b + far:return
 
 fpxpand	dpush	a
 BUFFER	$equf	4, sp		. save a:b + far:return
-				. 		35					0
-	dl	BUFFER		. Smxxxx xxxxxx MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM
-	dsa	12		. SSSSSS SSSSSS Smxxxx xxxxxx MMMMMM MMMMMM MMMMMM MMMMMM
-	sb	BUFFER+1	.			      35			12
+				. 
+	dl	BUFFER		.
+.	sb	BUFFER+3	. save mantisse LS 12 bits. It is
+	dsa	12		.
 
-	dsa	11		. midpoint @ msb
-	sba	12		. more midpoints
-	xorB	(07FF800)	. switch the 12 new midpoints
-	dsa	1		. 24-bit characteristic
+	sb	BUFFER+1	. 1 mantissa word
+	dsa	10		. all the exponent except midpoint
+	rar	2		. save 1 sign + mdpoint
+	dsa	12		. shift 12 antisigns down
+	saa	10		. shift 1 sign + midpoint
+	dsa	2		. sign.midpoint.12 antisigns.10 ls exponent bits
 
 	sb	BUFFER
-	lb	BUFFER+3	. SSSSSS SSSSSS SSSSSS SSSSSS MMMMMM MMMMMM MMMMMM MMMMMM
-	drr	12		. MMMMMM MMMMMM SSSSSS SSSSSS SSSSSS SSSSSS MMMMMM MMMMMM
-	sba	12		. MMMMMM MMMMMM SSSSSS SSSSSS SSSSSS SSSSSS SSSSSS SSSSSS
+	lb	BUFFER+3	. 
+	drr	12		. 
+	sba	12		.
+
+	ds	BUFFER+2
+	dpop	a
+	fret	0
+
+.	format	16:32
+.	vector name __fppD
+
+fpcompressD
+	dpush	a
+	dl	FP_QUAD
+	dsr	14
+	sar	8		. drop 8 exponent bits after sign:midpoint
+	dsr	2		. sign:midpoint -> sM.14.mantissa8 in b
+	sb	FP_QUAD
+	dl	FP_QUAD+1
+	dsl	8		. one byte of mantissa already stored
+	sa	FP_QUAD+1
+	dpop	a
+	fret	0
+
+.	vector name __fpxD
+
+fpxpandD
+	dpush	a
+	dl	BUFFER
+.	sb	BUFFER+3	. save lower 8 bits it is
+	dsa	8
+	sb	BUFFER+1	. mantisssa word shifted right 8 positions
+	dsa	14		. all the exponent except midpoint
+	rar	2		. save 1 sign : midpoint 
+	dsa	8
+	saa	14
+	dsa	2		. sign.midpoint.8 antisigns.14 ls exponent bits
+	sb	BUFFER
+	lb	BUFFER+3	. saved ls 8 bits 32-bit mantissa
+	drr	8		. 8 bits:signs
+	sba	16		. signs
 	ds	BUFFER+2
 	dpop	a
 	fret	0

@@ -500,7 +500,7 @@ else							\
       if (ea < 0x0000a000)				\
       {							\
         ea = operand_read(ea & 0x00001FFF, 0, xcore);	\
-        if (ea < 0) return;				\				
+        if (ea < 0) return;				\
       }							\
       else						\
       {							\
