@@ -441,7 +441,7 @@ typedef union  { page		*pages;
 #define	BSTREAM16W 16
 
 #define	FLOATING_RESIDUE 8
-#define	FLOATING_PACKED	4
+#undef	FLOATING_PACKED	4
 #define CARRY	1
 
 #define	ADP	1	/* automatic data page */

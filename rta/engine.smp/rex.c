@@ -267,6 +267,25 @@ void rex(int rex_ea, smp *xcore)
 
                   break;
 
+                  #ifndef FLOATING_PACKED
+               case FA:
+                  if ((__fa(ea, targetp, xcore)) < 0) return;
+                  break;
+
+               case FAN:
+                  if ((__fan(ea, targetp, xcore)) < 0) return;
+                  break;
+
+               case FM:
+                  if ((__fm(ea, targetp, xcore)) < 0) return;
+                  break;
+
+               case FD:
+                  if ((__fd(ea, targetp, xcore)) < 0) return;
+                  break;
+
+                  #else
+
                case FA:
                   if (psr & FLOATING_PACKED)
                   {
@@ -310,6 +329,8 @@ void rex(int rex_ea, smp *xcore)
                      if ((__fd(ea, targetp, xcore)) < 0) return;
                   }
                   break;
+
+                  #endif	/* FLOATING_PACKED */
 
                case MTA:
                   OPERAND(v, ea, 7)
