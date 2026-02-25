@@ -1,103 +1,179 @@
 
 compress $tree
 
-.	format 12:36
-.	vector name __fpp
+__FORM_12_36	$set	1
+__FORM_16_32	$set	0
 
+.	format 12:36
+.	vector name __fpp[D]
+
+	$do	__FORM_16_32=0,fpcompressD	. if not also 48-bit floating format 16:32
 fpcompress
 	dpush	a
 
 FP_QUAD	$equf	4, sp		. save a:b + far:return
 
-	$if	0
-	la	FP_QUAD
-	dsa	48
-	sa	FP_QUAD+3
-	xorB	fp$guard
-	drr	36-24
-	da	FP_QUAD+1
+	$if	1		. some bad down-roundings can be avoided
+	la	FP_QUAD		. by adding guard setting before truncate
+	dsa	48		. do two whole words of signs
+	xorB	fp$guard	. guard value thread setting
+	drr	36-24		. at first truncated position
+	da	FP_QUAD+1	. add rounding
 	ds	FP_QUAD+1
-	jnc	along
-	sc	a
-	src	FP_QUAD+1
-	src	FP_QUAD+2
-	xor	FP_QUAD+3
-	aa	FP_QUAD
-	sa	FP_QUAD
+	tp	FP_QUAD		. a + number ?
+	j	that_side_up	. a - number
+	jnc	along		. nothing to adjust
+	inc	FP_QUAD		. exponent++
+	j	this_side_up	. roll a 1-bit into mantissa
+
+that_side_up			. a - number
+	jc	along		. less is the mirror of more
+	dec	FP_QUAD		. ^[exponent]-- = exponent++
+
+this_side_up
+	src	FP_QUAD+1	. carry position -> normalising position 
+	src	FP_QUAD+2	. mantissa >> 1
+along
 	$endif
 
-				.			      71			48
-	dl	FP_QUAD		. Smxxxx xxxxxx xxxxxx xxxxxx MMMMMM MMMMMM MMMMMM MMMMMM
-	dsr	10		. 000000 0000Sm xxxxxx xxxxxx xxxxxx xxxxMM MMMMMM MMMMMM
-	sar	12		. 000000 000000 000000 0000Sm xxxxxx xxxxMM MMMMMM MMMMMM
-	dsr	2		.			      Smxxxx xxxxxx MMMMMM MMMMMM
-	sb	FP_QUAD		. 71
-	dl	FP_QUAD+1	. MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM
-	dsl	12		. MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM MMMMMM		24
-	sa	FP_QUAD+1	. 59			   36
+	dl	FP_QUAD
+	dsr	10
+	rar	12		. 12 exponent bits of 23 not forwarded
+
+				. start exclusion of truncated exponents
+	lk	(0FFF000s)	. mask to test significant bits
+	jao	fp_compress_zeros	. exponent midpoint on ?
+	mta	k		. no, so discarded bits must be all 1s
+	j	fp_significant_range_u
+	j	fp_compress
+
+fp_significant_range_u
+	dl	(-0.0)
+	ds	FP_QUAD
+	j	fp_compressed
+
+fp_compress_zeros
+	mta	(0)
+	j	fp_significant_range_u
+
+				. drop forward, value can be compressed
+				. end exclusion of truncated exponents
+fp_compress
+	dsr	2		. b <- sign.midpoint+exponent10.mantissa35..24
+	sb	FP_QUAD
+	dl	FP_QUAD+1
+	dsl	12
+	sa	FP_QUAD+1	. _______________________________________
+				. |s|exponent|		mantissa	|
+				. |_|________|__________________________|
+				.  47         35                       0
+fp_compressed
 	dpop	a
 	fret	0
 
-.	vector name __fpx
+.	vector name __fpx[D]
 
-fpxpand	dpush	a
-BUFFER	$equf	4, sp		. save a:b + far:return
+	$do	__FORM_16_32=0,fpxpandD	. if not also 48_bit floating format 16:32
+fpxpand	dpush	a		. 48-bit float is in a:b : s:12:36
+	dpush	a
+BUFFER	$equf	0, sp		. save a:b + far:return
 				. 
 	dl	BUFFER		.
 .	sb	BUFFER+3	. save mantisse LS 12 bits. It is
 	dsa	12		.
 
 	sb	BUFFER+1	. 1 mantissa word
-	dsa	10		. all the exponent except midpoint
-	rar	2		. save 1 sign + mdpoint
-	dsa	12		. shift 12 antisigns down
-	saa	10		. shift 1 sign + midpoint
-	dsa	2		. sign.midpoint.12 antisigns.10 ls exponent bits
+	dsa	10		. exponent bits except midpoint -> b
+	rar	1		. midpoint -> a sign position
+	saa	12		. copy midpoint value 12 times
+	rar	1		. sign to sign position s.M.12*midpoints
+	saa	10		. zero10.s.midpoint.12copiedmidpoints
+	xor	4095,,xi	. reverse the inserted midpoints
+	dsa	2+12		. sign.midpoint.12 antimidpoints.10 ls exponent bits
+				.				______________
+	sb	BUFFER		. stretched characteristic word |s|exponent23|
+	lb	BUFFER+3	. mantissa 23..0		|_|__________|
+	drr	12		. half a mantissa word
+	sba	12		. and a new word of signs
 
-	sb	BUFFER
-	lb	BUFFER+3	. 
-	drr	12		. 
-	sba	12		.
-
-	ds	BUFFER+2
-	dpop	a
+	ds	BUFFER+2	. mantissa 2..3
+	qpop	a
 	fret	0
 
 .	format	16:32
 .	vector name __fppD
 
+	$if	__FORM_16_32	. if there is also 48-bit floating format 16:32
 fpcompressD
 	dpush	a
+
+	$if	0		. round up 72-bit mantissa @ 32-bit length
+	lb	fp$guard	. read guard pattern
+	la	FP_QUAD		
+	saa	24		. make signs
+	xorB	a		. propagate signs over guard pattern
+	dsa	8		. get below the value range -more signs
+	da	FP_QUAD+1	. round on mantissa 71..40
+	ds	FP_QUAD+1
+	$endif
+
 	dl	FP_QUAD
 	dsr	14
-	sar	8		. drop 8 exponent bits after sign:midpoint
+	rar	8		. drop 8 exponent bits after sign:midpoint
+
+	.			. start exclusion of truncated exponents
+
+	lk	(0FF0000s)	. mask how many bits may be not as midpoint
+	jao	fcompress_zeros	. must be zeros if midpoint position is 1
+	mta	k		. must be 1s because midpoint bit is 0
+	j	fcompress_not1s	. are not
+	j	fcompress_allow	. are
+
+fcompress_notzeros		. mantissa can be rounded + truncated
+fcompress_not1s			. not the exponent 
+	dl	(-0.0L)		. same as -1L whatever 48-bit format is
+	ds	FP_QUAD		. substitute impossible compressionn: -0.0 
+	j	fcompress_return
+
+fcompress_zeros
+	mta	(0)		. midpoint bit = 1, discarded exponent bits
+	j	fcompress_notzeros	. are not zero, disqualify
+
+				. end exclusion of truncated exponents
+fcompress_allow
 	dsr	2		. sign:midpoint -> sM.14.mantissa8 in b
 	sb	FP_QUAD
 	dl	FP_QUAD+1
 	dsl	8		. one byte of mantissa already stored
 	sa	FP_QUAD+1
+
+fcompress_return
 	dpop	a
 	fret	0
 
 .	vector name __fpxD
 
-fpxpandD
+fpxpandD			. 48-bit float is in a:b : s:15:32
+	dpush	a
 	dpush	a
 	dl	BUFFER
 .	sb	BUFFER+3	. save lower 8 bits it is
 	dsa	8
 	sb	BUFFER+1	. mantisssa word shifted right 8 positions
-	dsa	14		. all the exponent except midpoint
-	rar	2		. save 1 sign : midpoint 
-	dsa	8
-	saa	14
-	dsa	2		. sign.midpoint.8 antisigns.14 ls exponent bits
+	dsa	14		. exponent bits except midpoint -> b
+	rar	1		. midpoint -> sign position
+	saa	8		. copy midpoint value 8 times
+	rar	1		. s.mpoint at register top
+	saa	14		. some more signs
+	xor	255,,xi		. reverse all but 1 midpoint copy
+	dsa	2+8		. sign.midpoint.8 antimidpoints.14 ls exponent bits
 	sb	BUFFER
-	lb	BUFFER+3	. saved ls 8 bits 32-bit mantissa
+	lb	BUFFER+3	. mantissa 23..0
 	drr	8		. 8 bits:signs
-	sba	16		. signs
-	ds	BUFFER+2
-	dpop	a
+	sba	16		. 24 signs
+	ds	BUFFER+2	. 
+	qpop	a
 	fret	0
+	$endif
 
 	$root
