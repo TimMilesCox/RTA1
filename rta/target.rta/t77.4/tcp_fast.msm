@@ -1,0 +1,52 @@
+	$if	MSG_WAITALL
+
+tcp_fast_ack	$tree			. application call
+
+	$head_near	 params(how_fast?,	int)	;
+			scalars(caller_b,	int,	b)	. b will be consulted
+								. after return from here
+	lb	how_fast?
+	sbr	16			. inside 16 bits?
+	jzb	tcp_ack_in_picture	. yes, refresh and apply
+	lb	-1,,xi			. no, substitute and apply saturation
+	sb	how_fast?		. because the truncated remainder may be puny
+tcp_ack_in_picture
+	lb	how_fast?
+
+	lk	(0FF0000s)			. keep ms 8 bits sequence
+	mlb	transmission:sequence_ackx+1	. flag state machine ack ++ new window
+	sb	transmission:sequence_ackx+1	. app (this thread) maintains sequence 
+
+		pop	b		. caller needs b unchanged
+		lret	0
+		$root
+
+.	both these calls happen during application large fixed recv MSG_WAITALL
+.	and avertise a big local window
+.	application owns field sequence but does not look at it while receiving
+.	ip [tcp] owns field ack and updates [ ack window ] on RX / [ window ] on TX
+.       window may only reduce corresponding to RX payload
+.	window may restart upwards on TX
+
+tcp_fast_launch				. TCP state machine call
+					. b = new window
+	la	transmission:ack_window+1
+	lk	(0FF0000s)		. zone new window
+	mlb	a			. same as old window
+	ana	b			. compare
+	jc	tcp_give_existing_window
+					. use the new window. It's larger
+					. this is ip thread 
+					. not this moment otherwise updating ack_window
+	sb	transmission:ack_window+1
+tcp_give_existing_window
+
+	lcal	tcp_send_ack		. tell remote tcp the purpose-sized window
+	lret	0			. did not happen: leave request unconsumed
+
+	z	transmission:sequence_ackx+1,,t2	. request consumed
+	z	transmission:sequence_ackx+1,,t3	. ack sent
+	lret	0
+
+	$endif
+

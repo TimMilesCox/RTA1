@@ -1,0 +1,51 @@
+
+.	this isn't compiled in the kernel
+.	it's a source include for applications
+
+.	write a data structure
+.	larger than (remote) FS accepts in 1 call 
+
+remotefs_stepped_write	$tree
+
+	$head_near	 params(fi,	int	;
+				datap,	int	;
+				bytes,	int)	;
+						;
+			scalars(count,	int	)
+
+TX_SLICE	$equ	60000
+
+	$do	TX_SLICE///3^=0,	$flag	TX_SLICE must fit $word/$byte
+
+write_as_always
+	lx	count		. climbs from zero
+	lr	bytes		. until >= request
+	jxge	complete	. condition == included
+
+	la	(TX_SLICE)	. proposed TX bytes
+	ax	a		. add to TX so far
+
+	jxl	send		. bytes (required) < incremented count ?
+				. no
+	lb	bytes
+	anb	x		. negative difference
+	jzb	send		. exact fit, case not tested in jxl
+	ax	b		. retard x
+	aa	b		. restrict a
+
+send	sx	count	
+	c	(write)	fi	datap	a
+
+	lx	datap		. buffer pointer +=
+	ax	(TX_SLICE/3)
+	sx	datap
+
+	jpa	write_as_always	. if nothing went wrong
+
+	sa	count		. otherwise status instead of upcount
+
+complete
+	pop	a		. accumulated count or status otherwise
+	lret	0
+
+	$root

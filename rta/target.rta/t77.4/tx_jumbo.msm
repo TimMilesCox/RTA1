@@ -1,0 +1,295 @@
+
+.	source fragmentation device driver
+.	in ip threa so no queue locking
+
+jumbo_txq*	$tree
+
+$(1)
+
+oq	dq		. datagram queue from ip
+index	0		. cursor in partially transmitted payload
+
+$(0)
+next	la	oq:head
+	jza	clear
+
+	push	descriptor:ifql, a	. the queue must be popped
+	pop	oq:head			. q2 -> i_f loses forward link
+
+	lx	descriptor:i_f, a	. pick up interface address
+	n	x			. inverted when on this queue
+	ax	$if0p,,xi
+	lx	0, x
+
+	lcal	tx_jumbo
+
+	tp	index			. all transmitted ?
+	j	resume			. no
+	$do	1,	j	next	. yes
+clear	fret	0			. 1 total dgram per pass to allow
+					. fragment wrapper dgrams to clear
+
+resume	lb	oq:head			. unfinished: b < - queue head
+	jnzb	first			. queue populated ?
+	sa	oq:tail			. no: a -> queue tail
+first	sa	oq:head			.     a -> queue head
+	sb	descriptor:ifql, a	. should still be identical
+
+	$if	0
+	sa	oq:head			. next datagram link not changed
+	tnz	descriptor:ifql, a	. this thread also writes this queue
+	sa	oq:tail
+	$endif
+
+	n	index			. change index back
+	fret	0			. to magnitude sent
+
+.	a -> datagram descriotor
+.	x -> interace
+
+q2oq	lb	this_if:id		. mark within fragmentation
+	 jnzb	$+2
+	 ii	GUARD$
+	xorB	-1,,xi
+	sb	descriptor:i_f, a
+
+	push	MTU			. save in descriptor:mtu which is also
+	pop	descriptor:mtu, a	. app data pointer or high volume page index
+
+	$do	0,	c	(g_checksum)	IPPROTO_TCP,,xi	bytes**03FFFFF	a
+					. if SIMD checksumming is preferred to
+					. incrementing checksum in w2buffer routine
+	tz	oq:head
+	j	append
+	sa	oq:head
+	j	conclude
+append	lb	oq:tail			. queue tail so far
+	sa	descriptor:ifql, b	. new queue tail <-
+conclude
+	sa	oq:tail			. new queue tail
+	z	descriptor:ifql, a
+	$do	1,	call	(jumbo_drive)
+	fret	0
+
+		$root
+
+.	precisely a jumbo-size TPDU goes to a smaller MTU I / F in fragments
+.	the TPDU buffer is app data up to 16384 octets + TPDU header + IP header
+.	temp (LL headers + IP headers) get injected as the TPDU goes past
+.	interface drivers pool the temp buffers on transmit
+.	the input big buffer should be pooled here if it's not marked for resends
+
+tx_jumbo	$tree
+		$head_near						;
+		scalars(more,		int,	(IP_MORE)		;
+			frame_p,	int,	descriptor:frame, a	;
+			routing_buffer,	int				;
+			iph_words,	int				;
+			i_f,		int,	x			;
+			ifidx,		int,	this_if:id		;
+			jumbo_axw,	int,	a			;
+			jumbo_dgram,	int,	descriptor:dgram, a	;
+			jumbo_uproto,	int,	descriptor:uproto, a	;
+			mtu,		int,	descriptor:mtu, a 	;
+			final_count,	int				;
+			ipdu_offset,	int,	jumbo_txq:index		;
+			fragment_payload,	int			;
+			caller_fp,	int,	fp			)
+
+	ly	jumbo_dgram
+
+	la	0, y
+	sar	8-1			. data words from IP header longs
+	and	30,,xi
+	sa	iph_words		. ***
+					. before looping back
+					. load current ip header words in a ***
+
+	sal	1			. input dgram header bytes
+	lb	dgram:bytes, y
+	anb	a			. payload only this counter
+
+	jnb	no_more
+	jzb	no_more
+
+	sb	final_count
+	
+acquire	la	iph_words		. data words ip header
+	lb	ROUTING_HEADER, a, i	. routing buffer + IP header
+	sb	routing_buffer
+
+.	lx	i_f			. not doing anything
+	lb	mtu
+	la	iph_words
+	sal	1			. ip header words -> bytes
+	anb	a
+	andB	-8,,xi			. * blocks of 8 octets
+	sb	fragment_payload
+	
+.	get tx temp routing buffer + ip header
+.	fragment payload  = mtu - ip header ** -8
+.	microstack = physaL:physa, iphl:ipheader, fragmentL:fragment
+
+request	lx	tx_buffers
+	la	routing_buffer
+	call	(if_buy1)
+	jnza	qfragment
+
+	n	jumbo_txq:index		. it might still be zero
+	la	jumbo_axw		. descriptor needed again
+	j	return
+
+	$if	0
+	dl	(10d)			. xmit is not in an application thread
+	ii	TWAIT$			. which could pause for effect
+
+					. test socket
+	j	acquire
+	$endif
+					. descriptor is the from here the temp axw
+
+qfragment				. construct routing buffer + ip header
+	sa	fp			. first copy all original routing buffer
+
+					. address limit of copy
+	ly	frame_p			. address the come-from headers
+	ay	iph_words
+	lr	ROUTING_HEADER, y, i
+	ly	frame_p
+
+	lx	descriptor:frame
+	
+headers1_2
+	jyge	headers_template_acquired
+
+	dl	0, y
+	ds	0, x			. copy longwords routing header + ip header
+	ax	2,,xi		
+	ay	2,,xi
+	j	headers1_2
+
+headers_template_acquired
+	ly	jumbo_uproto
+	sy	descriptor:uproto	. address in the original buffer
+
+	lx	descriptor:frame
+	ly	ROUTING_HEADER, x, i		. new dgram
+
+	sy	descriptor:dgram	. write for 1st time
+
+	$if	0			. done b4 you ask
+	la	iph_words		. not certain to be same every datagram
+	sal	1			. ip header bytes
+	lb	mtu
+	andB	-8,,xi			. in case MTU is not / 8
+	anb	a			. wrong. Round the payload part
+	sb	fragment_payload
+	$endif
+
+	la	final_count		. remaining total payload
+	anu	fragment_payload	. proposed fraction payload
+	sb	final_count		. that can be [ - 0 + ]
+	jc	more?			. at least that much data on hand
+	sa	fragment_payload	. but if final count < 0
+					. then previous final count -> last send
+	z	more			. and this shall be last fragment
+
+more?	la	ipdu_offset		. talking of more
+	sar	3			. mark out fragment offset
+	or	more
+	sa	dgram:flags_fragment, y
+
+	la	iph_words
+	sal	1			. words -> bytes
+	lb	y
+.					. x -> new frame y -> new datagram
+.	lx	descriptor:frame	. construct microstack channel program (2) *
+.	ly	16, x, i		. y -> 
+
+	ds	nframe:frame_axw(2)
+
+	aa	fragment_payload
+	sa	dgram:bytes,	y
+	sa	descriptor:bytes
+
+	la	iph_words
+	lcal	ip_checksum		. returns y -> ip header
+
+	$if	1			. fragment needs an interface number
+	la	ifidx
+	sa	descriptor:i_f
+	$endif
+					. de-comment next line if x changed since (2) *
+.	lx	descriptor:frame	. construct microstack channel program (3)
+	la	fragment_payload	. MTU - ip header bytes
+	lb	jumbo_uproto		. incrementing pointer
+	ds	nframe:frame_axw(3)
+
+	$if	0
+	la	iph_words
+	sal	1			. these tuples contain a byte count
+	lb	y
+	ds	nframe:frame_axw(2)
+	$endif
+
+	la	-6,,xi
+	sa	nframe:stack_index
+
+	la	fp			. axw ->
+	lx	i_f			. q2 i/f
+	call	(write_ifq)	
+
+	la	fragment_payload	. add to fragment index in bytes
+	lb	ipdu_offset
+	ab	a
+	sb	ipdu_offset
+	sb	jumbo_txq:index
+
+	sar	1			. add to address in media words
+	aa	jumbo_uproto
+	sa	jumbo_uproto
+					. remove non-repeat header options
+					. not from the original
+					. it might be a resending protocol
+					. recalculate dynamic variable iph_words
+	tz	more
+	j	acquire
+
+no_more	z	jumbo_txq:index		. signal dequeue
+	la	jumbo_axw		. chain jumbo to the last fragment
+	call	(write_ifq)		. (write_ifq) returns x as supplied
+
+return	lx	caller_fp		
+	sx	fp
+	lx	i_f			. as it was
+
+	$ret
+
+ip_checksum
+	push	y
+	z	dgram:checksum, y
+
+	aa	y			. ip header words
+	lr	a			. range high index
+
+	dl	0, y
+
+ip_check_more?
+	ay	2,,xi
+	jyge	ip_compress_check
+	da	0, y
+	j	ip_check_more?
+
+ip_compress_check
+	aa	b
+	dsr	16
+	sbr	8
+	jnza	ip_compress_check
+
+	xorB	(00FFFF)
+	pop	y
+
+	sb	dgram:checksum, y
+	lret	0
+
+	$root

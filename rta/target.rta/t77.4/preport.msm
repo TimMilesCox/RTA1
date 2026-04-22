@@ -1,0 +1,66 @@
+.		places to roam withing page 002000
+
+.		lcal	tcp_socket		. in a
+.		jza	tcp_reset_deflect	. frame not buffered
+.			-> ipv4_rxz		. don't get here if it is
+
+.		lcal	udp_socket		. in a
+.		jza	icmp_du_port		. frame not buffered
+.			-> ipv4_rxz		. don't get here if it is		
+.	a <- protocol
+.	x -> TX_TPDATA
+
+.	1, sp = datagram
+
+.	catch RX fragments and detect quickly if any socket user wants them
+.	of even if the I / F allows them
+
+preport	$tree
+
+$(71::,sp)
+lookaside	$res	2
+return		$res	1
+dgram	datagram
+
+$(0)
+	$head_near	scalars(caller_ab,	long,	a)
+
+	z	SOCKET_LPOINTER		. socket not yet known
+	lb	dgram:flags_fragment
+	andB	01FFF,,xi
+	jzb	unigram_or_1st_part
+	call	(rasmgram)		. fragment not the 1st
+	j	ipv4_rxz
+	
+unigram_or_1st_part
+	la	1, x			. dest port udp and tcp
+	lb	caller_ab		. protocol
+
+	ab	-IPPROTO_UDP,,xi
+	jzb	get_udp_socket
+
+	ab	IPPROTO_UDP-IPPROTO_TCP,,xi
+	jnzb	no_pointer_needed	. not a protocol using ports
+	lcal	tcp_socket
+	j	store_port_pointer
+
+get_udp_socket
+	lcal	udp_socket
+					. look at fragment zero
+store_port_pointer			. it's the only one with port numbers
+	ds	SOCKET_LPOINTER		. this tells caller (and rasmgram)
+					. if any process could want the TPDU
+
+	lb	dgram:flags_fragment	. no fragment or fragment zero?
+	andB	IP_MORE,,xi		. classically checksum is before all this,
+	jzb	no_fragment_encountered	. but if the port is wrong it won't get put right
+	call	(rasmgram)		. we may be doing TCP_RST / ICMP_DU
+	j	ipv4_rxz		. when silent drop would be correct
+					. but we dont't want to buffer then drop frames
+					. when we already know the PDU is dud
+no_fragment_encountered			. we use what we know to avoid hosting and
+no_pointer_needed			. checksumming fragments which shall not be used
+	dpop	a
+	lret	0
+	$root
+

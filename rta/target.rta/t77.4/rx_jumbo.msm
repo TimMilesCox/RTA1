@@ -1,0 +1,763 @@
+
+rx_jumbo	$tree
+
+$(1)						. B1 page objects used serially per RX fragment
+reassembly_chain_head	0
+reassembly_chain_tail	0
+ip_payload_bytes	0
+prior_descriptor	0
+fragment_engine_lookaside	0
+tag_lookaside		0
+ip_header_bytes		0
+i_f_buffer_cursor	0
+
+$(66::,x)
+tag	fragment_tag				. reassembly control structure
+						. tuples collection -> 1 total dgram
+$(67::,y)
+payload		payload_token			. tuple describing recombined fragment
+
+
+						. structure rassembly resource
+$(66::,x)					. assigned to interface as required + permitted
+
+?	$do	IP4_RASMGRAMS_IF,ttag(?)	fragment_tag	. interface -> reassembly structures[]
+free_payload_token	$res	1				. interface -> availabe fragment tuple
+?	$do	PAYLOAD_BANDS,payload_band(?)	payload_token	. interface -> fragment tuples []
+
+FRAGMENT_ENGINE	$equ	$			. interface -> size of reassembly resource
+
+$(71::,sp)					. view of internal stack both sides of caller -> return
+scope_w		$res	1
+new_p		$res	1
+i_f_pointer	$res	1			. 4
+calling_iframe	$res	1			. caller instruction frame ->
+calling_offset	$res	1			. caller return address offset
+lookaside_proto	$res	2
+return2_ip	$res	1
+
+__dgram		datagram			. rx datagram leading byte pairs[] in register stack
+
+$(0)
+	$head_far	scalars(interface_pointer8_11,	int,	8	;	. 
+				dgramp,			int,__dgram,,i	;	. location stacked dgram
+				scope_before,		int		)	. previous coverage when
+										. walking fragment tuples
+. i_f_buffer_cursor	$equf	interface_pointer8_11+1
+. y_forward		$equf   interface_pointer8_11+1
+. x_ifid			$equf	interface_pointer8_11+2
+
+	sy	i_f_buffer_cursor		. -> interface dualport window fragment read point
+
+	lx	8				. -> interface
+	tn	this_if:iq_rxfragments		. fragments accepted this I / F ?
+not_allowed
+not_feasible
+	j	interface_escape		. not just now
+
+	lx	this_if:iq_buffer		. storage obtained?
+	sx	fragment_engine_lookaside
+	tz	x
+	j	configured			. yes
+
+	la	FRAGMENT_ENGINE,,xi		. obtain a cache for tags =
+						. RASMGRAM_WORDS*IP4_RASMGRAMS_IF+1+3*PAYLOAD_BANDS,,xi
+
+	lx	rx_buffers			. from rx packet storage
+	call	(if_buy1)
+
+	jza	no_storage_escape 		. can't always have resources
+						. don't begin to assign resources. Drop the RX fragment
+	lb	descriptor:frame, a		. capture new resource -> interface
+	lx	8				. <- interface
+	ds	this_if:fragment_engine_descriptor	. b -> structure
+	sb	fragment_engine_lookaside	. cache * in B1 memory
+	lx	b
+						. initialise [] total datagram slots
+	ql	(0q)				. as vacant + available
+?	$do	2*IP4_RASMGRAMS_IF,	qs	?*4-4, x
+
+	la	payload_band(1),,i		. free chain <- all tuples
+	sa	free_payload_token
+
+	lr	payload_band(PAYLOAD_BANDS),,i
+	z	*r				. no forward pointer from last tuple
+
+free_token
+	lx	a
+	jxge	configured			. stop when this == last
+	la	3, x, i				. forward 1 tuple
+	sa	payload:next, x			. this -> next = this[+1]
+	j	free_token
+
+configured
+	ql	__dgram:ipsource		. construct the tag netsource.dgramid.netdest.protocol
+	sbl	8
+	dsl	8
+	lk	(00FFFF)
+	mlb	__dgram:id
+	ds	8
+
+	dl	6
+	sbl	8
+	dsl	8
+	mlb	lookaside_proto
+	ds	10				. [ 8..11 ] <- netsource.dgramid.netdest.protocol
+
+	la	__dgram:flags_fragment		. is this fragment zero ?
+	lk	03FFF,,xi			. because the following ones have no tproto header
+	mta	(02000)				. so SOCKET_LPOINTER is not generated for this packet
+	j	fragments_plus
+						. this is tpdu fragment zero and SOCKET_LPOINTER counts
+	dl	SOCKET_LPOINTER			. ...or doesn't: protocol port storage?
+	jza	socket_escape			. drop
+						. let timing drop any fragments aready received
+	la	so:socket_address+1, b
+	and	(00FFFF)			. is an application bound to this port ?
+	jza	socket_escape			. drop
+						. let timing drop any fragments aready received
+fragments_plus					. find = or free slot
+	lx	interface_pointer8_11		. -> interface
+	lcal	search				. new or existing chains which are OK
+	j	limits_escape			. or will be if fragment zero is OK when it arrives
+
+	ql	8
+	qs	tag:source_id
+	dl	SOCKET_LPOINTER
+	jza	not_1st_fragment		. avoid out of date SOCKET_LPOINTER
+
+	ds	tag:socket_lpointer
+
+not_1st_fragment
+
+	ly	__dgram,,i
+
+	$if	0
+	j	store_and_link
+	$endif
+
+store_and_link					. y -> dgram
+	la	fragment_engine_lookaside
+
+	$if	0
+	jza	no_storage_escape		. resource not awarded to interface
+	$endif					. just been assigned / checked
+
+	la	free_payload_token, a		. within permitted total fragments?
+	jza	storage_escape			. before committing any other resource
+						. extend time but necessarily drop fragment
+	sx	tag_lookaside
+	la	HEADER_LONGWORDS
+	sal	2
+	sa	ip_header_bytes
+
+	la	tag:chain
+	sa	fp
+	jnza	add_reassemble			. reassembly is buffered
+						. 1 or more RX framents are in
+	la	tag:dest_protocol+1
+	and	255,,xi
+	aa	-IPPROTO_UDP,,xi
+	jza	regroup_udp
+	aa	IPPROTO_UDP-IPPROTO_TCP,,xi
+	jnza	no_protocol_escape
+
+TCP_MAXTEST $equ 0
+
+	$if	TCP_MAXTEST
+	lr	258*64,,xi
+	$else
+	la	interface_pointer8_11		. it's tcp
+	lr	this_if:mtu, a			. mss is governed by local i / f mtu
+	$endif
+
+	ly	dgramp
+	la	dgram:flags_fragment, y
+	and	8191,,xi
+	j	first_size_test
+
+regroup_udp
+	ly	dgramp
+	la	dgram:flags_fragment, y
+	lb	a
+	and	8191,,xi			. it's udp
+	jnza	subsequent			
+	ly	TP_HEADER			. and initial fragment
+	ly	uugram:udgraml, y			. with header
+						. UDP header byte count is IP payload size
+	lr	20, y, i			. plus buffer needs one minimal ip header  
+	j	first_size_test
+
+subsequent					. 1st rx fragment is not initial fragment
+	andB	IP_MORE,,xi				. is it last fragment ?
+	jzb	final_fragment
+	lr	258*64,,xi			. assign a superjumbo buffer
+	j	first_size_test			. if possible
+
+final_fragment
+	sal	3
+	aa	dgram:bytes, y
+	ana	ip_header_bytes
+	lr	20, a, i			. allow minimal IP header
+	j	first_size_test_passed
+
+first_size_test
+	ly	dgramp
+	sal	3
+	ly	dgram:bytes, y
+	ana	ip_header_bytes			. a -= actual ip header bytes
+	ay	20, a, i			. plus minimal IP header			
+
+	$if	1
+	jyge	drop_nothing			. clear tag entry
+	$else
+	jyge	no_storage_escape		. 1st encountered fragment
+	$endif
+					. is overboard, it's a wreck, ram it
+first_size_test_passed
+
+	la	r				. buy the buffer
+	push	r
+	la	1, a, i
+	sar	1
+	lx	rx_buffers
+	call	(if_buy1)
+	jza	no_storage_escape		. unless it's not for sale
+	push	-20,,xi				. write payload length to descriptor
+	popA	1, sp
+	pop	descriptor:bytes, a
+	lx	tag_lookaside
+	sa	tag:chain			. x must still -> tag
+	sa	fp
+	z	descriptor:next			. initialise chain -> end
+	la	descriptor:frame
+	sa	descriptor:dgram
+	la	10, a, i			. retain minimum IP header for net addresses
+	sa	descriptor:uproto		. for when initial fragment arrives
+
+	lx	i_f_pointer
+	la	this_if:id
+	sa	descriptor:i_f
+
+	ly	dgramp
+.	la	dgram:flags_fragment, y
+.	and	8192,,xi
+	j	impress
+
+add_reassemble					. storage for reassembly already obtained
+	sa	fp				. fragment to add
+	lb	descriptor:bytes
+	lx	dgramp
+	la	dgram:flags_fragment, y
+	and	8191,,xi
+	sal	3
+	aa	dgram:bytes, y
+	ana	ip_header_bytes
+	anb	a
+
+	$if	1				. buffer, tokens assigned
+	jnc	drop_discard			. drop reassembling resource
+	$else
+	jc	impress				. out of expected range
+	lx	tag_lookaside
+	lcal	tag_free
+	j	escape
+	$endif
+
+impress	la	dgram:bytes, y
+	ana	ip_header_bytes
+	sa	ip_payload_bytes
+	la	dgram:flags_fragment, y
+	lb	a
+	andB	IP_MORE,,xi
+	sbl	10				. more flag in sign position
+	sb	7	
+	and	8191,,xi
+	sal	3
+	ly	descriptor:next,,i		. forward pointer -> 1st cover tuple
+
+slink	sy	6				
+	lb	 descriptor:next, y
+	ly	b
+	jzb	not_more
+
+	lr	payload:bytes, y
+	lb	payload:offset, y
+
+	andB	(00FFF8)
+	push	b
+	anb	a
+	pop	b
+	jc	not_more
+
+	ab	r				. +  bytes previous = high extent previous
+	sb	scope_before			.
+	j	slink
+
+not_more
+.	sal	3				. offset
+	lb	a
+	aa	ip_payload_bytes		. scope of new fragment
+	ana	scope_before
+	jnc	replication_escape		. adds nothing
+	jza	replication_escape
+
+.	sy	7
+	la	fragment_engine_lookaside
+	lx	free_payload_token, a
+	push	payload:next, x
+	pop	free_payload_token, a
+
+	la	ip_payload_bytes
+	orB	7				. more bit
+	ds	payload:bytes, x
+	andB	(00FFF8)
+	sx	*6
+	sy	payload:next, x
+
+	lx	dgramp
+	sx	sp				. params + dynamic variables now out of scope
+	lr	TP_HEADER			. point r beyond IP header
+	jnzb	non_initial			. if RX fragment is initial save IP header
+
+	lx	descriptor:dgram		. transcribe ip header + internet adresses
+	qpop	0, x				. no ip header options needed
+	qpop	4, x
+	dpop	8, x
+
+non_initial
+	sr	sp				. forward sp to start of payload
+	lx	descriptor:uproto
+	lr	ONE_TIME_SAVE1			. limit of internal stacked part
+	sbr	1				. offset in data words
+	ax	b
+
+pop4w?	ly	4-1, sp, i			. would another quad pop overtake itself ?
+	jyge	pop2w?				. yes
+						. no
+	qpop	0, x
+	ax	4,,xi
+	j	pop4w?
+
+pop2w?	ly	sp				. 1 more  longword in internal stack ?
+	jyge	internal_stacked_part_received	. no
+	dpop	0, x				. yes
+	ax	2,,xi
+
+internal_stacked_part_received
+
+	ly	i_f_buffer_cursor		. remainder dgram is in i/f frame page
+
+	la	ip_payload_bytes		. datagram bytes
+	aa	ip_header_bytes
+
+	lb	a				. bytes in fragment + 1
+
+	and	-8,,xi				. round down 8-byte frames
+	sar	1				. / 2 = quadwords
+	aa	y				. + interface frame window
+	lr	a				. = range check
+ 
+	ay	IPV4_OVERHAUL/2,,xi		. interface frame windows
+
+include	jyge	complete
+	qpush	0, y
+	qpop	0, x
+	ay	4,,xi
+	ax	4,,xi
+	j	include
+
+complete
+	andB	7,,xi				. last fragment last bytes?
+	jzb	span				. complete and separate any foundry flash
+	la	0,,xi
+	drr	1				. words count in b : byte flag in a
+
+	lr	b
+	j	trailing_word?
+
+trailing_word!
+	push	0, y
+	pop	0, x
+	ay	1,,xi
+	ax	1,,xi
+
+trailing_word?
+	jdr	trailing_word!
+
+	jpa	pad?				. trailing byte  ?
+	la	0, y
+	and	(00FF00)
+	sa	0, x
+	ax	1,,xi
+
+pad?	la	x				. odd address ?
+	jae	span
+	z	0, a				. smooth the way for checksums
+
+						. walk for remaining gaps + count total
+span	lx	0,,xi				. initialise octet count comparator
+	ly	descriptor:next			. 1st payload token, per declaration
+						. y -> default base register
+spanner	la	payload:offset
+	lb	a				. save for
+	and	(00FFFF)			. more flag 1 */ 23
+	lr	a
+	jxl	await_escape				. a gap (offset > accumulated)
+	lx	a				. restart byte count per fragment
+						. total does not need overlaps
+	ax	payload:bytes
+	jpb	unspan				. more flag ?
+
+	ly	payload:next			. next payload token
+	tz	y				. Sanity Claus doan exist none
+	j	spanner
+	j	await_escape			. end chain not end dgram
+
+unspan	sx	7				. tpdu byte count for checksum inclusion
+	sx	descriptor:bytes		. keep reassembly last payload token y ->
+
+	lb	descriptor:dgram
+	ax	ip_header_bytes
+	sx	dgram:bytes, b
+	z	dgram:flags_fragment, b
+
+.	la	payload:bytes
+.	and	7,,xi
+.	jza	sum
+
+sum	lx	tag_lookaside			. base register tag <- per declaration
+	lb	tag:dest_protocol+1
+	andB	255,,xi
+	sb	6				. protocol for checksum inclusion
+
+	dpush	6
+	dpush	tag:socket_lpointer		. user datagram descriptor needs this
+
+	la	tag:chain
+	sa	fp
+
+	ql	(0q)				. fragment tag is freed
+	qs	0, x				. by writing zero all over it
+	qs	4, x				. free the tag
+	qpop	a
+	ds	 SOCKET_LPOINTER
+
+	push	descriptor:next			. payload tokens chain head this reassembly
+	la	fragment_engine_lookaside	. reassembly machine this interface 
+	push	free_payload_token, a		. payload tokens free chain this interface
+						. y -> lookinat last tuple reassembled chain
+	pop	payload:next			. becomes y -> next after freed chain
+	pop	free_payload_token, a		. freed chain -> front of free chain
+
+	lx	descriptor:uproto		. destination delivered IP payload
+	la	6				. cached protocol name awaiting checksum
+	aa	-IPPROTO_TCP,,xi
+	jza	sum_tcp				. checksum per TCP and deliver
+
+	la	uugram:checksum			. user datagram bearing checksum?
+	jza	deliver_udp			. OK... big reassembled udgram no checksum
+	push	a				. otherwise save RX checksum
+	z	uugram:checksum			. do not add the checksum to the checksum
+	lcal	uchecksum			. when generating to compare
+	jnzb	udpcksu				. a zero result on generation
+	xorB	(00FFFF)			. is for UDP reflipped
+						. to distinguish from optional non-checksum
+udpcksu	xorB	0, sp				. compare generated sum with RX sum
+	pop	uugram:checksum			. put RX sum back in RX header
+	jnzb	drop_completed			. drop it if it's wrong
+						. deliver it if it's right
+deliver_udp
+	dl	SOCKET_LPOINTER
+.	dte	(000029,02f090L)			.	jnza	$+2
+.	ii	GUARD$
+	ds	descriptor:sobdi
+	push	-8,,xi
+	popA	descriptor:bytes
+	la	fp
+	ly	udpq,,xi
+	call	(far_q2)
+	j	escape
+
+sum_tcp	push	transfer:checksum		. RX checksum -> internal stack
+	z	transfer:checksum		. do not add the checksum to the checksum
+	lcal	uchecksum			. when generating to compare
+	xorB	0, sp				. compare generated sum with RX sum
+	pop	transfer:checksum		. put RX sum back in RX header
+	jnzb	drop_completed			. drop it if it's wrong
+						. deliver it if it's right
+	la	fp				. deliver tcp
+	call	(tcp_rx_ready)
+	j	escape
+	
+restart_rasm_timer
+	la	DAYCLOCK$
+	aa	IP4_RASM_RETAIN_MS,,xi
+	lx	tag_lookaside
+	sa	tag:runout
+	lret	0
+
+replication_escape
+await_escape					. restart target reassembly timeout
+	lcal	restart_rasm_timer		. for next fragment
+	j	escape
+
+drop_completed					. tag already cleared
+	la	fp				. tokens already pooled
+	lx	rx_buffers			. did not check out
+	call	(if_sell1)
+	lx	IPINDISCARDS_I,,xi
+	j	drop_count48
+
+drop_nothing					. this entry does not start reassembling
+	ql	(0q)				. x -> tag
+	qs	0, x
+	qs	4, x
+	lx	IPREASMFAILS_I,,xi
+	j	drop_count48
+
+drop_discard					. this entry cancels a reassembly
+	lx	fragment_engine_lookaside
+	lr	free_payload_token,,i
+	lx	tag_lookaside			. tag -> buffer -> tokens_chain
+	lcal	tag_free			. x -> a reassembling resource
+	lx	IPREASMFAILS_I,,xi
+	j	drop_count48
+
+storage_escape					. bypass rx fragment which can't be used
+	lcal	restart_rasm_timer		. and restart target reassembly timeout 
+
+no_storage_escape				. these entries bypass an RX fragment
+interface_escape				. which can't be used and don't relate
+limits_escape					. to a reassembly already in progress
+no_protocol_escape
+socket_escape
+drop_rasm
+	lx	IPREASMFAILS_I,,xi		. do not drop any reassembling resource
+
+drop_count48
+	dl	0, x
+	da	(1L)
+	ds	0, x
+
+	$if	0
+drop	lx	rx_buffers
+	la	fp
+	call	(if_sell1)
+	$endif
+
+	j	escape
+
+	$ret
+
+	$if	0
+replication_escape
+storage_escape
+await_escape
+	la	DAYCLOCK$
+	aa	IP4_RASM_RETAIN_MS,,xi
+	lx	tag_lookaside	
+	sa	tag:runout
+
+no_storage_escape
+interface_escape
+limits_escape
+no_protocol_escape
+socket_escape
+	$endif
+						. all fragment rx gets to here
+escape	 go	(0800000++$0(ipv4_rxz, 2L)s)	. gated jump to drop RX fragment at interface
+						. and clear internal stack
+uchecksum
+	push	x				. this is used after
+	ly	descriptor:dgram
+	dl	dgram:ipsource, y
+	da	dgram:ipdest, y
+	da	6				. protocol : octets
+
+	SIMD_CONTROL	(-1, 0, 128-1, 2q)	. 1 accumulator, 128 adds,  memory increment +2
+
+	dpush	a				. into SIMD space
+	la	7
+	sar	9				. each pass adds 128 * 4 octets
+	lr	a				. passes
+	j	pass?				. x -> protocol unit already 
+
+pass!	rex	(da	0, x)			. add 128 word pairs
+	dl	0, sp				. to internal stack top word pair
+	aa	b				. fold the value
+	dsr	16
+	sbr	8
+	ds	0, sp
+pass?	jdr	pass!
+
+	la	7
+	sar	2
+	and	127,,xi
+	jza	remainder?			. no remaining part > 3 octets
+
+	aa	-1,,xi				. restart count is 1 less than objects
+	sa	WDATAC				. and final count is -1
+
+	rex	(da	0, x)
+
+remainder?
+	la	7				. final octets ?
+	and	3,,xi
+	jza	repass
+						. 1..3 more octets to sum
+	ly	(48, 24+8, 24, 8q), a		. bits to clear
+	dl	0, x				. 2 more words 00XXXX:00YYYY
+	dsr	0, y
+	dsl	0, y
+	da	0, sp				. add to SIMD result
+	ds	0, sp
+
+repass	dpop	a
+refold	aa	b
+	dsr	16
+	sbr	8
+	jnza	refold
+	xorB	(00FFFF)
+
+	z	WDATAC				. restore ip thread SIMD defaults
+	z	SIMD_INDEXU
+	pop	x				. uproto pointer
+	lret	0
+
+free	$equ	6
+
+search	lx	this_if:iq_buffer		. x preloaded -> interface
+
+	lr	RASMGRAM_WORDS*IP4_RASMGRAMS_IF, x, i
+	z	free
+
+next	tz	tag:chain			. if this tag is free remember it
+	j	linked				. because a new one is always needed
+	sx	free				. if the tag being searched is not there
+		
+linked	dl	8				. good. linked to us?
+	dte	tag:source_id
+	j	next?
+	dl	10
+	dte	tag:dest_protocol
+	j	next?
+	lret	1				. tag equals search pattern return + 1
+
+next?	ax	RASMGRAM_WORDS,,xi
+	jxl	next
+
+	lx	free
+	tz	x
+	lret	1				. free tag available return + 1
+	lret	0				. no tag available return
+
+payload_size_b					. extract size ip payload to r
+	dpush	a				. b -> datagram
+	la	b				
+	ana	descriptor:uproto, y		. minus ip payload address -> minus ip header words
+	sal	1				. negative address offset -> minus bytes difference
+	aa	dgram:bytes, b	
+	lr	a				. deliver
+	dpop	a				. restore b -> datagram + data in a
+	lret	0
+
+reassembly_time?
+	lx	$if0p,,xi				. points to tally
+	sx	11
+
+rasm?	inc	11				. point into pointer array
+	lx	*11				. pointer interface(_)
+	tz	this_if:iq_buffer		. has fraction token table?
+	lcal	rasm				. yes
+	lr	$ifzp				. was this interface(highest_active) ?
+	jxge	rasm!				. yes
+	j	rasm?				. no
+rasm!	fret	0
+
+rasm	push	x
+	lx	this_if:iq_buffer
+	lcal	tag_4_tag
+	pop	x
+	lret	0
+
+tag_4_tag
+	$head_near	scalars(tag_high_index,	int,	free_payload_token,,i	;
+				this_tag,	int,	x			)
+next_tag
+	$if	1
+	dl	tag:chain			. storage ++ timeout
+	$else
+	dl	tag:dest_protocol
+	$endif
+
+	jdz	no_tag				. not in use
+	sa	fp				. descriptor if any
+	la	tag:runout
+	ana	DAYCLOCK$
+	jpa	not_timeout
+
+	lr	tag_high_index			. **pointer &free_payload_token		.
+	lcal	tag_free			. release resources + forget
+
+	push	1,,xi
+	popA	IPREASMFAILS_I+1
+	jnc	no_carry
+	inc	IPREASMFAILS_I
+
+no_carry
+no_tag
+not_timeout
+	lr	tag_high_index			. free_payload_token is after last tag
+	lx	this_tag
+	ax	RASMGRAM_WORDS,,xi
+	sx	this_tag
+	jxl	next_tag
+	$ret
+
+tag_free
+	$if	1
+	la	fp
+	jza	tag_void
+	$else
+	la	tag:chain			. buffer?
+	jza	tag_void
+	sa	fp
+	$endif
+
+	lb	descriptor:next			. fragment tokens?
+	jzb	free_rasm_storage
+	ly	b				. 1st token
+
+tag_walk_tokens					. includes case timeout
+	$if	0				. so may not have final fragiola
+	tn	2, y				. more flag?
+	j	tag_relink 			. no 
+	$endif
+
+	la	0, y
+	jza	tag_relink			. token after this token ?
+	ly	a
+	j	tag_walk_tokens
+
+tag_relink
+	push	*r				. free tokens head -> until now
+	pop	0, y				. to tail of freed tokens chain
+	sb	*r				. new free tokens chain head
+
+free_rasm_storage
+.	push	x				. reassembly tag pointer
+	la	fp				. retrieve descriptor
+	sx	fp
+	lx	rx_buffers
+	call	(if_sell1)
+	lx	fp
+.	pop	x				. reassembly tag pointer
+						. about to get written void = free
+tag_void
+	ql	(0q)
+	qs	0, x
+	qs	4, x
+	lret	0
+
+	$root

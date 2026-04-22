@@ -1,0 +1,38 @@
+
+tcp_gauge_segmemt	$tree
+	sb	7				. requested bytes
+	la	transmission:q4window:head
+	lb	transmission:q4ack:head
+	jdz	grant				. wait and ack_wait are clear
+	lr	tcp_pro_connection_max		. allowed share total send buffers
+	ly	0,,xi
+	jza	list4				. initial accumulation
+
+	lcal	gauge				. what's already awaiting window ?
+	lret	0				. either too much or fragmenting a segment
+list4	la	transmission:q4ack:head		. move over to 
+	jza	grant
+	lcal	gauge2				. what's already awaiting ack ?
+	lret	0				. too much, that's how much
+
+grant	lb	7				. requested bytes
+	lret	1
+
+gauge	tp	descriptor:i_f, a		. fragments all go before a new segment
+	lret	0
+	lcal	gauge2
+	lret	0				. no new segment
+allow	lret	1
+
+
+gauge2	lb	descriptor:bytes, a		. byte count -> stack top
+	andB	(07FFFFF)			. strip sticky bit
+	ay	b				. tally up
+	jyge	disallow			. too much already
+	la	descriptor:next, a		. more queued?
+	jnza	gauge2				. yes
+	lret	1				. no, so far so good
+disallow
+	lret	0
+			$root
+
