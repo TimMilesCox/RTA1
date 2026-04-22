@@ -1,0 +1,93 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	stream/stream.def
+	$include	t77.4/ip.def
+	$include	lib/ascii.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+DATA	$equ	200
+
+$(1:01000)
+$(3:03000/$3)
+s	0
+newso	0
+data	$res	DATA//3
+
+$(4:*1)
+
+	$lit
+
+$(0:*1)
+
+back*	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(back_data:L),,long
+
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	socket_fail
+	sa	s
+	c	(bind)	a	(200L),,long
+	jna	bind_fail
+
+	c	(__accept)	s
+	jna	accept_fail
+	sa	newso
+
+	printf	$3("new socket %d":LF:0),,xi	a
+
+loop
+	$if	0
+	c	(sense_data)	newso
+	jna	wait
+	jza	wait
+	$endif
+
+	c	(recv)	newso	data,,xi	DATA,,xi	0,,xi
+	jna	rx_fail
+	jza	wait
+
+	$if	1
+	fprintf  1,,xi	$3("[%d]":0),,xi	a	.	data,,xi
+	fflush	stdout
+	$else
+	c	(write)	stdout	data,,xi	a
+	$endif
+
+	la	data,,t1
+	aa	-'.',,xi
+	jza	leave
+
+	j	loop
+
+wait	dl	(5000L)
+	ii	TWAIT$
+
+	printf	$3(".":LF:0),,xi
+	j	loop
+
+leave	c	(close)	s
+	c	(close)	newso
+	fret	0
+
+socket_fail
+	printf	$3("socket error %d":LF:0),,xi	a
+	j	leave
+
+bind_fail
+	printf	$3("bind error %d":LF:0),,xi	a
+	j	leave
+
+accept_fail
+	printf	$3("accept error %d":LF:0),,xi    a
+	j	leave
+
+rx_fail	printf	$3("rx error %d":LF:0),,xi	a
+	j	leave
+

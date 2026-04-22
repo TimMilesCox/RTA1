@@ -1,0 +1,109 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	stream/stream.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	lib/ascii.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+DATA	$equ	200
+
+
+$(1:01000)
+$(3:03000/$3)
+s	0
+
+net_address	0q
+
+one	127
+two	0
+three	0
+four	1
+port	200
+
+data	$res	DATA//3
+
+$(4:*1)
+	$lit
+
+$(0:*1)
+
+sling*	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(sling_data:L),,long
+
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	socket_fail
+	sa	s
+
+	printf	$3("hootoo>":0),,xi
+	fflush	stdout
+	fgets	data,,xi	DATA,,xi	stdin
+
+	sscanf	data,,xi $3("%d.%d.%d.%d:%d":0),,xi	one,,xi		;
+							two,,xi		;
+							three,,xi	;
+							four,,xi	;
+							port,,xi
+	dl	one
+	sbl	16
+	dsl	8
+	lb	three
+	sbl	16
+	dsl	8
+	lb	four
+	sbl	16
+	lk	(00FFFF)
+	mlb	port
+	ds	net_address+2
+
+	c	(connect)	s	net_address,,float
+	jna	connect_fail
+
+yep?	printf	$3("%d.%d.%d.%d:%d YEP?>":0),,xi	one	two	;
+							three	four	port
+
+	fflush	stdout
+
+	fgets	data,,xi	DATA,,xi	stdin
+	jnb	input_fail
+	jzb	yep?
+
+	
+	c	(send)	s	data,,xi	b	TCP_PSH,,xi
+	jna	tx_fail
+
+	printf	$3("%d octets tx":LF:0),,xi	a
+
+	la	data,,t1
+	jna	leave
+	aa	-'.',,xi
+	jza	leave
+
+	j	yep?
+
+leave	c	(close)	s
+	fret	0
+
+socket_fail
+	printf	$3("socket fail %d":LF:0),,xi	a
+	j	leave
+
+connect_fail
+	printf	$3("connect fail %d":LF:0),,xi	a
+	j	leave
+
+input_fail
+	printf	$3("stdin fail %d":LF:0),,xi	a
+	j	leave
+
+tx_fail	printf	$3("tx fail %d":LF:0),,xi	a
+	j	leave
+
+

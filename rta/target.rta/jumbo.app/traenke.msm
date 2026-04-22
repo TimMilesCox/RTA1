@@ -1,0 +1,272 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$include	language/iframe.def
+	$include	t77.4/ip.def
+	$include	stream/stream.def
+	$include	lib/ascii.def
+	$include	fs/file_io.def
+	$include	image.app/imports.def
+	$path
+	$include	traenke.def
+	$list
+
+	$lit	4
+
+$(4:*1/$4)
+
+DATA	$equ	16600
+
+	$set_option	"z"
+
+$(1:01000)
+s
+
+$(3:03000/$3)
+
+?	$do	3,athread(?)	0
+
+file_handle	0
+bytes		0
+name_bytes	0
+cycle		0L
+
+remote_host	"platform"
+
+path
+	$do	24,	0
+input	$res	72//3
+data	$res	DATA//3
+aside	$res	DATA//3
+
+$(0:*1)
+rxia*	$base_d	$zenith(3)-03000	1024	1024+DATA//3	;
+						1024+DATA//3	;
+						1024+DATA//3	1024
+
+	c	(seg$load)	0,,xi	(rxia_data:L),,long
+
+	c	(speed_dial)	remote_host,,long	path,,xi
+
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	no_socket
+
+	sa	s
+	c	(bind)	a	($net_socket	0.0.0.0:18),,long
+	jna	no_bind
+
+	$if	1
+
+	ql	(rx_async, 0, (PORT_LEFT, 'L':L), THREAD_FP(2)q)
+	ii	THREAD$
+	sa	athread(1)
+
+	ql	(rx_async, 0, (PORT_RIGHT, 'R':L), THREAD_FP(3)q)
+	ii	THREAD$
+	sa	athread(2)
+
+	ql	(rx_async, 0, (PORT_CENTRE, 'C':L), THREAD_FP(4)q)
+	ii	THREAD$
+	sa	athread(3)
+
+	lx	athread(1),,xi
+	ly	(("rx_jumbo_left":0), ("rx_jumbo_right":0), ("rx_jumbo_centre":0)T),,xi
+	lr	3-1,,xi
+
+name_plant
+	la	0, x
+	jza	name_next
+	lb	0, y
+	ii	TAG$
+
+name_next
+	ax	1,,xi
+	ay	1,,xi
+	jdr	name_plant
+
+again	printf	$3("RX>":0),,xi
+	c	(recv)	s	path+6,,xi	72,,xi	0,,xi
+
+	sa	name_bytes
+
+	la	path+6,,t1
+	aa	-'=',,xi		. compare instead of store
+	jnza	afile
+
+	c	(recv)	s	aside,,xi	DATA,,xi	0,,xi
+	lc	check1	aside,,xi
+
+	dl	cycle
+	da	(1L)
+	ds	cycle
+	printf	$3("":CR:"[%ld]>":0),,xi	a,,long
+	j	again
+
+afile	printf	$3("[%d]":LF:0),,xi	name_bytes
+
+	la	name_bytes
+
+	jna	no_rxname
+	jza	no_rxname
+
+	la	path+6,,t1
+	jna	again
+	aa	-'.',,xi
+	jza	eof
+
+	la	name_bytes
+	sa	path,,t2
+
+	printf	$3("%d:%s":LF:0),,xi	a	path+6,,xi
+
+	c	(open)	path,,xi	O_CREAT++O_TRUNC++O_OCTET,,xi
+	jna	remote_file_open_fail
+	sa	file_handle
+
+	printf	$3("file handle %d":LF:0),,xi	a
+
+	c	(recv)	s	data,,xi	DATA,,xi	0,,xi
+	jna	rx_fail
+	sa	bytes
+	jza	rx_fail
+
+	c	(write)	file_handle	data,,xi	bytes
+	jna	remote_file_write_fail	
+	printf	$3("[%d]":0),,xi	a
+
+	c	(close)	file_handle
+	jna	remote_file_close_fail
+	j	again
+
+	$else
+
+again	printf	$3("RX>":0),,xi
+	fgets	input,,xi	72,,xi	stdin
+
+	la	input,,t1
+	jna	eof
+	aa	-'.',,xi
+	jza	eof
+
+	c	(sense_data)	s
+	jna	no_sense
+	jnza	rx
+	printf	$3("%d":LF:0),,xi	a
+	j	again
+
+rx	c	(recv)	s	data,,xi	DATA,,xi	0,,xi
+	jna	no_rx
+
+	c	(write)	stdout	data,,xi	a
+
+	j	again
+	$endif
+
+eof	c	(close)	s
+	fret	0
+
+no_socket	printf	$3("socket error %d":LF:0),,xi	a
+		j	eof
+
+no_bind		printf	$3("bind error %d":LF:0),,xi	a
+		j	eof
+rx_fail		printf	$3("receive error %d":LF:0),,xi	a
+		j	eof
+
+no_sense	printf	$3("sense error %d":LF:0),,xi	a
+		j	eof
+
+no_rxname		printf	$3("filename_rx error %d":LF:0),,xi	a
+		j	eof
+
+remote_file_open_fail
+		printf	$3("remote_file_open error %d":LF:0),,xi	a
+		j	eof
+
+remote_file_write_fail
+		printf	$3("remote_file_write error %d":LF:0),,xi	a
+		j	eof
+			
+remote_file_close_fail
+		printf	$3("remote_file_close error %d":LF:0),,xi	a
+		j	eof
+
+check1	$tree
+	$head_near	 params(apdup,		int)
+
+	anu	bytes
+	jzb	check2
+	
+	printf	$3("cycle %ld rx %d bytes not %d":LF:0),,xi	cycle,,long	a	bytes
+	j	chex
+
+check2	lx	apdup				. aside,,xi
+	ly	data,,xi
+	la	bytes
+	la	2, a, i				. rounded
+	mf	(02AAAAA)			. / 3
+	lr	a
+	j	check?
+
+check!	dl	0, x
+	dte	0, y
+	j	no
+	ax	2,,xi
+	ay	2,,xi
+
+check?	jdr	check!
+	lret	0
+
+no	la	x
+	ana	aside,,xi
+
+	printf	$3("cycle %ld offset %x %qx:%qx":LF:0),,xi	cycle,,long	;
+								a		;
+								0, x, float	;
+								0, y, float
+
+chex	inA	65					; Thread CB
+	printf	$3("":CR:"< close %x":LF:0),,xi	a
+.	fgets	input,,xi	72,,xi	stdin
+	c	(close)	s
+	ii	EXIT$
+	$root
+
+rx_async	$tree
+	$head_near	scalars(port,	int,	0, a	;	1st word a -> RX port
+				socka,	int,	0,,xi	;	1st bind address	
+				sense,	int,	1, a	;	2nd word (1, a) -> [ L R C ]
+				s,	int	)	;
+							;
+			 xframe(tac,	long		;
+				aside,	DATA//3		)
+
+	z	tac
+	z	tac+1
+
+	socket	AF_INET	anything	IPPROTO_UDP
+	jna	notso
+	sa	s
+
+	c	bind	a	socka,,long
+	jna	nobind
+	
+	c	(recv)	s	aside,,i	DATA//3,,xi	0,,xi
+	jna	nodata
+
+	lc	check1	aside,,i
+
+	dl	tac
+	da	(1L)
+	ds	tac
+
+notso
+nobind
+nodata
+	
+	$ret
+		$root

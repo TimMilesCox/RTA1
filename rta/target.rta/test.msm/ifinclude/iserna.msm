@@ -1,0 +1,49 @@
+iserna	$tree
+
+$(1)
+
+oq		dq
+tsq		0
+oq_noccheck	dq
+tsq_noccheck	0
+
+$(0)
+
+q_o	ly	oq,,xi		. this is application callable TX request
+	j	qforward
+
+q_onocheck
+	ly	oq_noccheck,,xi	. this is application callable TX request
+
+qforward			. queue for tx
+	la	x		. acw is in x
+	LOCK	2, y
+	lcal	q2	
+	FREE	2, y
+	fret	0		. far return to app
+
+qforward_tx			. this is protocol UDGRAM transmission layer
+	ly	oq_noccheck,,xi
+	lcal	q_tx		. read no-checksum queue
+	j	qforward_tx2	. until there isn't any
+	lx	a
+	call	(udp_iaxw_send_nocheck)
+	j	qforward_tx
+
+qforward_tx2
+	ly	oq,,xi
+	lcal	q_tx		. send with-checksums queue
+	lret	0		. until there isn't any
+	lx	a
+	call	(udp_iaxw_send)	
+	j	qforward_tx2
+
+q_tx	LOCK    2, y
+	lcal	readq
+	FREE	2, y
+	jza	q_txx
+	lret	1		. traffic 2go
+q_txx	lret	0		. near return to IP thread loop
+
+	$root
+

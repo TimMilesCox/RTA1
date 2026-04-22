@@ -1,0 +1,38 @@
+
+free	$equ	6
+
+
+search	lx	this_if:iq_buffer		. x preloaded -> interface
+
+	lr	RASMGRAM_WORDS*IP4_RASMGRAMS_IF, x, i
+	z	free
+
+next	tz	tag:chain			. if this tag is free remember it
+	j	linked				. because a new one is always needed
+	sx	free				. if the tag being searched is not there
+		
+linked	dl	8				. good. linked to us?
+	dte	tag:source_id
+	j	next?
+	dl	10
+	dte	tag:dest_protocol
+	j	next?
+	lret	1				. tag equals search pattern return + 1
+
+next?	ax	RASMGRAM_WORDS,,xi
+	jxl	next
+
+	lx	free
+	tz	x
+	lret	1				. free tag available return + 1
+	lret	0				. no tag available return
+
+payload_size_b					. extract size ip payload to r
+	dpush	a				. b -> datagram
+	la	b				
+	ana	descriptor:uproto, y		. minus ip payload address -> minus ip header words
+	sal	1				. negative address offset -> minus bytes difference
+	aa	dgram:bytes, b	
+	lr	a				. deliver
+	dpop	a				. restore b -> datagram + data in a
+	lret	0

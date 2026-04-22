@@ -1,0 +1,156 @@
+
+r8	$equ	8
+r9	$equ	9
+r10	$equ	10
+r11	$equ	11
+
+r16	$equ	16
+r17	$equ	17
+r18	$equ	18
+r19	$equ	19
+
+r20	$equ	20
+r21	$equ	21
+r22	$equ	22
+r23	$equ	23
+
+f	$func	
+$rrang*	$name
+	$do	((f(1, 1)>5)**(f(1, 1)<24)),	;
+	$return	f(1, 1)
+	$flag	register not in range
+	$return	f(1, 1)
+	$end
+
+p	$proc
+s*	$name
+__designator	$set	0
+	$do	p(0, 2)^=0,__designator	$set	p(0, 2)
+	$do	p(2, 3)^=0,__designator	$set	p(2, 3)
+
+	$if	p(1)>1
+		$flag	field 1 is an application register address
+		$note	example: s R20 [*]address[, index][, [w0|]|t1|t2|t3|h1|h2]
+	$endif
+	$if	p(1, 1)<6
+		sr+p(1, 1)	p(2, 1), p(2, 2), __designator 
+	$else 
+		push	$rrang(p(1, 1))
+__oset		$set	p(2, 2)=sp
+		pop	p(2, 1)+__oset, p(2, 2), __designator
+	$endif
+	$end
+
+p	$proc
+l*	$name
+__designator	$set	0
+	$do	p(0, 2)^=0,__designator	$set	p(0, 2)
+	$do	p(2, 3)^=0,__designator	$set	p(2, 3)
+
+	$if	(1)>1
+		$flag	field 1 is an application register address
+		$note	example: l RDATAC [*]address[, index][, [w0|]t1|t2|t3|h1|h2|i|xi]
+	$endif
+	$if	p(1, 1)<6
+		lr+p(1, 1)	p(2, 1), p(2, 2), __designator
+	$else
+		push	p(2, 1), p(2, 2), __designator
+		pop	$rrang(p(1, 1))
+	$endif
+	$end
+
+p	$proc
+add*	$name
+__designator	$set	0
+	$do	p(0, 2)^=0,__designator	$set	p(0, 2)
+	$do	p(2, 3)^=0,__designator	$set	p(2, 3)
+
+	$do	(p(1)>2)++(p(2, 3)>5),	;
+	$flag	add [*]to[, index] [*]from[, index][, [w0|]t1|t2|t3|h1|h2|i|xi]
+
+	$if	(p(1)=1)**(p(1, 1)=x)
+	ax	p(2, 1), p(2, 2), __designator
+	$elseif	(p(1)=1)**(p(1, 1)=y)
+	ay	p(2, 1), p(2, 2), __designator
+	$elseif	(p(1)=1)**(p(1, 1)=a)
+	aa	p(2, 1), p(2, 2), __designator
+	$elseif	(p(1)=1)**(p(1, 1)=b)
+	ab	p(2, 1), p(2, 2), __designator
+	$else
+__oset	$set	p(1, 2)=sp
+	push	p(2, 1), p(2, 2), __designator
+	popA	p(1, 1)+__oset, p(1, 2)
+	$endif
+	$end
+
+p	$proc
+store*	$name
+	$do	(p(0)>1)**(p(1, 3)>3)**(p(2, 3)>5),	;
+	$flag	store [*]to[, index][, [w0|]t1|t2|t3|h1|h2] [*]from[, index][, [w0|]t1|t2|t3|h1|h2|i|xi]
+__oset	$set	p(1, 2)=sp
+	push	p(2)
+	pop	p(1, 1)+__oset, p(1, 2), p(1, 3)
+	$end
+
+p	$proc
+dstore*	$name
+__oset	$set	2*(p(1, 2)=sp)
+	dpush	p(2)
+	dpop	p(1, 1)+__oset, p(1, 2)
+	$end
+
+p	$proc
+tstore*	$name
+	store	p(1)	p(2)
+	dstore	p(1, 1)+1, p(1, 2)	p(2, 1)+1, p(2, 2)
+	$end
+	$end
+
+p	$proc
+qstore*	$name
+__oset	$set	4*(p(1, 2)=sp)
+	qpush	p(2)
+	qpop	p(1, 1)+__oset, p(1, 2)
+	$end
+
+p	$proc
+dato*	$name
+	$if	p(0, *2)
+	dl	p(1)
+	da	p(2)
+	ds	p(3)
+	$else
+__oset	$set	2*(p(2, 2)=sp)
+	dpush	p(1)
+	rex	(da	p(2, 1)+oset, p(2, 2))
+__oset	$set	2*(p(3, 2)=sp)
+	dpop	p(3, 1)+__oset, p(3, 2)
+	$endif
+	$end
+
+p	$proc
+tato*	$name
+	$if	p(0, *2)
+	dato,*	p(1, 1)+1, p(1, 2)	;
+		p(2, 1)+1, p(2, 2)	;
+		p(3, 1)+1, p(3, 2)
+	sc	b
+	ab	p(1)
+	ab	p(2)
+	sb	p(3)
+	$else
+	dato	p(1, 1)+1, p(1, 2)	;
+		p(2, 1)+1, p(2, 2) 	;
+		p(3, 1)+1, p(3, 2)
+	push	0,,xi
+	sc	0, sp
+__oset	$set	p(1, 2)=sp
+	push	p(1, 1)+__oset, p(1, 2)
+	popA	1, sp
+__oset	$set	p(2, 2)=sp
+	push	p(2, 1)+__oset, p(2, 2)
+	popA	1, sp
+__oset	$set	p(3, 2)=sp
+	pop	p(3, 1)+__oset, p(3, 2)
+	$endif
+	$end

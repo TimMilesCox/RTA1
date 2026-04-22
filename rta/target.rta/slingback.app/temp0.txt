@@ -1,0 +1,317 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/vector_array.def
+	$include	def/ii.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	stream/stream.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	t77.4/window.def
+	$include	t77.4/socket.def
+	$include	lib/ascii.def
+	$include	lib/inline.def
+	$include	fs/file_io.def
+	$include	table/names.def
+	$include	teraframe/teraframe.def
+	$include	teraframe/array.def
+	$include	teraframe/dframe.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+	$include	wave.def
+
+	$do	0, DATA		$equ	262144*7+8
+
+DATA_RECORD	$equ	262144*7+8
+
+	$if	1
+FIXED_RECORD_8	$equ	262144*8*3
+FIXED_RECORD_20 $equ	262144*20*3
+	$else
+FIXED_RECORD	$equ	16392
+	$endif
+
+PORT	$equ	201
+
+__ARRAY_S                       $equ    02A00
+__ARRAY_LIMIT(__ARRAY_S)        $equ    262144*112
+__ARRAY_GRANULE(__ARRAY_S)      $equ    18
+__ARRAY_S_CLUSTER               $equ    1
+
+	$set_option	"z"
+
+$(1:01000)
+?	$do	2,my_structure(?)	-1	. initial state
+						. not accidentlly usable
+$(3:03000/$3)
+s	0
+newso	0
+
+file_handle	0
+bytes		0
+name_bytes	0
+state		0
+cycle		0L
+missing		0L
+
+total		0
+final_count	0
+write_p		0
+
+remote_host	"macmini"	. "macmini"	. "airbook"
+path		"__________________stencil"
+	$do	24,	0
+
+	$if	1
+	$else
+data	$res	DATA//3
+aside	$res	DATA//3
+	$endif
+
+$(4:*1)
+
+	$lit
+
+$(0:*1)
+
+wall*	$base_d	$zenith(3)-03000	1024	1024	. remote file block is big
+							. so 1 extra "stack" for file states
+
+	c	(seg$load)	0,,xi	(wall_data:L),,long
+
+	c	(speed_dial)	remote_host,,long	path,,xi
+
+	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	socket_fail
+	sa	s
+	c	(bind)	a	(PORT:L),,long
+	jna	bind_fail
+
+	dframe$bank	24:31	__ARRAY_S	DATA_RECORD	(3L)
+	jza	storage_fail
+	sa	my_structure(1)
+
+	dframe$bank	16:23	__ARRAY_S	DATA_RECORD	7,,xi
+	jza	storage_fail
+	sa	my_structure(2)
+
+loop1	c	(__accept)	s
+	jna	accept_fail
+	sa	newso
+
+	printf	$3("new socket %d":LF:0),,xi	a
+
+	ql	(0q)
+	qs	path+6
+	qs	path+10
+
+	c	(recv)	newso	path+6,,xi	24,,xi	0,,xi
+
+	jza	leave				data connection remote close
+	lx	path+6,,xi
+	lr	a
+	ly	0,,xi
+
+countup	ex	(__inline       lb      24), y
+	jzb	counted
+	ab	-CR,,xi
+	jzb	counted
+	ab	CR-LF,,xi
+	jzb	counted
+
+	ay	1,,xi
+	jyl	countup
+	
+counted	tnz	y
+	j	leave
+
+	sy	name_bytes
+	sy	path,,t2
+
+	printf	$3("%d:%s":LF:0),,xi	y	path+6,,xi 
+	la	name_bytes
+		
+	la	path+6,,t1
+	aa	-'.',,xi
+	jza	leave				. eof
+
+	printf	$3("%s":LF:0),,xi	path+6,,xi
+
+	c	(send) newso	$3("send":0:0),,xi	6,,xi	TCP_PSH,,xi
+	jna	tx_fail
+
+	la	path+6,,t1
+	aa	-'=',,xi
+	jnza	afile
+
+storm	c	(recv)	newso	my_structure(2)		(DATA_BYTES:s)	MSG_WAITALL,,xi
+	jza	remote_close
+	jna	rx_fail
+
+	lcal	check1
+	j	remote_close
+
+	dl	cycle
+	da	(1L)
+	ds	cycle
+
+	$if	0
+	c	(send)	newso	cycle,,xi	6,,xi	TCP_PSH,,xi
+	$endif
+
+	printf	$3("":CR:"[%ld]":0),,xi	cycle,,long
+
+	c	(sense_data)	stdin
+	jza	storm
+	andB	(1*/15)			. eof ?
+        
+	jzb	storm
+
+	printf	$3("close request":LF:0),,xi
+	j	local_close
+
+afile	c	(open)	path,,xi	O_CREAT++O_TRUNC++O_OCTET,,xi
+	jna	remote_file_open_fail
+	sa	file_handle
+
+	printf	$3("file handle %d":LF:0),,xi	a
+
+	c	(recv)	newso	my_structure(1)		(DATA_BYTES:s)	MSG_WAITALL,,xi
+	jna	rx_fail
+	jza	remote_file_close	
+	sa	bytes
+
+	$if	DATA_BYTES>65535	. NFS servers don't all do more than that
+
+	$else
+
+	c	(write)	file_handle	my_structure(1)	bytes
+	jna	remote_file_write_fail
+	printf	$3("[%d]":0),,xi	a
+	fflush	stdout
+
+	$endif
+
+remote_file_close
+	printf	$3("[%d]":LF:0),,xi	bytes
+	fflush	stdout
+	c	(close)	file_handle
+	jna	remote_file_close_fail
+
+local_close
+remote_close
+	c	(close)	newso
+	j	loop1
+
+.	tz	bytes			. data connection remote close
+.	j	loop1_2
+
+leave	printf	$3("eof":LF:0),,xi
+	c	(close)	newso
+	c	(close)	s
+	fret	0
+
+check1	sb	state
+	anu	bytes
+	jzb	check2
+
+	lb	my_structure(1),,t1
+	dte	(1, '='L)
+	j	discord
+
+	dl	missing
+	da	(1L)
+	ds	missing
+	lret	0
+	
+discord	lb	state
+	printf	$3("state %s cycle %ld rx %d bytes not %d sample %x":LF:0),,xi	;
+										;
+		(names	none							;
+		 	closed      listen   synsent  synreceived,		;
+		 	established finwait1 finwait2 closewait,		;
+		 	lastack     closing  timewait deletetcb), b		;
+										;
+		cycle,,long	a	bytes	my_structure(1),,t1
+
+	j	chex
+
+check2	lx	my_structure(2),,xi
+	ly	my_structure(1),,xi
+	la	bytes
+	la	2, a, i				. rounded
+	mf	(02AAAAA)			. / 3
+	lr	a
+	j	check?
+
+check!	dl	0, x
+	dte	0, y
+	j	no
+	ax	2,,xi
+	ay	2,,xi
+
+check?	jdr	check!
+	lret	1
+
+no	la	x
+	ana	my_structure(2),,xi
+
+	printf	$3("cycle %ld offset %x %qx:%qx":LF:0),,xi	cycle,,long	;
+								a		;
+								0, x, float	;
+								0, y, float
+
+chex	printf	$3("":CR:"< close":LF:0),,xi
+.	fgets	input,,xi	72,,xi	stdin
+	c	(close)	s
+	ii	EXIT$
+
+storage_fail
+	printf	$3("storage unavailable":LF:0),,xi
+	j	leave
+
+socket_fail
+	printf	$3("socket error %d":LF:0),,xi	a
+	j	leave
+
+bind_fail
+	printf	$3("bind error %d":LF:0),,xi	a
+	j	leave
+
+accept_fail
+	printf	$3("accept error %d":LF:0),,xi    a
+	j	leave
+
+rx_fail1
+	printf	$3("rx filename error %d":LF:0),,xi	a
+	j	leave
+
+tx_fail	printf	$3("tx prompt error %d":LF:0),,x	a
+	j	leave
+
+rx_fail	printf	$3("rx error %d":LF:0),,xi	a
+	j	leave
+
+sense_fail
+	printf	$3("sense error %d":LF:0),,xi	a
+	j	leave
+
+remote_file_open_fail
+	printf	$3("data file open error %d":LF:0),,xi	a
+	j	leave
+
+remote_file_write_fail
+	printf	$3("data file write error %d":LF:0),,xi	a
+	j	leave
+
+remote_file_close_fail
+	printf	$3("data file close error %d":LF:0),,xi	a
+	j	leave
+ 
+serialise
+	lret	0

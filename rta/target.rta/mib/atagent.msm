@@ -1,0 +1,131 @@
+.	protocol address to physical Address Translation
+.	this implementation is about ARP cache and local net
+
+.	local host neta/physa not always reported here
+.	but available in ifTable entries
+
+.	this does both	at Table		MIB-II.3
+.	and		ipNettoMedia Table	MIB-II.4.22
+
+.	in order to take few $vector positions in Page 9
+
+$(1)
+
+atagent_ifidx	mobjet	atagent_physa	1  SNMP_INT	3	1	0 0 atagent_if_id
+atagent_physa	mobjet	0	2       SNMP_STRING     6       1	0 0 atagent_string
+atagent_neta	mobjet	0	3 SNMP_NETWORKADDRESS	4	1
+
+atagent_if_id	0	. that could overlap atagent_string
+atagent_string	0L	. bit might be useful for debug alongside
+
+$(0)
+net_address2ifidx
+	$head_far	 params(at_x_oidp,	int	;
+				at_x_sequence,	int	;
+				at_x_action,	int)	
+.		scalars(keep1_x,	int,	x)
+
+	ly	at_x_oidp
+.	ay	11,, xi
+	la	at_x_action
+	aa	-SNMP_GETNEXTREQ,,xi
+	jza	net2ifindex_walk
+
+	lcal	at_lib:at_this
+	j	net2ifidx_x		. return + 0, x <- 0
+	j	net2ifidx_deliver
+
+net2ifindex_walk
+	lcal	at_lib:at_higher
+	j	net2ifidx_x		.  no object retrieved
+
+	lcal	at_lib:unpack_neta	. y -> iod + 11
+
+net2ifidx_deliver
+	ly	at_x_oidp		. received oid may not include netadddr
+
+	la	14, y
+	sa	atagent_ifidx:seq
+
+.	la	13,,xi			. it does now
+.	sa	1, y			. write back inclusive oid length
+
+	dl	(1, 1L)
+	ds	9, y
+.	sa	10, y
+
+	lcal	at_lib:deliver_ifidx	. encapsulated read from structure
+	sa	atagent_if_id		. because part if structure definition
+					. is known to at_lib but not here
+	lx	atagent_ifidx,,xi	. result <- @ dynamic object descriptor
+
+net2ifidx_x
+	lb	x			. result -> b
+.	pop	x			. restore x <- MIB tree walker
+	fret	0			. not $ret macro
+
+net_address2physa
+	$head_far	 params(at_physa_oidp,	int	;
+				at_physa_seq,	int	;
+				at_physa_act,	int)
+	.		scalars(keep2_x,	int,	x)
+
+	ly	at_physa_oidp
+.	ay	11,,xi
+
+	la	at_physa_act
+	aa	-SNMP_GETNEXTREQ,,xi
+	jza	net2physa_walk
+
+	lcal	at_lib:at_this
+	j	net2physa_x		. return + 0 = no hit
+	j	net2physa_deliver
+
+net2physa_walk
+	la	10,y
+	xor	2,,xi			. have we stepped over from object.1 ?
+	jza	net2physa_tree
+
+	dsr	48
+	ds	6
+	qs	11, y
+
+net2physa_tree
+
+	lcal	at_lib:at_higher
+	j	net2physa_x
+
+					. y -> oid + 11
+	lcal	at_lib:unpack_neta	. unpack from object x ->
+
+net2physa_deliver
+	ly	at_physa_oidp		. received oid may not include netadddr
+
+	la	14, y
+	sa	atagent_physa:seq
+
+	la	13,,xi			. it does now
+	sa	1, y			. write back inclusive oid length
+
+.	dl	(1, 2L)
+.	ds	9, y
+	la	2,,xi
+	sa	10, y			. 1.1.2 may be missing
+
+	lcal	at_lib:pack_phy		. pack from object x ->
+	ds	atagent_string
+	lx	atagent_physa,,xi	. result <- @ dynamic object descriptor
+
+net2physa_x
+	lb	x			. result -> b
+.	pop	x			. restore x <- MIB tree walker
+	fret	0			. not $ret macro
+
+net_addres2net_address
+	$head_far	 params(at_proto_oidp,	int	;
+				at_proto_seq,	int	;
+				at_proto_act,	int	)
+
+	lb	0,,xi
+	$ret
+

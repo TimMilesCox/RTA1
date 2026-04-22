@@ -1,0 +1,77 @@
+at_lib	$tree
+
+	$include	../arp.ext/arp_enet.def
+
+$(66::,x)
+arp_row	arp_cache
+
+$(0)
+
+at_this	lcal	pack_neta	. turn BER string to 00.aa.bb.00.cc.dd
+				. in 6:7
+
+	and	ARP_HASH-1,,xi	. pack_neta leaves low order neta byte in a
+	lx	AT_HASH_LIST,,xi
+	ax	a	
+
+	dl	6		. retrieve packed address
+
+again	lx	arp_row:next
+	tnz	x
+	lret	0
+	dte	arp_row:tpa
+	j	again
+	lret	1
+
+at_higher 
+	lcal	pack_neta	. turn BER string to 00.aa.bb.00.cc.dd
+				. in 6:7
+
+	lr	AT_POINTER_ARRAY,,xi
+
+next?	lx	*r
+	tnz	x
+	lret	0
+	dl	6
+	dan	arp_row:tpa
+	jna	next!
+	inc	r
+	j	next?
+	
+next!	lret	1
+
+pack_neta
+	dl	11, y		. pack network address from field of oid
+	sbl	16
+	dsl	8
+	sa	6
+	dl	13, y 
+	sbl	16
+	dsl	8
+	sa	7
+	lret	0
+
+unpack_neta
+	la	arp_row:tpa	. unpack network address to field of oid
+	dsr	8
+	sbr	16
+	ds	11, y
+	la	arp_row:tpa+1
+	dsr	8
+	sbr	16
+	ds	13, y
+	lret	0
+
+pack_phy
+	dl	arp_row:tha
+	sbl	8
+	dsl	8
+	lk	(00FFFF)
+	mlb	arp_row:tha+2
+	lret	0
+
+deliver_ifidx
+	la	arp_row:i_f
+	lret	0
+
+	$root

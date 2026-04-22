@@ -1,0 +1,322 @@
+
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/ii.def
+	$include	def/vector.def
+	$include	def.sys/base.def
+	$include	language/stack.def
+	$include	array.app/array.def
+	$include	t77.4/dq.def
+	$include	t77.4/socket.def	
+	$include	t77.4/ip.def
+	$include	lib/ascii.def
+	$include	lib/register.def
+	$include	lib/lib.def
+	$include	stream/stream.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+FP48_SERVER_PORT	$equ	132
+
+$(3:03000/$3)
+socket1	+	0
+fp_bound -	1
+portcb_lva	$res 1
+portcb		$res 1
+
+	$lit	4
+$(4:*1/$4)
+
+$(66::,x)
+descriptor	acw
+
+$(66::,y)
+s		$socket
+
+$(0:*1)
+fp_server48*	$head_far	scalars(response_axw,	int	;		
+					operator,	int	;
+					right,		long	;
+					left,		long	)	
+	
+	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(fp48serv_d:L),,long
+
+	lcal	netview
+
+	on	fpack$		. only applies to SIMD operation
+				. scan and edit are not SIMD operation
+				. only applied to this application
+.	tz	socket1
+.	j	fp_rx
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	sa	socket1
+	jna	fp_error_socket
+
+	c	(bind) a (FP48_SERVER_PORT:d),,long
+
+.	lb, xi	FPSERVER_PORT
+.	sb	7
+.	z	6
+.	call	(bind)
+
+	sa	fp_bound
+	jna	fp_error_bind
+
+	dl	10
+	ds	portcb_lva
+
+fp_rx	tp	fp_bound
+	j	fp_error_bind
+
+	dl	portcb_lva
+	sabr	BSOCKET
+
+fp_rx1	lb	s:udp:socket_inq.head, b
+	jnzb	fp_traffic
+
+	dl	(20L)			. msecs
+	ii	TWAIT$
+	lb	portcb_lva+1
+	j	fp_rx1
+
+fp_traffic
+
+	$if	1
+
+	sb	fp
+	la	21+7+1+2+1,,xi
+	call	(udp_rtxbuffer)
+	jza	fp_release
+	sa	response_axw
+	la	descriptor:bytes
+	lb	descriptor:apdata
+	call	(rstream_start_net)
+
+	$else
+
+	la	descriptor:bytes, b
+	sa	BYTES
+
+	z	RDATAC
+
+	push	descriptor:apdata, b
+	pop	q
+
+	la, xi	21+7+1+2+1
+	call	(udp_rtxbuffer)
+	jza	fp_release
+
+	ly	descriptor:apdata, a
+	sa	response_axw
+	sy	p
+	z	WDATAC
+	z	WDATA
+
+	$endif
+
+	la	0, b
+	jna	eof
+	lk	(00FF00s)
+	mtane	(' . ')
+	j	eof
+
+	call	(floating_scan)
+	lcal	pack
+	ds	left
+
+	call	(symbol_scan)
+	sa	operator
+
+	call	(floating_scan)
+	lcal	pack
+	ds	right
+
+	lr, xi	0
+	la	LAST_BYTE_READ	.	LAST_BYTE_READ
+	aa, xi	-','
+
+	jnza	fp_simd
+	call	(iscan_skip)
+	lb, xi	1		.	nothing scanned
+	ab, xi	-1
+	jnb	fp_simd
+	lr	b
+
+fp_simd
+	SIMD_CONTROL	(-1, 0, 0, 0q)	. grab the stream registers
+					. they are now SIMD registers				
+					. array size: one 2-word object
+fp_again
+	la	operator
+
+	anu, xi	'+'
+	jzb	fp_add
+	anu, xi	'-'
+	jzb	fp_add_negative
+	anu, xi	'*'
+	jzb	fp_multiply
+	anu, xi	'/'
+	jzb	fp_divide
+	j	fp_nop
+
+fp_add	
+					. ql	left
+fp_add_again
+	rex	(fa	right)
+	jdr	fp_add_again
+	j	fp_edit
+
+fp_add_negative
+					. ql	left
+fp_add_negative_again
+	rex	(fan	right)
+	jdr	fp_add_negative_again
+	j	fp_edit
+
+fp_multiply
+.					. ql	left
+fp_multiply_again
+	rex	(fm	right)
+	jdr	fp_multiply_again
+	j	fp_edit
+
+fp_divide
+					. ql	left
+fp_divide_again
+	rex	(fd	right)
+	jdr	fp_divide_again
+	j	fp_edit
+
+fp_nop	dl	left			. no operation
+					. return scanned number if any
+fp_edit	lx	response_axw
+	lx	descriptor:apdata, x
+	call	(wstream_start_net)	. drop the SIMD registers
+					. they are now I/O stream registers
+
+	$if	1
+	la	LAST_BYTE_READ
+	aa	-'?',,xi
+	jnza	notrac
+
+	ly	left,,i
+	lr	2-1,,xi
+
+display	la	0, y
+	call	(display_quartets)
+	wsr	$byte*2
+	wsr	$byte
+	la	b
+	wsr	$byte*2
+	wsr	$byte
+	la	1, y
+	call	(display_quartets)
+	wsr	$byte*2
+	wsr	$byte
+	la	b
+	wsr	$byte*2
+	wsr	$byte
+	la	(' '*/16)
+	wsr	$byte
+	ay	2,,xi
+	jdr	display
+	la	(LF*/16)
+	wsr	$byte
+
+	push	3+12*2,,xi
+	popA	BYTES
+
+notrac
+	$endif
+
+	dl	left
+	ii	FP_XPO$FLAG		. drain cached exponent overflow event
+	dl	(-0.0d)			. because fpser192 is also in this thread
+					. also the event may have been in scan library
+.	Flcal	unpack			. and not appear here as -0.0
+
+
+	call	(__fedit_D48)		. (__fedit_F48)
+
+	la	("":10:0:0)
+	wsr	16
+	wsr	8
+	
+	lx	response_axw
+	la	BYTES
+	la, i	1, a
+	sa	descriptor:bytes, x
+
+
+	call	(udp_acw_send)
+
+fp_release
+	lx	portcb			. port structure in scalar frame
+	call	(release_udgram)
+	lb	portcb			. port structure in scalar frame
+	j	fp_rx1
+
+fp_error_socket
+fp_error_bind
+	c	(write)	stdout	$3("error":LF;0),,xi	7,,xi
+
+eof	lx, i	$$frame, sp
+	sx	sp
+	fret	0			. this does ii EXIT$
+
+pack	qpush	a
+
+	$if	0
+	la	fp$guard		. round @ mantissa + 32
+	tp	0, sp
+	j	less
+	dsr	32
+	j	more
+less	dsa	32
+more	da	1, sp
+	ds	1, sp
+	la	0, sp			. read sign ++  exponent
+	src	a			. carry -> high order bit
+	lk	(0c00000s)		. compare bits rounding carry : sign
+	jpe	no_rounding_outflow	. carry equal sign = no outflow
+	slc	a			. read carry back
+	src	1, sp			. push it down the mantissa
+	src	2, sp
+	saa	23			. exponent +-
+	aa	0, sp
+	sa	0, sp
+
+	$endif
+
+no_rounding_outflow
+	call	(__fppD)
+	qpop	a
+	lret	0
+
+unpack	dpush	a
+	dpush	a
+	call	(__fpxD)
+	qpop	a
+	lret	0
+
+netview	on	see$2
+	lx	02900,,xi
+	lr	16-1,,xi
+	lb	48,,xi
+
+nextview
+	la	0, x
+	jna	next_all		. unused windows are C00001
+	sabr	0, b			. and come after the used windows
+	ax	1,,xi
+	lb	1, b, i
+	jdr	nextview
+	
+next_all
+	off	see$2
+	lret	0
+

@@ -1,0 +1,186 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/catalog.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	t77.4/dq.def
+	$include	t77.4/ip.def
+	$include	t77.4/udp.def
+	$include	image.app/imports.def
+	$include	lib/ascii.def
+	$include	lib/startups.def
+	$include	lib/binary.def
+	$include	lib/inline.def
+	$path
+	$list
+
+DATA	$equ	72
+BIG	$equ	16392
+PORT	$equ	USTDOUT
+
+	$lit	4
+
+$(4:*1/$4)
+
+$(1:01000)
+cursor	+	big
+
+$(3:03000/$3)
+s		-1
+sequence	0
+bytes		0
+
+port	+	PORT
+?	$do	4,term(?)	255
+
+sockets	$tree
+local_socket	0L	
+remote_socket	$net_socket	255.255.255.255:PORT
+	$root
+
+template	"jumbo ____  "
+
+data	$res	DATA//3			. DATA bytes
+
+big	$res	BIG/12*4		. BIG bytes
+
+zenith
+	$do	8,	"|||"
+
+$(0:*1)
+
+
+jumbo*	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(initial_data:L),,long
+
+	la	(IPPROTO_UDP*/16))
+	call	(__socket)
+	jna	foiled_once
+	sa	s
+
+	$if	0			. connect finds the come_from address:port
+	c	(bind)	a	(2047L),,long
+	jna	foiled_twice
+	$elseif	0
+	c	(bind)	a	($net_socket	127.0.0.1:0),,long
+	jna	foiled_twice
+	$endif
+
+	lx	big,,xi
+
+	off	half$w
+
+propagate				. format the image
+	inc	sequence
+
+	ql	template
+	qs	0, x
+
+	la	sequence
+	call	(i2columns)		. this does not change x
+	dsl	$byte*2			. first zero digit not needed
+
+	lr	4-1,,xi			. 5 columns
+	ly	6,,xi			. 6th .. 11th columns
+	lcal	token_insert		. this does not change x
+
+	ax	4,,xi
+
+	lr	zenith,,xi
+	jxl	propagate
+
+	ax	-big,,xi
+	lb	x
+	sbl	1
+	ab	x
+	sb	bytes
+	
+hootoo	printf	$3("hootoo>":0),,xi
+	fflush	stdout
+
+	fgets	data,,xi	DATA	stdin
+
+	la	data,,t1
+	jna	completely
+
+	sscanf	data,,xi	$3("%d.%d.%d.%d:%d":0),,xi	term(1),,xi	;
+								term(2),,xi	;
+								term(3),,xi	;
+								term(4),,xi	;
+							 	port,,xi
+	dl	term(1)
+	sbl	16
+	dsl	8
+	lb	term(3)
+	sbl	16
+	dsl	8
+	lb	term(4)
+	sbl	16	
+
+	lk	(00FFFF)
+	mlb	port
+
+	ds	sockets:remote_socket
+
+	c	(connect)	s	sockets,,float
+
+some?	printf	$3("%d.%d.%d.%d:%d file>":0),,xi	sockets:remote_socket,,t1	;
+						sockets:remote_socket,,t2	;
+						sockets:remote_socket,,t3	;
+						sockets:remote_socket+1,,t1	;
+						port
+
+	fflush	stdout
+
+	fgets	data,,xi	DATA,,xi	stdin
+
+	la	data,,t1
+	jna	completely
+
+	ab	-2,,xi		. strip CR LF from filename
+	jnc	syntax_problem
+	c	(send)	s	data,,xi	b	0,,xi	. send a filename
+
+	la	data,,t1
+	ana	'.',,xi
+	jza	completely
+
+	c	(send)	s	big,,xi	BIG,,xi	0,,xi	. (UDP_NO_CHECKSUM)
+	jna	send_fail
+
+	printf	$3("[%d] ->":LF:0),,xi	a
+
+	j	some?
+
+completely
+	c	(close)	s
+	fret	0
+	0
+foiled_once
+	printf	$3("socket %d":LF:0),,xi	a
+	j	completely
+
+foiled_twice
+	printf	$3("bind %d":LF:0),,xi	a
+	j	completely
+
+send_fail
+	printf	$3("send %d":LF:0),,xi	a
+	j	completely
+
+syntax_problem
+	ab	2,,xi
+	printf	$3("problem scanning store filename %d":LF:0),,xi	b
+	j	some?
+
+token_insert
+insert	drl	$byte
+	ex	(__inline	sb	10), y
+	ay	1,,xi
+	jdr	insert
+	lret	0
+
+.	$do	$<256,$(0:256)
+

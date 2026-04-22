@@ -1,0 +1,110 @@
+fedit48	$tree
+
+FORM_16_32	$set	0
+
+.	floating number is positive magnitude in 8:9:10:11
+.	after call to fedit_start
+
+.	jump to 96-bit integer-predominant output %g is __fedit_g
+.	jump ro 96-bit fraction ++ exponent output %f is fedit_zero
+
+.	vector __fedit_D48*	%D  floating binary s:15:32 style %g
+
+	$if	FORM_16_32
+fedit_D call	(__fpxD)
+	lcal	fedit_start		. vector name __fedit_D48
+	
+	ql	8
+	jpb	fedit_z1		. = unnormalised
+					. positive magnitudes only here
+	lx	8
+	lr	(0400021)		. < 33 : <  default top range
+	jxge	gfedit_F		. of  (scale_integrate)
+
+	call	(scale_integrate)
+	j	gfedit_F		. scale < minimum 
+					. for integer treatment
+	dl	(0FF0000000000L)
+g2editg	and	10
+	andB	11
+	ds	10
+
+	j	__fedit_g		. mostly integer treatment
+
+.	vector __fedit_F48*	%lD floating binary s:15:32 style %f
+
+fedit_F	call	(__fpxD)
+	lcal	fedit_start		. writes magnitude to 8:9:10:11
+	ql	8
+	jpb	fedit_z1		. = unnormalised
+
+gfedit_F
+	call	(scale_out)
+
+	$if	1
+	la	fp$guard
+	dsr	32
+	da	9
+	andB	(0FF0000s)
+	ds	9
+	z	11
+	$else
+	dl	(0FF0000000000L)	. process 32 mantissa bits
+	and	10
+	andB	11
+	ds	10
+	$endif
+	j	fedit_zero		. fraction predominant treatment
+
+	$endif				. FORM_16_32
+
+.	entries for format s:11:36	
+
+.	vector__fedit_g48*	%lg floating binary s:11:36
+
+
+	$do	FORM_16_32=0,fedit_D
+fedit_g	call	(__fpx)
+	lcal	fedit_start		. writes magnitude to 8:9:10:11
+	ql	8
+	jpb	fedit_z1		. = unnormalised
+
+	lx	8			. characteristic word
+	lr	(0400025)		. to high for integer treatment ?
+        jxge	gfedit_f		. fraction treatment
+	call	(scale_integrate)
+	jxge	gfedit_f		. scale too low for integer treatment
+
+	dl	(0FFF000000000L)	. process 36 mantissa bits
+	and	10
+	andB	11
+	ds	10
+	j	__fedit_g
+
+.	vector __fedit_f48*	 %lf floating binary s:11:36
+
+	$do	FORM_16_32=0,fedit_F
+fedit_f	call	(__fpx)
+	lcal	fedit_start		. vector name __fedit_f48
+	ql	8
+	jpb	fedit_z1		. = unnormalised
+
+gfedit_f
+	call	(scale_out)
+	$if	1
+	la	fp$guard
+	dsr	36			. already in positive magnitude
+	da	9
+	andB	(0FFF000s)
+	ds	9
+	z	11
+	$else
+	dl	(0FFF000000000L)	. process 36 mantissa bits
+	and	10
+	andB	11
+	ds	10
+	$endif
+
+	j	fedit_zero		. fraction ++ exponent treatment
+	
+	$root

@@ -1,0 +1,267 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	def/vector_array.def
+	$include	def/ii.def
+	$include	def.sys/base.def
+	$include	language/stack.def
+	$include	language/catalog.def
+	$include	stream/stream.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	t77.4/socket.def
+	$include	t77.4/route.def
+	$include	lib/ascii.def
+	$include	lib/inline.def
+	$include	teraframe/array.def
+	$include	teraframe/dframe.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+	$include	wave.def
+
+__PRIORITY	$equ	1
+
+__ARRAY_S                       $equ    02A00
+__ARRAY_LIMIT(__ARRAY_S)        $equ    262144*112
+__ARRAY_GRANULE(__ARRAY_S)      $equ    18
+__ARRAY_S_CLUSTER               $equ    1
+
+	$do	0,DATA	$equ	262144*7+8
+
+DATA_RECORD	$equ	262144*7+8
+
+PORT	$equ	201
+
+	$set_option	"z"
+
+$(66::,x)
+ro	route
+
+$(1:01000)
+my_structure	-1
+my_limit	+	DATA
+
+$(3:03000/$3)
+s	0
+
+net_address	0q
+
+one	127
+two	0
+three	0
+four	1
+port	+	PORT
+
+name_bytes	0
+bytes		0
+distance	0
+
+route_10_240	5-2, 32, 0a01, 0F0F0, 0a01, 000a, 600:Z
+
+interface	5
+i_f_p		256		. ya won't write that address by accident
+
+signal1		0
+cycle		0L
+recycle		0L
+interval	50L
+
+cplane	$res	72//3
+	$do	0,data	$res	DATA//3
+
+$(4:*1)
+	$lit
+
+$(0:*1)
+
+wave*	$base_d	$zenith(3)-03000	1024
+	c	(seg$load)	0,,xi	(wave_data:L),,long
+	off	half$w
+
+	dframe$bank	24:31	__ARRAY_S	DATA_RECORD	(15L)	. assign 12 banks containing
+	jza	storage_fail					. 16th table occurence of
+	sa	my_structure					. 2'883'592 words = 8'650'776 octets
+	push	a
+	popA	my_limit					.
+
+	lx	a
+
+prime	lr	my_limit
+	jxge	wave_build
+	inc	distance
+
+	ql	("wave        ")
+	qs	0, x
+
+	la	distance
+
+	call	(i2columns)
+
+	lr	6-1,,xi				. write 6th..11th columns 
+	ly	5,,xi				. 6th column offset
+	lcal	token_insert
+
+	ax	4,,xi
+	j	prime
+
+wave_build
+	ly	route_10_240,,xi		. this route does
+	call	(__route_config)		. source fragmentation
+
+	printf	$3("RTA1.File.Router.Address>":0),,xi
+	fflush	stdout
+	fgets	cplane,,xi	72,,xi	stdin
+
+	sscanf	cplane,,xi $3("%d.%d.%d.%d:%d":0),,xi	one,,xi		;
+							two,,xi		;
+							three,,xi	;
+							four,,xi	;
+							port,,xi
+	dl	one
+	sbl	16
+	dsl	8
+	lb	three
+	sbl	16
+	dsl	8
+	lb	four
+	sbl	16
+	lk	(00FFFF)
+	mlb	port
+	ds	net_address+2
+
+yep?	printf	$3("%d.%d.%d.%d:%d file>":0),,xi	one	two	;
+							three	four	port
+	fflush	stdout
+
+	z	cplane
+
+	fgets	cplane,,xi	72,,xi	stdin
+	jnb	input_fail
+	jzb	yep?
+	sb	name_bytes
+
+	la	cplane,,t1
+	jna	leave
+
+	aa	-'-',,xi
+	jnza	interval?
+					. spare command currently nop
+	j	yep?
+
+interval?
+	aa	'-'-'+',,xi
+	jnza	engage
+
+	sscanf	cplane,,xi	$3("%ld"),,xi	interval,,xi
+	j	yep?
+
+engage	la	(IPPROTO_TCP*/16)
+	call	(__socket)
+	jna	socket_fail
+	sa	s
+
+	c	(connect)	s	net_address,,float
+	jna	connect_fail
+
+	c	(tcp_timer(1))	s	0,,xi
+
+mss_assigned
+	c	(send)	s	cplane,,xi	name_bytes	TCP_PSH,,xi
+	jna	tx_fail1
+
+	la	cplane,,t1
+	sa	signal1
+
+	aa	-'.',,xi
+	jza	leave_close
+	
+	c	(recv)	s	cplane,,xi	6,,xi	0,,xi
+	jna	rx_fail
+
+	dl	cplane
+	dte	("send":0:0)
+	j	yep?
+
+	printf	$3("<- %s":LF:0),,xi	cplane,,xi
+
+	la	signal1
+	aa	-'=',,xi
+	jnza	a_file
+
+.	c	(tcp_timer(1))	s	0,,xi
+
+storm	c	(send)	s	my_structure	(DATA_BYTES:s)	TCP_PSH,,xi
+	jna	tx_fail_20
+
+	dl	cycle
+	da	(1L)
+	ds	cycle
+
+	$if	0
+	c	(recv)	s	recycle,,xi	6,,xi	0,,xi
+	$endif
+
+	printf	$3("":CR:"[%ld]":0),,xi	cycle,,long
+
+	dl	interval
+	jdz	keys?
+	ii	TWAIT$
+
+keys?	c	(sense_data)	stdin
+	jna	input_fail
+	jza	storm
+	j	close_and_next
+
+a_file	c	(send)	s	my_structure	(DATA_BYTES:s)	TCP_PSH++TCP_PACE,,xi	. ++TCP_PACE
+	jna	tx_fail_20
+
+	printf	$3("%d octets tx":LF:0),,xi	a
+
+close_and_next
+
+	c	(close)	s
+	printf	$3("":CR:"[%ld]":0),,xi	cycle,,long
+	j	yep?
+
+leave_close
+	c	(close)	s
+
+leave	fret	0
+
+storage_fail
+	printf	$3("storage fail":LF:0),,xi
+	j	leave
+
+socket_fail
+	printf	$3("socket fail %d":LF:0),,xi	a
+	j	leave
+
+connect_fail
+	printf	$3("connect fail %d":LF:0),,xi	a
+	j	leave
+
+input_fail
+	printf	$3("stdin fail %d":LF:0),,xi	a
+	j	leave
+
+tx_fail1
+	printf	$3("send_filename fail %d":LF:0),,xi
+	j	leave_close
+
+rx_fail	printf	$3("rx prompt fail %d":LF:0),,xi	a
+	j	leave_close
+
+tx_fail_20
+	printf	$3("tx B * 20 fail %d":LF:0),,xi	a	
+	j	leave_close
+
+token_insert
+insert	drl	$byte
+	ex	(__inline	sb	10), y
+	ay	1,,xi
+	jdr	insert
+	lret	0
+

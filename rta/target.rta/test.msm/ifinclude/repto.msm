@@ -1,0 +1,60 @@
+	$if	REPTO			. regenerate checksum (in single_step)
+					. not identical to segment_generate tcp_startbuffer
+					. because this reads the sent segment from itself
+					. which is separately verified all except checksum
+repto	ly	descriptor:dgram, a	
+	lb	descriptor:bytes, a
+	andB	32767,,xi
+
+	la	IPPROTO_TCP,,xi
+	da	dgram:ipsource, y
+	da	dgram:ipdest, y
+	ds	HEADER_SUM
+	ab	a
+
+	la	txq_p
+	ly	descriptor:uproto, a
+
+	lk	transfer:checksum, y
+
+	z	transfer:checksum, y
+
+	$if	0			. include state fields in stored segment
+	z	transfer:window, y
+	z	ack+1, y
+	z	ack, y
+	$endif
+
+	sy	q			. from (and to)
+	on	b$stream16r++b$streamZR	. 16 bits per word zero-zoned
+	z	RDATAC
+	z	RDATA
+	la	descriptor:bytes, a
+	and	32767,,xi
+
+	lcal	w2buffer
+
+wrapper	dsr	16
+	sbr	8
+	jza	wrapped
+	aa	b
+	j	wrapper
+wrapped	xorB	(00FFFF)
+
+	la	txq_p			. retrieve descriptor address
+					. like none of this happened
+	ly	descriptor:uproto, a
+	sb	transfer:checksum, y	. use the recalculated checksum
+
+	xorB	k			. whether it agrees or not
+	jzb	repto_y
+
+	$if	REPTO<0			. only have this if you breakpoint here
+	j	repto			. to rerun single step from label repto
+	$else
+	sr	0			. no-op to keep addresses constant
+	$endif				. if switching REPTO [ 1 -1 ] for debug
+repto_y
+	lx	txbloc_p
+	$endif
+

@@ -1,0 +1,141 @@
+	
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	stream/stream.def
+	$include	language/iframe.def
+	$include	t77.4/ip.def
+	$include	t77.4/tcp.def
+	$include	lib/ascii.def
+	$include	lib/compress.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+FPACK_TCPPORT	$equ	132
+PATH_STDIN	$set	1
+
+$(3:03000/$3)
+s	0
+fields	0
+left	-	0.0d
+right	-	0.0d
+operator	'?'
+delimiter	'/'
+repeat		0
+s1	0
+request	$res	24
+response $res	16
+
+	$lit	4
+
+$(4:*1/$4)
+$(0:*1)
+
+respond*
+	$base_d	03000-$zenith(3)	1024	1024
+	c	(seg$load))	0,,xi	(respond_d:L),,long
+
+	socket	AF_INET	SOCK_STREAM	IPPROTO_TCP
+	sa	s
+	jna	no_socket
+
+	c	(bind)	s	$3(FPACK_TCPPORT:L),,long
+	jna	no_bind
+
+	la	s
+	lb	NON_BLOCKING,,xi
+
+	la	s
+	call	(__accept)
+	jna	no_connection
+	sa	s1
+
+	on	fpack$		. 48-bit SIMD floating point
+
+loup	fprintf	s1	$3("[%d]fpac>":0),,xi	s1
+	fflush	s1	stdout
+
+	fgets	request,,xi	24*3,,xi	s1
+	jna	fall_out
+	la	request,,t1
+	aa	-'.',,xi
+	jza	fall_out
+
+	z	repeat
+
+	sscanf	request,,xi	$3("%D %c %D %c %d":0),,xi	;
+		left,,xi operator,,xi right,,xi delimiter,,xi repeat,,xi
+
+	sa	fields
+
+	qpush	left
+
+	la	operator
+	lr	repeat
+	tz	r
+	dec	r
+
+	lk	255,,xi
+	mta	('+')
+	j	minus?
+plus	rex	(fa	right)
+	jdr	plus
+	j	retrieve
+
+minus?	mta	('-')
+	j	times?
+
+minus	rex	(fan	right)
+	jdr	minus
+
+times?	mta	('*')
+	j	over?
+
+times	rex	(fm	right)
+	jdr	times
+	j	retrieve
+
+over?	mta	('/')
+	j	retrieve
+
+over	rex	(fd	right)
+	jdr	over
+
+retrieve
+	la	delimiter
+	aa	-'?',,xi
+	jnza	readout
+
+centre	$equf	0, sp
+
+	fprintf	s1	$3("%lx %lx %lx":LF:0),,xi	left,,long	;
+							right,,long	;
+							centre,,long
+readout
+	qpop	left
+
+	fprintf	s1	$3("%d: %D %c %D %c %d":LF:0),,xi 	;
+			fields		left,,long		;
+			operator	right,,long		;
+			delimiter	repeat
+
+	j	loup
+
+fall_out
+	c	(close)	s1
+	c	(close)	s
+fell_out
+	fret	0
+
+no_socket
+	sprintf	s	$3("no socket %d":LF:0)	a
+	j	fell_out
+
+no_bind	sprintf	s	$3("bind fail %d":LF:0)  a
+	j	fall_out
+
+no_connection
+	sprintf	s	$3("listen / accept  fail %d":LF:0)
+	j	fall_out

@@ -1,0 +1,147 @@
+	$list		0
+	$path		../
+	$include	def/rta.def
+	$include	def/vector.def
+	$include	language/stack.def
+	$include	language/iframe.def
+	$include	t77.4/ip.def
+	$include	stream/stream.def
+	$include	lib/ascii.def
+	$include	fs/file_io.def
+	$include	image.app/imports.def
+	$path
+	$list
+
+	$lit	4
+
+$(4:*1/$4)
+
+DATA	$equ	16600
+
+	$set_option	"z"
+
+$(1:01000)
+s
+
+$(3:03000/$3)
+
+file_handle	0
+bytes		0
+name_bytes	0
+
+remote_host	"platform"
+
+path
+	$do	24,	0
+. input	$res	72//3
+data	$res	DATA//3
+
+$(0:*1)
+trunk*	$base_d	$zenith(3)-03000	1024
+
+	c	(seg$load)	0,,xi	(trunk_data:L),,long
+
+	c	(speed_dial)	remote_host,,long	path,,xi
+
+	la	(IPPROTO_UDP*/16)
+	call	(__socket)
+	jna	no_socket
+
+	sa	s
+	c	(bind)	a	($net_socket	0.0.0.0:18),,long
+	jna	no_bind
+
+	$if	1
+
+again	printf	$3("RX>":0),,xi
+	c	(recv)	s	path+6,,xi	72,,xi	0,,xi
+	sa	name_bytes
+
+	printf	$3("[%d]":LF:0),,xi	a
+
+	la	name_bytes
+
+	jna	no_rxname
+	jza	no_rxname
+
+	la	path+6,,t1
+	jna	again
+	aa	-'.',,xi
+	jza	eof
+
+	la	name_bytes
+	sa	path,,t2
+
+	printf	$3("%d:%s":LF:0),,xi	a	path+6,,xi
+
+	c	(open)	path,,xi	O_CREAT++O_TRUNC++O_OCTET,,xi
+	jna	remote_file_open_fail
+	sa	file_handle
+
+	printf	$3("file handle %d":LF:0),,xi	a
+
+	c	(recv)	s	data,,xi	DATA,,xi	0,,xi
+	jna	rx_fail
+	sa	bytes
+	jza	rx_fail
+
+	c	(write)	file_handle	data,,xi	bytes
+	jna	remote_file_write_fail	
+	printf	$3("[%d]":0),,xi	a
+
+	c	(close)	file_handle
+	jna	remote_file_close_fail
+	j	again
+
+	$else
+
+again	printf	$3("RX>":0),,xi
+	fgets	input,,xi	72,,xi	stdin
+
+	la	input,,t1
+	jna	eof
+	aa	-'.',,xi
+	jza	eof
+
+	c	(sense_data)	s
+	jna	no_sense
+	jnza	rx
+	printf	$3("%d":LF:0),,xi	a
+	j	again
+
+rx	c	(recv)	s	data,,xi	DATA,,xi	0,,xi
+	jna	no_rx
+
+	c	(write)	stdout	data,,xi	a
+
+	j	again
+	$endif
+
+eof	c	(close)	s
+	fret	0
+
+no_socket	printf	$3("socket error %d":LF:0),,xi	a
+		j	eof
+
+no_bind		printf	$3("bind error %d":LF:0),,xi	a
+		j	eof
+rx_fail		printf	$3("receive error %d":LF:0),,xi	a
+		j	eof
+
+no_sense	printf	$3("sense error %d":LF:0),,xi	a
+		j	eof
+
+no_rxname		printf	$3("filename_rx error %d":LF:0),,xi	a
+		j	eof
+
+remote_file_open_fail
+		printf	$3("remote_file_open error %d":LF:0),,xi	a
+		j	eof
+
+remote_file_write_fail
+		printf	$3("remote_file_write error %d":LF:0),,xi	a
+		j	eof
+			
+remote_file_close_fail
+		printf	$3("remote_file_close error %d":LF:0),,xi	a
+		j	eof
