@@ -1727,7 +1727,7 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 	<a href="#lk">lk</a>	Load Mask Register		<a href="#rbr">rbr</a>	Rotate b Right			<a href="#ql">ql</a>	Quadruple Load
 
 	<a href="#lx">lx</a>	Load Index Pointer x		<a href="#drr">drr</a>	Double Rotate Right		<a href="#dte">dte</a>	Double Test Equal
-	<a href="#ly">ly</a>	Load Index Pointer y		<a href="#jnc">jnc</a>	Jump No Carry			<a href="#dpop">dpop</a>	Double Pop (macro)
+	<a href="#ly">ly</a>	Load Index Pointer y		<a href="#jnc">jnc</a>	Jump No Carry			<a href="#dpop">dpop</a>	Double Pop
 
 	<a href="#la">la</a>	Load Accumulator a		<a href="#ral">ral</a>	Rotate a Left			<a href="#fa">fa</a>	Floating Add
 	<a href="#lb">lb</a>	Load Accumulator b		<a href="#rbl">rbl</a>	Rotate b Left			<a href="#fan">fan</a>	Floating Add Negative
@@ -1764,7 +1764,7 @@ Instruction File 7 contains arithmetic instructions which have an operand of one
 	<a href="#d">d</a>	Divide				<a href="#jxge">jxge</a>	Jump x Not Less Than r		<a href="#go">go</a>	Jump to Iframe
 	<a href="#push">push</a>	Push				<a href="#jyge">jyge</a>	Jump y Not Less Than r		<a href="#call">call</a>	Call Iframe
 						<a href="#jxge">jxl</a>	Jump x Less Than r (macro)
-						<a href="#jyge">jyl</a>	Jump x Less Than r (macro)
+						<a href="#jyge">jyl</a>	Jump y Less Than r (macro)
 
 	INTEGER COMPARE MACROS
 	______________________
@@ -6477,7 +6477,7 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 
 	instructions		<a href="#ds">Double Store</a>			<a href="#dl">Double Load</a>
-				<a href="#dpop">Double Pop (macro)</a>		<a href="#dpush">Double Push</a>
+				<a href="#dpop">Double Pop</a>		<a href="#dpush">Double Push</a>
 
 				<a href="#qs">Quadruple Store</a>			<a href="#ql">Quadruple Load</a>
 				<a href="#qpop">Quadruple Pop</a>			<a href="#qpush">Quadruple Push</a>
@@ -6869,10 +6869,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 				
 	<a	name="dpop"/>
-	Double Pop	macro	dpop
-	_________		____
-
-	Double Pop is a 2-instruction macro which pops two words from the internal stack top to registers or storage
+	Double Pop		dpop
+	__________		____
 
 				_________________________________________________________
 				|	two words are stored at EA from the registers	|
@@ -6953,13 +6951,12 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 				_________________________________________________________
 				|							|
-				|	a value at EA is retrieved, rotated to scale	|
-				|	and stored in Accumulator a			|
+				|	one data word at EA is read and rotated left	|
+				|	until sign bit 23 changes			|
+				|	or the value is rotated 24 positions		|
 				|							|
-				|	the value is rotated left counting		|
-				|	until bit 23 changes or the count reaches 24	|
-				|							|
-				|	the shift count is stored in accumulator b	|
+				|	the rotated value is stored in accumulator a	|
+				|	the rotation count is stored in accumulator b	|
 				|							|
 				|_______________________________________________________|
 				|	source is the register or storage word at EA	|
@@ -6968,9 +6965,9 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 
 
-	assembler syntax	lsc	short_mantissa[, {x|y|a|b|fp|sp}]
+	assembler syntax	lsc	indicators[, {x|y|a|b|fp|sp}]
 
-				lsc	*short_mantissa_indirectly
+				lsc	*stored_flags_via_pointer
 
 
 
@@ -7282,13 +7279,13 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 
 				_________________________________________________________
 				|							|
-				|	2 words read from EA are rotated to scale	|
-				|	and stored in accumulators a b			|
+				|	two data words are read from EA and rotated left|
+				|	until sign bit 47 changes			|
+				|	or the value is rotated 48 positions		|
 				|							|
-				|	48-bit value is rotated left counting		|
-				|	until bit 47 changes or the count reaches 48	|
-				|							|
-				|	shift count is stored in accumulator  mantissa2	|
+				|	rotated 48-bit value is stored			|
+				|	in accumulators [ a b ]				|
+				|	rotation count is stored in register mantissa2	|
 				|							|
 				|_______________________________________________________|
 				|	source is two registers or storage words at EA	|
@@ -7366,8 +7363,8 @@ See <a href="#iset">Lookup Panel</a> to find an instruction by name
 	|	Rounding Setting											|
 	|_______________________________________________________________________________________________________________|
 	|														|
-	|	Rounding is determined by the pattern of high-order bits in register <b>fp$guard</b> at address 147		|
-	|	(hex 93). <b>fp$guard</b> can only be written by interrupt code. Prototype kernel smaragd7 assigns a	 	|
+	|	Rounding is determined by the pattern of high-order bits in register <b>fp$guard</b> at address 147<sub>10</sub>		|
+	|	(93<sub>16</sub>). <b>fp$guard</b> can only be written by interrupt code. Prototype kernel smaragd7 assigns a	 	|
 	|	default value C00000 hex to <b>fp$guard</b> for every thread. <b>fp$guard</b> value is part of thread			|
 	|	context and each thread may change its value with the system call					|
 	|														|
@@ -8695,10 +8692,10 @@ Kernels launch all threads with <a href="#A2_2" style="text-decoration:none">SIM
 so that the application has <a href="rta.html#A2_2">alternative accumulators</a> to <a style="font-family:courier">[ a b mantissa2 mantissa3 ]</a>
 <pre	style="color:#00AF6F;font-size:12pt">
 
-	<a style="color:#00AF6F">SIMD_CONTROL	(-1, 0, 0, 0q)</a>
+	<a style="color:#00AF6F">SIMD_CONTROL	(-1, 0, 0, 0q)	. q means quadword here</a>
 
 </pre>
-If accumulator vector q designates any register outside the range 24..127
+If accumulator vector pointer register q designates any register outside the range 24..127
 the thread faults with interrupt GUARD$ latent parameter permission
 
 <p>
@@ -8791,7 +8788,7 @@ Optional second argument is how many iterations, default 1
 	. the unrolled quad pushes and pops are instructions multiply generated
 	. no push or pop instructions are SIMD-repeatable
         . <a href="#A2_3">Internal stack accumulator loads and stores</a> are SIMD-repeatable,
-	. that is, executable in scope of rex intruction
+	. that is, executable in scope of rex instruction
 	. implementation depending it should be possible to read and write memory as fast as the data bus can go
 	. RTA1 internal stack is an array of registers loaded by push operations and stored by pop operations
 </pre>
@@ -9104,7 +9101,7 @@ is eight words, and so in the example is the index register increment SIMD_INDEX
   :                            205
 (+04)10
 00:00013D  550000              +206 	lx	table2,,xi
-(+04)0f										. accumulator vector incremente 8 words
+(+04)0f										. accumulator vector increment 8 words
 00:00013E  8F00FF              +207 	SIMD_CONTROL	(-1, 8, LANES-1, RECORD:q) . primed to initialise, 12 objects, 
 00:00013F  870014              +207 						. source-2 increments RECORD words
 00:000140  050008              +208 	on	fp$r				. 192-bit floating operations
@@ -9118,7 +9115,7 @@ is eight words, and so in the example is the index register increment SIMD_INDEX
 
 								. note label of $do is a relative-1 enumerator
 								. no push or pop instructions are SIMD-repeatable
-								. that is, executable in scope of rex intruction
+								. that is, executable in scope of rex instruction
 </pre>
 <hr/>
 
