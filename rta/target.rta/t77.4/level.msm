@@ -1,0 +1,70 @@
+
+.	change from zero queued packets to 1 starts time frame
+.	if now >= breakpoint tested when transmit proposed ::
+.
+.	transmit proposed and ::
+.	now >= breakpoint+ =  queued = 1, breakpoint = now + MSECS
+.	else queued++ > 99 = limit_time <- breakpoint_time = brakes
+
+tcp_traffic_level	;
+	$tree
+
+	andB	4095,,xi
+	jzb	thru			. outgoing connect 
+					. i/f pointer zero
+	ab	i_f_pointer_array,,xi
+	lb	0, b
+
+	tz	this_if:limit_time, b	. brakes ?
+	j	negotiate		. are on
+	j	continue		. are not on yet
+
+negotiate
+	la	DAYCLOCK$
+	ana	this_if:limit_time, b	
+	jpa	release			. time frame passed, brakes off
+	lret	0			. don't, segments / tframe @max
+
+continue
+	tz	this_if:queued, b		. traffic ? -only zero @sys_start
+	j	breakpoint?		. of course at least 1 otherwise
+					. this must be system start
+
+release	z	this_if:limit_time, b	. brakes off
+
+apply_breakpoint			. restart queued  & breakpoint
+	la	1,,xi			. zero + 1st segment = 1
+	sa	this_if:queued, b		. start count_up
+	la	DAYCLOCK$		. start time_frame
+	aa	TCP_BURST_MSECS,,xi
+	sa	this_if:breakpoint_time, b
+	lret	1			. do
+
+breakpoint?
+	la	DAYCLOCK$
+	ana	this_if:breakpoint_time, b
+	jpa	apply_breakpoint	. DAYCLOCK$ has passed time frame
+	la	this_if:queued		. time frame unchanged, segments++
+	aa	1,,xi
+	sa	this_if:queued, b
+	aa	-TCP_BURST_MAX,,xi	
+	jpa	apply_limit_time, b	. segments > allowed for timeframe
+thru	lret	1			. do, segments still <= maximum 
+
+apply_limit_time
+	push	this_if:breakpoint_time, b	. brakes...
+	pop	this_if:limit_time, b	. ...on
+	lret	0			. don't
+
+preselect		. save transmission[x] and whatever[y]
+	dpush	x
+	ly	transmission:q4window:head	. this descriptor
+	la	descriptor:dgram, y		. ip datagram  ->
+	dl	dgram:ipdest, a			. ip destination
+	ds	6				. <-  route
+	lcal	ip_route			. uses [ x a b ]
+	lb	ro:i_f				. interface index  ->
+	sb	descriptor:i_f, y		. for retries
+	dpop	x				. transmission[x] + ?[y]
+	lret	0
+	$root

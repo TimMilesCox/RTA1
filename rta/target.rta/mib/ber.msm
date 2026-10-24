@@ -65,8 +65,16 @@ ber_edit_mojet
 ber_edit_integer
 	lb	mo:data
 	la	mo:bytes
-	aa, xi	-4
+	aa, xi	-4		. is working value 3 or 6 octets ?
 	jc	ber_edit_long	. stored value > 1 word
+
+	$if	BER_SLINT
+	la	0, b
+	dsa	24		. add a word of signs before
+	dpush	a
+	j	ber_edit_long_x
+
+	$else
 
 	push	0, b		. stored value 1 word
 	lsc	0, sp		. count signs
@@ -81,9 +89,11 @@ ber_edit_integer
 	sa	ber_t:bytes
 	aa, xi	2
 	lret	0
+	$endif
 
 ber_edit_long			. stored value 2 words
 	dpush	0, b
+ber_edit_long_x
 	dlsc	0, sp		. count signs
 
 	la	6
@@ -105,9 +115,16 @@ ber_edit_long			. stored value 2 words
 ber_edit_unsigned
 	lb	mo:data
 	la	mo:bytes
-	aa, xi	-4
+	aa, xi	-4		. is working value 3 or 6 octets ?
 	jc	ber_edit_ul	. stored number > 1 word
 				. stored number = 1 word
+	$if	BER_SLINT
+	push	0, b
+	push	0,,xi		. place 24 zero bits before
+	j	ber_edit_ul_x
+
+	$else
+
 	push	0, b
 	lsc	0, sp		. calculate whole zero octets
 	andB,xi	-8		. to suppress
@@ -127,8 +144,12 @@ ber_edit_length1
 	aa, xi	2
 	lret	0
 
+	$endif
+
 ber_edit_ul
 	dpush	0, b
+ber_edit_ul_x
+
 	dlsc	0, sp		. calculate whole zero octets
 	la	6		. to suppress
 	and, xi	-8
@@ -544,16 +565,31 @@ ber_esi_effect
 
 
 ber_edit_cluster
-	push	a
-	lsc	0, sp
-	ab, xi	-16
-	jnb	$+2
-	ab, xi	7
-	sbr	3
-	la, xi	3
-	ana	b
-	popA	a
+
+	$if	BER_SLINT
+
+	anu	128,,xi
+	sc	b		. b = ? a > 127
+	sbl	1		. length field 1 more byte + 82 byte to say so
+	aa	2, b, i		. a += 6 + ? a > 127 
+				. no SNMP PDUs > 60K octets
 	lret	0
+	$else
+
+	push	a		. data count
+	lsc	0, sp
+	ab, xi	-16		. 2+ leading bytas 0 ?
+
+	jnb	$+2		. no
+	ab, xi	7		. yes, round up significant octets
+	sbr	3		. divide by $byte giving +- octets adjustment
+	la, xi	3		. subtract +- adjustment from containing bytes
+	ana	b		. 3 - -significant bits /// 8
+	popA	a		. + data count
+	lret	0
+
+	$endif
+
 
 ber_release_cluster_p
 	la	ber_t:ojet

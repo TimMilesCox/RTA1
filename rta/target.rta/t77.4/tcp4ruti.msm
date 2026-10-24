@@ -1,8 +1,10 @@
 tcp_event1_acknowledged?
 
-__REMOTE_ACK	$equf	1, sp
+__REMOTE_ACK	$equf	1, sp			. stack top + return address
+						. may only be called within tcp4_rxaction
+						. remote ACK as high as sequence ?
 
-	dl	transmission:sequence_ackx
+	dl	transmission:sequence_ifidx
 	andB	(0FF0000s)			. ls 16 bits aren't used yet, but...
 	dan	__REMOTE_ACK			. is the new remote ACK
 	lret	0
@@ -24,7 +26,21 @@ tcp_restart_timer2
 	sa	transmission:timer(2)
 	lret	0
 
+TIMEWAIT_TIMER	$equ	2
+
 tcp_start_timewait
+	
+	$if	1
+	la	DAYCLOCK$
+	$if	TCP_TIMEWAIT_MS<32768
+	aa	TCP_TIMEWAIT_MS,,xi
+	$else
+	aa	(TCP_TIMEWAIT_MS)
+	$endif
+	sa	transmission:timer(TIMEWAIT_TIMER)
+	lret	0
+
+	$else
 	$if	TCP_TIMEWAIT_MS<32768
 	la	TCP_TIMEWAIT_MS,,xi
 	$else
@@ -32,6 +48,7 @@ tcp_start_timewait
 	$endif
 
 	j	tcp_add_timer1
+	$endif
 
 tcp_restart_timer1
 	la	(TCP_TIMER1)			. something arrived
@@ -206,7 +223,7 @@ tcp_compare_forward
         and     TCP_RST,,xi
         jnza    tcp_ripdown_silently
 
-	dl	transmission:sequence_ackx
+	dl	transmission:sequence_ifidx
 	andB	(255*/16:s)
 
 	dan	8				. remote ACK beyond local SEQ?
@@ -386,7 +403,6 @@ tcp_rx_exact_sequence
 						. = descriptor -> bytes_to_bypass
 	la	HL_FLAGS
 	and, xi	TCP_FIN				. established -> closewait ?
-
 	jza	tcp_rx_payload?			. no such event, keep going
 
 	dl	received_seq			. add event_weight + remote_sequence
@@ -406,6 +422,8 @@ tcp_rx_exact_sequence
 tcp_lastack
 	lcal	tcp_event1_acknowledged?
 	jdz	tcp_lastack2closed
+
+	$if	0
 	la	DAYCLOCK$
 
 	$if	1
@@ -413,6 +431,8 @@ tcp_lastack
 	$endif
 
 	sa	transmission:timer(1)		. drop connection in a few seconds
+	$endif
+
 	j	tcp_stepover_response
 
 tcp_lastack2closed
@@ -583,8 +603,10 @@ tcp_rx_already_acked
 tcp_rx_above_range
 .	la, xi	1
 .	sa	ACK_AWAITED
-.	lcal	tcp_send_ack
-
+.	lcal	tcp_send_ack	. if you uncomment this
+.	j	$+1		. uncomment this as well
+				. or change to lcal tcp_rack
+				. tcp_send_ack returns +0 or +1 = it happened
 tcp_rx_ack_nopayload
 	j	tcp_ack
 .	ly, xi	tcpq
@@ -599,31 +621,42 @@ tcp_finwait1
 	dl	(1*/16d)
 	da	transmission:ack_window
 	ds	transmission:ack_window
+
+	$if	0		. ack not consulted ACK FIN -> CLOSING
+	j	tcp_finwait1_acked?
+	$endif
+
+tcp_finwait1_2closing		. also get here from finwait1 if <- FIN
+	
 	push,xi	TCP_CLOSING
 	pop	transmission:state
 	lcal	tcp_rack
 				. ACK and FIN  may be on the same segment
 tcp_closing
+	
 	lcal	tcp_event1_acknowledged?
-	jdz	tcp_close2timewait
-	j	tcp_stepover_response
+	jdnz	tcp_stepover_response
+
+tcp_close2timewait
+	push	TCP_TIMEWAIT,,xi
+	pop	transmission:state
+	lcal	tcp_start_timewait
+	j	tcp_timewait	. send ACKs starting now
 
 tcp_finwait1_acked?
 	lcal	tcp_event1_acknowledged?
-	jdz	tcp_finwait1tofinwait2
+	jdz	tcp_finwait1_2finwait2
 	j	tcp_stepover_response
 
-tcp_finwait1tofinwait2
+tcp_finwait1_2finwait2
+	la	HL_FLAGS
+	and	TCP_FIN,,xi
+	jnza	tcp_finwait2_2timewait
+
 	push,xi	TCP_FINWAIT2
 	pop	transmission:state
 	j	tcp_stepover_response
 
-tcp_close2timewait
-	push,xi	TCP_TIMEWAIT
-	pop	transmission:state
-	lcal	tcp_start_timewait
-	j	tcp_stepover_response
-	
 tcp_finwait2
 	la	HL_FLAGS
 	and, xi	TCP_FIN
@@ -631,12 +664,18 @@ tcp_finwait2
 	dl	(1*/16d)
 	da	transmission:ack_window
 	ds	transmission:ack_window
-	lcal	tcp_rack
-	j	tcp_close2timewait
+
+tcp_finwait2_2timewait
+	lcal	tcp_start_timewait
+	push	TCP_TIMEWAIT,,xi
+	pop	transmission:state
 	
 tcp_timewait
+	lcal	tcp_send_ack
+	j	tcp_stepover_response	. stay in TiMEWAIT until ACK sent
+
 	la	DAYCLOCK$
-	ana	transmission:timer(1)
+	ana	transmission:timer(TIMEWAIT_TIMER)
 	jna	tcp_stepover_response
 	la, xi	TCP_CLOSED
 	sa	transmission:state
@@ -749,7 +788,7 @@ tcp4xreact				. when buffered rx segment is queued to socket
 tcp_rack
 	$if	0			. send up to 1 ack in state machine
 	push	1,,xi			. when all available rx segments are scanned
-	popA	transmission:sequence_ackx+1
+	popA	transmission:sequence_ifidx+1
 	lret	0
 	$else				. otherwise remote host resends unnecessarily
 

@@ -29,8 +29,15 @@ zone	04000
 mask	0FFF
 ozone	05000
 flag	0
+pattern	-1L
+record	-1
+offset	-1
+increment	-1
+pages	-1
 
-buffer	$res	8
+COLUMNS	$equ	72
+buffer	$res	COLUMNS//3
+
 
 $(0:*1/$0)
 	$base_d	$zenith(3)-003000	1024
@@ -42,7 +49,7 @@ $(0:*1/$0)
 	ds	start_of_ram			. after NVRAM / ROM
 
 ask	printf	$3("h / Page Index>":0),,xi
-	fgets	buffer,,xi	8*3	stdin
+	fgets	buffer,,xi	COLUMNS,,xi	stdin
 	jza	end_of				. broken pipe
 	jna	error				. or something
 	la	buffer,,t1
@@ -55,10 +62,19 @@ ask	printf	$3("h / Page Index>":0),,xi
 	lcal	help1				. operator wants help
 	j	ask
 
-listen	sscanf	buffer,,xi	$3("%i":0),,xi	page,,xi
+listen	sscanf	buffer,,xi	$3("%i:%x+%i %i %i %lx":0),,xi	page,,xi	record,,xi	;
+				offset,,xi	increment,,xi	pages,,xi	pattern,,xi
+
 	jna	error				. whatever
 	jza	ask				. no number field
 
+	anu	6,,xi
+	jnzb	check_granule_name
+
+	lc	search	page	record	offset	increment	pages	pattern,,long
+	j	ask
+
+check_granule_name
 	la	page
 	lcal	allowed?
 	j	ask
@@ -82,7 +98,7 @@ start	sabr	4				. open the window
 	printf	$3("TCB":LF:0),,xi		. announce it seems to be a TCB
 	j	readout
 
-line	fgets	buffer,,xi	3*8,,xi	stdin
+line	fgets	buffer,,xi	COLUMNS,,xi	stdin
 	jna	error
 	jza	readout				. scroll on
 	la	buffer,,t1
@@ -98,11 +114,12 @@ line	fgets	buffer,,xi	3*8,,xi	stdin
 	lcal	help2				. operator wants syntax help
 	j	line
 
-input	sscanf	buffer,,xi	$3("%i:%x":0),,xi	left,,xi	right,,xi
+input	sscanf	buffer,,xi	$3("%i:%x":0),,xi	left,,xi	right,,xi 
+
 	jna	error
 	jza	readout
-						. the only things left
-	anu	2,,xi				. are scroll or 
+
+two?	anu	2,,xi				. are scroll or 
 	jnzb	one?				. [ change_page: ] change_cursor
 	dl	left
 	lcal	allowed?
@@ -154,9 +171,33 @@ threshold_allowed
 	lr	x				. request becomes limit comparand
 	lx	ram_high_index			. this must be as high as request
 	lk	(0400000)			. but has the request big-bank flag?
-	mta	(0)				. is request in a bit 0400000 on?
+	mta	k				. has request bit 0400000 on?
+	j	compare				. no
+	lb	a
+	andB	63,,xi				. device outside executable space ?
+	jzb	sysmem_compare			. no, it's a big bank in system memory
+
+	inB	128, b				. read the device descriptor port
+	lx	a
+	dsl	2				. device type -> a bits 0:1
+	lk	3,,xi
+	mta	(2)				. SYSMEM device ?
+	j	device_protect			. no
+	sbr	2				. # banks in device
+	sar	2+6				. bank index sought
+	lr	a				. just a bank index in [device]
+	la	x				. restore bank name to a
+	lx	b				. limit for test
+	j	compare
+
+device_protect
+	printf	$3("only SYSMEM + arrays be displayed":LF:;
+		"not file systems ++ network trunks":10:0),,xi
+	lret	0
+
+sysmem_compare	
 	ax	(0400000)			. yes it is, so compare for that
-	jxge	allowed!
+compare	jxge	allowed!
 	printf	$3("requested page beyond RAM":10:0),,xi
 	lret	0				. check
 
@@ -176,3 +217,128 @@ help2	printf	$3("key return for next line. Key . to quit":LF:0),,xi
 	printf	$3("large page flag 04xxxxx:OFFSET to scan a block of 262144 words":LF:0),,xi
 	lret	0
 	
+search	$tree
+	$head_near	 params(page,		int	;
+				record,		int	;
+				offset,		int	;
+				increment,	int	;
+				pages,		int	;
+				pattern,	long)	;
+							;
+			scalars(running_record,	int	;
+				high_index,	int	)
+next_page
+	la	page
+
+	lcal	allowed?
+	j	no_more_pages
+
+	sabr	4
+
+	lx	record		. 1st record in page / bank
+	ax	(4*/18)
+
+	$if	1
+	lb	(4*/18)
+	lk	(03FFFF)
+	mlb	2, b		. 1st unused table entry tbank->top
+	lr	b
+	$else
+	lr	(4*/18++4096)
+	lk	(0400000)
+	mta	(0)
+	lr	(4*/18++262144)
+	$endif
+
+	dl	pattern
+
+this_slot
+	ly	offset
+	ay	x
+	dte	0, y
+	j	next_slot	
+
+	sx	running_record
+	sr	high_index
+
+	printf	$3("%x:%x+%x %lx":LF:0),,xi	page	x	offset	0,y,long
+
+
+	tz	switch
+	lcal	behaviour
+
+.	la	switch
+.	mtane	('.'*/$word-$byte)
+.	j	no_more_pages
+
+advance	lr	high_index
+	lx	running_record
+
+	dl	pattern
+	
+next_slot
+	ax	increment
+	jxl	this_slot
+
+	la	page
+	ly	1,a,i		. granule 4096 words ?...
+	lk	(0400000)
+	mta	(0)
+	ly	64,a,i		. granule 262144 words
+	sy	page
+
+	dec	pages
+	tp	pages
+	j	no_more_pages
+	tz	pages
+	j	next_page	
+
+no_more_pages
+	$ret
+
+behaviour
+$(3)
+switch	-1
+buffer	$res	1
+
+$(0)
+	$head_near	scalars(aside,	float192,	r)
+
+	printf	$3("![list] ?[display] [next hit] .[new search / escape]>":0),,xi
+	fgets	buffer,,xi	3,,xi	stdin
+
+.	jna	return
+.	jza	return
+
+	la	buffer
+.	sa	switch
+
+	lk	(0FF0000s)
+	mta	('!'*/$word-$byte)
+	j	display?
+	z	switch
+	j	return
+
+display?
+	mta	('?'*/$word-$byte)
+	j	return
+
+	lx	aside+x
+	lcal	outline
+	lcal	outline
+	lcal	outline
+
+return	qpop	r
+	qpop	a
+	lret	0
+
+outline	push	x
+	printf	$3("%x %x %x %x %x %x %x %x":LF:0),,xi	;
+		0, x	1, x	2, x	3, x		;
+		4, x	5, x	6, x	7, x
+
+	pop	x
+	ax	8,,xi
+	lret	0
+
+	$root

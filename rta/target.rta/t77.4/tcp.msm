@@ -126,13 +126,23 @@ tcp4_service
 tcp_service_2nd_list
 	inc	tcp_supercount
 	lcal	tcp4_service_connection_list	. service up to 1 hvlist
+
+	$if	$t(lsc)=0
+	dsa	24
+	dlsc	a
+	la	48,,xi
+	ana	6
+	$else
 	lsc	a				. calculate log of # established
 	la	24,,xi
 	ana	b
+	$endif
+
 	lb	(BSOCKET*/18s)
 	sa	tlist:connection_block(1):timer(2), b
 	la	tlist:link, b			. next hvlist next pass
 	sa	tcp_2nd_list
+
 	j	tcp4x
 			
 tcp_no_2nd_list
@@ -167,11 +177,13 @@ tcp4_service_next_connection
 	ab, xi	TCP_ESTABLISHED-TCP_CLOSEWAIT
 	jnzb	tcp4_synreceived?
 
-				. closewait
+	lcal	tcp4_rxaction:tcp_rack		. TCP_CLOSEWAIT
+	j	$+1
+
 tcp4_established!
 
 	$if	MSG_WAITALL
-	lb	transmission:sequence_ackx+1
+	lb	transmission:sequence_ifidx+1
 	andB	(00FFFF)		. ask this question once only here
 	jzb	tcp4ser	
 	lcal	tcp_fast_launch
@@ -245,20 +257,45 @@ tcp4_synsent?
 	jzb	tcp4_most_states
 	j	tcp4_state?
 
-tcp4_globaltime!
-	n	transmission:state	. socket owner reversed state
-	j	tcp4_mark_time		. to command relinquish
+tcp4_globaltime!			. you get here if socket owner closes
+	call	(xdisco)		. attempt disconnect
+	j	tcp4_locate_next_connection	. attempt disconnect later
+
+					. TCP_FIN sent on fail no skip
+					. +-ESTABLISHED -> FINWAIT1 skip
+					. +-CLOSEWAIT   -> LASTACK  skip
+					. anything else -> no change no skip
+
+	j	tcp4_locate_next_connection
 
 tcp4_globaltime?
-	la	transmission:timer(1)
+	la	transmission:timer(1)	. by default sessions time off
 	jza	tcp4_locate_next_connection
 
 	ana	DAYCLOCK$
 	jpa	tcp4_locate_next_connection
 
+	la	transmission:state
+	jna	tcp4_locate_next_connection	. close from socket ownner
+	n	transmission:state		. otherwise it is now
+
+.		this is like caller close()
+.		and should only happen from	ESTABLISHED
+.						CLOSEWAIT
+	$if	0
+
 tcp4_mark_time
+	$if	TCP_TUNE_ZERO
+	$if	0
+	la	tco_total_i+1		. may need to be a function 
+	sal	2			. of connection high volumes
+	aa	TCP_TIMEWAIT_MS,,xi
+	aa	DAYCLOCK$
+	sa	transmission:timer(1)
+	$else
 	lcal	tcp_restart_timer1	. don't repeat the same timeout
-					. during final state transitions
+	$endif				. during final state transitions
+	$endif
 
 		. an inactivity timeout is not part of TCP protocol except
 		. in state TCP_TIMEWAIT during outgoing close.
@@ -275,11 +312,42 @@ tcp4_mark_time
 
 		. The timeout is not active if connection:timer(1) is zero
 
-	call	(xdisco)
+	$do	0,	call	(xdisco)
+
+	$endif
 
 	j	tcp4_locate_next_connection
 
 tcp4_state?
+	anu	TCP_LASTACK
+	jnzb	tcp4_finwait1?
+						. try to force 
+						. ACK of FINWAIT1[ACK++FIN] -> CLOSING
+						. or move beyond FINWAIT2 <- last ack
+	lcal	tcp4_rxaction:tcp_rack
+	j	tcp4_locate_next_connection	, could not send an ACK
+	j	tcp4_locate_next_connection	. did send an ACK
+	
+tcp4_finwait1?
+	anu	TCP_FINWAIT1,,xi
+	jnzb	tcp4_timewait?
+	la	DAYCLOCK$
+	ana	transmission:timer(2)
+	jna	tcp4_locate_next_connection
+	lcal	tcp4_retransmit1
+	j	tcp4_locate_next_connection
+
+tcp4_timewait?
+	anu	TCP_TIMEWAIT,,xi
+	jnzb	tcp4_closed?
+
+	la	DAYCLOCK$
+	ana	transmission:timer(TIMEWAIT_TIMER)
+	jna	tcp4_locate_next_connection	. now < eotime = not yet
+	push	TCP_CLOSED,,xi
+	pop	transmission:state
+	j	tcp4_locate_next_connection
+
 tcp4_closed?
 	anu, xi	TCP_CLOSED
 	jzb	tcp4_free_block
@@ -422,11 +490,11 @@ tcp4_retransmit1
 					. scalar descriptor from queue head
 					. must be on stack top for tcp_xmit
 
-	$if	0
+	$if	1
 	lcal	tcp_restart_timer2
 	$else
 	la	DAYCLOCK$
-	aa	TCP_TIMER2*8,,xi	. large backoff time
+	aa	TCP_TIMER2*1,,xi	. large backoff time
 	sa	transmission:timer(2)	. for any subsequent resend
 	$endif
 					. this function is called only if q4ack
@@ -443,6 +511,15 @@ tcp4_retransmit_next
 
 	ly	descriptor:uproto, a
 	sy	TP_HEADER
+
+	$if	1
+	lb	descriptor:i_f		. stored when prerouting
+	$else				. routine preselect
+	lb	transmission:sequence_ifidx+1
+	$endif
+
+	lcal	tcp_traffic_level
+	j	tcp4_retransmitted
 
 	$if	PROTOCOL_CACHE
 	$else
@@ -582,7 +659,7 @@ tcp_auto_accept
 	lret	0				. no connection block
 	lcal	tcp_add_incoming_defaults
 	lret	1				. input segment bad
-
+						. see below lret 2 is good
 	MIB_ICOUNT48	tcpPassiveOpens:i
 
 	dl	transmission:ack_window, x
@@ -602,18 +679,19 @@ tcp_auto_accept
 
 tcp_hv_accept
 	lcal	tcp_restart_timer2
-	call	(tcp_accept)
+	call	(tcp_accept)			. that is xmit SYN_ACK
 	j	tcp_accept_fail			. could not respond yet
-        dl      transmission:sequence_ackx, x
+        dl      transmission:sequence_ifidx, x
         da      (1*/16:d)
-        ds      transmission:sequence_ackx, x
+        ds      transmission:sequence_ifidx, x
 	lret	2				. good
 
 tcp_accept_fail
 	MIB_ICOUNT48	tcpAttemptFails:i
 	lret	1
 
-tcp_xaccept
+.	vector	(xaccept)		. called from applications
+tcp_xaccept				. and connect.msm : (accept)
 	la	transmission:q4ack:head
 	or	transmission:q4window.head
 	jnza	tcp_e0_accept
@@ -662,7 +740,7 @@ tcp_connection_made
 
 	dl	DAYCLOCK$U
 	dsl	16
-	ds	transmission:sequence_ackx
+	ds	transmission:sequence_ifidx
 
 	z	transmission:timer(1)	. no timeout for high-volume connections
 	tn	*(BSOCKET*/12++tlist:flags)
@@ -722,6 +800,7 @@ tcp_scan_next_option?
 
 tcp_add_incoming_defaults
 	la	descriptor:i_f
+	jza	tcp_options_complete	. interfaces have a nonzero ID
 	aa, xi	i_f_pointer_array
 	la	0, a
 	lb	this_if:mtu, a
@@ -735,9 +814,14 @@ tcp_add_incoming_defaults
 	mlb	transmission:ack_window+1, x
 	ds	transmission:ack_window, x
 
-	dl	transmission:sequence_ackx, x
+	dl	transmission:sequence_ifidx, x
 	mlb	transfer:window, y
 	ds	transmission:remote_ack_window, x
+
+	$if	0			. no, it gets wiped out
+	mlb	descriptor:i_f
+	sb	transmission:sequence_ifidx+1, x
+	$endif
 
 	la	HL_FLAGS
 	sar	12-1
@@ -1201,7 +1285,8 @@ tcp_store_window
 	lret	0
 
 tcp_send_on_window
-	$head_near	scalars(remote_ack_plus_window,	long	;
+	$head_near	scalars(i_f_idx,		int		;
+				remote_ack_plus_window,	long	;
 				xmitted,	int		;
 				tconnection_p,	int,	x	;
 			segment_descriptor,	int		)
@@ -1209,12 +1294,26 @@ tcp_send_on_window
 			. remote ACK + window >=
 			. sequence + size = send
 
+	$if	1
+	lcal	tcp_traffic_level:preselect
+	sb	i_f_idx
+	$else
+
+	lb	transmission:sequence_ifidx+1
+	sb	i_f_idx
+	$endif
+
 tcp_send_on_window_next
-	la	transmission:q4window:head	. <- x is reloaded before looping
+	la	transmission:q4window:head
+					. <- x is reloaded before looping
 	jza	tcp_sent_all
 	sa	segment_descriptor
 
-	ly	a
+	lb	i_f_idx
+	lcal	tcp_traffic_level
+	j	tcp_sent_all		. driving too fast
+
+	ly	segment_descriptor
 
 	dl	transmission:remote_ack_window, x
 
@@ -1327,6 +1426,7 @@ tcp_sent_all
 
 	inc	sp
 	inc	sp			. temporary pointer remote ack + window
+	inc	sp			. temporary interface pointer
 	lret	0
 
 	$if	0
@@ -1684,7 +1784,7 @@ tcp_startbuffer	$tree
 	z	transfer:ack+1, y
 	
 	lx	save_rkxy+2			. connection
-	dl	transmission:sequence_ackx
+	dl	transmission:sequence_ifidx
 	dsr	8
 	sbr	8
 	ds	transfer:seq, y
@@ -2050,51 +2150,63 @@ tcp_xdisco		. vector is xdisco
 			. connection in x
 
 	la	transmission:state
-	anu, xi	TCP_CLOSEWAIT	. remote close received
+
+	jpa	tcp_xdisco_p
+	xor	-1,,xi
+
+tcp_xdisco_p
+
+	aa, xi	-TCP_CLOSEWAIT	. remote close received
 				. close from local socket awaited
 
-	jzb	tcp_xclosewait
+	jza	tcp_xclosewait
 
-	$if	0
 
-	j	tcp_xfinwait1	. treat timeout
-				. as outgoing close
-	$else
-
-	ab, xi	TCP_CLOSEWAIT-TCP_ESTABLISHED
-	jzb	tcp_xfinwait1
-
-	$endif
-
-tcp_xclose
-				. it's been ripped and the owner knows
-	push,xi	TCP_DELETETCB	. It can be really reassigned
-	pop	transmission:state
-	fret	0
+.	arriving here is mostly [+|-] TCP_ESTABLISHED
+.	get TCP_FIN++TCP_ACK on TX queue / sent awaiting ACK
+.	or return no-skip so calling routine knows
 
 tcp_xfinwait1			. outgoing close
 	call	(tcp_ack_fin)
-	j	tcp_xclose	. better delete roughly
-				. if you could not send ACK++FIN
 
-	push,xi	TCP_FINWAIT1
-	pop	transmission:state
-	j	tcp_xfin_upsequence
+	fret	0		. did not transmit. state remains +-state
 
-tcp_xclosewait			. passive close
+.	z	transmission:timer(1)	. don't time out now
+
+.	connection is still running or [externally] damaged
+.	FIN keeps transmitting until ACK or sustained no-answer
+
+	lcal	tcp_restart_timer2	. (tcp_ack_fin) only writes output queue
+					. and prods waiting outputs
+					. if none waiting FIN goes now
+
+	push,xi	TCP_FINWAIT1	. state change to + but +sequence must get acked
+	pop	transmission:state	. before ACK ++ FIN gets taken from q4ack
+	j	tcp_xfin_upsequence	. (tcp_ack_fin) only writes output queue
+					. and prods waiting outputs
+
+tcp_xclosewait			. close after remote close
 	call	(tcp_ack_fin)	. 
-	j	tcp_xclose	. better delete roughly
-				. if you could not send ACK++FIN
 
-	push,xi TCP_LASTACK
-	pop	transmission:state
+	fret	0		. . did not transmit. state remains +-state
 
-tcp_xfin_upsequence
+.	z	transmission:timer(1)	. don't time out now
+	lcal	tcp_restart_timer2	. (tcp_ack_fin) only writes output queue
+					. and prods waiting outputs
+					. if none waiting FIN goes now
 
-	dl	transmission:sequence_ackx
+	push,xi TCP_LASTACK	. state change to + but +sequence must get acked
+	pop	transmission:state	. before ACK ++ FIN gets taken from q4ack
+
+tcp_xfin_upsequence		. (tcp_ack_fin) only writes output queue
+				. and prods waiting outputs
+				. none of that jumps sequence variable FIN = +1
+
+	dl	transmission:sequence_ifidx
 	da	(65536d)
-	ds	transmission:sequence_ackx
-	fret	0
+	ds	transmission:sequence_ifidx
+	lcal	tcp4_rxaction:tcp_rack
+	fret	1		. did
 
 
 .	do not call tcp_socket from application threads
