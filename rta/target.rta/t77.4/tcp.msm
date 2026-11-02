@@ -319,10 +319,11 @@ tcp4_mark_time
 	j	tcp4_locate_next_connection
 
 tcp4_state?
-	anu	TCP_LASTACK
+	anu	TCP_LASTACK,,xi
 	jnzb	tcp4_finwait1?
 						. try to force 
-						. ACK of FINWAIT1[ACK++FIN] -> CLOSING
+	tz	transmission:q4window:head		. ACK of FINWAIT1[ACK++FIN] -> CLOSING
+	lcal	tcp_send_on_window
 						. or move beyond FINWAIT2 <- last ack
 	lcal	tcp4_rxaction:tcp_rack
 	j	tcp4_locate_next_connection	, could not send an ACK
@@ -331,6 +332,10 @@ tcp4_state?
 tcp4_finwait1?
 	anu	TCP_FINWAIT1,,xi
 	jnzb	tcp4_timewait?
+
+	tz	transmission:q4window
+	lcal	tcp_send_on_window
+
 	la	DAYCLOCK$
 	ana	transmission:timer(2)
 	jna	tcp4_locate_next_connection
@@ -518,8 +523,10 @@ tcp4_retransmit_next
 	lb	transmission:sequence_ifidx+1
 	$endif
 
+	$if	1
 	lcal	tcp_traffic_level
 	j	tcp4_retransmitted
+	$endif
 
 	$if	PROTOCOL_CACHE
 	$else

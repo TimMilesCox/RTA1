@@ -1,4 +1,4 @@
-.       
+
 .    Copyright Tim Cox, 2012
 .    TimMilesCox@gmx.ch
 .
@@ -76,7 +76,21 @@ THISMTU	$set	i_f(?, 2)
 mtu	+	THISMTU
 state	+	1
 
-bitrate +	1000000000000:d
+BITRATE	$set	1000000000	. on-platform qlist
+	$do	i_f(?, 3)=ETHERNET_CSMACD,;
+		BITRATE $set	10000000
+
+.	bitrate is used for bandwidth sharing per I/F
+.	the slowest sort of Ethernet is a good choice
+
+.	on-platform buffer rings can be as fast as feasible
+.	if many tcoRetranamit are generated, then
+.
+.		the assigned bitrate is too optimistic
+.		resends are a network fix
+.		not a traffic calculation parameter
+
+bitrate +	BITRATE:d
 physa	+	i_f(?, 10:1),i_f(?, 10:2),i_f(?, 10:3),;
 		i_f(?, 10:4),i_f(?, 10:5),i_f(?, 10:6):d
 
@@ -151,10 +165,19 @@ base_tx	+	0
 tx_cursor +	TX_BASE*/18++RPAGES*RPAGEW**262143:s
 	$root
 
+KLUMP	$equ	1000	. (octets + KLUMP / 8 - 1) >> (10-3)
+			. is the packet granules size
+			. for outbound flow moderation
+
+TCP_BURST_GRANULES	$set	TCP_BURST_MAX
+
+	$do	BITRATE<50000000,;
+TCP_BURST_GRANULES	$set	TCP_BURST_MAX_ENET
+
 breakpoint_time	0
 limit_time	0
 queued		0
-spare		0
+tcp_burst_max	+	TCP_BURST_GRANULES
 
 sif	$branch
 	$root
