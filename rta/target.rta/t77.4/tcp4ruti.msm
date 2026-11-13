@@ -11,32 +11,30 @@ __REMOTE_ACK	$equf	1, sp			. stack top + return address
 
 tcp_restart_timer2
 	$if	TCP_TIMER2<32768
-	la	TCP_TIMER2,,xi
+	la	TCP_TIMER2,,i		. 15 bits no sign extension
 	$else
 	la	(TCP_TIMER2)
 	$endif
 
-	$if	HVSOCKET
+	$if	0	. HVSOCKET
 	tp	*(BSOCKET*/12++tlist:flags)
-	$if	0
-	lcal	tcp4_high_volume_resend_time
-	$else
-	sal	HVSOCKET_LOG			. lcal	tcp_stretch_timer2
-	$endif
-	$endif					. timer(2) is stretched by waiting
-						. for service to hv connection blocks
-						. traffic = restart timer(2)
+	sal	HVSOCKET_LOG
+	$endif				. timer(2) is stretched by waiting
+					. for service to hv connection blocks
+					. traffic = restart timer(2)
 	aa	DAYCLOCK$
 	sa	transmission:timer(2)
 	lret	0
 
 
-	$if	0
-tcp4_high_volume_resend_time
-	push	a
-	la	tcp_superpages
-	sal	TCP_STATES_BEAT-5
-	popA	a
+	$if	0			. HVSOCKET turn superpages 0..1000
+tcp4_high_volume_resend_timer		. to additional msecs 0..80'000
+	dpush	a
+	lb	tcp_superpages
+	mf	TCP_STATES_BEAT*2,,xi	. 160,,xi
+	la	b			. low-order half of result
+	popA	a			. plus normal timer
+	pop	b			. b unchanged
 	lret	0
 	$endif
 

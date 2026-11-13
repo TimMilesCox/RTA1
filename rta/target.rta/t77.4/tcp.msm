@@ -72,12 +72,19 @@ tcp_lsegment_noport + tcp_reset_deflect	. default vector RX large segment no por
 					. RST + discard or silent discard
 
 tcp_2nd_list	0			. next candidate list for state service
-tcp_states_beat	0
+
+	$do	STREAMLINE27=0,tcp_states_beat	0
 tcp_superpages	0
 tcp_supercount	0
 
 $(0)
 
+	$if	STREAMLINE27
+
+xtcp4
+
+	$else
+	
 tcp_states_step
 	la	TCP_STATES_BEAT,,xi
 	aa	DAYCLOCK$
@@ -97,14 +104,12 @@ tcp4	la	tcpq.head
 	lcal	tcp4_rxaction		. requeues payload to target connection
 	j	tcp4
 
-	$endif
-
 tcp4_high_volume
 
 tcp4_routine				. walk and maintain all connections
-
-					. default connections bank is serviced
-					. first and separately
+	
+	$endif				. default connections bank is serviced
+	$endif				. first and separately
 
 	la	tcx_v4(1)
 
@@ -495,14 +500,14 @@ tcp4_retransmit1
 					. scalar descriptor from queue head
 					. must be on stack top for tcp_xmit
 
-	$if	1
+	$if	1		. not doing it yet	
 	lcal	tcp_restart_timer2
 	$else
 	la	DAYCLOCK$
 	aa	TCP_TIMER2*1,,xi	. large backoff time
 	sa	transmission:timer(2)	. for any subsequent resend
 	$endif
-					. this function is called only if q4ack
+
 tcp4_retransmit_next
 	la	txq_p			. descriptor must stay on stack top
 	jza	tcp4_retransmitted	. until after tcp_xmit
@@ -517,9 +522,9 @@ tcp4_retransmit_next
 	ly	descriptor:uproto, a
 	sy	TP_HEADER
 
-	$if	1
-	lb	descriptor:i_f		. stored when prerouting
-	$else				. routine preselect
+	$if	1			. q4ack:head also register a
+	lb	descriptor:i_f, a	. also local pointer txq_p
+	$else
 	lb	transmission:sequence_ifidx+1
 	$endif
 
@@ -552,10 +557,12 @@ tcp4_retransmit_next
 
 	MIB_ICOUNT48	tcpRetransSegs:i
 
-	$if	1
-	la	txq_p
-	la	descriptor:next, a
-	sa	txq_p
+	$if	1			. x -> connection
+.	lcal	tcp_restart_timer2	. from tcp_smit
+	$else
+	la	txq_p			. can't be right
+	la	descriptor:next, a	. remote ack is examined
+	sa	txq_p			. in state machine
 	jnza	tcp4_retransmit_next
 	$endif
 

@@ -54,6 +54,9 @@ arpq_tscell	+	0
 
 broadcast_line	broadcast_cache
 
+repeat_request_when?	0		. then + time
+latest_request	+	0L		. protocol address
+
 ARP_HASH_LIST(1)	$set	arp_hash
 
 $(67::,y)
@@ -172,13 +175,31 @@ AXW		$set	8		. it was where we are called from
 	tz	y
 	j	deliver			. consider found in ARP cache
 
-	la	TX_DATAGRAM
+	dl	NET_ADDR
+	dte	latest_request
+	j	new_request		. right now
+
+	la	DAYCLOCK$
+	anu	repeat_request_when?
+	jpb	write_interval
+	j	return			. wait a bit for an answer
+
+new_request
+	ds	latest_request
+
+write_interval
+	la	DAYCLOCK$
+	aa	7000,,xi
+	sa	repeat_request_when?
+	
+	lb	this_if:address_list	. x -> i_f
+					. b <- l_f addresses list head
 
 	c	(ARP_XMIT)	ARP_REQUEST,,xi		;
 				caller_i_f		;
 				0,,xi			;
 				NET_ADDR,,long		;
-				dgram:ipsource,a,long
+				ifaddr:net,b,long	. first address on i_f chain
 	j	return
 
 deliver	lx	TX_FRAME, sp
